@@ -13,7 +13,7 @@ Every object rejects unknown keys, except the free text under `agents.instructio
 ## Vocabulary
 
 - Environments: `dev`, `test`, `prod`. `dev` is the `main` branch, `test` the `test` branch, `prod` the `stable` branch.
-- Action classes (a closed set): `git.commit`, `git.push`, `git.tag`, `git.merge`, `git.rewrite`, `git.branch`, `release.publish`, `service.control`, `service.config`, `fs.write`, `data.write`, `data.copy`, `secrets.read`, `policy.edit`, `promote`, `deploy`.
+- Action classes (a closed set): `git.commit`, `git.push`, `git.tag`, `git.merge`, `git.rewrite`, `git.branch`, `release.publish`, `service.control`, `service.config`, `fs.write`, `fs.delete`, `data.write`, `data.copy`, `secrets.read`, `policy.edit`, `promote`, `deploy`.
 - Verdicts: `allow`, `warn` (a stern warning plus explicit user confirmation), `deny`.
 - Actors: `agent` (any tool call through a harness hook) and `operator` (an interactive terminal with a typed phrase).
 
@@ -77,9 +77,16 @@ environments:
 | `id` | `R-…` | Rule id shown in every message. |
 | `match.env` | environment | Restrict to a stage. |
 | `match.class` | list of action classes | Restrict to these classes. |
-| `match.crosses` | `data_classes` or `location` | `data_classes`, for `data.copy`: matches when the data class is not allowed in the destination. `location`, for `fs.write`, `data.write` and `data.copy`: matches when the target is another project or another environment of the same project than the caller's location, and is prod or sits under a protected root (the engine evaluates it). |
+| `match.crosses` | `data_classes` or `location` | `data_classes`, for `data.copy`: matches when the data class is not allowed in the destination. `location`, for `fs.write`, `fs.delete`, `data.write` and `data.copy`: matches when the target is another project or another environment of the same project than the caller's location, and is prod or sits under a protected root (the engine evaluates it). |
 | `match.destructive` | `true` | Matches only a `data.write` the shell classifier marked destructive: SQL with TRUNCATE, DROP, ALTER ... DROP, DELETE without WHERE, or UPDATE without WHERE (the classifier sets the mark). |
 | `match.ref` | string | Restrict to a git ref. |
+| `match.shape` | list of shape names | Matches when the action carries any listed shape. The classifier tags shapes from the parsed script (pipeline, redirects, heredoc and `-c` bodies), never from raw text. Names: `bulk_stage` (`git add -A`, `--all`, `-u`, `--update`, `.`, `:/`, the repo root; `git commit -a`), `chained_release` (a `git.tag`, `git.push`, `release.publish` or `promote` action in a script of more than one command), `latest_flip` (`gh release create` or `edit` with `--latest`, `gh api` with `make_latest` true), `lockfile_edit` (an Edit or Write tool call, `sed -i`, `perl -i` or a redirect writing `Cargo.lock`, `Gemfile.lock`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `uv.lock` or `poetry.lock`), `pattern_kill` (`pkill -f`, `killall`, `kill` or `pkill` fed by `$(pgrep ...)`), `cargo_clean`, `worktree_force` (`git worktree remove --force`, `git worktree prune`). An unknown name is a validation error. |
+| `match.lock_held` | boolean | Matches when the action's target path is listed in `TMP_AGENT_FILE_LOCKS.yml` at the target's git toplevel by a live entry that is not an ancestor of the hook process. An entry with `owner_pid`, `owner_start` and `owner_boot` is live when that process exists with the same start time and boot id; an entry without owner fields is live for 10 minutes from `acquired_at`. |
+| `match.live_binary` | boolean | Matches when an `fs.delete` target, or the target directory of a `cargo clean`, contains the resolved `/proc/<pid>/exe` of a running process of the current user. |
+| `match.supervised` | boolean | Matches when a `service.control` target (a unit name, or a pid from `kill`) belongs to a component reported by the command in setting `polispec.supervisor.status_command` (argv, no shell, prints `{"units": [...], "pids": [...]}`, 1 s timeout, cached 60 s under `$POLISPEC_HOME/cache`). Unset or failing, the predicate is true for a `pattern_kill` and false for a named unit, with a finding either way. |
+| `match.pin_regress` | boolean | Matches a `git.commit` whose index changes a submodule pin to a commit that is not a descendant of the old pin (`git commit -a` also counts the working tree). An object missing from the local clone matches, and the reason says to fetch the submodule. |
+| `match.tag_claimed` | boolean | Matches a `git.tag` or tag push of `vX` when `refs/tags/vX` already exists at a different commit, or `X` is not greater than the `VERSION` file at `refs/remotes/origin/main`. No network is used; the reason says to fetch when the last fetch is older than an hour. |
+| `match.base_unpushed` | boolean | Matches a branch creation (`worktree add -b`, `checkout -b`, `switch -c`, `branch X [start]`) whose start point resolves to a local branch with commits not on its upstream. |
 | `verdict` | `allow`, `warn`, `deny` | Required. |
 | `reason` | string | Why, shown to the agent. |
 | `requires` | `gates.to_test` or `gates.to_stable` | Gates that must pass for the rule to allow. |

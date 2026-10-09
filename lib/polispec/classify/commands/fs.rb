@@ -16,11 +16,101 @@ module Polispec
       SED_VALUE = %w[-e -f -l --expression --file --line-length].freeze
       PERL_VALUE = %w[-e -E -I -M -m -0 -x].freeze
       IN_PLACE = /\A--in-place|\A-[a-zA-Z]*i/.freeze
+      DELETERS = %w[rm rmdir unlink shred].freeze
+      LOCKFILES = %w[Cargo.lock Gemfile.lock package-lock.json pnpm-lock.yaml yarn.lock uv.lock poetry.lock].freeze
 
       class << self
         def classify(cmd)
           writes = write_paths(cmd).map { |path| Support.write_action(path, cmd.text) }
-          writes + redirect_writes(cmd)
+          writes + redirect_writes(cmd) + deletes(cmd)
+        end
+
+        def shapes(cmd)
+          found = []
+          found << "cargo_clean" if cargo_clean?(cmd)
+          found << "lockfile_edit" if lockfile_writer?(cmd)
+          found
+        end
+
+        def hints(cmd)
+          return {} unless cargo_clean?(cmd) && !cmd.args.include?("--dry-run")
+
+          { "target_dir" => cargo_target(cmd) }
+        end
+
+        def deletes(cmd)
+          delete_paths(cmd).reject { |path| Support.discard?(path) }.map { |path| Support.act("fs.delete", cmd.text, "path" => path) }
+        end
+
+        def delete_paths(cmd)
+          return cargo_deletes(cmd) if cargo_clean?(cmd)
+
+          paths = case cmd.name
+                  when *DELETERS then Support.split_args(cmd.args).first
+                  when "find" then find_deletes(cmd)
+                  end
+          Array(paths).map { |path| Support.abs(path, cmd.cwd) }
+        end
+
+        def find_deletes(cmd)
+          args = cmd.args
+          exec_at = args.index { |arg| %w[-exec -execdir -ok -okdir].include?(arg) }
+          return [] unless args.include?("-delete") || (exec_at && DELETERS.include?(File.basename(args[exec_at + 1].to_s)))
+
+          starts = args.take_while { |arg| !arg.start_with?("-") && !%w[( ! ,].include?(arg) }
+          starts.empty? ? ["."] : starts
+        end
+
+        def cargo_clean?(cmd)
+          return false unless cmd.name == "cargo"
+
+          cmd.args.reject { |arg| arg.start_with?("-", "+") }.first == "clean"
+        end
+
+        def cargo_deletes(cmd)
+          return [] if cmd.args.include?("--dry-run")
+
+          [cargo_target(cmd)]
+        end
+
+        def cargo_target(cmd)
+          explicit = Support.option_value(cmd.args, "--target-dir") || cmd.env["CARGO_TARGET_DIR"]
+          return Support.abs(explicit, cmd.cwd) if explicit
+
+          manifest = Support.option_value(cmd.args, "--manifest-path")
+          start = manifest ? File.dirname(Support.abs(manifest, cmd.cwd)) : cmd.cwd
+          File.join(crate_root(start), "target")
+        end
+
+        def crate_root(start)
+          dir = File.expand_path(start)
+          dir = File.dirname(dir) until File.directory?(dir) || dir == "/"
+          nearest = nil
+          top = nil
+          loop do
+            manifest = File.join(dir, "Cargo.toml")
+            if File.file?(manifest)
+              nearest ||= dir
+              top = dir if workspace_manifest?(manifest)
+            end
+            parent = File.dirname(dir)
+            break if parent == dir
+
+            dir = parent
+          end
+          top || nearest || File.expand_path(start)
+        end
+
+        def workspace_manifest?(manifest)
+          File.foreach(manifest).any? { |line| line.start_with?("[workspace") }
+        rescue SystemCallError
+          false
+        end
+
+        def lockfile_writer?(cmd)
+          targets = cmd.redirects.select(&:write?).map(&:target)
+          targets += in_place(cmd) || [] if %w[sed perl].include?(cmd.name)
+          targets.any? { |target| LOCKFILES.include?(File.basename(target.to_s)) }
         end
 
         def redirect_writes(cmd)
