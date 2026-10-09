@@ -63,6 +63,11 @@ module Polispec
         @profiles && @profiles[1]
       end
 
+      def profiles_map
+        map = @profiles && @profiles[0]["profiles"]
+        map.is_a?(Hash) ? map : {}
+      end
+
       def read(relative)
         source.kind == :dir ? read_dir(relative) : read_repo(relative)
       end
@@ -169,6 +174,16 @@ module Polispec
 
         @stores ||= {}
         @stores[src.key] ||= Store.new(src)
+      end
+
+      def global
+        shelf = store
+        return nil unless shelf
+
+        profiles = shelf.profiles_map
+        names = Array(shelf.global_doc && shelf.global_doc["includes"]) + profiles.values.flat_map { |list| Array(list) }
+        modules = shelf.expand(names.uniq, []).to_h { |mod| [mod.name, mod.doc] }
+        (shelf.global_doc || {}).merge("profiles" => profiles, "modules" => modules)
       end
 
       def fallback_rules

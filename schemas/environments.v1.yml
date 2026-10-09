@@ -14,7 +14,7 @@ properties:
     items: { $ref: "#/$defs/id" }
   environments:
     type: object
-    additionalProperties: false
+    additionalProperties: { $ref: "#/$defs/environment" }
     required: [dev, test, prod]
     properties:
       dev: { $ref: "#/$defs/environment" }
