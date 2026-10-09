@@ -277,7 +277,11 @@ module Polispec
         located = ledger.locate(cwd)
         return "dev" unless located && located.project.id == project_id
 
-        by_policy_checkout(canonical(absolute(cwd, cwd)), policy, nil) || "dev"
+        found = by_policy_checkout(canonical(absolute(cwd, cwd)), policy, nil)
+        return found if found
+        return env_for_checkout_dir(located.env.to_s, policy) if located.kind == :env_checkout
+
+        "dev"
       end
 
       def for_action(action, target, ctx)
@@ -323,9 +327,16 @@ module Polispec
         policy = target.policy
         %i[explicit by_ref by_unit by_db by_secret by_path].each do |step|
           found = send(step, hint, policy, ctx)
-          return found if found
+          return tier_name(found, policy) if found
         end
         fallback ? home_env(target, ctx) : nil
+      end
+
+      def tier_name(name, policy)
+        return name if ENV_NAMES.include?(name)
+
+        tier = (environments(policy)[name] || {})["tier"].to_s
+        ENV_NAMES.include?(tier) ? tier : "prod"
       end
 
       def explicit(hint, _policy, _ctx)
@@ -390,12 +401,12 @@ module Polispec
       end
 
       def by_policy_checkout(abs, policy, ctx)
-        ENV_NAMES.each do |name|
+        (ENV_NAMES + (environments(policy).keys - ENV_NAMES)).each do |name|
           spec = environments(policy)[name]
-          next unless spec
+          next unless spec.is_a?(Hash)
 
           checkout = checkout_root(spec, ctx)
-          return name if checkout && under?(abs, checkout)
+          return tier_name(name, policy) if checkout && under?(abs, checkout)
         end
         nil
       end
@@ -418,8 +429,8 @@ module Polispec
       def env_for_checkout_dir(dir, policy)
         return dir if ENV_NAMES.include?(dir)
 
-        named = ENV_NAMES.find { |name| (environments(policy)[name] || {})["branch"].to_s == dir }
-        named || "prod"
+        named = environments(policy).find { |_name, spec| spec.is_a?(Hash) && spec["branch"].to_s == dir }
+        named ? tier_name(named[0], policy) : (environments(policy).key?(dir) ? tier_name(dir, policy) : "prod")
       end
 
       def under?(path, root)
