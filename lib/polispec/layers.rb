@@ -186,6 +186,21 @@ module Polispec
         (shelf.global_doc || {}).merge("profiles" => profiles, "modules" => modules)
       end
 
+      def baseline?
+        shelf = store
+        return false unless shelf && shelf.global_doc
+
+        doc = shelf.global_doc
+        !Array(doc["rules"]).empty? || !Array(doc["includes"]).empty? || !shelf.profiles_map.empty?
+      end
+
+      def fingerprint
+        shelf = store
+        return "" unless shelf
+
+        sha([shelf.source.key.inspect, shelf.global_text.to_s, shelf.profiles_text.to_s].join("\n--\n"))
+      end
+
       def fallback_rules
         rules = store&.global_doc&.dig("fallback_rules")
         rules.is_a?(Array) && !rules.empty? ? rules : nil
