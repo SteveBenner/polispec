@@ -116,14 +116,21 @@ module Polispec
       Fastpath.refresh(ledger)
       cwd = input.cwd.to_s.empty? ? Dir.pwd : input.cwd.to_s
       calls = adapter.calls(input)
-      return nil unless relevant?(ledger, cwd, calls)
+      baseline = Layers.baseline?
+      return nil unless baseline || relevant?(ledger, cwd, calls)
 
       actions = calls.flat_map { |tool, data| Array(Classify.call(tool, data, cwd)) }
-      groups = group(actions, ledger, cwd)
+      groups = group(actions, ledger, cwd, baseline)
       return nil if groups.empty?
 
       mode = enforce_mode
-      outcomes = groups.map { |project, list| evaluate(adapter, input, ledger, cwd, project, list, mode, started) }
+      outcomes = groups.map do |kind, project, list|
+        if kind == :live
+          evaluate(adapter, input, ledger, cwd, project, list, mode, started)
+        else
+          evaluate_baseline(adapter, input, ledger, cwd, project, list, mode, started)
+        end
+      end
       worst = outcomes.max_by { |outcome| outcome.verdict.severity }
       mode == "enforce" ? adapter.render(worst.verdict) : nil
     end
@@ -144,15 +151,28 @@ module Polispec
       [project.id, File.basename(project.repo.to_s), root, File.join(File.basename(File.dirname(root)), File.basename(root))].map(&:downcase).reject(&:empty?)
     end
 
-    def group(actions, ledger, cwd)
+    def group(actions, ledger, cwd, baseline = false)
       groups = {}
       actions.each do |action|
         owner = Engine::Envs.owner(action, ledger, cwd)
-        next unless owner && owner.status == "live"
-
-        (groups[owner.id] ||= [owner, []])[1] << action
+        if owner && owner.status == "live"
+          (groups[[:live, owner.id]] ||= [:live, owner, []])[2] << action
+        elsif baseline && !(owner && owner.status == "retired")
+          id = owner ? owner.id : GLOBAL_ID
+          (groups[[:baseline, id]] ||= [:baseline, id, []])[2] << action
+        end
       end
       groups.values
+    end
+
+    GLOBAL_ID = "global"
+
+    def evaluate_baseline(adapter, input, ledger, cwd, id, actions, mode, started)
+      target = Target.new(project: id, env: "dev", policy: { "rules" => [] }, roster: nil, policy_source: "global", digest: Layers.fingerprint)
+      context = { ledger: ledger, cwd: cwd, session_id: input.session_id, role: (input.agent_type.to_s.empty? ? nil : input.agent_type), issue_allow_once: mode == "enforce" && !adapter.ask? }
+      outcome = Engine.explain(actions, target, context)
+      record(adapter, input, cwd, target, outcome, mode, started)
+      outcome
     end
 
     def evaluate(adapter, input, ledger, cwd, project, actions, mode, started)

@@ -772,6 +772,7 @@ module Polispec
       def explain(actions, target, ctx = {})
         now = ctx[:now] || Time.now
         context = ctx.merge(now: now, predicate_memo: {}, findings: ctx[:findings] || [])
+        context[:global] = Layers.global unless context.key?(:global)
         paused = pause_for(target, context)
         return paused if paused
 
