@@ -31,6 +31,7 @@ properties:
   includes:
     type: array
     items: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }
+  profile: { enum: [personal, service, live] }
   hermetic:
     type: object
     additionalProperties: false
@@ -153,7 +154,7 @@ $defs:
       reason: { type: string, minLength: 1 }
       requires: { type: string, pattern: "^gates\\.(to_test|to_stable)$" }
       overridable: { type: boolean }
-      overrides: { type: string, pattern: "^R-[A-Z0-9-]+$" }
+      overrides: { type: string, pattern: "^[A-Z][A-Z0-9]*-[A-Z0-9-]+$" }
   gate:
     type: object
     additionalProperties: false

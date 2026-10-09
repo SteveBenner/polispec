@@ -130,7 +130,7 @@ Point `POLISPEC_LEDGER`, `XDG_STATE_HOME` and `POLISPEC_ENVS_ROOT` at scratch di
 
 ## Settings and host wiring
 
-polispec reads four machine settings, each from an environment variable, then the rplugin settings snapshot, then the default:
+polispec reads these machine settings, each from an environment variable, then the rplugin settings snapshot, then the default:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -138,5 +138,8 @@ polispec reads four machine settings, each from an environment variable, then th
 | `polispec.ledger` | `~/.config/polispec/ledger.yml` | Path of the ledger of governed projects. `POLISPEC_LEDGER` overrides it. When the setting is absent, `$XDG_CONFIG_HOME/polispec/ledger.yml` is used. |
 | `polispec.operator` | `the operator` | How deny and next-step messages name the person who promotes to stable and redeems allow-once, for example `Only the operator moves production: ask the operator to run ...`. |
 | `polispec.code.specs_repo` | `~/polispec-specs` | Path of the code specs repository. `POLISPEC_SPECS_REPO` overrides it. |
+| `polispec.global.repo` | unset | Path of the git repository that holds the global layer. Unset means no global layer. `POLISPEC_GLOBAL`, a plain directory, overrides it and the two settings below, for scratch runs. |
+| `polispec.global.ref` | `main` | Ref of that repository the layer is read from with `git show`; the working tree is never read. |
+| `polispec.global.path` | `polispec` | Directory inside the repository that holds `global.yml`, `profiles.yml` and `modules/`. |
 
 The guard is a hook the host wires into each agent harness: it runs `polispec hook pretool --harness <name>` on every tool call and prints the harness's own allow, ask or deny reply. The plugin ships `hooks/polispec.hooks.yml` for harnesses rplugin can render; any other harness calls the same command from its pre-tool event. Two integrations are optional and never required: events may be emitted to an `rlogs` sink (`observability.events: rlogs`, otherwise `local` or `none`), and `polispec onboard` recognises a `*.rstack_component.yml` manifest as well as `*.rplugin.yml` when it adds a `serves:` pointer.

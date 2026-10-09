@@ -58,6 +58,7 @@ Change them with `rplugin settings`, or set the matching environment variable na
 - `polispec.ledger`: path of the ledger of governed projects; default `~/.config/polispec/ledger.yml`. `POLISPEC_LEDGER` overrides it.
 - `polispec.operator`: how messages name the person who promotes to stable; default `the operator`.
 - `polispec.code.specs_repo`: path of the code specs repository; default `~/polispec-specs`. `POLISPEC_SPECS_REPO` overrides it.
+- `polispec.global.repo`, `polispec.global.ref` (default `main`) and `polispec.global.path` (default `polispec`): where the optional global layer of shared rules, modules and profiles is read from. Unset means no global layer. `POLISPEC_GLOBAL` points at a plain directory for scratch runs. See `docs/schema.md`.
 
 ## Optional integrations
 
