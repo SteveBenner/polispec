@@ -3,8 +3,8 @@
 `polispec promote` moves code between branches and `polispec deploy` puts a branch or tag into an environment checkout. Both read the project from the ledger and the promotion policy from the trust ref (`PolicySource.load`), never from the working tree. Both accept `--json` and `--dry-run`.
 
 ```
-polispec promote <project> --to test|stable [--dry-run] [--json]
-polispec deploy  <project> <test|stable> [--tag vX.Y.Z] [--skip-drain] [--dry-run] [--json]
+polispec promote <project> --to <env> [--dry-run] [--json]
+polispec deploy  <project> <env> [--tag vX.Y.Z] [--skip-drain] [--dry-run] [--json]
 ```
 
 `--json` prints one object. A failure is `{"ok":false,"error":{"code":"…","message":"…","payload":{…}}}` with exit status 1; a usage error exits 2. `--dry-run` runs every check and every gate and changes nothing.
@@ -112,13 +112,43 @@ Constraint: a gate that touches a live database must use `run_in: active`. Some 
 - `health_required` re-runs, on the policy at the candidate sha, the check that an environment declaring `deploy.steps` or `deploy.activate` also declares `deploy.health` (`env <name> deploys without a health check; G-TESTED can never pass`). The same check (`Gates.health_required_errors(policy)`) runs whenever the operator loads a project, so promote and deploy refuse such a policy with `policy_invalid`.
 - `promotion.to_stable.preflight` gates run first, ahead of the other gates and the phrase prompt.
 
+## Environment names and promotion hops
+
+Environment names come from the policy. `dev`, `test` and `prod` always exist; a policy may declare more under `environments` (for example `canary`), each with a `tier` of `dev`, `test` or `prod` that keeps its meaning for rules, data classes and `hermetic.<tier>`. The name `stable` is the operator-facing alias of `prod`: `promote --to stable`, `deploy <project> stable`, deploy records and `promotion.to_stable` all use it.
+
+A hop is `promotion.to_<env>` for any declared env, each with `from:`, so `main -> test -> canary -> stable` is `to_test` (from `main`), `to_canary` (from `test`) and `to_stable` (from `canary`). `to_test` keeps its tag-and-push flow. Every other hop behaves like `to_stable`: the `from` branch's tip must carry the `v{VERSION}` tag, the target branch must be an ancestor of it, then the gates run and one atomic push moves the target branch. For a hop other than `to_stable`, the actor list is checked against the caller (an agent on a dry run is always allowed), and a declared `phrase` needs an interactive terminal and the typed phrase. `to_stable` is unchanged: operator only, terminal, phrase, and the implicit `G-TESTED` and `G-FREEZE` gates. The implicit `G-TESTED` (`sha_ran_on`, env `test`) is skipped when the hop lists its own `sha_ran_on` or `sha_ran_on_test` gate.
+
+`polispec deploy <project> <env>` deploys any declared non-dev env. An env other than `test` checks out a promoted tag on its branch, unless it sets `runs: branch`; one other than `test` asks for the `deploy <project> to <env>` phrase unless a promotion confirmed it. A deploy to an env of tier `prod` records `pinned_behind`. Deploy records carry `env` as the name (`stable` for `prod`).
+
+- `sha_ran_on` (gate option `env`, default `test`) passes when `deploys.jsonl` holds a deploy of the sha in that env with health `ok`. `sha_ran_on_test` is its alias with `env: test`. Failure code `untested_sha`.
+- `soaked` takes the same `env` option (default `test`).
+- `promotion.to_<env>` keys and gate `env` options that name an env the policy does not declare are a `policy_invalid` error.
+
+## logs_quiet
+
+`logs_quiet` compares log volume after a deploy with the same-length window before it. Options: `services: [name...]` (required), `window_minutes` (default 120) and `max_over_baseline` (default 0). It measures from the newest healthy deploy of the candidate sha in the env the hop promotes from (the env whose name or branch equals `from`; `test` when none matches). For each service it runs the argv template in the setting `polispec.logs.count_command` without a shell, once for `[deploy, deploy + window)` and once for `[deploy - window, deploy)`. `{service}`, `{since}` and `{until}` are replaced in each word (UTC ISO 8601 times), a leading `~` and `$HOME` are expanded, and the command must print one integer. The gate fails when `after` exceeds `before + max_over_baseline` (`logs_not_quiet`, listing each service) and when less than `window_minutes` have passed since the deploy (`logs_in_window`). An unset setting, or a command that fails, times out (60 s) or prints a non-integer, fails the gate closed (`gate_failed`, with the reason). `RPLUGIN_POLISPEC_POLISPEC_LOGS_COUNT_COMMAND` sets it for a scratch run.
+
+## requires_live
+
+`requires_live` passes when the newest prod deploy record (`env` `stable`) of another project in `deploys.jsonl` has health `ok` and a tag whose version is at least the minimum. Options: `project` (required) and the minimum as `min_version` (for example `0.80.4`), or as `min_version_from` (a path in the candidate tree) with `min_version_key` (a dotted key in that YAML or JSON file). Failure code `not_live`, or `gate_failed` when the minimum cannot be read.
+
+## Profile checks
+
+`Polispec::ValidateProfiles.errors(policy, entry)` runs wherever the operator loads a project (`policy_invalid`) and in `polispec doctor` (finding `profile_check`). The profile is the `profile` field of the ledger entry, default `personal`.
+
+- `personal_no_warn` (every project): a rule with verdict `warn` in a module the global layer's `personal` profile selects is an error.
+- `version_reported` (profile `service` or `live`): an env with `deploy.health.url` and `expect_version` false or absent is an error, `env <name> health does not prove the deployed version`.
+- `protected_writers` (profile `service` or `live`): a deploy step or `activate` command that the classifier says writes or deletes under a protected root of the global layer, whose `writers` do not include the command's `argv[0]` basename, is an error. Writes inside the project's own env directory and commands the classifier cannot place (it marks them unknown) are not reported.
+
+The global layer is read from `POLISPEC_GLOBAL`, a plain directory holding `global.yml` (with `protected_roots: [{ path, writers }]`), `profiles.yml` and `modules/<name>.yml`. With no global layer, the roots are `[]` and `personal_no_warn` finds nothing.
+
 ## Freeze source `command`
 
 A freeze with `source: command` runs its `command` argv in the prod checkout of its `project` (default the policy's own project), with a 5 s timeout, a 300 s cache and the findings described in `docs/schema.md`. The output is `{ "windows": [{ "kind", "from", "until", "detail" }] }`; a window covers now from `from` (less any lead) until `until`, and the window's `detail` shows in the freeze label. When the freeze sets `kind`, only windows of that kind apply. `source: teach.activity` is a deprecated alias for `command: [bin/teach, activity, --json]` without the kind filter; `source: teach.calendar` is a deprecated alias for `command: [bin/teach, calendar, freezes, --json]` with it.
 
 ## Other error codes
 
-`policy_invalid`, `not_soaked`, `drain_timeout`, `drain_failed`, `drain_check_failed`, `skip_drain_unsupported`, `env_file_unreadable`, `unknown_env`, `rolled_back`, `release_conflict`, `clone_failed`, `not_tty`, `confirmation_failed`, `actor_denied`, `drift`, `not_fast_forward`, `nothing_to_promote`, `version_not_bumped`, `tag_exists`, `tag_mismatch`, `missing_ref`, `push_rejected`, `release_failed`, `after_failed`, `locked` (another promote or deploy of the same project holds its lock), `policy_unavailable`, `unknown_project`, `retired_project`, `repo_missing`, `invalid_target`, `invalid_env`, `invalid_tag`, `no_deploy`, `no_remote`.
+`policy_invalid`, `not_soaked`, `drain_timeout`, `drain_failed`, `drain_check_failed`, `skip_drain_unsupported`, `env_file_unreadable`, `unknown_env`, `rolled_back`, `release_conflict`, `clone_failed`, `not_tty`, `confirmation_failed`, `actor_denied`, `drift`, `not_fast_forward`, `nothing_to_promote`, `version_not_bumped`, `tag_exists`, `tag_mismatch`, `missing_ref`, `push_rejected`, `release_failed`, `after_failed`, `locked` (another promote or deploy of the same project holds its lock), `policy_unavailable`, `unknown_project`, `retired_project`, `repo_missing`, `invalid_target`, `invalid_env`, `logs_not_quiet`, `logs_in_window`, `not_live`, `untested_sha`, `invalid_tag`, `no_deploy`, `no_remote`.
 
 ## Events and records
 
@@ -130,7 +160,7 @@ Point `POLISPEC_LEDGER`, `XDG_STATE_HOME` and `POLISPEC_ENVS_ROOT` at scratch di
 
 ## Settings and host wiring
 
-polispec reads four machine settings, each from an environment variable, then the rplugin settings snapshot, then the default:
+polispec reads these machine settings, each from an environment variable, then the rplugin settings snapshot, then the default:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -138,5 +168,6 @@ polispec reads four machine settings, each from an environment variable, then th
 | `polispec.ledger` | `~/.config/polispec/ledger.yml` | Path of the ledger of governed projects. `POLISPEC_LEDGER` overrides it. When the setting is absent, `$XDG_CONFIG_HOME/polispec/ledger.yml` is used. |
 | `polispec.operator` | `the operator` | How deny and next-step messages name the person who promotes to stable and redeems allow-once, for example `Only the operator moves production: ask the operator to run ...`. |
 | `polispec.code.specs_repo` | `~/polispec-specs` | Path of the code specs repository. `POLISPEC_SPECS_REPO` overrides it. |
+| `polispec.logs.count_command` | unset | Argv template (no shell) for the `logs_quiet` gate; takes `{service}`, `{since}` and `{until}` and prints one integer. Unset fails the gate closed. `RPLUGIN_POLISPEC_POLISPEC_LOGS_COUNT_COMMAND` overrides it. |
 
 The guard is a hook the host wires into each agent harness: it runs `polispec hook pretool --harness <name>` on every tool call and prints the harness's own allow, ask or deny reply. The plugin ships `hooks/polispec.hooks.yml` for harnesses rplugin can render; any other harness calls the same command from its pre-tool event. Two integrations are optional and never required: events may be emitted to an `rlogs` sink (`observability.events: rlogs`, otherwise `local` or `none`), and `polispec onboard` recognises a `*.rstack_component.yml` manifest as well as `*.rplugin.yml` when it adds a `serves:` pointer.

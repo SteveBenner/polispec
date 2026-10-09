@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require_relative "../validate_profiles"
+
 module Polispec
   class DoctorCommand
     USAGE = "usage: polispec doctor [--json]"
@@ -53,6 +55,7 @@ module Polispec
       findings << finding(project.id, loaded.finding["kind"], loaded.finding["detail"]) if loaded.finding
       defaults = loaded.source == "defaults"
       roster = PolicySource.roster_digest(project)
+      Polispec::ValidateProfiles.errors(loaded.policy, project, ledger: ledger).each { |detail| findings << finding(project.id, "profile_check", detail) } unless defaults
       findings << finding(project.id, "roster_missing", "#{project.trust_ref}:#{project.roster} not found") if roster.nil? && !defaults
       AgentsRender.drift(project.repo, project.trust_ref, project).each { |detail| findings << finding(project.id, "agents_drift", detail) } unless defaults
       findings << finding(project.id, "not_live", "status #{project.status}: the guard does not enforce this project") unless project.status == "live"

@@ -19,6 +19,7 @@ settings:
   - { key: polispec.ledger, type: path, default: "~/.config/polispec/ledger.yml", scopes: [machine], description: "Path of the host's ledger of governed projects. POLISPEC_LEDGER overrides it." }
   - { key: polispec.operator, type: string, default: "the operator", scopes: [machine], description: "How deny and next-step messages name the person who promotes to stable and redeems allow-once." }
   - { key: polispec.code.specs_repo, type: path, default: "~/polispec-specs", scopes: [machine], description: "Path of the repository that holds the code specs. POLISPEC_SPECS_REPO overrides it." }
+  - { key: polispec.logs.count_command, type: string, default: "", scopes: [machine], description: "Argv template (no shell) the logs_quiet gate runs to count log lines. It takes {service}, {since} and {until} (UTC ISO 8601) and prints one integer. RPLUGIN_POLISPEC_POLISPEC_LOGS_COUNT_COMMAND overrides it. Unset fails the gate closed." }
 contents:
   skills:
     - { id: polispec, path: skills/polispec/SKILL.md }

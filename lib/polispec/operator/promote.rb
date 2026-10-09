@@ -7,7 +7,7 @@ require_relative "gates"
 module Polispec
   module Operator
     module Promote
-      TARGETS = %w[test stable].freeze
+      TARGET = /\A[a-z0-9][a-z0-9-]{0,40}\z/
       BOOTSTRAP_FROM = { "test" => "main", "stable" => "test" }.freeze
       Plan = Struct.new(:project, :git, :to, :source_ref, :target, :from_sha, :to_sha, :version, :tag, :gates, :preflight, :actor, :started, keyword_init: true)
 
@@ -15,12 +15,16 @@ module Polispec
 
       def call(project_id, to:, dry_run: false)
         to = to.to_s
-        raise Failure.new("invalid_target", "--to must be test or stable") unless TARGETS.include?(to)
+        raise Failure.new("invalid_target", "--to must name an environment") unless TARGET.match?(to)
 
         started = Gates.now_ms
         project = Gates.load_project(project_id, bootstrap_from: BOOTSTRAP_FROM[to])
+        unless project.promotion["to_#{to}"].is_a?(Hash) || %w[test stable].include?(to)
+          known = project.promotion.keys.map { |key| key.to_s.delete_prefix("to_") }
+          raise Failure.new("invalid_target", "--to must be #{Gates.name_list(known)}")
+        end
         Gates.with_lock("promote-#{project.id}") do
-          result = to == "test" ? to_test(project, dry_run, started) : to_stable(project, dry_run, started)
+          result = to == "test" ? to_test(project, dry_run, started) : to_hop(project, to, dry_run, started)
           result.merge("duration_ms" => Gates.now_ms - started)
         end
       rescue Failure => e
@@ -33,7 +37,7 @@ module Polispec
         unless config.is_a?(Hash)
           raise Failure.new("policy_unavailable", "project #{project.id} policy has no promotion.to_#{to} (source #{project.source})", "policy_source" => project.source)
         end
-        if project.source.start_with?("bootstrap:") && config["from"] != BOOTSTRAP_FROM[to]
+        if project.source.start_with?("bootstrap:") && BOOTSTRAP_FROM.key?(to) && config["from"] != BOOTSTRAP_FROM[to]
           raise Failure.new("bootstrap_mismatch", "the bootstrap policy from #{BOOTSTRAP_FROM[to]} promotes to #{to} from #{config['from'].inspect}", "policy_source" => project.source)
         end
         config
@@ -200,33 +204,39 @@ module Polispec
       def deploy_step(plan, args)
         project, env, *rest = args
         tag = rest.each_cons(2).find { |flag, _| flag == "--tag" }&.last
-        Deploy.call(project, env, tag: tag, confirmed: plan.to == "stable")
+        Deploy.call(project, env, tag: tag, confirmed: plan.to != "test")
       end
 
-      def to_stable(project, dry_run, started)
-        config = promotion_config(project, "stable")
-        unless Array(config["actor"]).include?("operator")
-          raise Failure.new("actor_denied", "promotion to stable must allow the operator actor")
+      def to_hop(project, to, dry_run, started)
+        config = promotion_config(project, to)
+        stable = to == "stable"
+        phrased = stable || config["phrase"]
+        if stable
+          raise Failure.new("actor_denied", "promotion to stable must allow the operator actor") unless Array(config["actor"]).include?("operator")
+        elsif !dry_run && !Array(config["actor"]).include?(Gates.actor)
+          raise Failure.new("actor_denied", "promotion to #{to} is limited to #{Array(config['actor']).join(', ')}; this caller is #{Gates.actor}")
         end
 
-        Gates.require_terminal!("promote --to stable") unless dry_run
+        Gates.require_terminal!("promote --to #{to}") if phrased && !dry_run
         git = Git.new(project.repo)
         git.fetch
-        plan = plan_to_stable(project, config, git)
+        plan = plan_to_hop(project, config, git, to, stable ? "operator" : Gates.actor)
         plan.started = started
         plan.preflight = Gates.run_all(Array(config["preflight"]), context(plan))
-        plan.gates = Gates.run_all(Gates.effective_gates(project, "stable"), context(plan))
+        plan.gates = Gates.run_all(Gates.effective_gates(project, to), context(plan))
         return preview(plan) if dry_run
 
-        phrase = Gates.interpolate(config["phrase"] || "promote {project} to stable", "project" => project.id)
-        warn "promoting #{project.id} #{plan.version} (#{plan.to_sha[0, 12]}) from #{plan.source_ref} to #{plan.target}"
-        Gates.confirm!(phrase)
+        if phrased
+          phrase = Gates.interpolate(config["phrase"] || "promote {project} to stable", "project" => project.id)
+          warn "promoting #{project.id} #{plan.version} (#{plan.to_sha[0, 12]}) from #{plan.source_ref} to #{plan.target}"
+          Gates.confirm!(phrase)
+        end
         publish(plan)
       end
 
-      def plan_to_stable(project, config, git)
+      def plan_to_hop(project, config, git, to, actor)
         source = config["from"]
-        target = project.environment("prod")["branch"]
+        target = project.environment(Gates.env_key(to))["branch"]
         tip = remote_tip(git, source)
         previous = git.rev("origin/#{target}")
         if previous
@@ -238,8 +248,8 @@ module Polispec
         found = git.tag_commit(tag)
         raise Failure.new("tag_mismatch", "tag #{tag} does not point at #{tip[0, 12]}", "tag" => tag, "tag_sha" => found, "sha" => tip) unless found == tip
 
-        Plan.new(project: project, git: git, to: "stable", source_ref: source, target: target, from_sha: previous || Git::ZEROS,
-                 to_sha: tip, version: version, tag: tag, gates: [], actor: "operator")
+        Plan.new(project: project, git: git, to: to, source_ref: source, target: target, from_sha: previous || Git::ZEROS,
+                 to_sha: tip, version: version, tag: tag, gates: [], actor: actor)
       end
 
       def emit(plan, result)
