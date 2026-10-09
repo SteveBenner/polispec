@@ -1,7 +1,7 @@
 schema: rplugin/v1
 id: polispec
 name: Polispec
-version: 0.15.2
+version: 0.16.0
 rplugin: ">= 1.12.0"
 description: "Spec-based policy guardrails for agentic development and operations: a versioned policy per live project, enforced from its stable ref in every harness."
 ports:

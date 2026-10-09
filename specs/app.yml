@@ -1,6 +1,6 @@
 schema_version: 1
 name: polispec
-version: 0.15.2
+version: 0.16.0
 kind: plugin
 purpose: "Spec-based policy guardrails for agentic development and operations. Every live project carries a versioned policy and, beside it, an environment manifest (main, test, stable), both read from the trust ref; the policy declares what agents may do in each environment, how code is promoted, what data and secrets each environment may hold, when it is frozen, and which harness, model and effort each agent role gets."
 ports:
@@ -26,15 +26,15 @@ schemas:
   ledger: { id: polispec.ledger/v1, file: schemas/ledger.v1.yml, path: "resolved from POLISPEC_LEDGER, then the polispec.ledger setting, then ~/.config/polispec/ledger.yml" }
 commands:
   - { name: behavior, status: built, usage: "polispec behavior compile FILE | decide FILE EVENT FACTS.json" }
-  - { name: validate, status: built, usage: "polispec validate <policy|environments|roster|ledger|behavior|auto> <file> [--json]", note: "validate policy merges a sibling environments.yml when the policy has no environments block" }
+  - { name: validate, status: built, usage: "polispec validate <policy|environments|roster|ledger|global|module|profiles|behavior|auto> <file> [--json]", note: "validate policy merges a sibling environments.yml when the policy has no environments block" }
   - { name: onboard, status: built, usage: "polispec onboard <repo> --serves real_users|internal|none [--archetype service|distributed] [--id ID] [--trust-ref REF] [--push] [--checkouts] [--dry-run] [--json]", note: "scaffolds specs/polispec environments, policy and roster from templates/onboard, appends serves: and a polispec: pointer to the component manifest (*.rstack_component.yml, else *.rplugin.yml), inserts a status onboarding ledger entry after a backup, renders [ENVS], creates local test and stable branches; --push and --checkouts are opt-in (impl environments FR-10)" }
   - { name: "agents render", status: built, usage: "polispec agents render <project|repo> [--from worktree|REF] [--check] [--json]", note: "writes .agents/directives/envs.md and upserts the AGENTS.md line keyed by the [ENVS] opcode; doctor reports agents_drift when the trust ref disagrees with a fresh render; edits to the row or envs.md classify as policy.edit (impl environments FR-5 to FR-8)" }
   - { name: "hook git", status: built, usage: "polispec hook git pre-commit|pre-push|reference-transaction | install|uninstall <project> dev|test|prod|all [--dry-run]", note: "judges git operations in a live project with the same rules and environment resolution as the harness guard; shims chain to the previous core.hooksPath; POLISPEC_OPERATOR=1, set by polispec's operator git, skips them; a seatbelt for processes outside a harness, not a security boundary (impl environments FR-9)" }
   - { name: version, status: built, usage: "polispec version" }
   - { name: "hook pretool|session", status: planned }
-  - { name: resolve, status: planned }
+  - { name: resolve, status: built, usage: "polispec resolve <path> [--layers] [--json]", note: "since 0.16.0 --layers prints the global, repo and child layer chain with each layer's digest and the effective digest" }
   - { name: classify, status: planned }
-  - { name: "promote, deploy", status: built, usage: "polispec promote <project> --to test|stable [--dry-run] [--json] | polispec deploy <project> test|stable [--tag vX.Y.Z] [--skip-drain]", note: "while stable carries no policy, promote and test deploys bootstrap from the candidate branch's committed policy (impl FR-4b); gate, step and after commands run without a shell, with $HOME, ${HOME} and a leading ~ expanded in each word (impl FR-4c); `hermetic.<env>` isolates variables into scratch and fails a run that writes under a protected root (a command gate with `hermetic: false` runs outside it, recorded as `hermetic: false` in the promote result), `deploy.strategy: release_dirs` swaps a release symlink and rolls back on failed health, `deploy.drain` pauses, waits, checks and resumes queues in the active release, and `polispec deploy <project> stable --skip-drain` skips the drain (terminal plus phrase `skip drain for <project>`); a policy that deploys without health is refused" }
+  - { name: "promote, deploy", status: built, usage: "polispec promote <project> --to <env> [--dry-run] [--json] | polispec deploy <project> <env> [--tag vX.Y.Z] [--skip-drain]", note: "while stable carries no policy, promote and test deploys bootstrap from the candidate branch's committed policy (impl FR-4b); gate, step and after commands run without a shell, with $HOME, ${HOME} and a leading ~ expanded in each word (impl FR-4c); `hermetic.<env>` isolates variables into scratch and fails a run that writes under a protected root (a command gate with `hermetic: false` runs outside it, recorded as `hermetic: false` in the promote result), `deploy.strategy: release_dirs` swaps a release symlink and rolls back on failed health, `deploy.drain` pauses, waits, checks and resumes queues in the active release, and `polispec deploy <project> stable --skip-drain` skips the drain (terminal plus phrase `skip drain for <project>`); a policy that deploys without health is refused" }
   - { name: "pause, allow-once", status: planned }
   - { name: "roster resolve|check", status: planned }
   - { name: "status, digest, doctor", status: planned }
