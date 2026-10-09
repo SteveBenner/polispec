@@ -171,6 +171,11 @@ module Polispec
         @stores[src.key] ||= Store.new(src)
       end
 
+      def fallback_rules
+        rules = store&.global_doc&.dig("fallback_rules")
+        rules.is_a?(Array) && !rules.empty? ? rules : nil
+      end
+
       def reset!
         @stores = nil
       end
@@ -285,19 +290,11 @@ module Polispec
         named
       end
 
-      def default_rules(ledger)
-        return [] unless ledger
-
-        Array(ledger.defaults["rules"]).each_with_index.map { |rule, index| rule.merge("id" => rule["id"] || "DEFAULT-#{index + 1}") }
-      end
-
       def global_layer(shelf, profile, ledger, errors)
         doc = shelf.global_doc
         if doc.nil?
-          rules = default_rules(ledger)
-          return nil if rules.empty?
-
-          return Layer.new(name: "global", source: "#{shelf.source.describe} (ledger defaults)", digest: sha(JSON.generate(rules)), rules: rules, modules: [], extras: EMPTY_EXTRAS)
+          errors << "global.yml not found in #{shelf.source.describe}" if shelf.errors.empty?
+          return nil
         end
 
         seen = {}
