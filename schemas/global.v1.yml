@@ -13,6 +13,9 @@ properties:
   rules:
     type: array
     items: { $ref: "#/$defs/rule" }
+  fallback_rules:
+    type: array
+    items: { $ref: "#/$defs/rule" }
   gates:
     type: object
     additionalProperties: false

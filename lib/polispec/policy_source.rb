@@ -60,7 +60,7 @@ module Polispec
       end
 
       def defaults_policy(project, ledger)
-        rules = Array(ledger.defaults["rules"])
+        rules = Layers.fallback_rules || Array(ledger.defaults["rules"])
         rules = FALLBACK_RULES if rules.empty?
         {
           "schema" => "polispec.policy/v1", "project" => project.id, "defaults" => true,
