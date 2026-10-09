@@ -45,6 +45,8 @@ module Polispec
       end
     end
 
+    autoload :Shapes, File.join(LIB, "classify", "shapes")
+
     TOOL = File.join(LIB, "classify", "tool.rb")
     @tool_loaded = false
 
@@ -54,7 +56,8 @@ module Polispec
         require TOOL
         return call(tool_name, tool_input, cwd)
       end
-      Registry.families.values.flat_map { |klass| Array(klass.call(tool_name, tool_input, cwd)) }
+      found = Registry.families.values.flat_map { |klass| Array(klass.call(tool_name, tool_input, cwd)) }
+      Shapes.annotate(found, tool_name, tool_input, cwd)
     end
   end
 end

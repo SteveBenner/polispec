@@ -3,11 +3,12 @@
 
 require "securerandom"
 require_relative "classify/shell"
+require_relative "predicates"
 
 module Polispec
   module Engine
     Row = Struct.new(:action, :env, :verdict)
-    Outcome = Struct.new(:verdict, :env, :action_class, :rows, keyword_init: true)
+    Outcome = Struct.new(:verdict, :env, :action_class, :rows, :findings, keyword_init: true)
     ENV_NAMES = %w[prod test dev].freeze
     STORE_REF = /\A[a-z][a-z0-9+.-]*:/
 
@@ -22,7 +23,20 @@ module Polispec
       OPERATOR_KEY = "polispec.operator"
       OPERATOR_DEFAULT = "the operator".freeze
       LEDGER_KEY = "polispec.ledger"
+      SUPERVISOR_KEY = "polispec.supervisor.status_command"
       module_function
+
+      def argv(key)
+        forced = ENV[env_name(key)].to_s.strip
+        return Shellwords.split(forced) unless forced.empty?
+
+        machine = snapshot.dig("machine", key)
+        return machine.map(&:to_s) if machine.is_a?(Array)
+
+        machine.is_a?(String) && !machine.strip.empty? ? Shellwords.split(machine) : []
+      rescue ArgumentError
+        []
+      end
 
       def text(key, default)
         forced = ENV[env_name(key)].to_s.strip
@@ -483,13 +497,13 @@ module Polispec
     end
 
     module Locations
-      Loc = Struct.new(:project, :env, :root) do
+      Loc = Struct.new(:project, :env, :root, :writers) do
         def label
           project ? "#{project}/#{env}" : "outside any project"
         end
       end
 
-      CLASSES = %w[fs.write data.write data.copy].freeze
+      CLASSES = %w[fs.write fs.delete data.write data.copy].freeze
 
       class Atlas
         def initialize(target, ctx)
@@ -507,7 +521,7 @@ module Polispec
         def destinations(action)
           hint = Envs.hint_of(action)
           case action.action_class
-          when "fs.write" then [path_loc(hint)]
+          when "fs.write", "fs.delete" then [path_loc(hint)]
           when "data.write" then [named_loc(hint) || (hint["db"] || hint["unit"] ? nil : path_loc(hint))]
           when "data.copy" then [copy_loc(hint)]
           else []
@@ -573,7 +587,15 @@ module Polispec
           return nil if path.to_s.empty? || Polispec::Engine.store_ref?(path)
 
           abs = Envs.canonical(Envs.absolute(path, @cwd))
-          protected_loc(abs) || checkout_loc(abs)
+          protected_loc(abs) || global_loc(abs) || checkout_loc(abs)
+        end
+
+        def global_loc(abs)
+          GlobalRoots.of(@ctx).each do |entry|
+            root = Envs.canonical(File.expand_path(entry.path))
+            return Loc.new("global", "root #{root}", root, entry.writers) if Envs.under?(abs, root)
+          end
+          nil
         end
 
         def checkout_loc(abs)
@@ -604,6 +626,15 @@ module Polispec
 
       module_function
 
+      def writer?(action, loc, ctx)
+        return false if Array(loc.writers).empty?
+
+        name = Classify::Shell.parse(action.raw.to_s, ctx[:cwd].to_s.empty? ? Dir.pwd : ctx[:cwd].to_s).commands.first&.name
+        Array(loc.writers).include?(name)
+      rescue StandardError
+        false
+      end
+
       def crossing(action, target, ctx)
         return nil unless CLASSES.include?(action.action_class) && ctx[:ledger] && !ctx[:cwd].to_s.empty?
 
@@ -611,10 +642,32 @@ module Polispec
         origin = atlas.origin
         atlas.destinations(action).each do |loc|
           next unless (loc.project != origin.project || loc.env != origin.env) && (loc.env == "prod" || loc.root)
+          next if writer?(action, loc, ctx)
 
           return "#{action.action_class} from #{origin.label} into #{loc.label}#{loc.root ? " (protected root #{loc.root})" : ''}"
         end
         nil
+      end
+    end
+
+    module GlobalRoots
+      Root = Struct.new(:path, :writers)
+
+      module_function
+
+      def of(ctx)
+        source = ctx[:global]
+        list = source.respond_to?(:protected_roots) ? source.protected_roots : (source.is_a?(Hash) ? (source["protected_roots"] || source[:protected_roots]) : nil)
+        Array(list).filter_map { |entry| root(entry) }
+      end
+
+      def root(entry)
+        return nil unless entry.is_a?(Hash)
+
+        path = entry["path"] || entry[:path]
+        return nil if path.to_s.strip.empty? || Polispec::Engine.store_ref?(path)
+
+        Root.new(path.to_s, Array(entry["writers"] || entry[:writers]).map { |name| File.basename(name.to_s) })
       end
     end
 
@@ -633,13 +686,28 @@ module Polispec
     end
 
     module Match
+      KEYS = (%w[env class ref crosses destructive shape] + Predicates::NAMES).freeze
+
       module_function
 
       def rule?(match, action, env, target, ctx)
         return false unless match.is_a?(Hash)
-        return false unless (match.keys - %w[env class ref crosses destructive]).empty?
+        return false unless (match.keys - KEYS).empty?
 
-        env_ok?(match, env) && class_ok?(match, action) && ref_ok?(match, action, env, target, ctx) && crosses_ok?(match, action, target, ctx) && destructive_ok?(match, action, ctx)
+        env_ok?(match, env) && class_ok?(match, action) && ref_ok?(match, action, env, target, ctx) && crosses_ok?(match, action, target, ctx) &&
+          destructive_ok?(match, action, ctx) && shape_ok?(match, action) && predicates_ok?(match, action, ctx)
+      end
+
+      def shape_ok?(match, action)
+        return true if match["shape"].nil?
+
+        (Array(match["shape"]).map(&:to_s) & Classify::Shapes.names(action)).any?
+      end
+
+      def predicates_ok?(match, action, ctx)
+        Predicates::NAMES.all? do |name|
+          match[name].nil? || Predicates.evaluate(name, action, ctx).match == (match[name] == true)
+        end
       end
 
       def env_ok?(match, env)
@@ -691,7 +759,7 @@ module Polispec
 
       def explain(actions, target, ctx = {})
         now = ctx[:now] || Time.now
-        context = ctx.merge(now: now)
+        context = ctx.merge(now: now, predicate_memo: {}, findings: ctx[:findings] || [])
         paused = pause_for(target, context)
         return paused if paused
 
@@ -731,7 +799,7 @@ module Polispec
         return nil unless record
 
         verdict = Verdict.new(level: "allow", rule_id: "POLISPEC-PAUSE", reason: "polispec is paused for #{target.project} until #{record['expires_at']} (#{record['reason']})")
-        Outcome.new(verdict: verdict, env: target.env, action_class: nil, rows: [])
+        Outcome.new(verdict: verdict, env: target.env, action_class: nil, rows: [], findings: ctx[:findings])
       end
 
       def judge(action, target, ctx)
@@ -759,10 +827,10 @@ module Polispec
 
       def rule_reason(rule, action, target, ctx)
         reason = rule["reason"]
-        return reason unless Array((rule["match"] || {})["crosses"]).include?("location")
-
-        note = Locations.crossing(action, target, ctx)
-        note ? [reason || "#{rule['verdict']} by #{rule['id']}", note].join("; ") : reason
+        notes = Predicates.notes(rule["match"], action, ctx)
+        notes.unshift(Locations.crossing(action, target, ctx)) if Array((rule["match"] || {})["crosses"]).include?("location")
+        notes = notes.compact
+        notes.empty? ? reason : [reason || "#{rule['verdict']} by #{rule['id']}", *notes].join("; ")
       end
 
       def build(reason, rule_id, level, action, env, target)
@@ -803,7 +871,7 @@ module Polispec
         worst = Verdict.worst(rows.map(&:verdict))
         lead = rows.find { |row| row.verdict.equal?(worst) }
         worst = settle_warn(rows, worst, target, ctx) if worst.warn?
-        Outcome.new(verdict: worst, env: lead ? lead.env : target.env, action_class: lead ? lead.action.action_class : nil, rows: rows)
+        Outcome.new(verdict: worst, env: lead ? lead.env : target.env, action_class: lead ? lead.action.action_class : nil, rows: rows, findings: ctx[:findings])
       end
 
       def settle_warn(rows, worst, target, ctx)
