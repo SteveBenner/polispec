@@ -168,7 +168,8 @@ module Polispec
     GLOBAL_ID = "global"
 
     def evaluate_baseline(adapter, input, ledger, cwd, id, actions, mode, started)
-      target = Target.new(project: id, env: "dev", policy: { "rules" => [] }, roster: nil, policy_source: "global", digest: Layers.fingerprint)
+      env = id == GLOBAL_ID ? "dev" : Engine::Envs.cwd_env({}, ledger, id, cwd)
+      target = Target.new(project: id, env: env, policy: { "rules" => [] }, roster: nil, policy_source: "global", digest: Layers.fingerprint)
       context = { ledger: ledger, cwd: cwd, session_id: input.session_id, role: (input.agent_type.to_s.empty? ? nil : input.agent_type), issue_allow_once: mode == "enforce" && !adapter.ask? }
       outcome = Engine.explain(actions, target, context)
       record(adapter, input, cwd, target, outcome, mode, started)

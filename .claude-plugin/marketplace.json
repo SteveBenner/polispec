@@ -9,7 +9,7 @@
       "name": "polispec",
       "source": "./",
       "description": "Spec-based policy guardrails for agentic development and operations: a versioned policy per live project, enforced from its stable ref in every harness.",
-      "version": "0.16.1"
+      "version": "0.16.2"
     }
   ]
 }

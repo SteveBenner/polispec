@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.2] - 2026-10-09
+
+### Fixed
+- The global baseline judged every action of an onboarding project as `dev` when the action carried no path of its own (`lib/polispec/commands/hook.rb` `evaluate_baseline`). A `systemctl --user restart` run from the project's prod checkout, or from a `release_dirs` release behind it, was allowed by a baseline rule scoped to `env: prod`. The baseline now takes the working directory's environment the way a live project does; a repository outside the ledger stays `dev`.
+
 ## [0.16.1] - 2026-10-09
 
 ### Fixed
