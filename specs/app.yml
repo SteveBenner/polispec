@@ -1,6 +1,6 @@
 schema_version: 1
 name: polispec
-version: 0.15.0
+version: 0.15.1
 kind: plugin
 purpose: "Spec-based policy guardrails for agentic development and operations. Every live project carries a versioned policy and, beside it, an environment manifest (main, test, stable), both read from the trust ref; the policy declares what agents may do in each environment, how code is promoted, what data and secrets each environment may hold, when it is frozen, and which harness, model and effort each agent role gets."
 ports:
@@ -34,7 +34,7 @@ commands:
   - { name: "hook pretool|session", status: planned }
   - { name: resolve, status: planned }
   - { name: classify, status: planned }
-  - { name: "promote, deploy", status: built, usage: "polispec promote <project> --to test|stable [--dry-run] [--json] | polispec deploy <project> test|stable [--tag vX.Y.Z] [--skip-drain]", note: "while stable carries no policy, promote and test deploys bootstrap from the candidate branch's committed policy (impl FR-4b); gate, step and after commands run without a shell, with $HOME, ${HOME} and a leading ~ expanded in each word (impl FR-4c); `hermetic.<env>` isolates variables into scratch and fails a run that writes under a protected root, `deploy.strategy: release_dirs` swaps a release symlink and rolls back on failed health, `deploy.drain` pauses, waits, checks and resumes queues in the active release, and `polispec deploy <project> stable --skip-drain` skips the drain (terminal plus phrase `skip drain for <project>`); a policy that deploys without health is refused" }
+  - { name: "promote, deploy", status: built, usage: "polispec promote <project> --to test|stable [--dry-run] [--json] | polispec deploy <project> test|stable [--tag vX.Y.Z] [--skip-drain]", note: "while stable carries no policy, promote and test deploys bootstrap from the candidate branch's committed policy (impl FR-4b); gate, step and after commands run without a shell, with $HOME, ${HOME} and a leading ~ expanded in each word (impl FR-4c); `hermetic.<env>` isolates variables into scratch and fails a run that writes under a protected root (a command gate with `hermetic: false` runs outside it, recorded as `hermetic: false` in the promote result), `deploy.strategy: release_dirs` swaps a release symlink and rolls back on failed health, `deploy.drain` pauses, waits, checks and resumes queues in the active release, and `polispec deploy <project> stable --skip-drain` skips the drain (terminal plus phrase `skip drain for <project>`); a policy that deploys without health is refused" }
   - { name: "pause, allow-once", status: planned }
   - { name: "roster resolve|check", status: planned }
   - { name: "status, digest, doctor", status: planned }

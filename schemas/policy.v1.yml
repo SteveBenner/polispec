@@ -169,6 +169,7 @@ $defs:
       hours: { type: integer, minimum: 1 }
       run_in: { enum: [repo, active] }
       env_from: { type: string, minLength: 1 }
+      hermetic: { type: boolean }
   actors:
     type: array
     minItems: 1

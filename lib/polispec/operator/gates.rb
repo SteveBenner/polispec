@@ -340,7 +340,9 @@ module Polispec
         gates.map do |gate|
           started = now_ms
           gate["builtin"] ? builtin(gate, context) : command(gate, context)
-          { "id" => gate["id"], "result" => "pass", "duration_ms" => now_ms - started }
+          result = { "id" => gate["id"], "result" => "pass", "duration_ms" => now_ms - started }
+          result["hermetic"] = false if gate["hermetic"] == false && !gate["builtin"]
+          result
         end
       end
 
@@ -350,7 +352,7 @@ module Polispec
 
         chdir, extra = gate_location(gate, context)
 
-        guard = Hermetic.for(context.project, tier_for(context.to), new_id("gate"))
+        guard = gate["hermetic"] == false ? nil : Hermetic.for(context.project, tier_for(context.to), new_id("gate"))
         execution = guard ? guard.exec(argv, chdir: chdir, env: extra, timeout: DEFAULT_TIMEOUT) : exec(argv, chdir: chdir, env: extra)
         guard&.finish
         if execution.violation
