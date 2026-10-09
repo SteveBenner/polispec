@@ -21,6 +21,7 @@ settings:
   - { key: polispec.global.ref, type: string, default: main, scopes: [machine], description: "Ref of polispec.global.repo that the global layer is read from, never its working tree." }
   - { key: polispec.global.path, type: string, default: polispec, scopes: [machine], description: "Directory inside polispec.global.repo that holds global.yml, profiles.yml and modules/." }
   - { key: polispec.operator, type: string, default: "the operator", scopes: [machine], description: "How deny and next-step messages name the person who promotes to stable and redeems allow-once." }
+  - { key: polispec.supervisor.status_command, type: string, default: "", scopes: [machine], description: "Command (argv, no shell) that prints JSON {\"units\": [...], \"pids\": [...]} for the components a supervisor runs. Rules with match.supervised read it; unset means the predicate is unavailable. RPLUGIN_POLISPEC_POLISPEC_SUPERVISOR_STATUS_COMMAND overrides it." }
   - { key: polispec.code.specs_repo, type: path, default: "~/polispec-specs", scopes: [machine], description: "Path of the repository that holds the code specs. POLISPEC_SPECS_REPO overrides it." }
   - { key: polispec.logs.count_command, type: string, default: "", scopes: [machine], description: "Argv template (no shell) the logs_quiet gate runs to count log lines. It takes {service}, {since} and {until} (UTC ISO 8601) and prints one integer. RPLUGIN_POLISPEC_POLISPEC_LOGS_COUNT_COMMAND overrides it. Unset fails the gate closed." }
 contents:

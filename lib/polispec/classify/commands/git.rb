@@ -24,13 +24,15 @@ module Polispec
         "tag" => :tag, "branch" => :branch, "checkout" => :checkout, "switch" => :switch,
         "restore" => :fs_path, "rm" => :fs_path, "mv" => :fs_path, "apply" => :fs_path, "clean" => :clean,
         "update-ref" => :update_ref, "filter-branch" => :rewrite_all, "filter-repo" => :rewrite_all,
-        "fetch" => :fetch, "clone" => :clone, "init" => :init, "worktree" => :worktree, "submodule" => :submodule
+        "add" => :add, "fetch" => :fetch, "clone" => :clone, "init" => :init, "worktree" => :worktree, "submodule" => :submodule
       }.freeze
       GLOBAL_VALUE = %w[-c --namespace --super-prefix --config-env].freeze
       PUSH_VALUE = %w[-o --push-option --repo --receive-pack --exec].freeze
       CLONE_VALUE = %w[-b --branch --depth -o --origin --reference --template -c --config -j --jobs --separate-git-dir --filter -u --upload-pack].freeze
       BRANCH_VALUE = %w[-u --set-upstream-to --contains --no-contains --merged --no-merged --sort --format --points-at].freeze
       TAG_VALUE = %w[-m -F -u --contains --no-contains --points-at --merged --no-merged --sort --format].freeze
+      COMMIT_VALUE_LETTERS = "mFCctu".freeze
+      ROOT_PATHSPECS = [".", ":/", ":/*", ":(top)", ":(top)*"].freeze
 
       Invocation = Struct.new(:cmd, :path, :sub, :args)
       Spec = Struct.new(:name, :tag, :force, :delete)
@@ -47,6 +49,62 @@ module Polispec
           return [] if READ_ONLY.include?(inv.sub)
 
           [Support.act("fs.write", cmd.text, "path" => inv.path, "unknown" => true, "command" => "git #{inv.sub}")]
+        end
+
+        def shapes(cmd)
+          return [] unless cmd.name == "git"
+
+          inv = invocation(cmd)
+          return [] unless inv
+
+          found = []
+          found << "bulk_stage" if bulk_stage?(inv)
+          found << "worktree_force" if worktree_force?(inv)
+          found
+        end
+
+        def bulk_stage?(inv)
+          case inv.sub
+          when "add" then bulk_add?(inv)
+          when "commit" then commit_all?(inv.args)
+          else false
+          end
+        end
+
+        def bulk_add?(inv)
+          pos, flags = Support.split_args(inv.args, %w[--chmod --pathspec-from-file])
+          return false if flags.include?("-n") || flags.include?("--dry-run")
+          return true if flags.any? { |flag| %w[-A --all -u --update].include?(flag) }
+
+          root = Support::Repo.find(inv.path)&.root
+          pos.any? { |spec| ROOT_PATHSPECS.include?(spec) || (root && !Support.dynamic?(spec) && File.expand_path(spec, inv.path) == root) }
+        end
+
+        def commit_all?(args)
+          args.take_while { |arg| arg != "--" }.any? do |arg|
+            arg == "--all" || (arg.match?(/\A-[a-zA-Z]+\z/) && short_flag_before_value?(arg, "a"))
+          end
+        end
+
+        def short_flag_before_value?(arg, letter)
+          arg.delete_prefix("-").each_char do |char|
+            return true if char == letter
+            return false if COMMIT_VALUE_LETTERS.include?(char)
+          end
+          false
+        end
+
+        def worktree_force?(inv)
+          return false unless inv.sub == "worktree"
+
+          verb = inv.args.first
+          return true if verb == "prune"
+
+          verb == "remove" && inv.args.drop(1).any? { |arg| arg == "--force" || arg.match?(/\A-[a-zA-Z]*f[a-zA-Z]*\z/) }
+        end
+
+        def add(inv)
+          bulk_add?(inv) ? [Support.write_action(inv.path, inv.cmd.text)] : []
         end
 
         def invocation(cmd)
@@ -100,7 +158,8 @@ module Polispec
         def clean(inv)
           return [] if inv.args.any? { |arg| arg == "--dry-run" || arg.match?(/\A-[a-zA-Z]*n[a-zA-Z]*\z/) }
 
-          fs_path(inv)
+          forced = inv.args.any? { |arg| arg == "--force" || arg.match?(/\A-[a-zA-Z]*f[a-zA-Z]*\z/) }
+          forced ? fs_path(inv) + [Support.act("fs.delete", inv.cmd.text, "path" => inv.path, "command" => "git clean")] : fs_path(inv)
         end
 
         def reset(inv)
@@ -157,6 +216,7 @@ module Polispec
           classes = ["git.push"]
           classes << "git.rewrite" if (force || spec.force) && !spec.tag
           classes << "git.branch" if (delete || spec.delete) && !spec.tag
+          extra[:delete] = true if (delete || spec.delete) && spec.tag
           classes.map { |klass| Support.act(klass, inv.cmd.text, base(inv).merge(Support.hint(extra))) }
         end
 
@@ -166,7 +226,8 @@ module Polispec
           return [] if listing || pos.empty?
 
           ref = pos[1] && !pos[1].match?(/\A[0-9a-f]{7,40}\z/) ? ref_name(pos[1]) : current(inv)
-          out = [action(inv, "git.tag", ref: ref, tag: pos[0])]
+          deleting = flags.include?("-d") || flags.include?("--delete")
+          out = [action(inv, "git.tag", ref: ref, tag: pos[0], delete: deleting ? true : nil)]
           out << action(inv, "git.rewrite", ref: ref, tag: pos[0]) if flags.include?("-f") || flags.include?("--force")
           out
         end
@@ -176,7 +237,8 @@ module Polispec
           return [] if pos.empty? || flags.any? { |f| %w[-l --list --show-current -u --set-upstream-to --unset-upstream --edit-description].include?(f) }
 
           names = branch_names(pos, flags)
-          out = names.map { |name| action(inv, "git.branch", ref: ref_name(name)) }
+          creating = !branch_delete?(flags) && flags.none? { |f| %w[-m -M -c -C --move --copy].include?(f) }
+          out = names.map { |name| action(inv, "git.branch", ref: ref_name(name), base: creating ? (pos[1] || "HEAD") : nil) }
           out << action(inv, "git.rewrite", ref: ref_name(pos[0])) if branch_force?(flags) && !branch_delete?(flags)
           out
         end
@@ -211,9 +273,17 @@ module Polispec
         end
 
         def branch_created(inv, name, force)
-          out = [action(inv, "git.branch", ref: ref_name(name))]
+          out = [action(inv, "git.branch", ref: ref_name(name), base: start_point(inv, name))]
           out << action(inv, "git.rewrite", ref: ref_name(name)) if force
           out
+        end
+
+        def start_point(inv, name)
+          args = inv.args.dup
+          index = args.index { |arg| %w[-b -B -c -C --create --force-create --orphan].include?(arg) }
+          args.slice!(index, 2) if index
+          pos, = Support.split_args(args)
+          pos.first || "HEAD"
         end
 
         def update_ref(inv)
@@ -254,7 +324,8 @@ module Polispec
           pos, = Support.split_args(rest, %w[-b -B --reason])
           out = []
           created = Support.option_value(rest, "-b", "-B")
-          out << action(inv, "git.branch", ref: ref_name(created)) if created
+          out << action(inv, "git.branch", ref: ref_name(created), base: pos[1] || "HEAD") if created
+          out << Support.act("fs.delete", inv.cmd.text, "path" => inv.path, "command" => "git worktree prune") if verb == "prune" && !rest.include?("--dry-run") && !rest.include?("-n")
           return out if pos.empty? || %w[list prune].include?(verb)
 
           out << Support.write_action(Support.abs(pos.first, inv.path), inv.cmd.text) if %w[add remove move].include?(verb)
@@ -267,8 +338,8 @@ module Polispec
           fs_path(inv)
         end
 
-        def action(inv, klass, ref: nil, tag: nil)
-          Support.act(klass, inv.cmd.text, base(inv).merge(Support.hint(ref: ref, tag: tag)))
+        def action(inv, klass, ref: nil, tag: nil, base: nil, delete: nil)
+          Support.act(klass, inv.cmd.text, base(inv).merge(Support.hint(ref: ref, tag: tag, base: base, delete: delete)))
         end
 
         def base(inv)
