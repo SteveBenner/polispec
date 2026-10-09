@@ -6,7 +6,7 @@ require_relative "validator"
 
 module Polispec
   module Schema
-    KINDS = %w[policy environments roster ledger behavior spec waivers].freeze
+    KINDS = %w[policy environments roster ledger behavior spec waivers global module profiles].freeze
     DIR = File.join(ROOT, "schemas")
     Result = Struct.new(:ok, :schema, :errors) do
       def to_h

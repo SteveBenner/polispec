@@ -3,6 +3,7 @@
 
 require "securerandom"
 require_relative "classify/shell"
+require_relative "layers"
 
 module Polispec
   module Engine
@@ -751,10 +752,12 @@ module Polispec
       end
 
       def by_rule(action, env, target, ctx)
-        rule = Array(target.policy["rules"]).find { |candidate| Match.rule?(candidate["match"] || {}, action, env, target, ctx) }
+        rule, note = Layers.pick(target, ctx) { |candidate| Match.rule?(candidate["match"] || {}, action, env, target, ctx) }
         return build(nil, "NO-RULE", "allow", action, env, target) unless rule
 
-        build(rule_reason(rule, action, target, ctx), rule["id"], rule["verdict"], action, env, target)
+        reason = rule_reason(rule, action, target, ctx)
+        reason = [reason || "#{rule['verdict']} by #{rule['id']}", note].join("; ") if note
+        build(reason, rule["id"], rule["verdict"], action, env, target)
       end
 
       def rule_reason(rule, action, target, ctx)
