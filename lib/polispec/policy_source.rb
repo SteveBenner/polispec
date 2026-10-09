@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require_relative "layers"
+
 module Polispec
   module PolicySource
     Loaded = Struct.new(:policy, :source, :digest, :finding, keyword_init: true)
@@ -24,7 +26,8 @@ module Polispec
         outcome = lookup(project, project.policy, "policy")
         if outcome.is_a?(Blob) && outcome.errors.nil?
           remember_environments(project, outcome)
-          return Loaded.new(policy: outcome.data, source: "#{project.trust_ref}:#{outcome.sha}", digest: outcome.digest, finding: outcome.finding)
+          policy, digest = Layers.compose(project, outcome.data, outcome.digest, ledger: ledger)
+          return Loaded.new(policy: policy, source: "#{project.trust_ref}:#{outcome.sha}", digest: digest, finding: outcome.finding)
         end
 
         fallback(project, ledger, outcome)
@@ -57,7 +60,7 @@ module Polispec
       end
 
       def defaults_policy(project, ledger)
-        rules = Array(ledger.defaults["rules"])
+        rules = Layers.fallback_rules || Array(ledger.defaults["rules"])
         rules = FALLBACK_RULES if rules.empty?
         {
           "schema" => "polispec.policy/v1", "project" => project.id, "defaults" => true,

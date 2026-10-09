@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 require_relative "classify/commands/support"
+require_relative "layers"
 
 module Polispec
   module Resolve
@@ -312,6 +313,7 @@ module Polispec
         data, sha, digest, errors = Environments.load_policy_text(repo, project.trust_ref, project.policy)
         return nil unless data.is_a?(Hash) && errors.nil?
 
+        data, digest = Layers.compose(project, data, digest, ledger: ledger)
         Entry.new(data, "#{project.trust_ref}:#{sha}", digest)
       rescue SystemCallError, Schema::Document::ParseError
         nil

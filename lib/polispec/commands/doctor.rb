@@ -52,6 +52,8 @@ module Polispec
       loaded = PolicySource.resolve(project, ledger: ledger)
       findings << finding(project.id, loaded.finding["kind"], loaded.finding["detail"]) if loaded.finding
       defaults = loaded.source == "defaults"
+      Operator::Gates.health_required_errors(loaded.policy).each { |message| findings << finding(project.id, "health_required", message) } unless defaults
+      Layers.policy_errors(loaded.policy, project: project, ledger: ledger).each { |message| findings << finding(project.id, "layers_invalid", message) }
       roster = PolicySource.roster_digest(project)
       findings << finding(project.id, "roster_missing", "#{project.trust_ref}:#{project.roster} not found") if roster.nil? && !defaults
       AgentsRender.drift(project.repo, project.trust_ref, project).each { |detail| findings << finding(project.id, "agents_drift", detail) } unless defaults

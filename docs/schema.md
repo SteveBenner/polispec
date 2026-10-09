@@ -149,13 +149,27 @@ Names the live projects of the host. The file is resolved in order from the `POL
 | `schema`, `host` | | Document type and machine name. |
 | `envs_root` | path | Where `test` and `stable` checkouts live. |
 | `defaults.rules[]` | list | The fail-closed policy for a ledgered project whose stable policy is missing or invalid. Each rule has `match` (`env`, `ref`, `class`), `verdict`, optional `id` and `reason`. |
-| `projects[]` | list | `id`, `status` (`live`, `onboarding`, `retired`), `repo`, `remote`, `worktree_globs`, `trust_ref`, `policy`, `roster`, `related`, `onboarded`. |
+| `projects[]` | list | `id`, `status` (`live`, `onboarding`, `retired`), `repo`, `remote`, `worktree_globs`, `trust_ref`, `policy`, `roster`, `related`, `onboarded`, `profile` (`personal`, `service` or `live`; default `personal`). |
 | `pauses_log`, `allow_once_log` | path | Append-only JSONL logs. |
 
 ```yaml
 projects:
   - { id: shop, status: live, repo: ~/src/shop, trust_ref: stable, policy: specs/polispec/policy.yml, roster: specs/polispec/roster.yml }
 ```
+
+## Layers: `polispec.global/v1`, `polispec.module/v1`, `polispec.profiles/v1`
+
+A policy is composed from layers: the global layer, the repo policy, then any ledgered child project nested under the repo that contains the path, nearest last. The global layer is `global.yml`, `profiles.yml` and `modules/<name>.yml` read from the `polispec.global.*` settings (see `docs/operator.md`). With no global source configured, verdicts are exactly those of the repo policy alone.
+
+- `global.yml` (`polispec.global/v1`): `includes` (module names), `rules`, `fallback_rules`, `gates` (`to_test`, `to_stable`), `preflight`, `freezes`, `hermetic`, `protected_roots` (`path`, `writers`).
+- `modules/<name>.yml` (`polispec.module/v1`): `name` (equal to the file name), `includes`, `rules`, `gates`, `preflight`, `freezes`, `hermetic`.
+- `profiles.yml` (`polispec.profiles/v1`): `profiles.personal`, `profiles.service`, `profiles.live`, each a list of module names. A ledger project gets its `profile` (default `personal`); a path outside the ledger gets only the global layer without profile modules. A policy may set `profile` only to a stricter one than its ledger entry.
+- Within a layer rules stay first-match. A layer's included modules (depth-first, each once; a cycle or a missing module is an error) come before the layer's own rules. Across layers the strictest verdict wins (`deny`, then `warn`, then `allow`); on equal severity the lowest layer's rule is reported.
+- A lower layer loosens an upper rule only when that rule has `overridable: true` and the lower layer's rule names it in `overrides`. Overriding a rule that is not overridable, or that no upper layer defines, is a validation error naming both rules, and the override is not applied.
+- Layers merge `rules`, `gates`, `freezes` and `hermetic`, never `environments`. Child layers contribute rules only.
+- `fallback_rules` in `global.yml` replace the ledger `defaults.rules` as the repo layer of a project whose policy is missing at its trust ref. They never join the composed global layer. When `polispec.global.repo` is set and `global.yml` is absent or invalid, doctor and validate report it and the global layer contributes no rules; the repo layer still applies.
+
+`polispec resolve <path> --layers --json` prints each layer with its source, digest, rule count and modules, then the effective digest (sha256 over the ordered layer digests). `polispec validate policy`, `validate global`, `validate module` and `polispec doctor` report override, include and profile errors, and an environment that deploys without a health check.
 
 ## Candidates for schema v2
 

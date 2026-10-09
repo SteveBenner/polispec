@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require_relative "layers"
+
 module Polispec
   module CLI
     COMMANDS_DIR = File.join(LIB, "commands")
@@ -12,7 +14,7 @@ module Polispec
     @all_loaded = false
 
     class Validate
-      USAGE = "usage: polispec validate <policy|environments|roster|ledger|behavior|auto> <file> [--json]"
+      USAGE = "usage: polispec validate <policy|environments|roster|ledger|behavior|global|module|profiles|auto> <file> [--json]"
 
       def run(args)
         json = args.delete("--json")
@@ -20,6 +22,7 @@ module Polispec
         return usage unless file && args.length == 2 && (Schema::KINDS + ["auto"]).include?(kind)
 
         result = merged_result(kind, file) || Schema.validate_file(kind, file)
+        result = with_semantics(result, kind, file)
         json ? puts(JSON.generate(result.to_h)) : print_text(result, file)
         result.ok ? 0 : 1
       end
@@ -38,11 +41,35 @@ module Polispec
         errors = sibling.errors ? sibling.errors.map { |item| Schema::Error.new("/environments.yml#{item['pointer']}", item["message"]) } : []
         if errors.empty?
           merged, finding = Environments.merge(data, sibling.data)
+          @merged = merged
           errors = finding ? [Schema::Error.new("/environments.yml", finding["detail"])] : Schema.validate("policy", merged)
         end
         Schema::Result.new(errors.empty?, errors.empty? ? "#{Schema.schema_id('policy')} + environments.yml" : Schema.schema_id("policy"), errors)
       rescue Schema::Document::ParseError
         nil
+      end
+
+      def with_semantics(result, kind, file)
+        return result unless result.ok
+
+        data = @merged || Schema::Document.load(file)
+        kind = Schema.kind_for(data).to_s if kind == "auto"
+        errors = semantic_errors(kind, data, file)
+        errors.empty? ? result : Schema::Result.new(false, result.schema, errors)
+      rescue Schema::Document::ParseError
+        result
+      end
+
+      def semantic_errors(kind, data, file)
+        case kind
+        when "policy"
+          health = Operator::Gates.health_required_errors(data).map { |message| Schema::Error.new("/environments", message) }
+          health + Layers.policy_errors(data).map { |message| Schema::Error.new("/layers", message) }
+        when "global", "module"
+          Layers.document_errors(kind, data, file).map { |message| Schema::Error.new("/layers", message) }
+        else
+          []
+        end
       end
 
       def usage
@@ -133,7 +160,7 @@ module Polispec
         load_all
         io.puts "polispec #{Polispec.version}: spec-based policy guardrails"
         io.puts
-        io.puts "  validate <policy|environments|roster|ledger|behavior|auto> <file> [--json]   check a file against its schema"
+        io.puts "  validate <policy|environments|roster|ledger|behavior|global|module|profiles|auto> <file> [--json]   check a file against its schema"
         @commands.values.reject { |entry| entry.name == "validate" }.sort_by(&:name).each do |entry|
           io.puts format("  %-12s %s", entry.name, entry.summary)
         end
