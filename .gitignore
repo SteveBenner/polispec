@@ -1,0 +1,13 @@
+.scratch/
+.backup/
+*.private.*
+corpora/
+ai-brain/
+.ai-brain/
+.brain/
+.specstory
+.rproject/
+TOKENS.jsonl
+DECISIONS.md
+TMP_AGENT_FILE_LOCKS.yml
+TMP_AGENT_REPO_LOCK.yml

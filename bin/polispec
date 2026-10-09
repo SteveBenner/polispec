@@ -1,0 +1,6 @@
+#!/usr/bin/env ruby
+# SPDX-License-Identifier: MIT
+
+require_relative "../lib/polispec"
+
+exit Polispec::CLI.run(ARGV)

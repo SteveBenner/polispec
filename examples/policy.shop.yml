@@ -1,0 +1,52 @@
+schema: polispec.policy/v1
+project: "shop"
+recorded: "2026-10-09"
+summary: "shop serves real users. main is dev, test is the persistent instance, stable is production and moves only by the operator."
+rules:
+  - { id: R-PROD-GIT, match: { env: prod, class: [git.commit, git.push, git.tag, git.merge, git.rewrite, git.branch, release.publish] }, verdict: deny, reason: "the production branch moves only through `polispec promote --to stable`, run by the operator" }
+  - { id: R-PROD-SVC, match: { env: prod, class: [service.control, service.config, deploy, promote] }, verdict: deny, reason: "live services change only through the operator" }
+  - { id: R-PROD-FS, match: { env: prod, class: [fs.write] }, verdict: deny, reason: "the production checkout is not edited by agents" }
+  - { id: R-PROD-DATA, match: { env: prod, class: [data.write] }, verdict: warn, reason: "live user data" }
+  - { id: R-PROD-SECRET, match: { env: prod, class: [secrets.read] }, verdict: deny, reason: "production secrets are not readable by agents" }
+  - { id: R-XENV-COPY, match: { class: [data.copy], crosses: data_classes }, verdict: deny, reason: "data class not allowed in destination environment" }
+  - { id: R-TEST-DIRECT, match: { env: test, class: [git.push, git.merge, git.commit, git.tag] }, verdict: deny, reason: "test moves only through `polispec promote --to test`" }
+  - { id: R-TEST-REWRITE, match: { env: test, class: [git.rewrite] }, verdict: deny, reason: "test history is never rewritten" }
+  - { id: R-TEST-PROMOTE, match: { env: test, class: [promote] }, verdict: allow, requires: gates.to_test }
+  - { id: R-TEST-OPS, match: { env: test, class: [deploy, service.control, data.write, fs.write] }, verdict: allow }
+  - { id: R-POLICY, match: { class: [policy.edit] }, verdict: warn, reason: "policy files take effect only after promotion to stable" }
+  - { id: R-DEV-REWRITE, match: { env: dev, class: [git.rewrite], ref: main }, verdict: warn, reason: "main is shared history" }
+  - { id: R-DEV, match: { env: dev }, verdict: allow }
+promotion:
+  to_test:
+    from: main
+    actor: [agent, operator]
+    fast_forward_only: true
+    requires_version_bump: true
+    tag: "v{VERSION}"
+    gates:
+      - { id: G-CLEAN, builtin: clean_tree }
+      - { id: G-VHOMES, builtin: version_homes_agree }
+    after: ["polispec deploy {project} test"]
+  to_stable:
+    from: test
+    actor: [operator]
+    fast_forward_only: true
+    phrase: "promote {project} to stable"
+    gates:
+      - { id: G-TESTED, builtin: sha_ran_on_test }
+      - { id: G-FREEZE, builtin: not_frozen }
+    after: ["polispec deploy {project} stable --tag v{VERSION}"]
+freezes:
+  - { id: F-MANUAL, applies_to: [promote.to_stable], rrule: null, from: null, until: null }
+  - { id: F-BLACKOUT, applies_to: [promote.to_stable], source: command, command: [bin/release-calendar, blackouts, --json], kind: blackout, lead_hours: 2 }
+data_classes:
+  user_pii: { allowed_in: [prod] }
+  keys: { allowed_in: [prod] }
+  deidentified: { allowed_in: [test, dev] }
+  synthetic: { allowed_in: [dev, test, prod] }
+  operational: { allowed_in: [dev, test, prod] }
+observability: { events: local, digest: daily }
+agents:
+  instructions:
+    - "shop serves real users. Ship to main, promote with `polispec promote shop --to test`; only the operator promotes to stable."
+  roster: specs/polispec/roster.yml

@@ -1,0 +1,41 @@
+schema: rplugin/v1
+id: polispec
+name: Polispec
+version: 0.15.0
+rplugin: ">= 1.12.0"
+description: "Spec-based policy guardrails for agentic development and operations: a versioned policy per live project, enforced from its stable ref in every harness."
+ports:
+  required: [state, events]
+  optional: [schedule, notify, registry, decide]
+extensions:
+  enabled: [rstack, hermes, pi, deepseek-tui, antigravity, os]
+  only: [hermes, pi, deepseek-tui, antigravity]
+corpora: null
+settings:
+  - { key: polispec.enforce, type: enum, options: [advise, enforce], default: advise, scopes: [machine], harnesses: [claude-code, codex, hermes, pi, deepseek-tui, antigravity], description: "advise logs every verdict and never blocks; enforce applies allow, warn and deny." }
+  - { key: polispec.code.enforce, type: enum, options: [advise, tiered], default: tiered, scopes: [machine], harnesses: [claude-code, codex, hermes], description: "advise logs code-spec findings and never blocks; tiered blocks MUST and MUST_NOT violations on changed lines and warns on SHOULD. polispec.enforce keeps governing only the environment guard." }
+  - { key: polispec.code.check_at, type: enum, options: [pre_write, post_write], default: pre_write, scopes: [machine], harnesses: [claude-code, codex, hermes], description: "pre_write checks the edited text and denies before anything lands; post_write lets the write land and blocks with the findings. SHOULD findings are always reported after the write." }
+  - { key: polispec.code.inject, type: enum, options: [once, every_write], default: once, scopes: [machine], harnesses: [claude-code, codex, hermes], description: "once injects a language's spec chain before the first write per session and chain digest, and again after compaction; every_write injects before every write." }
+  - { key: polispec.ledger, type: path, default: "~/.config/polispec/ledger.yml", scopes: [machine], description: "Path of the host's ledger of governed projects. POLISPEC_LEDGER overrides it." }
+  - { key: polispec.operator, type: string, default: "the operator", scopes: [machine], description: "How deny and next-step messages name the person who promotes to stable and redeems allow-once." }
+  - { key: polispec.code.specs_repo, type: path, default: "~/polispec-specs", scopes: [machine], description: "Path of the repository that holds the code specs. POLISPEC_SPECS_REPO overrides it." }
+contents:
+  skills:
+    - { id: polispec, path: skills/polispec/SKILL.md }
+  agents: []
+  specs:
+    - { path: specs/app.yml }
+  scripts: []
+  docs:
+    - { path: docs/schema.md }
+    - { path: docs/behavior.md }
+    - { path: docs/code-specs.md }
+  hooks: hooks/polispec.hooks.yml
+  rules:
+    - { id: polispec, path: rules/polispec.md }
+compatibility:
+  ruby: ">= 2.6"
+  harnesses: { claude-code: supported, codex: supported, hermes: supported, pi: skills-only, deepseek-tui: skills-only, antigravity: skills-only, cowork: unsupported }
+repository:
+  remote: https://github.com/SteveBenner/polispec.git
+  store_path: polispec

@@ -1,0 +1,33 @@
+schema: polispec.ledger/v1
+host: workstation
+envs_root: ~/.polispec/envs
+defaults:
+  rules:
+    - { match: { ref: [stable, test] }, verdict: deny }
+    - { match: { class: [service.control, service.config, deploy, promote] }, verdict: deny }
+    - { match: { class: [secrets.read, fs.write], env: prod }, verdict: deny }
+    - { match: { class: [data.write, policy.edit] }, verdict: warn }
+    - { match: {}, verdict: allow }
+projects:
+  - id: shop
+    status: live
+    repo: ~/src/shop
+    remote: git@github.com:example/shop.git
+    worktree_globs: [~/src/.shop-wt/*]
+    trust_ref: stable
+    policy: specs/polispec/policy.yml
+    roster: specs/polispec/roster.yml
+    related: [widget]
+    onboarded: 2026-10-09
+  - id: widget
+    status: live
+    repo: ~/src/widget
+    remote: git@github.com:example/widget.git
+    worktree_globs: [~/src/.widget-wt/*]
+    trust_ref: stable
+    policy: specs/polispec/policy.yml
+    roster: specs/polispec/roster.yml
+    related: [shop]
+    onboarded: 2026-10-09
+pauses_log: ~/.local/state/polispec/pauses.jsonl
+allow_once_log: ~/.local/state/polispec/allow_once.jsonl

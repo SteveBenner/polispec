@@ -1,0 +1,12 @@
+{
+  "name": "polispec",
+  "version": "0.15.0",
+  "description": "Spec-based policy guardrails for agentic development and operations: a versioned policy per live project, enforced from its stable ref in every harness.",
+  "repository": "https://github.com/SteveBenner/polispec",
+  "skills": "./skills/",
+  "hooks": "./hooks/codex.json",
+  "interface": {
+    "displayName": "Polispec",
+    "shortDescription": "Spec-based policy guardrails for agentic development and operations: a versioned policy per live project, enforced from its stable ref in every harness."
+  }
+}

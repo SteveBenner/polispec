@@ -1,0 +1,15 @@
+{
+  "name": "polispec",
+  "owner": {
+    "name": "polispec"
+  },
+  "description": "Spec-based policy guardrails for agentic development and operations: a versioned policy per live project, enforced from its stable ref in every harness.",
+  "plugins": [
+    {
+      "name": "polispec",
+      "source": "./",
+      "description": "Spec-based policy guardrails for agentic development and operations: a versioned policy per live project, enforced from its stable ref in every harness.",
+      "version": "0.15.0"
+    }
+  ]
+}

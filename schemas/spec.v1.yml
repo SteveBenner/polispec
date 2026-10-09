@@ -1,0 +1,258 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.spec/v1
+title: Polispec spec
+description: "One spec file. A spec is the root policy of a file mounted at a spec path (code, code/ruby, code/ruby/code_quality). Policies are atomic; a policy with subpolicies is composite; a subpolicy is another policy object or a ref to a spec path or a policy id."
+type: object
+additionalProperties: false
+required: [schema, spec, version, policy]
+properties:
+  schema: { const: polispec.spec/v1 }
+  spec: { $ref: "#/$defs/spec_path" }
+  parent: { $ref: "#/$defs/spec_path" }
+  version: { $ref: "#/$defs/semver" }
+  recorded: { $ref: "#/$defs/date" }
+  summary: { type: string, minLength: 1 }
+  activation:
+    type: object
+    additionalProperties: false
+    required: [languages]
+    properties:
+      languages:
+        type: array
+        minItems: 1
+        items: { $ref: "#/$defs/language" }
+  detection:
+    type: object
+    additionalProperties: false
+    properties:
+      extensions: { $ref: "#/$defs/string_list" }
+      filenames: { $ref: "#/$defs/string_list" }
+      shebangs: { $ref: "#/$defs/string_list" }
+      modelines: { $ref: "#/$defs/string_list" }
+  defaults: { $ref: "#/$defs/defaults" }
+  policy: { $ref: "#/$defs/policy" }
+$defs:
+  spec_path: { type: string, pattern: "^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$" }
+  policy_id: { type: string, pattern: "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_-]*)+$" }
+  language: { type: string, pattern: "^(\\*|[a-z][a-z0-9_+-]*)$" }
+  semver: { type: string, pattern: "^\\d+\\.\\d+\\.\\d+$" }
+  date: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$" }
+  string_list:
+    type: array
+    items: { type: string, minLength: 1 }
+  level: { enum: [MUST, MUST_NOT, SHOULD, SHOULD_NOT, MAY] }
+  execution_class:
+    description: "The fundament. harness: an enforcer decides fully, no model. agent: the interpreter judges against the lens. hybrid: the enforcer flags candidates, the interpreter judges them. contextual: the classifier decides per event whether the policy applies, then its enforcer or the interpreter acts."
+    enum: [harness, agent, hybrid, contextual]
+  phase: { enum: [session_start, pre_write, post_write, task_end, commit, push] }
+  severity:
+    description: "Severity by what breaks, not by taste. critical: security, secrets, personal or customer data, data loss. high: lost or duplicated work, silent failure, broken contract. medium: drift, duplicated truth, maintainability debt that compounds. low: consistency and style."
+    enum: [critical, high, medium, low]
+  model_ref:
+    type: object
+    additionalProperties: false
+    properties:
+      classifier: { type: string, minLength: 1 }
+      classifier_fallback: { type: string, minLength: 1 }
+      interpreter: { type: string, minLength: 1 }
+      interpreter_effort: { enum: [low, medium, high, xhigh, max] }
+      confidence_floor: { type: number, minimum: 0, maximum: 1 }
+  defaults:
+    type: object
+    additionalProperties: false
+    properties:
+      models: { $ref: "#/$defs/model_ref" }
+      level: { $ref: "#/$defs/level" }
+      severity: { $ref: "#/$defs/severity" }
+      exclude: { $ref: "#/$defs/string_list" }
+      inject:
+        type: object
+        additionalProperties: false
+        properties:
+          budget_lines: { type: integer, minimum: 1, maximum: 400 }
+          order: { enum: [severity, tree] }
+  enforcer:
+    type: object
+    additionalProperties: false
+    required: [kind, decides]
+    properties:
+      kind: { enum: [rubocop, ripper, grep, script, hook, plugin] }
+      ref: { type: string, minLength: 1 }
+      cop: { type: string, minLength: 1 }
+      config:
+        type: object
+      pattern: { type: string, minLength: 1 }
+      args: { $ref: "#/$defs/string_list" }
+      decides: { enum: [all, part] }
+      budget_ms: { type: integer, minimum: 1, maximum: 60000 }
+      autocorrect: { type: boolean }
+  lens:
+    type: object
+    additionalProperties: false
+    required: [look_for, violation]
+    properties:
+      look_for: { type: string, minLength: 1 }
+      violation: { type: string, minLength: 1 }
+      compliant_if: { type: string, minLength: 1 }
+  applies_if:
+    type: object
+    additionalProperties: false
+    required: [question]
+    properties:
+      question: { type: string, minLength: 1 }
+      options: { $ref: "#/$defs/string_list" }
+      applies_on: { $ref: "#/$defs/string_list" }
+  classified:
+    type: object
+    additionalProperties: false
+    required: [by, at]
+    properties:
+      by: { type: string, minLength: 1 }
+      at: { $ref: "#/$defs/date" }
+      confidence: { type: number, minimum: 0, maximum: 1 }
+      reviewed_by: { type: string, minLength: 1 }
+      digest: { type: string, pattern: "^sha256:[0-9a-f]{64}$" }
+  execution:
+    type: object
+    additionalProperties: false
+    required: [class, phases]
+    properties:
+      class: { $ref: "#/$defs/execution_class" }
+      phases:
+        type: array
+        minItems: 1
+        items: { $ref: "#/$defs/phase" }
+      enforcer: { $ref: "#/$defs/enforcer" }
+      lens: { $ref: "#/$defs/lens" }
+      applies_if: { $ref: "#/$defs/applies_if" }
+      classified: { $ref: "#/$defs/classified" }
+  scope:
+    type: object
+    additionalProperties: false
+    properties:
+      languages:
+        type: array
+        items: { $ref: "#/$defs/language" }
+      paths: { $ref: "#/$defs/string_list" }
+      exclude: { $ref: "#/$defs/string_list" }
+      when: { type: string, pattern: "^Use when " }
+  control:
+    type: object
+    additionalProperties: false
+    required: [fixture, expect]
+    properties:
+      fixture: { type: string, minLength: 1 }
+      compliant: { type: string, minLength: 1 }
+      expect:
+        type: object
+        additionalProperties: false
+        required: [verdict]
+        properties:
+          verdict: { enum: [violation] }
+          line: { type: integer, minimum: 1 }
+  exemplars:
+    type: object
+    additionalProperties: false
+    properties:
+      good: { $ref: "#/$defs/string_list" }
+      bad: { $ref: "#/$defs/string_list" }
+  rationalization:
+    type: object
+    additionalProperties: false
+    required: [excuse, rebuttal]
+    properties:
+      excuse: { type: string, minLength: 1 }
+      rebuttal: { type: string, minLength: 1 }
+  origin:
+    type: object
+    additionalProperties: false
+    required: [date, cause]
+    properties:
+      date: { $ref: "#/$defs/date" }
+      cause: { type: string, minLength: 1 }
+      evidence: { $ref: "#/$defs/string_list" }
+      incident: { type: string, minLength: 1 }
+      source: { enum: [corpus, directive, memory, incident, external, interview] }
+  rejected:
+    type: object
+    additionalProperties: false
+    required: [date, reason]
+    properties:
+      date: { $ref: "#/$defs/date" }
+      reason: { type: string, minLength: 1 }
+      source: { type: string, minLength: 1 }
+  directive:
+    type: object
+    additionalProperties: false
+    required: [opcode, row]
+    properties:
+      opcode: { type: string, pattern: "^[A-Z][A-Z0-9]{1,11}$" }
+      row: { type: string, minLength: 1, maxLength: 110 }
+      enforce: { type: string, minLength: 1 }
+      condition: { type: string, minLength: 1 }
+      body: { type: string, pattern: "^docs/directives/[a-z0-9_-]+\\.md$" }
+  ref:
+    type: object
+    additionalProperties: false
+    required: [ref]
+    properties:
+      ref:
+        anyOf:
+          - { $ref: "#/$defs/spec_path" }
+          - { $ref: "#/$defs/policy_id" }
+  policy:
+    oneOf:
+      - { $ref: "#/$defs/rule" }
+      - { $ref: "#/$defs/composite" }
+  composite:
+    type: object
+    additionalProperties: false
+    required: [id, title, subpolicies]
+    properties:
+      id: { $ref: "#/$defs/policy_id" }
+      title: { type: string, minLength: 1, maxLength: 80 }
+      summary: { type: string, minLength: 1 }
+      lifecycle: { enum: [draft, active, deprecated, rejected] }
+      scope: { $ref: "#/$defs/scope" }
+      models: { $ref: "#/$defs/model_ref" }
+      subpolicies:
+        type: array
+        minItems: 1
+        items:
+          anyOf:
+            - { $ref: "#/$defs/ref" }
+            - { $ref: "#/$defs/policy" }
+  rule:
+    type: object
+    additionalProperties: false
+    required: [id, title, statement, level, severity, execution, lifecycle, origin]
+    properties:
+      id: { $ref: "#/$defs/policy_id" }
+      title: { type: string, minLength: 1, maxLength: 80 }
+      statement: { type: string, minLength: 1 }
+      rationale: { type: string, minLength: 1 }
+      level: { $ref: "#/$defs/level" }
+      severity: { $ref: "#/$defs/severity" }
+      lifecycle: { enum: [draft, active, deprecated, rejected] }
+      scope: { $ref: "#/$defs/scope" }
+      execution: { $ref: "#/$defs/execution" }
+      ratchet: { type: boolean }
+      waivable: { enum: [never, waiver, waiver_tty] }
+      control: { $ref: "#/$defs/control" }
+      exemplars: { $ref: "#/$defs/exemplars" }
+      rationalizations:
+        type: array
+        items: { $ref: "#/$defs/rationalization" }
+      red_flags: { $ref: "#/$defs/string_list" }
+      origin: { $ref: "#/$defs/origin" }
+      rejected: { $ref: "#/$defs/rejected" }
+      decided_in: { type: string, minLength: 1 }
+      review_after: { $ref: "#/$defs/date" }
+      supersedes:
+        type: array
+        items: { $ref: "#/$defs/policy_id" }
+      conflicts_with:
+        type: array
+        items: { $ref: "#/$defs/policy_id" }
+      models: { $ref: "#/$defs/model_ref" }
+      directive: { $ref: "#/$defs/directive" }
