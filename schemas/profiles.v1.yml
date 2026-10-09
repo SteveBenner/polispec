@@ -1,0 +1,20 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.profiles/v1
+title: Polispec profiles
+type: object
+additionalProperties: false
+required: [schema, profiles]
+properties:
+  schema: { const: polispec.profiles/v1 }
+  profiles:
+    type: object
+    additionalProperties: false
+    required: [personal, service, live]
+    properties:
+      personal: { $ref: "#/$defs/module_list" }
+      service: { $ref: "#/$defs/module_list" }
+      live: { $ref: "#/$defs/module_list" }
+$defs:
+  module_list:
+    type: array
+    items: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }

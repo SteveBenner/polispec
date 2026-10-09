@@ -6,7 +6,7 @@ module Polispec
     class Invalid < Polispec::Error; end
 
     DEFAULT_PATH = "~/.config/polispec/ledger.yml"
-    Project = Struct.new(:id, :status, :repo, :remote, :worktree_globs, :trust_ref, :policy, :roster, :related, :onboarded, keyword_init: true) do
+    Project = Struct.new(:id, :status, :repo, :remote, :worktree_globs, :trust_ref, :policy, :roster, :related, :onboarded, :profile, keyword_init: true) do
       def to_h
         members.each_with_object({}) { |member, memo| memo[member.to_s] = self[member] }
       end
@@ -91,7 +91,7 @@ module Polispec
         id: entry["id"].to_s, status: entry["status"].to_s, repo: entry["repo"].to_s, remote: entry["remote"],
         worktree_globs: Array(entry["worktree_globs"]), trust_ref: entry["trust_ref"].to_s,
         policy: entry["policy"].to_s, roster: entry["roster"].to_s, related: Array(entry["related"]),
-        onboarded: entry["onboarded"]
+        onboarded: entry["onboarded"], profile: entry["profile"]
       )
     end
 
