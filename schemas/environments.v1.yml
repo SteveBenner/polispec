@@ -69,6 +69,19 @@ $defs:
     required: [steps]
     properties:
       steps: { $ref: "#/$defs/string_list" }
+      strategy: { enum: [in_place, release_dirs] }
+      activate: { $ref: "#/$defs/string_list" }
+      drain:
+        type: object
+        additionalProperties: false
+        properties:
+          pause: { type: string, minLength: 1 }
+          wait: { type: string, minLength: 1 }
+          resume: { type: string, minLength: 1 }
+          timeout_s: { type: integer, minimum: 1 }
+          checks: { $ref: "#/$defs/string_list" }
+          run_in: { enum: [repo, active] }
+          env_from: { type: string, minLength: 1 }
       health:
         type: object
         additionalProperties: false
