@@ -153,7 +153,7 @@ module Polispec
       def location_env(project, loc)
         return "dev" unless loc && loc.kind == :env_checkout
 
-        env_branches(project).key(loc.env) || (ENVIRONMENTS.include?(loc.env) ? loc.env : "dev")
+        env_branches(project).key(loc.env) || (ENVIRONMENTS.include?(loc.env) ? loc.env : "prod")
       end
 
       def by_unit(hint)
