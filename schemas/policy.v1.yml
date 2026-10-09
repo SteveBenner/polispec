@@ -62,7 +62,7 @@ $defs:
   id: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }
   env_name: { enum: [dev, test, prod] }
   action_class:
-    enum: [git.commit, git.push, git.tag, git.merge, git.rewrite, git.branch, release.publish, service.control, service.config, fs.write, data.write, data.copy, secrets.read, policy.edit, promote, deploy]
+    enum: [git.commit, git.push, git.tag, git.merge, git.rewrite, git.branch, release.publish, service.control, service.config, fs.write, fs.delete, data.write, data.copy, secrets.read, policy.edit, promote, deploy]
   string_list:
     type: array
     items: { type: string, minLength: 1 }
@@ -141,6 +141,16 @@ $defs:
         items: { $ref: "#/$defs/action_class" }
       crosses: { enum: [data_classes, location] }
       destructive: { const: true }
+      shape:
+        type: array
+        minItems: 1
+        items: { enum: [bulk_stage, chained_release, latest_flip, lockfile_edit, pattern_kill, cargo_clean, worktree_force] }
+      lock_held: { type: boolean }
+      live_binary: { type: boolean }
+      supervised: { type: boolean }
+      pin_regress: { type: boolean }
+      tag_claimed: { type: boolean }
+      base_unpushed: { type: boolean }
       ref: { type: string, minLength: 1 }
   rule:
     type: object

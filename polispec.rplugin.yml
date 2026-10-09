@@ -18,6 +18,7 @@ settings:
   - { key: polispec.code.inject, type: enum, options: [once, every_write], default: once, scopes: [machine], harnesses: [claude-code, codex, hermes], description: "once injects a language's spec chain before the first write per session and chain digest, and again after compaction; every_write injects before every write." }
   - { key: polispec.ledger, type: path, default: "~/.config/polispec/ledger.yml", scopes: [machine], description: "Path of the host's ledger of governed projects. POLISPEC_LEDGER overrides it." }
   - { key: polispec.operator, type: string, default: "the operator", scopes: [machine], description: "How deny and next-step messages name the person who promotes to stable and redeems allow-once." }
+  - { key: polispec.supervisor.status_command, type: string, default: "", scopes: [machine], description: "Command (argv, no shell) that prints JSON {\"units\": [...], \"pids\": [...]} for the components a supervisor runs. Rules with match.supervised read it; unset means the predicate is unavailable. RPLUGIN_POLISPEC_POLISPEC_SUPERVISOR_STATUS_COMMAND overrides it." }
   - { key: polispec.code.specs_repo, type: path, default: "~/polispec-specs", scopes: [machine], description: "Path of the repository that holds the code specs. POLISPEC_SPECS_REPO overrides it." }
 contents:
   skills:

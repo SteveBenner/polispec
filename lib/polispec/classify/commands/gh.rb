@@ -12,6 +12,8 @@ module Polispec
       VALUE_OPTS = %w[-R --repo -t --title -n --notes -F --notes-file --target --discussion-category --notes-start-tag -X --method -H --header -f --raw-field --field --input --jq -q --template --hostname -p --preview --cache -b --body -B --base -H --head -a --assignee -l --label -m --milestone -r --reviewer].freeze
       RELEASE_WRITES = %w[create edit delete upload delete-asset].freeze
       FIELD_FLAGS = %w[-f -F --field --raw-field --input].freeze
+      LATEST_FLAGS = %w[--latest --latest=true].freeze
+      MAX_BODY = 1_000_000
 
       class << self
         def classify(cmd)
@@ -27,11 +29,49 @@ module Polispec
           end
         end
 
+        def shapes(cmd)
+          return [] unless cmd.name == "gh"
+
+          latest_flip?(cmd) ? ["latest_flip"] : []
+        end
+
+        def latest_flip?(cmd)
+          pos, flags = Support.split_args(cmd.args, VALUE_OPTS)
+          case pos.first
+          when "release" then %w[create edit].include?(pos[1]) && flags.any? { |flag| LATEST_FLAGS.include?(flag) }
+          when "api" then make_latest?(cmd)
+          else false
+          end
+        end
+
+        def make_latest?(cmd)
+          values = Support.option_values(cmd.args, "-f", "-F", "--field", "--raw-field")
+          return true if values.any? { |value| true_field?(value.to_s) }
+
+          Support.option_values(cmd.args, "--input").any? { |file| body_make_latest?(file, cmd.cwd) }
+        end
+
+        def true_field?(value)
+          name, text = value.split("=", 2)
+          name == "make_latest" && %w[true "true"].include?(text.to_s.strip)
+        end
+
+        def body_make_latest?(file, cwd)
+          return false if file == "-"
+
+          path = File.expand_path(file.to_s, cwd.to_s)
+          return false unless File.file?(path) && File.size(path) <= MAX_BODY
+
+          [true, "true"].include?(JSON.parse(File.read(path))["make_latest"])
+        rescue SystemCallError, JSON::ParserError, NoMethodError, TypeError
+          false
+        end
+
         def release(cmd, pos, flags, repo)
           return [] unless RELEASE_WRITES.include?(pos[1])
 
           prerelease = flags.include?("--prerelease") || flags.include?("--draft")
-          channel = prerelease && !flags.include?("--latest") ? "prerelease" : "latest"
+          channel = prerelease && flags.none? { |flag| LATEST_FLAGS.include?(flag) } ? "prerelease" : "latest"
           [Support.act("release.publish", cmd.text, "path" => cmd.cwd, "repo" => repo, "tag" => pos[2], "channel" => channel, "env" => channel == "prerelease" ? "test" : "prod")]
         end
 
