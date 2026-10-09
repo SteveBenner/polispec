@@ -39,6 +39,8 @@ The guard reads it from the project's trust ref (the committed blob on `stable`)
 
 ### `environments.<env>`
 
+`dev`, `test` and `prod` are required; any other key is an additional environment of the same shape (for example `canary`), whose `tier` is still `dev`, `test` or `prod`.
+
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `branch` | string | Git branch bound to the stage. Required. |
@@ -94,7 +96,9 @@ environments:
 
 `preflight[]` takes gates of the same shape and runs before the other gates and the phrase prompt, so an operator is not asked to type a phrase for a promotion that would fail. `release.flip_latest` is `true`, `false` or `deferred`: `deferred` publishes the release as a full (not pre-) release without `--latest` and records `latest: deferred` in `promotions.jsonl`, leaving the flip to the project's own soak job.
 
-A gate is `{ id: G-…, run: <command>, pass: exit_zero }` or `{ id: G-…, builtin: clean_tree | version_homes_agree | sha_ran_on_test | not_frozen | soaked | health_required }`. `soaked` takes `hours` (integer, at least 1). A command gate also takes `run_in` (`repo` default, or `active`) and `env_from` (an environment name whose `env_files` are loaded); a gate that touches a live database must use `run_in: active`. A command gate may set `hermetic: false` to run outside `hermetic.<env>` (see `docs/operator.md`). Commands and phrases may use `{project}`, `{sha}`, `{VERSION}`, `{tag}` and `{stable_tag}` (the highest `v*` tag on the stable branch tip, empty when none). Commands run without a shell; `$HOME`, `${HOME}` and a leading `~` are the only expansions.
+`promotion` also accepts `to_<env>` for any other declared environment (for example `to_canary`), each with `from`, `actor`, `gates[]` and optionally `phrase`, `preflight[]`, `fast_forward_only`, `release.flip_latest` and `after[]`. `to_test` and `to_stable` stay required. See `docs/operator.md`.
+
+A gate is `{ id: G-…, run: <command>, pass: exit_zero }` or `{ id: G-…, builtin: clean_tree | version_homes_agree | sha_ran_on_test | sha_ran_on | not_frozen | soaked | health_required | logs_quiet | requires_live }`. `soaked` takes `hours` (integer, at least 1) and `env` (default `test`); `sha_ran_on` takes `env` (default `test`; `sha_ran_on_test` is its alias). `logs_quiet` takes `services[]`, `window_minutes` (default 120) and `max_over_baseline` (default 0). `requires_live` takes `project` and `min_version`, or `min_version_from` with `min_version_key`. A command gate also takes `run_in` (`repo` default, or `active`) and `env_from` (an environment name whose `env_files` are loaded); a gate that touches a live database must use `run_in: active`. A command gate may set `hermetic: false` to run outside `hermetic.<env>` (see `docs/operator.md`). Commands and phrases may use `{project}`, `{sha}`, `{VERSION}`, `{tag}` and `{stable_tag}` (the highest `v*` tag on the stable branch tip, empty when none). Commands run without a shell; `$HOME`, `${HOME}` and a leading `~` are the only expansions.
 
 ```yaml
 promotion:
@@ -103,7 +107,7 @@ promotion:
 
 ### `freezes[]`
 
-`id` (`F-…`), `applies_to` (`promote.to_stable`, `desk.dispatch`), `source`, `project`, `kind`, `command`, `lead_minutes`, `lead_hours`, and a manual window (`rrule`, `from`, `until`, each nullable). `kind` is a free label; `project` names the ledger project whose prod checkout runs the command (default the policy's own project).
+`id` (`F-…`), `applies_to` (`promote.to_<env>` for a declared environment, such as `promote.to_stable`, or `desk.dispatch`), `source`, `project`, `kind`, `command`, `lead_minutes`, `lead_hours`, and a manual window (`rrule`, `from`, `until`, each nullable). `kind` is a free label; `project` names the ledger project whose prod checkout runs the command (default the policy's own project).
 
 A freeze without `source` is a manual window. `source: command` runs `command`, a list of argv strings, without a shell: the first element is relative to the prod checkout or absolute, the working directory is the prod checkout, and stdout must be JSON of the form `{"windows": [{"kind": "...", "from": "ISO-8601", "until": "ISO-8601", "detail": "..."}]}`. When the freeze sets `kind`, only windows with that `kind` apply; otherwise every returned window applies. Results are cached for five minutes. A missing or failing program yields the finding `freeze_source_unavailable` ("<argv0> is not available in <checkout>") and no windows. Two sources are deprecated aliases with unchanged behaviour: `source: teach.calendar` is `command: [bin/teach, calendar, freezes, --json]` (kind filter always applied), and `source: teach.activity` is `command: [bin/teach, activity, --json]` (no kind filter, `project` selects the checkout).
 

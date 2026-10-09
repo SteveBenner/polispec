@@ -9,7 +9,7 @@ require_relative "gates"
 module Polispec
   module Operator
     module Deploy
-      ENVS = { "test" => "test", "stable" => "prod", "prod" => "prod" }.freeze
+      ENV_PATTERN = /\A[a-z0-9][a-z0-9-]{0,40}\z/
       STEP_TIMEOUT = 1800
       DEFAULT_HEALTH_TIMEOUT = 60
       POLL_SECONDS = 1
@@ -22,18 +22,22 @@ module Polispec
 
       def call(project_id, env, tag: nil, confirmed: false, dry_run: false, skip_drain: false)
         name = env.to_s == "prod" ? "stable" : env.to_s
-        raise Failure.new("invalid_env", "env must be test or stable") unless ENVS.key?(name)
+        raise Failure.new("invalid_env", "env must name a deployable environment") unless ENV_PATTERN.match?(name) && name != "dev"
         raise Failure.new("tag_unsupported", "test deploys follow the branch tip; --tag applies to stable only") if tag && name == "test"
 
         project = Gates.load_project(project_id, bootstrap_from: name == "test" ? "test" : nil)
-        raise Failure.new("skip_drain_unsupported", "--skip-drain applies to stable only") if skip_drain && name != "stable"
+        unless project.environment(Gates.env_key(name)).is_a?(Hash)
+          known = project.policy["environments"].keys.reject { |key| key == "dev" }.map { |key| Gates.row_env(key) }
+          raise Failure.new("invalid_env", "env must be #{Gates.name_list(known)}")
+        end
+        raise Failure.new("skip_drain_unsupported", "--skip-drain applies to stable only") if skip_drain && name == "test"
 
         Gates.with_lock("deploy-#{project.id}-#{name}") { deploy(project, name, tag, confirmed, dry_run, skip_drain) }
       end
 
       def deploy(project, name, tag, confirmed, dry_run, skip_drain = false)
         started = Gates.now_ms
-        config = project.environment(ENVS.fetch(name))
+        config = project.environment(Gates.env_key(name))
         settings = config["deploy"]
         raise Failure.new("no_deploy", "policy declares no deploy steps for #{name}") unless settings.is_a?(Hash)
 
@@ -46,14 +50,14 @@ module Polispec
         return preview(project, name, dir, source, tag, settings, actor) if dry_run
 
         record_id = Gates.new_id("dpl")
-        guard = Gates::Hermetic.for(project, Gates.tier_for(name), record_id)
+        guard = Gates::Hermetic.for(project, Gates.tier_of(project, name), record_id)
         run = begin
           settings["strategy"] == "release_dirs" ? release_flow(project, name, config, settings, dir, source, tag, guard, record_id) : in_place_flow(project, name, config, settings, dir, source, tag, guard)
         ensure
           guard_summary = guard&.finish
         end
         health = guard&.violation ? { "status" => "failed", "detail" => guard.violation } : run[:health]
-        pinned = name == "stable" ? pinned_behind?(run[:git], run[:tag]) : false
+        pinned = config["tier"] == "prod" ? pinned_behind?(run[:git], run[:tag]) : false
         record = State.append_jsonl("deploys", record_for(project, name, run[:sha], run[:tag], health, pinned, record_id, run[:detail], skipped))
         result = result_for(project, name, run[:dir], run[:sha], run[:tag], run[:version], run[:outcome][:steps], health, pinned, actor, record, started)
         result["strategy"] = settings["strategy"] || "in_place"
@@ -299,7 +303,10 @@ module Polispec
       def retain(releases, project_dir, keep)
         entries = Dir.children(releases).reject { |entry| entry.start_with?(".") }.select { |entry| File.directory?(File.join(releases, entry)) }
         newest = entries.sort_by { |entry| release_rank(entry) }.reverse.first(RETAIN)
-        active = ENVS.keys.filter_map { |env| File.symlink?(File.join(project_dir, env)) ? File.basename(File.readlink(File.join(project_dir, env))) : nil }
+        active = Dir.children(project_dir).filter_map do |entry|
+          link = File.join(project_dir, entry)
+          File.symlink?(link) ? File.basename(File.readlink(link)) : nil
+        end
         kept = (newest + active + keep.compact).uniq
         removed = []
         held = []
@@ -348,12 +355,13 @@ module Polispec
       end
 
       def authorize(project, name, confirmed, dry_run)
-        return unless name == "stable"
+        return if name == "test"
         return if dry_run || confirmed
 
-        Gates.require_terminal!("deploy to prod")
-        phrase = "deploy #{project.id} to prod"
-        warn "deploying #{project.id} to prod"
+        label = name == "stable" ? "prod" : name
+        Gates.require_terminal!("deploy to #{label}")
+        phrase = "deploy #{project.id} to #{label}"
+        warn "deploying #{project.id} to #{label}"
         Gates.confirm!(phrase)
       end
 
@@ -387,7 +395,7 @@ module Polispec
 
       def checkout(git, name, config, tag)
         branch = config["branch"]
-        return checkout_test(git, branch) if name == "test"
+        return checkout_test(git, branch) if name == "test" || (name != "stable" && config["runs"] == "branch")
 
         checkout_tag(git, branch, tag)
       end
