@@ -11,7 +11,7 @@ properties:
   summary: { type: string, minLength: 1 }
   environments:
     type: object
-    additionalProperties: false
+    additionalProperties: { $ref: "#/$defs/environment" }
     required: [dev, test, prod]
     properties:
       dev: { $ref: "#/$defs/environment" }
@@ -23,8 +23,8 @@ properties:
     items: { $ref: "#/$defs/rule" }
   promotion:
     type: object
-    additionalProperties: false
     required: [to_test, to_stable]
+    additionalProperties: { $ref: "#/$defs/promote_hop" }
     properties:
       to_test: { $ref: "#/$defs/promote_to_test" }
       to_stable: { $ref: "#/$defs/promote_to_stable" }
@@ -166,8 +166,16 @@ $defs:
       id: { type: string, pattern: "^G-[A-Z0-9-]+$" }
       run: { type: string, minLength: 1 }
       pass: { enum: [exit_zero] }
-      builtin: { enum: [clean_tree, version_homes_agree, sha_ran_on_test, not_frozen, soaked, health_required] }
+      builtin: { enum: [clean_tree, version_homes_agree, sha_ran_on_test, sha_ran_on, not_frozen, soaked, health_required, logs_quiet, requires_live] }
       hours: { type: integer, minimum: 1 }
+      env: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }
+      services: { $ref: "#/$defs/string_list" }
+      window_minutes: { type: integer, minimum: 1 }
+      max_over_baseline: { type: integer, minimum: 0 }
+      project: { $ref: "#/$defs/id" }
+      min_version: { type: string, minLength: 1 }
+      min_version_from: { type: string, minLength: 1 }
+      min_version_key: { type: string, minLength: 1 }
       run_in: { enum: [repo, active] }
       env_from: { type: string, minLength: 1 }
       hermetic: { type: boolean }
@@ -194,6 +202,27 @@ $defs:
       gates:
         type: array
         items: { $ref: "#/$defs/gate" }
+      after: { $ref: "#/$defs/string_list" }
+  promote_hop:
+    type: object
+    additionalProperties: false
+    required: [from, actor, gates]
+    properties:
+      from: { type: string, minLength: 1 }
+      actor: { $ref: "#/$defs/actors" }
+      fast_forward_only: { type: boolean }
+      phrase: { type: string, minLength: 1 }
+      preflight:
+        type: array
+        items: { $ref: "#/$defs/gate" }
+      gates:
+        type: array
+        items: { $ref: "#/$defs/gate" }
+      release:
+        type: object
+        additionalProperties: false
+        properties:
+          flip_latest: { enum: [true, false, deferred] }
       after: { $ref: "#/$defs/string_list" }
   promote_to_stable:
     type: object
@@ -225,7 +254,7 @@ $defs:
       applies_to:
         type: array
         minItems: 1
-        items: { enum: [promote.to_stable, desk.dispatch] }
+        items: { type: string, pattern: "^(promote\\.to_[a-z0-9][a-z0-9-]{0,40}|desk\\.dispatch)$" }
       source: { type: string, minLength: 1 }
       kind: { type: string, minLength: 1 }
       command: { $ref: "#/$defs/string_list" }
