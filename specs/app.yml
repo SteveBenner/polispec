@@ -1,0 +1,63 @@
+schema_version: 1
+name: polispec
+version: 0.15.0
+kind: plugin
+purpose: "Spec-based policy guardrails for agentic development and operations. Every live project carries a versioned policy and, beside it, an environment manifest (main, test, stable), both read from the trust ref; the policy declares what agents may do in each environment, how code is promoted, what data and secrets each environment may hold, when it is frozen, and which harness, model and effort each agent role gets."
+ports:
+  required: [state, events]
+  optional: [schedule, notify, registry]
+setting:
+  polispec.enforce: "advise logs every verdict and never blocks; enforce applies allow, warn and deny. Default advise."
+  polispec.ledger: "Path of the host's ledger of governed projects. POLISPEC_LEDGER overrides it. Default ~/.config/polispec/ledger.yml (under XDG_CONFIG_HOME when set)."
+  polispec.operator: "How deny and next-step messages name the person who promotes to stable and redeems allow-once. Default: the operator."
+  polispec.code.specs_repo: "Path of the code specs repository. POLISPEC_SPECS_REPO overrides it. Default ~/polispec-specs."
+harnesses:
+  claude-code: "supported: the host wires the guard hook; see docs/operator.md"
+  codex: "supported: the host wires the guard hook; see docs/operator.md; warn becomes deny with an allow-once id"
+  hermes: "supported where rplugin renders a pre-tool hook"
+  pi: "supported where rplugin renders a pre-tool hook"
+  deepseek-tui: "supported where rplugin renders a pre-tool hook"
+  antigravity: "supported where rplugin renders a pre-tool hook, otherwise the POLISPEC rules text"
+schemas:
+  policy: { id: polispec.policy/v1, file: schemas/policy.v1.yml, path_in_project: specs/polispec/policy.yml }
+  roster: { id: polispec.roster/v1, file: schemas/roster.v1.yml, path_in_project: specs/polispec/roster.yml }
+  behavior: { id: polispec.behavior/v1, file: schemas/behavior.v1.yml, runtime: "Compiled data consumed by an application-owned adapter; authority comes from the release or authenticated package, never this declaration." }
+  environments: { id: polispec.environments/v1, file: schemas/environments.v1.yml, path_in_project: specs/polispec/environments.yml, note: "Read from the trust ref beside policy.yml and merged into it; the file wins over an inline policy environments block (finding environments_duplicate). Only the fields policy.v1 knows go to the engine; audience, exposure, host, operators, rollback, pii_spec, freezes and notes feed the [ENVS] render. A project's serves flag lives in its component manifest, not here." }
+  ledger: { id: polispec.ledger/v1, file: schemas/ledger.v1.yml, path: "resolved from POLISPEC_LEDGER, then the polispec.ledger setting, then ~/.config/polispec/ledger.yml" }
+commands:
+  - { name: behavior, status: built, usage: "polispec behavior compile FILE | decide FILE EVENT FACTS.json" }
+  - { name: validate, status: built, usage: "polispec validate <policy|environments|roster|ledger|behavior|auto> <file> [--json]", note: "validate policy merges a sibling environments.yml when the policy has no environments block" }
+  - { name: onboard, status: built, usage: "polispec onboard <repo> --serves real_users|internal|none [--archetype service|distributed] [--id ID] [--trust-ref REF] [--push] [--checkouts] [--dry-run] [--json]", note: "scaffolds specs/polispec environments, policy and roster from templates/onboard, appends serves: and a polispec: pointer to the component manifest (*.rstack_component.yml, else *.rplugin.yml), inserts a status onboarding ledger entry after a backup, renders [ENVS], creates local test and stable branches; --push and --checkouts are opt-in (impl environments FR-10)" }
+  - { name: "agents render", status: built, usage: "polispec agents render <project|repo> [--from worktree|REF] [--check] [--json]", note: "writes .agents/directives/envs.md and upserts the AGENTS.md line keyed by the [ENVS] opcode; doctor reports agents_drift when the trust ref disagrees with a fresh render; edits to the row or envs.md classify as policy.edit (impl environments FR-5 to FR-8)" }
+  - { name: "hook git", status: built, usage: "polispec hook git pre-commit|pre-push|reference-transaction | install|uninstall <project> dev|test|prod|all [--dry-run]", note: "judges git operations in a live project with the same rules and environment resolution as the harness guard; shims chain to the previous core.hooksPath; POLISPEC_OPERATOR=1, set by polispec's operator git, skips them; a seatbelt for processes outside a harness, not a security boundary (impl environments FR-9)" }
+  - { name: version, status: built, usage: "polispec version" }
+  - { name: "hook pretool|session", status: planned }
+  - { name: resolve, status: planned }
+  - { name: classify, status: planned }
+  - { name: "promote, deploy", status: built, usage: "polispec promote <project> --to test|stable [--dry-run] [--json] | polispec deploy <project> test|stable [--tag vX.Y.Z] [--skip-drain]", note: "while stable carries no policy, promote and test deploys bootstrap from the candidate branch's committed policy (impl FR-4b); gate, step and after commands run without a shell, with $HOME, ${HOME} and a leading ~ expanded in each word (impl FR-4c); `hermetic.<env>` isolates variables into scratch and fails a run that writes under a protected root, `deploy.strategy: release_dirs` swaps a release symlink and rolls back on failed health, `deploy.drain` pauses, waits, checks and resumes queues in the active release, and `polispec deploy <project> stable --skip-drain` skips the drain (terminal plus phrase `skip drain for <project>`); a policy that deploys without health is refused" }
+  - { name: "pause, allow-once", status: planned }
+  - { name: "roster resolve|check", status: planned }
+  - { name: "status, digest, doctor", status: planned }
+extension_points:
+  commands: "lib/polispec/commands/*.rb is glob-loaded; a file calls Polispec::CLI.register(name, klass, summary:) and klass responds to run(args) returning an exit status, either as a class method or on a new instance."
+  classifier: "lib/polispec/classify/commands/*.rb is glob-loaded; a file calls Polispec::Classify::Registry.register(family, klass) and klass responds to call(tool_name, tool_input, cwd) returning [Polispec::Action]."
+code_specs:
+  status: built
+  summary: "Code specs: a tree of composable policies applied per language whenever an agent writes code. The policy is the atomic entity; a policy with subpolicies is composite; a spec is the root policy of one spec file, mounted at a path (code, code/ruby, code/ruby/code_quality, code/ruby/code_meta, code/code_meta)."
+  fundament: "Every policy carries an execution class (harness, agent, hybrid, contextual). The class is set when the policy is authored, by the classifier model and reviewed by the operator, and stored in the spec. At runtime the harness reads it with no model call, except for contextual policies, whose applicability the classifier decides per event."
+  models:
+    classifier: "A local decide port when the host provides one, otherwise a hosted model fallback; set by the host"
+    interpreter: "A model at medium effort that reviews agent-class policies against the task diff; set by the host"
+  binding: "Language is detected from the file before each write. The language's directives are injected once per session per spec digest before the first write. Harness-class checks run on the changed lines; MUST violations block, SHOULD violations warn. Agent-class policies are reviewed at task end."
+  legacy: "Ratchet: only violations on changed lines block; pre-existing violations are recorded in a per-repo baseline that may only shrink."
+  controls: "Every harness and hybrid policy ships a negative-control fixture that must trip its enforcer (polispec check --controls). Controls are checker machinery under NOTEST and live only in the code specs repository."
+  source_of_truth: "The code specs repository is the single source for code directives; a host generates directive rows and guards for code rules from, or calls into, their policies."
+  specs_home: "~/.polispec/specs, a symlink to the specs/ directory of the code specs repository named by the polispec.code.specs_repo setting"
+  schema: { id: polispec.spec/v1, file: schemas/spec.v1.yml }
+  waivers: { id: polispec.waivers/v1, file: schemas/waivers.v1.yml, path_in_project: specs/polispec/code-waivers.yml }
+  commands:
+    - { name: "code detect|chain|show|check|validate|baseline|controls|generate|classify", status: built }
+    - { name: "specs link|status|promote", status: built }
+    - { name: "code-hook pre|post|stop|session", status: built }
+  settings: [polispec.code.enforce, polispec.code.check_at, polispec.code.inject, polispec.code.specs_repo]
+  ports_optional: [decide]

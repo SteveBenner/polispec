@@ -1,0 +1,52 @@
+schema: polispec.environments/v1
+project: "shop"
+recorded: "2026-10-09"
+summary: "shop is a web service. main is dev, test is the persistent instance on port 8081, stable is production on port 8080."
+environments:
+  dev:
+    branch: main
+    checkout: repo
+    tier: dev
+    worktrees: [".shop-wt/*"]
+    audience: [operator]
+    exposure: loopback
+    data:
+      databases: [shop_dev]
+    data_classes: [synthetic, operational]
+  test:
+    branch: test
+    checkout: "~/.polispec/envs/shop/test"
+    tier: test
+    audience: [operator]
+    exposure: tailnet
+    services: [shop-web-test]
+    url: "http://localhost:8081"
+    ports: [8081]
+    data:
+      dirs: ["~/.shop-test"]
+      databases: [shop_test]
+    data_classes: [deidentified, synthetic, operational]
+    deploy:
+      steps: ["bin/migrate", "systemctl --user restart shop-web-test"]
+      health: { url: "http://localhost:8081/health", expect_version: true, timeout_s: 60 }
+    operators: [agent, operator]
+  prod:
+    branch: stable
+    checkout: "~/.polispec/envs/shop/stable"
+    tier: prod
+    runs: tag
+    audience: [users]
+    exposure: public
+    services: [shop-web]
+    url: "http://localhost:8080"
+    ports: [8080]
+    data:
+      dirs: ["~/.shop"]
+      databases: [shop]
+    secrets: ["~/.shop/keys/**"]
+    data_classes: [user_pii, keys, operational]
+    deploy:
+      steps: ["bin/migrate", "systemctl --user restart shop-web"]
+      health: { url: "http://localhost:8080/health", expect_version: true, timeout_s: 60 }
+    operators: [operator]
+    rollback: "polispec deploy shop stable --tag vPREV"

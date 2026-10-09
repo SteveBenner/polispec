@@ -1,0 +1,77 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.behavior/v1
+type: object
+additionalProperties: false
+required: [schema, id, version, authority, scope, directives, parameters, rules]
+properties:
+  schema: {const: polispec.behavior/v1}
+  id: {type: string, pattern: "^[a-z][a-z0-9_.-]+$"}
+  version: {type: integer, minimum: 1}
+  authority:
+    type: object
+    additionalProperties: false
+    required: [id, kind, authentication]
+    properties:
+      id: {type: string, minLength: 1}
+      kind: {enum: [application, course, control]}
+      authentication: {enum: [release, signed-package, signed-control]}
+  scope:
+    type: object
+    additionalProperties: false
+    required: [application, spaces]
+    properties:
+      application: {type: string, minLength: 1}
+      spaces: {$ref: '#/$defs/strings'}
+      course: {type: [string, 'null']}
+      assignment: {type: [string, 'null']}
+  directives:
+    type: array
+    maxItems: 2048
+    items: {$ref: '#/$defs/directive'}
+  parameters: {type: object}
+  rules:
+    type: array
+    maxItems: 2048
+    items: {$ref: '#/$defs/rule'}
+$defs:
+  strings:
+    type: array
+    minItems: 1
+    uniqueItems: true
+    items: {type: string, minLength: 1}
+  directive:
+    type: object
+    additionalProperties: false
+    required: [id, rule, when, enforce]
+    properties:
+      id: {type: string, pattern: "^[A-Za-z][A-Za-z0-9_.:-]+$"}
+      opcode: {type: string, pattern: "^[A-Z][A-Z0-9]{2,9}$"}
+      alias: {type: string, pattern: "^[A-Z]$"}
+      tier: {enum: [public, private]}
+      slice: {enum: [all, backend, panel, verification]}
+      scope: {enum: [slice, root, extracurricular, everywhere]}
+      spaces: {$ref: '#/$defs/strings'}
+      rule: {type: string, minLength: 1}
+      when: {$ref: '#/$defs/strings'}
+      enforce: {type: string, minLength: 1}
+      body: {type: string, minLength: 1}
+      body_ref: {type: string, minLength: 1}
+  rule:
+    type: object
+    additionalProperties: false
+    required: [id, description, event, mode, binding, failure]
+    properties:
+      id: {type: string, pattern: "^[A-Za-z][A-Za-z0-9_.:-]+$"}
+      description: {type: string, minLength: 1}
+      event: {type: string, pattern: "^[a-z][a-z0-9_.-]+$"}
+      mode: {enum: [native, advisory, declarative]}
+      binding: {type: string, minLength: 1}
+      failure: {enum: [deny, report, instruct]}
+      message_id: {type: string, pattern: "^M-[A-Z0-9-]+$"}
+      all:
+        type: object
+        additionalProperties:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: [string, number, boolean, 'null']}

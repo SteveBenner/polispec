@@ -1,0 +1,19 @@
+schema: polispec.roster/v1
+project: "{{project}}"
+harness_effort:
+  claude: [low, medium, high, xhigh, max]
+  codex: [low, medium, high, xhigh]
+roles:
+  blueprint: { default: { harness: claude, model: opus, effort: high }, bounds: { harnesses: [claude], models: [opus, fable], effort: { min: high } } }
+  coding-worker: { default: { harness: claude, model: sonnet, effort: medium, agent: coding-worker }, bounds: { harnesses: [claude, codex], models: [sonnet, opus, gpt-5.5-codex], effort: { min: medium } } }
+  reviewer: { default: { harness: claude, model: opus, effort: high }, bounds: { effort: { min: high } } }
+  explorer: { default: { harness: claude, model: sonnet, effort: medium, agent: Explore } }
+workflows:
+  feature: { build_role: coding-worker, verify_role: reviewer, min_effort: high }
+  bug: { build_role: coding-worker, verify_role: reviewer, min_effort: high }
+  is: { author_role: blueprint }
+  investigate: { min_effort: high }
+environments:
+  dev: { roles: ["*"], pipelines: [] }
+  test: { roles: [coding-worker, reviewer], pipelines: [] }
+  prod: { roles: [], pipelines: [] }

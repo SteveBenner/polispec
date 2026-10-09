@@ -1,0 +1,96 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.roster/v1
+title: Polispec roster
+type: object
+additionalProperties: false
+required: [schema, project, roles, environments]
+properties:
+  schema: { const: polispec.roster/v1 }
+  project: { $ref: "#/$defs/id" }
+  harness_effort:
+    type: object
+    additionalProperties: { $ref: "#/$defs/string_list" }
+  roles:
+    type: object
+    additionalProperties: { $ref: "#/$defs/slot" }
+  pipelines:
+    type: object
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required: [phases]
+      properties:
+        phases:
+          type: object
+          additionalProperties: { $ref: "#/$defs/slot" }
+  workflows:
+    type: object
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      properties:
+        build_role: { type: string, minLength: 1 }
+        verify_role: { type: string, minLength: 1 }
+        author_role: { type: string, minLength: 1 }
+        min_effort: { type: string, minLength: 1 }
+  environments:
+    type: object
+    additionalProperties: false
+    required: [dev, test, prod]
+    properties:
+      dev: { $ref: "#/$defs/env_caps" }
+      test: { $ref: "#/$defs/env_caps" }
+      prod: { $ref: "#/$defs/env_caps" }
+  budgets:
+    type: object
+    additionalProperties: false
+    properties:
+      per_run_usd_max: { type: number, minimum: 0 }
+      per_day_usd:
+        type: object
+        additionalProperties: { type: number, minimum: 0 }
+$defs:
+  id: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }
+  string_list:
+    type: array
+    items: { type: string, minLength: 1 }
+  env_caps:
+    type: object
+    additionalProperties: false
+    required: [roles, pipelines]
+    properties:
+      roles: { $ref: "#/$defs/string_list" }
+      pipelines: { $ref: "#/$defs/string_list" }
+  assignment:
+    type: object
+    additionalProperties: false
+    required: [harness, model]
+    properties:
+      harness: { type: string, minLength: 1 }
+      model: { type: string, minLength: 1 }
+      effort: { type: [string, "null"] }
+      agent: { type: string, minLength: 1 }
+      run: { enum: [merge, script, model] }
+      on_failure: { enum: [stop, model] }
+      budget_usd: { type: number, minimum: 0 }
+  limit:
+    type: object
+    additionalProperties: false
+    properties:
+      min: { type: [string, number] }
+      max: { type: [string, number] }
+  bounds:
+    type: object
+    additionalProperties: false
+    properties:
+      harnesses: { $ref: "#/$defs/string_list" }
+      models: { $ref: "#/$defs/string_list" }
+      effort: { $ref: "#/$defs/limit" }
+      budget_usd: { $ref: "#/$defs/limit" }
+  slot:
+    type: object
+    additionalProperties: false
+    required: [default]
+    properties:
+      default: { $ref: "#/$defs/assignment" }
+      bounds: { $ref: "#/$defs/bounds" }

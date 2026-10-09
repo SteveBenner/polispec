@@ -1,0 +1,245 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.policy/v1
+title: Polispec policy
+type: object
+additionalProperties: false
+required: [schema, project, environments, rules, promotion]
+properties:
+  schema: { const: polispec.policy/v1 }
+  project: { $ref: "#/$defs/id" }
+  recorded: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$" }
+  summary: { type: string, minLength: 1 }
+  environments:
+    type: object
+    additionalProperties: false
+    required: [dev, test, prod]
+    properties:
+      dev: { $ref: "#/$defs/environment" }
+      test: { $ref: "#/$defs/environment" }
+      prod: { $ref: "#/$defs/environment" }
+  rules:
+    type: array
+    minItems: 1
+    items: { $ref: "#/$defs/rule" }
+  promotion:
+    type: object
+    additionalProperties: false
+    required: [to_test, to_stable]
+    properties:
+      to_test: { $ref: "#/$defs/promote_to_test" }
+      to_stable: { $ref: "#/$defs/promote_to_stable" }
+  includes:
+    type: array
+    items: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }
+  hermetic:
+    type: object
+    additionalProperties: false
+    properties:
+      dev: { $ref: "#/$defs/hermetic" }
+      test: { $ref: "#/$defs/hermetic" }
+      prod: { $ref: "#/$defs/hermetic" }
+  freezes:
+    type: array
+    items: { $ref: "#/$defs/freeze" }
+  data_classes:
+    type: object
+    additionalProperties: { $ref: "#/$defs/data_class" }
+  observability:
+    type: object
+    additionalProperties: false
+    properties:
+      events: { enum: [rlogs, local, none] }
+      digest: { enum: [daily, weekly, none] }
+  agents:
+    type: object
+    additionalProperties: false
+    properties:
+      instructions:
+        type: array
+        items: { type: string, minLength: 1 }
+      roster: { type: string, minLength: 1 }
+$defs:
+  id: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }
+  env_name: { enum: [dev, test, prod] }
+  action_class:
+    enum: [git.commit, git.push, git.tag, git.merge, git.rewrite, git.branch, release.publish, service.control, service.config, fs.write, data.write, data.copy, secrets.read, policy.edit, promote, deploy]
+  string_list:
+    type: array
+    items: { type: string, minLength: 1 }
+  environment:
+    type: object
+    additionalProperties: false
+    required: [branch, checkout, tier]
+    properties:
+      branch: { type: string, minLength: 1 }
+      checkout: { type: string, minLength: 1 }
+      tier: { $ref: "#/$defs/env_name" }
+      runs: { enum: [branch, tag] }
+      worktrees: { $ref: "#/$defs/string_list" }
+      services: { $ref: "#/$defs/string_list" }
+      unit_files: { $ref: "#/$defs/string_list" }
+      env_files: { $ref: "#/$defs/string_list" }
+      url: { type: string, minLength: 1 }
+      ports:
+        type: array
+        items: { type: integer, minimum: 1, maximum: 65535 }
+      data:
+        type: object
+        additionalProperties: false
+        properties:
+          dirs: { $ref: "#/$defs/string_list" }
+          databases: { $ref: "#/$defs/string_list" }
+      data_classes: { $ref: "#/$defs/string_list" }
+      secrets: { $ref: "#/$defs/string_list" }
+      deploy: { $ref: "#/$defs/deploy" }
+  hermetic:
+    type: object
+    additionalProperties: false
+    properties:
+      isolate:
+        type: array
+        items: { type: string, pattern: "^[A-Za-z_][A-Za-z0-9_]*$" }
+      protected_roots: { $ref: "#/$defs/string_list" }
+  deploy:
+    type: object
+    additionalProperties: false
+    required: [steps]
+    properties:
+      steps: { $ref: "#/$defs/string_list" }
+      strategy: { enum: [in_place, release_dirs] }
+      activate: { $ref: "#/$defs/string_list" }
+      drain:
+        type: object
+        additionalProperties: false
+        properties:
+          pause: { type: string, minLength: 1 }
+          wait: { type: string, minLength: 1 }
+          resume: { type: string, minLength: 1 }
+          timeout_s: { type: integer, minimum: 1 }
+          checks: { $ref: "#/$defs/string_list" }
+          run_in: { enum: [repo, active] }
+          env_from: { type: string, minLength: 1 }
+      health:
+        type: object
+        additionalProperties: false
+        anyOf:
+          - { required: [url] }
+          - { required: [run] }
+        properties:
+          url: { type: string, minLength: 1 }
+          run: { type: string, minLength: 1 }
+          expect_version: { type: boolean }
+          timeout_s: { type: integer, minimum: 1 }
+  match:
+    type: object
+    additionalProperties: false
+    properties:
+      env: { $ref: "#/$defs/env_name" }
+      class:
+        type: array
+        minItems: 1
+        items: { $ref: "#/$defs/action_class" }
+      crosses: { enum: [data_classes, location] }
+      destructive: { const: true }
+      ref: { type: string, minLength: 1 }
+  rule:
+    type: object
+    additionalProperties: false
+    required: [id, match, verdict]
+    properties:
+      id: { type: string, pattern: "^R-[A-Z0-9-]+$" }
+      match: { $ref: "#/$defs/match" }
+      verdict: { enum: [allow, warn, deny] }
+      reason: { type: string, minLength: 1 }
+      requires: { type: string, pattern: "^gates\\.(to_test|to_stable)$" }
+      overridable: { type: boolean }
+      overrides: { type: string, pattern: "^R-[A-Z0-9-]+$" }
+  gate:
+    type: object
+    additionalProperties: false
+    required: [id]
+    anyOf:
+      - { required: [run] }
+      - { required: [builtin] }
+    properties:
+      id: { type: string, pattern: "^G-[A-Z0-9-]+$" }
+      run: { type: string, minLength: 1 }
+      pass: { enum: [exit_zero] }
+      builtin: { enum: [clean_tree, version_homes_agree, sha_ran_on_test, not_frozen, soaked, health_required] }
+      hours: { type: integer, minimum: 1 }
+      run_in: { enum: [repo, active] }
+      env_from: { type: string, minLength: 1 }
+  actors:
+    type: array
+    minItems: 1
+    items: { enum: [agent, operator] }
+  promote_to_test:
+    type: object
+    additionalProperties: false
+    required: [from, actor, gates]
+    properties:
+      from: { type: string, minLength: 1 }
+      actor: { $ref: "#/$defs/actors" }
+      fast_forward_only: { type: boolean }
+      requires_version_bump: { type: boolean }
+      tag: { type: string, minLength: 1 }
+      release:
+        type: object
+        additionalProperties: false
+        properties:
+          github_prerelease: { type: boolean }
+      drift: { type: string, minLength: 1 }
+      gates:
+        type: array
+        items: { $ref: "#/$defs/gate" }
+      after: { $ref: "#/$defs/string_list" }
+  promote_to_stable:
+    type: object
+    additionalProperties: false
+    required: [from, actor, phrase, gates]
+    properties:
+      from: { type: string, minLength: 1 }
+      actor: { $ref: "#/$defs/actors" }
+      fast_forward_only: { type: boolean }
+      phrase: { type: string, minLength: 1 }
+      preflight:
+        type: array
+        items: { $ref: "#/$defs/gate" }
+      gates:
+        type: array
+        items: { $ref: "#/$defs/gate" }
+      release:
+        type: object
+        additionalProperties: false
+        properties:
+          flip_latest: { enum: [true, false, deferred] }
+      after: { $ref: "#/$defs/string_list" }
+  freeze:
+    type: object
+    additionalProperties: true
+    required: [id, applies_to]
+    properties:
+      id: { type: string, pattern: "^F-[A-Z0-9-]+$" }
+      applies_to:
+        type: array
+        minItems: 1
+        items: { enum: [promote.to_stable, desk.dispatch] }
+      source: { type: string, minLength: 1 }
+      kind: { type: string, minLength: 1 }
+      command: { $ref: "#/$defs/string_list" }
+      project: { $ref: "#/$defs/id" }
+      lead_minutes: { type: integer, minimum: 0 }
+      lead_hours: { type: integer, minimum: 0 }
+      rrule: { type: [string, "null"] }
+      from: { type: [string, "null"] }
+      until: { type: [string, "null"] }
+  data_class:
+    type: object
+    additionalProperties: false
+    required: [allowed_in]
+    properties:
+      pii_spec: { type: string, minLength: 1 }
+      produced_by: { type: string, minLength: 1 }
+      allowed_in:
+        type: array
+        items: { $ref: "#/$defs/env_name" }

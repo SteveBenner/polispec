@@ -1,0 +1,22 @@
+# Features
+
+| Capability | Build | Deployment | Verification |
+|---|---|---|---|
+| Environment guard and classifier with allow, warn and deny verdicts | Implemented in 0.15.0 | The host wires the guard hook into each harness (see `docs/operator.md`); `polispec.enforce` defaults to `advise` | Real runs of `polispec resolve`, `polispec doctor` and `polispec hook` against scratch projects |
+| Policy, roster, ledger and environments schemas with `polispec validate` | Implemented in 0.15.0 | None needed; runs from a clone or an rplugin install | `polispec validate auto` on every example |
+| `polispec promote` and `polispec deploy` with gates and freezes | Implemented in 0.15.0 | Needs a ledger entry, a policy on the stable ref and an interactive terminal for stable | Scratch repositories; freeze windows from `source: command` and its legacy alias |
+| `allow-once` and `pause` operator commands | Implemented in 0.15.0 | Needs an interactive terminal and a typed phrase | Refused without a terminal |
+| Roster resolution and checks | Implemented in 0.15.0 | The host wires session and subagent start hooks to inject role values | Scratch rosters validated and resolved |
+| Behavioral policy compilation and declarative deny evaluation | Implemented in 0.15.0 | The consuming application owns authentication and enforcement | Compile output is deterministic; decide exercised on declarative rules |
+| Code specs: language detection, chain injection, changed-line enforcement with ratchet and waivers | Implemented in 0.15.0 | Needs a code specs repository (`polispec.code.specs_repo`) whose `stable` branch carries specs; the host wires the write hooks | Chain and check commands on scratch files |
+| Contextual policies through the rplugin decide port | Implemented in 0.15.0 | Needs a decide port from the host; without it the policy defers to task-end review | Defers when the port is absent |
+| Environment manifest `specs/polispec/environments.yml` merged into the policy | Implemented in 0.15.0 | Read from the trust ref; a project without the file resolves as before | Inline, split, duplicate and invalid cases on scratch repositories |
+| `polispec onboard` for a new user-serving project | Implemented in 0.15.0 | Run per repository; a ledger path must be writable | Both archetypes, dry run, and refusal on a second onboard |
+| `[ENVS]` AGENTS.md row, `agents render` and doctor `agents_drift` | Implemented in 0.15.0 | A repository carries the row after `agents render` lands on its stable ref | Row upsert and drift detection on a scratch repository |
+| Git hooks per environment (`hook git`) | Implemented in 0.15.0 | Installed per checkout with `hook git install`; silent while a project is `onboarding` | Scratch prod and dev checkouts: commits and ref moves denied where the policy denies them |
+| Hermetic runs (`hermetic.<env>.isolate`, `protected_roots`) | Implemented in 0.15.0 | A policy opts in per stage; the host needs nothing beyond a writable `$POLISPEC_HOME/scratch` | Scratch run: a step writing a protected root fails with `wrote outside its location` |
+| `release_dirs` deploys with drain, drain checks, automatic rollback and `--skip-drain` | Implemented in 0.15.0 | A policy opts in per stage; the first deploy of a project whose live release predates its drain commands needs `--skip-drain` once | Scratch run: swap, failed-health rollback recorded `rolled_back`, drain resume on failure, retention by tag version |
+| Gates `soaked` and `health_required`, `to_stable.preflight`, `flip_latest: deferred`, freeze `command` source with `project` | Implemented in 0.15.0 | A policy opts in; a freeze command is any executable in the prod checkout that prints JSON windows | Scratch run for soak hours and preflight; alias parity with the deprecated activity and calendar sources |
+| Match keys `crosses: location` and `destructive` | Implemented in 0.15.0 | Active once a policy rule uses them | Destructive SQL and shell samples classify as expected; policies without the keys give identical verdicts |
+
+No tests were added. Application adapters own authentication, native enforcement and domain parameter validation. A declared binding and matching artifact are traceability evidence, not a formal proof of behavioral equivalence.

@@ -1,0 +1,26 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.waivers/v1
+title: Polispec code waivers
+description: "A repository's deviations from code-spec policies, read by the checker. Lives at specs/polispec/code-waivers.yml in the repository it governs."
+type: object
+additionalProperties: false
+required: [schema, waivers]
+properties:
+  schema: { const: polispec.waivers/v1 }
+  waivers:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [policy, reason, recorded, review_after]
+      properties:
+        policy: { type: string, pattern: "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_-]*)+$" }
+        paths:
+          type: array
+          items: { type: string, minLength: 1 }
+        kind: { enum: [waive, tighten] }
+        level: { enum: [MUST, MUST_NOT, SHOULD, SHOULD_NOT, MAY] }
+        reason: { type: string, minLength: 12 }
+        recorded: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$" }
+        review_after: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$" }
+        approved: { type: string, minLength: 1 }
