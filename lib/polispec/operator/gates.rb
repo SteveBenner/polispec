@@ -387,8 +387,10 @@ module Polispec
         required.reject { |gate| (gate["alias"] & present).any? }.map { |gate| gate.reject { |key, _| key == "alias" } } + listed
       end
 
-      def run_all(gates, context)
+      def run_all(gates, context, waive: [])
         gates.map do |gate|
+          next { "id" => gate["id"], "result" => "waived", "duration_ms" => 0 } if gate["builtin"] && waive.include?(gate["builtin"])
+
           started = now_ms
           gate["builtin"] ? builtin(gate, context) : command(gate, context)
           result = { "id" => gate["id"], "result" => "pass", "duration_ms" => now_ms - started }

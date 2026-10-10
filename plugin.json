@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "polispec",
-  "version": "0.16.2",
+  "version": "0.17.0",
   "description": "Spec-based policy guardrails for agentic development and operations: a versioned policy per live project, enforced from its stable ref in every harness.",
   "repository": "https://github.com/SteveBenner/polispec",
   "extensions": {
