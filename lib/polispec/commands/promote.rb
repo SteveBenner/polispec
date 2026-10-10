@@ -7,16 +7,17 @@ require_relative "../operator/promote"
 module Polispec
   module Commands
     class Promote
-      USAGE = "usage: polispec promote <project> --to test|stable [--dry-run] [--json]"
+      USAGE = "usage: polispec promote <project> --to test|stable [--waive-soak] [--dry-run] [--json]"
 
       def run(args)
         args = args.dup
         json = args.delete("--json")
         dry_run = args.delete("--dry-run")
+        waive_soak = args.delete("--waive-soak")
         target = extract_target(args)
         return usage unless args.length == 1 && target
 
-        result = Polispec::Operator::Promote.call(args.first, to: target, dry_run: !dry_run.nil?)
+        result = Polispec::Operator::Promote.call(args.first, to: target, dry_run: !dry_run.nil?, waive_soak: !waive_soak.nil?)
         json ? puts(JSON.generate(result)) : print_text(result)
         0
       rescue Polispec::Operator::Failure => e

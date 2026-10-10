@@ -9,13 +9,14 @@ module Polispec
     module Promote
       TARGET = /\A[a-z0-9][a-z0-9-]{0,40}\z/
       BOOTSTRAP_FROM = { "test" => "main", "stable" => "test" }.freeze
-      Plan = Struct.new(:project, :git, :to, :source_ref, :target, :from_sha, :to_sha, :version, :tag, :gates, :preflight, :actor, :started, keyword_init: true)
+      Plan = Struct.new(:project, :git, :to, :source_ref, :target, :from_sha, :to_sha, :version, :tag, :gates, :preflight, :actor, :started, :waived, keyword_init: true)
 
       module_function
 
-      def call(project_id, to:, dry_run: false)
+      def call(project_id, to:, dry_run: false, waive_soak: false)
         to = to.to_s
         raise Failure.new("invalid_target", "--to must name an environment") unless TARGET.match?(to)
+        raise Failure.new("waive_soak_unsupported", "--waive-soak applies to promotions past test") if waive_soak && to == "test"
 
         started = Gates.now_ms
         project = Gates.load_project(project_id, bootstrap_from: BOOTSTRAP_FROM[to])
@@ -24,7 +25,7 @@ module Polispec
           raise Failure.new("invalid_target", "--to must be #{Gates.name_list(known)}")
         end
         Gates.with_lock("promote-#{project.id}") do
-          result = to == "test" ? to_test(project, dry_run, started) : to_hop(project, to, dry_run, started)
+          result = to == "test" ? to_test(project, dry_run, started) : to_hop(project, to, dry_run, started, waive_soak)
           result.merge("duration_ms" => Gates.now_ms - started)
         end
       rescue Failure => e
@@ -114,7 +115,7 @@ module Polispec
         {
           "ok" => true, "dry_run" => true, "project" => plan.project.id, "to" => plan.to, "from_sha" => plan.from_sha,
           "to_sha" => plan.to_sha, "tag" => plan.tag, "version" => plan.version, "actor" => plan.actor, "preflight" => plan.preflight, "gates" => plan.gates,
-          "policy_source" => plan.project.source
+          "policy_source" => plan.project.source, "waived" => plan.waived
         }.compact
       end
 
@@ -138,7 +139,7 @@ module Polispec
       def record_for(plan)
         {
           "id" => Gates.new_id("prm"), "project" => plan.project.id, "to" => plan.to, "from_sha" => plan.from_sha,
-          "to_sha" => plan.to_sha, "tag" => plan.tag, "actor" => plan.actor, "preflight" => plan.preflight, "gates" => plan.gates, "at" => Time.now.utc.iso8601,
+          "to_sha" => plan.to_sha, "tag" => plan.tag, "actor" => plan.actor, "preflight" => plan.preflight, "gates" => plan.gates, "waived" => plan.waived, "at" => Time.now.utc.iso8601,
           "latest" => (plan.project.promotion["to_#{plan.to}"]["release"] || {})["flip_latest"] == "deferred" && plan.to == "stable" ? "deferred" : nil
         }.compact
       end
@@ -147,8 +148,8 @@ module Polispec
         {
           "ok" => true, "project" => plan.project.id, "to" => plan.to, "from_sha" => plan.from_sha, "to_sha" => plan.to_sha,
           "tag" => plan.tag, "version" => plan.version, "actor" => plan.actor, "gates" => plan.gates, "record_id" => record["id"],
-          "local_branch" => local.to_s, "policy_source" => plan.project.source, "release" => { "status" => "none" }, "deploys" => []
-        }
+          "local_branch" => local.to_s, "policy_source" => plan.project.source, "release" => { "status" => "none" }, "deploys" => [], "waived" => plan.waived
+        }.compact
       end
 
       def finish(plan, result)
@@ -207,7 +208,7 @@ module Polispec
         Deploy.call(project, env, tag: tag, confirmed: plan.to != "test")
       end
 
-      def to_hop(project, to, dry_run, started)
+      def to_hop(project, to, dry_run, started, waive_soak = false)
         config = promotion_config(project, to)
         stable = to == "stable"
         phrased = stable || config["phrase"]
@@ -218,12 +219,15 @@ module Polispec
         end
 
         Gates.require_terminal!("promote --to #{to}") if phrased && !dry_run
+        gates = Gates.effective_gates(project, to)
+        waived = waive_soak ? waive_soak!(project, to, gates, dry_run) : nil
         git = Git.new(project.repo)
         git.fetch
         plan = plan_to_hop(project, config, git, to, stable ? "operator" : Gates.actor)
         plan.started = started
+        plan.waived = waived
         plan.preflight = Gates.run_all(Array(config["preflight"]), context(plan))
-        plan.gates = Gates.run_all(Gates.effective_gates(project, to), context(plan))
+        plan.gates = Gates.run_all(gates, context(plan), waive: waived ? %w[soaked] : [])
         return preview(plan) if dry_run
 
         if phrased
@@ -232,6 +236,15 @@ module Polispec
           Gates.confirm!(phrase)
         end
         publish(plan)
+      end
+
+      def waive_soak!(project, to, gates, dry_run)
+        raise Failure.new("nothing_to_waive", "promotion to #{to} has no soaked gate") unless gates.any? { |gate| gate["builtin"] == "soaked" }
+        return %w[soak] if dry_run
+
+        Gates.require_terminal!("promote --waive-soak")
+        Gates.confirm!("waive soak for #{project.id}")
+        %w[soak]
       end
 
       def plan_to_hop(project, config, git, to, actor)
@@ -255,7 +268,7 @@ module Polispec
       def emit(plan, result)
         Events.emit(
           "polispec.promote", project: plan.project.id, to: plan.to, from_sha: plan.from_sha, to_sha: plan.to_sha, tag: plan.tag,
-                              actor: plan.actor, gates: plan.gates, result: result, duration_ms: Gates.now_ms - plan.started
+                              actor: plan.actor, gates: plan.gates, waived: plan.waived, result: result, duration_ms: Gates.now_ms - plan.started
         )
       end
 

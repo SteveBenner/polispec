@@ -3,7 +3,7 @@
 `polispec promote` moves code between branches and `polispec deploy` puts a branch or tag into an environment checkout. Both read the project from the ledger and the promotion policy from the trust ref (`PolicySource.load`), never from the working tree. Both accept `--json` and `--dry-run`.
 
 ```
-polispec promote <project> --to <env> [--dry-run] [--json]
+polispec promote <project> --to <env> [--waive-soak] [--dry-run] [--json]
 polispec deploy  <project> <env> [--tag vX.Y.Z] [--skip-drain] [--dry-run] [--json]
 ```
 
@@ -110,6 +110,7 @@ Constraint: a gate that touches a live database must use `run_in: active`. Some 
 
 - `soaked` (gate option `hours`) passes when `deploys.jsonl` holds a `test` deploy of the sha with health `ok` recorded at least `hours` ago and no later `test` deploy of the same sha with another health. Failure code `not_soaked`.
 - `health_required` re-runs, on the policy at the candidate sha, the check that an environment declaring `deploy.steps` or `deploy.activate` also declares `deploy.health` (`env <name> deploys without a health check; G-TESTED can never pass`). The same check (`Gates.health_required_errors(policy)`) runs whenever the operator loads a project, so promote and deploy refuse such a policy with `policy_invalid`.
+- `polispec promote <project> --to <env> --waive-soak` skips every `soaked` gate of that promotion and reports it as `waived`; every other gate still runs. It needs an interactive terminal and the typed phrase `waive soak for <project>`, asked before any gate runs and ahead of the promotion phrase. It is refused for `--to test` (`waive_soak_unsupported`) and when the promotion has no `soaked` gate (`nothing_to_waive`); with `--dry-run` it previews `waived` without asking. The promotion record and its `polispec.promote` event carry `waived: [soak]`.
 - `promotion.to_stable.preflight` gates run first, ahead of the other gates and the phrase prompt.
 
 ## Environment names and promotion hops
@@ -148,11 +149,11 @@ A freeze with `source: command` runs its `command` argv in the prod checkout of 
 
 ## Other error codes
 
-`policy_invalid`, `not_soaked`, `drain_timeout`, `drain_failed`, `drain_check_failed`, `skip_drain_unsupported`, `env_file_unreadable`, `unknown_env`, `rolled_back`, `release_conflict`, `clone_failed`, `not_tty`, `confirmation_failed`, `actor_denied`, `drift`, `not_fast_forward`, `nothing_to_promote`, `version_not_bumped`, `tag_exists`, `tag_mismatch`, `missing_ref`, `push_rejected`, `release_failed`, `after_failed`, `locked` (another promote or deploy of the same project holds its lock), `policy_unavailable`, `unknown_project`, `retired_project`, `repo_missing`, `invalid_target`, `invalid_env`, `logs_not_quiet`, `logs_in_window`, `not_live`, `untested_sha`, `invalid_tag`, `no_deploy`, `no_remote`.
+`policy_invalid`, `not_soaked`, `drain_timeout`, `drain_failed`, `drain_check_failed`, `skip_drain_unsupported`, `waive_soak_unsupported`, `nothing_to_waive`, `env_file_unreadable`, `unknown_env`, `rolled_back`, `release_conflict`, `clone_failed`, `not_tty`, `confirmation_failed`, `actor_denied`, `drift`, `not_fast_forward`, `nothing_to_promote`, `version_not_bumped`, `tag_exists`, `tag_mismatch`, `missing_ref`, `push_rejected`, `release_failed`, `after_failed`, `locked` (another promote or deploy of the same project holds its lock), `policy_unavailable`, `unknown_project`, `retired_project`, `repo_missing`, `invalid_target`, `invalid_env`, `logs_not_quiet`, `logs_in_window`, `not_live`, `untested_sha`, `invalid_tag`, `no_deploy`, `no_remote`.
 
 ## Events and records
 
-`polispec.promote` carries `project, to, from_sha, to_sha, tag, actor, gates, result, duration_ms`; a failure emits it with `result` set to the error code. `from_sha` in a record is the target branch's previous tip, or forty zeros when the branch is created. `polispec.deploy` carries `project, env, sha, tag, steps, health, pinned_behind, actor, result`.
+`polispec.promote` carries `project, to, from_sha, to_sha, tag, actor, gates, waived, result, duration_ms` (`waived` only when `--waive-soak` was used); a failure emits it with `result` set to the error code. `from_sha` in a record is the target branch's previous tip, or forty zeros when the branch is created. `polispec.deploy` carries `project, env, sha, tag, steps, health, pinned_behind, actor, result`.
 
 ## Scratch use
 

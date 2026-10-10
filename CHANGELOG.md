@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] - 2026-10-09
+
+### Added
+- `polispec promote <project> --to <env> --waive-soak` (`lib/polispec/commands/promote.rb`, `lib/polispec/operator/promote.rb` `waive_soak!`): the operator skips the `soaked` gates of a promotion past test. It needs an interactive terminal and the typed phrase `waive soak for <project>` before any gate runs; agents cannot pass it. `Gates.run_all` reports the waived gate as `waived` and every other gate still runs. It is refused for `--to test` (`waive_soak_unsupported`) and when the promotion has no `soaked` gate (`nothing_to_waive`). `--dry-run --waive-soak` previews without the phrase. The promotion record, the result and the `polispec.promote` event (`lib/polispec/events.rb`) carry `waived: [soak]`. It lives in polispec, so no policy change is needed to use it.
+
 ## [0.16.2] - 2026-10-09
 
 ### Fixed
