@@ -26,3 +26,5 @@
 | Match keys `crosses: location` and `destructive` | Implemented in 0.15.0 | Active once a policy rule uses them | Destructive SQL and shell samples classify as expected; policies without the keys give identical verdicts |
 
 No tests were added. Application adapters own authentication, native enforcement and domain parameter validation. A declared binding and matching artifact are traceability evidence, not a formal proof of behavioral equivalence.
+
+| Read-only deployment receipts in `status --json` | Implemented in 0.17.1 | Built and held; not installed or released | Scratch status CLI consumes deployment state written by the real record_state function; successful receipt verifies, an in-progress or newer failed attempt, legacy identity, unchecked health, pin, SHA mismatch, tag mismatch, and malformed state fail closed in Teach's actual shipping script |

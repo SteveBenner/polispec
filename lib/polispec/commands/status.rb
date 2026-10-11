@@ -34,8 +34,27 @@ module Polispec
       windows = %w[promote.to_stable desk.dispatch].flat_map { |scope| Freeze.active(loaded.policy, scope, project: project) }
       entry.merge(
         "policy_source" => loaded.source, "policy_digest" => loaded.digest, "finding" => loaded.finding,
-        "pause" => pause, "freezes" => windows.map(&:to_h), "pending_allow_once" => pending(ledger, project.id)
+        "pause" => pause, "freezes" => windows.map(&:to_h), "pending_allow_once" => pending(ledger, project.id),
+        "deployments" => deployments(project.id)
       )
+    end
+
+    def deployments(project_id)
+      data = File.file?(State.state_file) ? Schema::Document.parse(File.read(State.state_file), State.state_file) : {}
+      saved = data.is_a?(Hash) ? data["deployments"] : nil
+      receipts = saved.is_a?(Hash) ? saved[project_id] : nil
+      receipts = {} unless receipts.is_a?(Hash)
+      attempts = State.read_jsonl("deploys").select { |row| row["project"] == project_id }.group_by { |row| row["env"] }
+      (receipts.keys + attempts.keys).uniq.to_h do |env|
+        receipt = receipts[env].is_a?(Hash) ? receipts[env].slice("record_id", "sha", "tag", "health", "pinned_behind", "at") : nil
+        latest = attempts[env]&.last&.slice("id", "sha", "tag", "health", "pinned_behind", "at")
+        verified = receipt && latest && !receipt["record_id"].to_s.empty? && receipt["record_id"] == latest["id"] &&
+          receipt["sha"] == latest["sha"] && receipt["tag"] == latest["tag"] && receipt["health"] == "ok" &&
+          latest["health"] == "ok" && receipt["pinned_behind"] == false && latest["pinned_behind"] == false
+        [env, { "receipt" => receipt, "latest_attempt" => latest, "verified" => !!verified }]
+      end
+    rescue Polispec::Error, SystemCallError, TypeError
+      {}
     end
 
     def pending(ledger, project_id)
