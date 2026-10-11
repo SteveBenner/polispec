@@ -50,6 +50,7 @@ module Polispec
         return preview(project, name, dir, source, tag, settings, actor) if dry_run
 
         record_id = Gates.new_id("dpl")
+        State.append_jsonl("deploys", { "id" => record_id, "project" => project.id, "env" => name, "health" => "running", "at" => Time.now.utc.iso8601 })
         guard = Gates::Hermetic.for(project, Gates.tier_of(project, name), record_id)
         run = begin
           settings["strategy"] == "release_dirs" ? release_flow(project, name, config, settings, dir, source, tag, guard, record_id) : in_place_flow(project, name, config, settings, dir, source, tag, guard)
@@ -66,7 +67,7 @@ module Polispec
         result["retention"] = run[:retention] if run[:retention]
         result["hermetic"] = guard_summary if guard_summary
         result["ok"] = false if run[:outcome][:code]
-        record_state(project, name, run[:tag], run[:sha], pinned) if result["ok"]
+        record_state(project, name, run[:tag], run[:sha], pinned, record) if result["ok"]
         Events.emit("polispec.deploy", project: project.id, env: name, sha: run[:sha], tag: run[:tag], steps: run[:outcome][:steps], health: health["status"],
                                        pinned_behind: pinned, actor: actor, result: result["ok"] ? "ok" : failure_code(run[:outcome], health))
         raise_failure(run[:outcome], health, result) unless result["ok"]
@@ -529,14 +530,14 @@ module Polispec
         }.compact
       end
 
-      def record_state(project, name, tag, sha, pinned)
+      def record_state(project, name, tag, sha, pinned, record)
         path = State.state_file
         FileUtils.mkdir_p(File.dirname(path), mode: 0o700)
         File.open("#{path}.lock", File::RDWR | File::CREAT, 0o600) do |lock|
           lock.flock(File::LOCK_EX)
           data = read_state(path)
           entry = (data[STATE_KEY] ||= {})[project.id] ||= {}
-          entry[name] = { "tag" => tag, "sha" => sha, "pinned_behind" => pinned, "at" => Time.now.utc.iso8601 }
+          entry[name] = { "tag" => tag, "sha" => sha, "pinned_behind" => pinned, "at" => Time.now.utc.iso8601, "record_id" => record["id"], "health" => record["health"] }
           temp = "#{path}.#{Process.pid}.tmp"
           File.write(temp, YAML.dump(data), perm: 0o600)
           File.rename(temp, path)

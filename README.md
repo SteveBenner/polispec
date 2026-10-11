@@ -77,3 +77,11 @@ None is required. Policy `observability.events` may name an `rlogs` sink, and `p
 ## License
 
 MIT. See `LICENSE`.
+
+`polispec status <project> --json` includes `projects[].deployments` (contract
+`polispec.status.deployments/v1`). Each environment carries `receipt`, `latest_attempt`, and `verified`.
+The receipt identifies the last successful deployment by record id, SHA, tag, health, pin status, and time.
+Verification requires the receipt to match the latest attempted deployment, with health `ok` and no pin.
+An in-progress or newer failed attempt, unchecked health, or a legacy receipt without record identity fails closed.
+Consumers must also match the current remote environment ref and tag; branch promotion alone does not prove deployment.
+No state paths, health output, or secrets are exposed by this field. It is deployment-time evidence, not continuous health.

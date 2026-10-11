@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.1] - 2026-10-10
+
+### Fixed
+- `status --json` exposes a read-only deployment receipt and latest attempt per environment. Successful deployment state now retains its deploy record identity and health; verification rejects an in-progress or newer failed attempt, unchecked health, pins, and legacy receipts without identity. Consumers can distinguish successful deployment from a stable branch move that preceded failed deployment.
+
 ## [0.17.0] - 2026-10-09
 
 ### Added
