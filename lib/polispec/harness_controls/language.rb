@@ -298,6 +298,7 @@ module Polispec
           if classes && (!classes.is_a?(Array) || !classes.include?(action))
             raise ParseError.new("class predicate cannot match generated action #{action}", offset: 0, suggestions: [action], code: "fixture_required")
           end
+          fixture_compatibility!(verb, object, match)
 
           path = fixture_path(match["path"], object)
           input = case [verb, object]
@@ -308,7 +309,9 @@ module Polispec
                   when ["run", "command"]
                     { "tool_name" => match["tool"] || "Bash", "tool_input" => { "command" => "printf polispec-control-fixture" }, "cwd" => FIXTURE_ROOT }
                   when ["call", "mcp"]
-                    { "tool_name" => match["tool"] || "mcp__polispec_fixture__inspect", "tool_input" => { "server" => match["server"] || "polispec_fixture", "operation" => match["operation"] || "inspect" }, "cwd" => FIXTURE_ROOT }
+                    server = match["server"] || "polispec_fixture"
+                    operation = match["operation"] || "inspect"
+                    { "tool_name" => match["tool"] || "mcp__#{server}__#{operation}", "tool_input" => { "server" => server, "operation" => operation }, "cwd" => FIXTURE_ROOT }
                   when ["fetch", "url"]
                     domain = match["domain"] || "polispec.invalid"
                     unless domain.is_a?(String) && domain.match?(/\A(?:[A-Za-z0-9-]+\.)*invalid\z/)
@@ -323,6 +326,33 @@ module Polispec
           input["env"] = match["env"] if match.key?("env")
           input["action"] = action
           { "input" => Language.canonical_value(input), "expected" => effect }
+        end
+
+        def fixture_compatibility!(verb, object, match)
+          compatible = {
+            "path" => %w[file control],
+            "server" => %w[mcp],
+            "operation" => %w[mcp],
+            "domain" => %w[url],
+            "role" => %w[agent],
+            "ref" => %w[repository]
+          }
+          incompatible = compatible.keys.select { |key| match.key?(key) && !compatible[key].include?(object) }
+          unless incompatible.empty?
+            raise ParseError.new("a matching fixture cannot represent predicates: #{incompatible.sort.join(', ')}", offset: 0, suggestions: ["remove incompatible predicates or supply this control through YAML IR with a fixture"], code: "fixture_required")
+          end
+
+          expected = case [verb, object]
+                     when ["write", "file"], ["write", "control"] then "Write"
+                     when ["delete", "file"], ["delete", "control"] then "Delete"
+                     when ["run", "command"] then "Bash"
+                     when ["fetch", "url"] then "WebFetch"
+                     when ["spawn", "agent"] then "Agent"
+                     else "Bash" if object == "repository"
+                     end
+          return if !match.key?("tool") || object == "mcp" || match["tool"] == expected
+
+          raise ParseError.new("tool predicate #{match['tool'].inspect} cannot match the generated #{verb} #{object} fixture", offset: 0, suggestions: [expected], code: "fixture_required")
         end
 
         def fixture_path(pattern, object)
