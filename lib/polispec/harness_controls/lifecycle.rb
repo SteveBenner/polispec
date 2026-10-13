@@ -1,4 +1,5 @@
 require "timeout"
+require "etc"
 require_relative "contracts"
 require_relative "backends"
 require_relative "files"
@@ -256,17 +257,21 @@ module Polispec
         name = harness.to_s == "claude" ? "claude-code" : harness.to_s
         raise Failure.new("invalid_harness", "harness is required", exit_status: 3) if name.empty?
         directory = canonical_path(cwd.to_s.empty? ? Dir.pwd : cwd)
+        home = current_user_home
         state = state_adapter(false, nil, port_set, read_only: true)
         records = read_records(state, nil)
         active = fold_effective_records(records)
         plane = resolve_plane
         protected = protected_paths_for(plane)
-        validated = active.values.select { |row| row["harness"] == name }.map do |row|
-          validate_effective_receipt(row, directory, protected)
-        end.compact
-        inherited = validated.flat_map { |entry| Array(entry.delete("supersedes")) }.uniq
-        validated.reject! { |entry| inherited.include?(entry["installation_id"]) }
-        { "status" => "available", "receipts" => validated.sort_by { |entry| [entry["scope"], entry["boundary"], entry["installation_id"]] }, "findings" => [] }
+        validated = active.each_with_object({}) do |(id, row), result|
+          result[id] = validate_effective_receipt(row, directory, home, protected)
+        end
+        superseded = validate_supersessions!(validated)
+        effective = validated.values.reject { |entry| superseded[entry["installation_id"]] }
+        selected = effective.select { |entry| entry["harness"] == name && entry.delete("applicable") }
+        selected.each { |entry| verify_current_receipt!(entry.delete("receipt")) }
+        selected.each { |entry| entry.delete("harness"); entry.delete("sequence"); entry.delete("owned_entries"); entry.delete("supersedes") }
+        { "status" => "available", "receipts" => selected.sort_by { |entry| [entry["scope"], entry["boundary"], entry["installation_id"]] }, "findings" => [] }
       rescue Failure
         raise
       rescue StandardError => error
@@ -360,9 +365,10 @@ module Polispec
       end
       private_class_method :fold_effective_row!
 
-      def validate_effective_receipt(record, cwd, protected_paths)
+      def validate_effective_receipt(record, cwd, home, protected_paths)
         receipt = stringify(record["receipt"])
         valid = receipt["protected"] == false && %w[user project].include?(receipt["scope"]) && receipt["file_access"].nil?
+        valid &&= record["installation_id"] == receipt["installation_id"] && record["operation_id"] == receipt["operation_id"]
         raise Failure.new("mutable_receipt_invalid", "mutable overlay claims protected or unsupported authority", exit_status: 3) unless valid
         controls = receipt["controls"]
         validate_document!(controls)
@@ -376,30 +382,122 @@ module Polispec
           marker = "/.polispec/harness/"
           raise Failure.new("mutable_receipt_invalid", "project overlay control path is not canonical", exit_status: 3) unless control_path.include?(marker)
           boundary = canonical_path(control_path.split(marker, 2).first)
-          return nil unless cwd == boundary || cwd.start_with?("#{boundary}/")
           context["project"] = boundary
-          context["home"] = Dir.home
+          context["home"] = home
         else
           marker = "/.config/polispec/harness/"
           raise Failure.new("mutable_receipt_invalid", "user overlay control path is not canonical", exit_status: 3) unless control_path.include?(marker)
           boundary = canonical_path(control_path.split(marker, 2).first)
-          raise Failure.new("mutable_receipt_invalid", "user overlay belongs to another profile", exit_status: 3) unless boundary == canonical_path(Dir.home)
+          raise Failure.new("mutable_receipt_invalid", "user overlay belongs to another profile", exit_status: 3) unless boundary == home
           context["home"] = boundary
         end
         planned = stringify(Backends.fetch(receipt["harness"]).plan(canonical(controls), context))
         trusted = Array(planned["artifacts"])
-        Files.validate_mutable_receipt!(receipt, trusted, owner_uid: Process.uid, boundary: boundary, home: canonical_path(Dir.home), protected_paths: protected_paths)
+        owned_entries = Files.validate_mutable_receipt!(receipt, trusted, owner_uid: Process.uid, boundary: boundary, home: home, protected_paths: protected_paths)
+        supersedes = receipt.key?("supersedes") ? receipt["supersedes"] : []
+        raise Failure.new("mutable_receipt_invalid", "mutable overlay supersession references are invalid", exit_status: 3) unless supersedes.is_a?(Array)
         owned_paths = receipt.fetch("artifact_digests", {}).keys.map { |path| canonical_path(path) }
         if owned_paths.any? { |path| protected_paths.any? { |protected| path == protected || path.start_with?("#{protected}/") || protected.start_with?("#{path}/") } }
           raise Failure.new("mutable_receipt_invalid", "mutable overlay collides with protected authority", exit_status: 3)
         end
         {
           "installation_id" => receipt["installation_id"], "control_digest" => receipt["control_digest"],
-          "scope" => receipt["scope"], "boundary" => boundary, "document" => canonical(controls),
-          "owned_paths" => owned_paths.sort, "protected" => false, "supersedes" => Array(receipt["supersedes"])
+          "harness" => receipt["harness"], "scope" => receipt["scope"], "boundary" => boundary,
+          "document" => canonical(controls), "owned_paths" => owned_paths.sort, "protected" => false,
+          "supersedes" => supersedes, "owned_entries" => owned_entries,
+          "sequence" => record["sequence"], "applicable" => receipt["scope"] == "user" || cwd == boundary || cwd.start_with?("#{boundary}/"),
+          "receipt" => receipt
         }
       end
       private_class_method :validate_effective_receipt
+
+      def validate_supersessions!(validated)
+        removed = {}
+        claimed = {}
+        validated.values.sort_by { |entry| entry["sequence"] }.each do |successor|
+          references = successor["supersedes"]
+          valid_references = references.is_a?(Array) && references.length <= 64
+          valid_references &&= references.all? { |id| id.is_a?(String) && id.match?(/\Ainstall_[0-9a-f]{24}\z/) }
+          valid_references &&= references == references.uniq.sort
+          raise Failure.new("mutable_receipt_invalid", "mutable overlay supersession references are invalid", exit_status: 3) unless valid_references
+          references.each do |id|
+            predecessor = validated[id]
+            valid = predecessor && predecessor["sequence"] < successor["sequence"] && predecessor["harness"] == successor["harness"]
+            valid &&= predecessor["scope"] == successor["scope"] && predecessor["boundary"] == successor["boundary"]
+            valid &&= (predecessor["owned_paths"] - successor["owned_paths"]).empty?
+            valid &&= inherited_entries?(predecessor["owned_entries"], successor["owned_entries"])
+            valid &&= !claimed[id]
+            raise Failure.new("mutable_receipt_invalid", "mutable overlay supersession does not inherit an active predecessor", exit_status: 3) unless valid
+            claimed[id] = successor["installation_id"]
+            removed[id] = true
+          end
+        end
+        removed
+      end
+      private_class_method :validate_supersessions!
+
+      def inherited_entries?(predecessor, successor)
+        current = Array(successor).map { |row| canonical(row) }
+        Array(predecessor).all? do |row|
+          prior = canonical(row)
+          if %w[root toml_block].include?(prior["merge_mode"])
+            inherited = prior.reject { |key, _| %w[contributed_digest contributed_value contributed_values control_ids].include?(key) }
+            current.any? do |candidate|
+              candidate.reject { |key, _| %w[contributed_digest contributed_value contributed_values control_ids].include?(key) } == inherited
+            end
+          else
+            current.include?(prior)
+          end
+        end
+      end
+      private_class_method :inherited_entries?
+
+      def verify_current_receipt!(receipt)
+        targets = receipt.fetch("artifact_digests", {}).keys
+        safe_targets = targets.all? do |target|
+          stat = File.lstat(target)
+          stat.file? && !stat.symlink? && stat.uid == Process.uid
+        end
+        checked = Files.verify_receipt(receipt)
+        artifacts = Array(receipt["artifacts"])
+        root_targets = artifacts.select { |artifact| %w[control_document exclusive].include?(artifact.dig("ownership", "kind")) }.map { |artifact| artifact["path"] }.uniq
+        exact = root_targets.all? do |target|
+          next false unless File.file?(target) && File.size(target) <= Files::LIMIT
+          Digest::SHA256.hexdigest(File.binread(target, Files::LIMIT + 1)) == receipt.dig("artifact_digests", target)
+        end
+        toml_owned = Array(receipt["owned_entries"]).select { |row| row["merge_mode"] == "toml_block" }.all? do |row|
+          artifact = artifacts.find { |item| item["path"] == row["target"] }
+          expected = artifact && owned_toml_block(artifact["content"], row["pointer"])
+          current = owned_toml_block(File.binread(row["target"], Files::LIMIT + 1), row["pointer"])
+          expected && current == expected
+        end
+        return if safe_targets && checked["ownership"] && exact && toml_owned
+        raise Failure.new("mutable_receipt_invalid", "effective mutable overlay bytes or ownership no longer match its receipt", exit_status: 3, data: checked, findings: checked["findings"])
+      rescue SystemCallError => error
+        raise Failure.new("mutable_receipt_invalid", "effective mutable overlay integrity is unavailable: #{error.class}: #{error.message}", exit_status: 3)
+      end
+      private_class_method :verify_current_receipt!
+
+      def owned_toml_block(content, name)
+        return nil unless content.is_a?(String) && content.bytesize <= Files::LIMIT && name.is_a?(String) && !name.empty?
+        lines = content.lines
+        starts = lines.each_index.select { |index| lines[index].chomp == "# polispec:begin #{name}" }
+        finishes = lines.each_index.select { |index| lines[index].chomp == "# polispec:end #{name}" }
+        return nil unless starts.length == 1 && finishes.length == 1 && finishes.first > starts.first
+        first = starts.first
+        last = finishes.first
+        lines[first..last].join
+      end
+      private_class_method :owned_toml_block
+
+      def current_user_home
+        path = Etc.getpwuid(Process.uid).dir
+        raise Failure.new("mutable_receipt_invalid", "current passwd entry has no absolute home", exit_status: 3) unless path.is_a?(String) && path.start_with?("/") && !path.include?("\0")
+        canonical_path(File.realpath(path))
+      rescue ArgumentError, SystemCallError => error
+        raise Failure.new("mutable_receipt_invalid", "current passwd home is unavailable: #{error.class}: #{error.message}", exit_status: 3)
+      end
+      private_class_method :current_user_home
 
       def protected_paths_for(plane)
         values = stringify(plane)
@@ -900,6 +998,7 @@ module Polispec
 
       def validate_transaction_row!(row, installation_id, previous_sequence, record_ids)
         valid = row.is_a?(Hash) && row["schema"] == "polispec.harness.transaction/v1" && row["installation_id"] == installation_id
+        valid &&= installation_id.match?(/\Ainstall_[0-9a-f]{24}\z/)
         valid &&= row["operation_id"].is_a?(String) && !row["operation_id"].empty? && row["operation_id"].bytesize <= 128 && !row["operation_id"].include?("\0")
         valid &&= TRANSACTION_STATUSES.include?(row["status"])
         valid &&= row["sequence"].is_a?(Integer) && row["sequence"].positive? && row["sequence"] > previous_sequence
@@ -910,6 +1009,7 @@ module Polispec
         valid &&= targets.all? { |path| path.is_a?(String) && path.start_with?("/") && !path.include?("\0") }
         valid &&= targets == row["receipt"].fetch("artifact_digests", {}).keys.sort
         valid &&= row["installation_id"] == row["receipt"]["installation_id"]
+        valid &&= row["operation_id"] == row["receipt"]["operation_id"]
         valid &&= row["control_digest"] == row["receipt"]["control_digest"] && row["harness"] == row["receipt"]["harness"]
         valid &&= row["scope"] == row["receipt"]["scope"] && row["edition"] == row["receipt"]["edition"]
         valid &&= JSON.generate(row).bytesize <= Files::LIMIT
