@@ -552,6 +552,7 @@ slices:
       finding: Support.edit_strings uses Enumerable.filter_map despite the declared Ruby 2.6 floor. Removing that newer method reproduces NoMethodError on an AGENTS.md edit; this is an API-surface reproduction, not a native Ruby 2.6 runtime run.
       change: Replace only that filter_map call with Ruby 2.6-compatible mapping and filtering while preserving string selection, nested edits, and ENVS classification. Do not change the supported Ruby floor.
       verification: Repeat the bounded reproduction without filter_map, and run a real AGENTS.md edit classification through the CLI. No tests or compatibility framework.
+    execution_order: The disjoint doctor and compatibility worker may build and review against the accepted plane while guard repairs continue. Its acceptance and integration require the assembled guard. Primary release-surface edits follow that worker; drafting outside the repository may proceed independently.
     verification:
       - {run: 'rplugin check polispec', shows: Zero plugin findings.}
       - {run: 'rplugin install polispec', shows: The accepted release installs; no root seal or live-project activation.}
