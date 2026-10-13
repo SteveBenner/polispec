@@ -4,6 +4,7 @@
 require "json"
 require "digest"
 require "shellwords"
+require_relative "../../harness/base"
 
 module Polispec
   module HarnessControls
@@ -28,13 +29,13 @@ module Polispec
           runtime = runtime_argv(values, scope, findings)
           restrictions = native_restrictions(controls, scope)
           findings.concat(restrictions["findings"])
-          artifacts = [artifact(paths["controls"], json_content(controls), "json", "control_document", ["/"], control_ids)]
+          artifacts = [artifact(paths["controls"], json_content(controls), "json", "control_document", [""], control_ids)]
 
           if runtime
             callback = runtime + ["hook", "pretool", "--harness", "antigravity", "--controls-file", paths["controls"]]
             hook = hook_fragment(callback)
             hook_kind = scope == "managed" ? "exclusive" : "json_entries"
-            hook_entries = scope == "managed" ? ["/"] : ["/polispec"]
+            hook_entries = scope == "managed" ? [""] : ["/polispec"]
             artifacts << artifact(paths["hooks"], json_content(hook), "json", hook_kind, hook_entries, control_ids)
             if restrictions["settings"]
               artifacts << artifact(paths["settings"], json_content(restrictions["settings"]), "json", "json_entries", ["/permissions/deny", "/enableTerminalSandbox"], control_ids)
@@ -151,8 +152,12 @@ module Polispec
             next unless control["effect"] == "restrict"
             network = control.fetch("effect_params", {})["network"]
             next unless network.is_a?(Hash)
-            unless control["trigger"] == "pre_tool" && control.fetch("match", {}).empty?
-              findings << finding("conditional_native_network_restriction_unavailable", "Control #{control['id']} remains callback-only because a global Antigravity network setting is not equivalent to its trigger or predicate.", control["id"], "antigravity.cli_network", "Use callback enforcement or an unconditional pre_tool network restriction.")
+            unless control["trigger"] == "pre_tool"
+              findings << finding("unsupported_trigger_network_restriction", "Control #{control['id']} has no generated #{control['trigger']} hook, so no native Antigravity network setting is claimed for it.", control["id"], "antigravity.cli_network", "Use a verified native event implementation or revise the trigger.")
+              next
+            end
+            unless control.fetch("match", {}).empty?
+              findings << finding("conditional_native_network_restriction_unavailable", "Control #{control['id']} remains PreToolUse callback-only because a global Antigravity network setting is not equivalent to its predicate.", control["id"], "antigravity.cli_network", "Use callback enforcement or an unconditional pre_tool network restriction.")
               next
             end
             candidates << { "mode" => network["mode"], "domains" => Array(network["domains"]).uniq.sort }
@@ -226,6 +231,9 @@ module Polispec
                      elsif trigger != "pre_tool"
                        disposition = "unsupported"
                        "The generated Antigravity hook handles only PreToolUse."
+                     elsif scope == "managed"
+                       disposition = "unavailable"
+                       "The generated file is operator staging and has no documented native managed load path."
                      elsif %w[deny ask restrict].include?(effect)
                        effect == "ask" ? "The callback emits ask and never auto_approve." : "The PreToolUse callback evaluates the canonical control."
                      else
