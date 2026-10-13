@@ -22,8 +22,12 @@ module Polispec
         unless supplied["provenance_digest"] == actual["provenance_digest"] && supplied["generation"] == actual["generation"]
           raise Authority::Failure.new("operator_required", "operator identity does not match current protected executable provenance")
         end
-        FileUtils.mkdir_p(ROOT, mode: 0o700)
+        raise Authority::Failure.new("operator_records_unsafe", "operator record root cannot be a symlink") if File.symlink?(ROOT)
+        FileUtils.mkdir_p(ROOT, mode: 0o755)
+        raise Authority::Failure.new("operator_records_unsafe", "operator record root must be a directory") unless File.directory?(ROOT)
+        File.chmod(0o755, ROOT)
         findings = Authority.protection_findings(ROOT, "operator_records")
+        findings.concat(Authority.consumer_read_findings(ROOT, "operator_records"))
         raise Authority::Failure.new("operator_records_unsafe", "operator record root is not protected", findings) unless findings.empty?
         path = stream_path(name)
         authenticated = stringify(record).merge(
@@ -39,11 +43,15 @@ module Polispec
         raise Authority::Failure.new("record_too_large", "operator record exceeds #{MAX_LINE} bytes") if line.bytesize > MAX_LINE
         flags = File::WRONLY | File::APPEND | File::CREAT
         flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
-        File.open(path, flags, 0o600) do |file|
+        File.open(path, flags, 0o644) do |file|
           file.flock(File::LOCK_EX)
           stat = file.stat
-          safe = stat.file? && stat.uid.zero? && (stat.mode & 0o077).zero? && stat.nlink == 1
-          raise Authority::Failure.new("operator_records_unsafe", "operator record stream must be a root-owned regular 0600 file with one link") unless safe
+          structural = stat.file? && stat.uid.zero? && (stat.mode & 0o022).zero? && stat.nlink == 1
+          raise Authority::Failure.new("operator_records_unsafe", "operator record stream must be a protected root-owned regular file with one link") unless structural
+          file.chmod(0o644)
+          stat = file.stat
+          safe = (stat.mode & 0o777) == 0o644
+          raise Authority::Failure.new("operator_records_unsafe", "operator record stream must be a root-owned regular 0644 file with one link") unless safe
           raise Authority::Failure.new("operator_records_full", "operator record stream exceeds #{MAX_STREAM} bytes") if stat.size + line.bytesize > MAX_STREAM
           file.syswrite(line)
           file.flush
@@ -59,9 +67,10 @@ module Polispec
         path = stream_path(name)
         return [] unless File.exist?(path) || File.symlink?(path)
         findings = Authority.protection_findings(path, "operator_records")
+        findings.concat(Authority.consumer_read_findings(path, "operator_records"))
         raise Authority::Failure.new("operator_records_unsafe", "operator record stream ancestry is not protected", findings) unless findings.empty?
         stat = File.lstat(path)
-        raise Authority::Failure.new("operator_records_unsafe", "operator record stream is not a regular protected file") unless stat.file? && !stat.symlink? && stat.uid.zero? && (stat.mode & 0o077).zero? && stat.nlink == 1
+        raise Authority::Failure.new("operator_records_unsafe", "operator record stream is not a root-owned regular 0644 file") unless stat.file? && !stat.symlink? && stat.uid.zero? && (stat.mode & 0o777) == 0o644 && stat.nlink == 1
         raise Authority::Failure.new("operator_records_full", "operator record stream exceeds #{MAX_STREAM} bytes") if stat.size > MAX_STREAM
         rows = []
         File.open(path, File::RDONLY) do |file|
