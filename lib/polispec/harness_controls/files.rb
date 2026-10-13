@@ -1,0 +1,548 @@
+require "fileutils"
+
+module Polispec
+  module HarnessControls
+    module Files
+      LIMIT = 1_048_576
+
+      module_function
+
+      def existing(paths)
+        Array(paths).each_with_object({}) do |path, result|
+          safe_target!(path)
+          next unless File.file?(path)
+
+          result[path] = read(path)
+        end
+      end
+
+      def prepare(artifacts, operation_id)
+        Array(artifacts).map { |artifact| prepare_artifact(artifact, operation_id) }
+      end
+
+      def with_target_locks(targets, &block)
+        with_locks(targets, &block)
+      end
+
+      def apply(prepared, lock: true)
+        operation = proc do
+          verify_priors!(prepared)
+          create_backups!(prepared)
+          prepared.each { |row| write_atomic(row["target"], row["merged_content"], row["mode"], row["uid"], row["gid"]) }
+          verify_installed!(prepared)
+        end
+        lock ? with_locks(prepared.map { |row| row["target"] }, &operation) : operation.call
+        prepared
+      end
+
+      def rollback(prepared, lock: true)
+        failures = []
+        operation = proc do
+          prepared.reverse_each do |row|
+            begin
+              current_digest = File.file?(row["target"]) ? digest(read(row["target"])) : nil
+              next if current_digest == row["expected_prior_digest"]
+              unless current_digest == row["installed_digest"]
+                raise Polispec::Error, "rollback refused unexpected bytes at #{row['target']}"
+              end
+              prior_exists = row.key?("rollback_prior_exists") ? row["rollback_prior_exists"] : row["prior_exists"]
+              backup_path = row["rollback_backup_path"] || row["backup_path"]
+              backup_digest = row["rollback_backup_digest"] || row["backup_digest"]
+              if prior_exists
+                backup = read(backup_path)
+                raise Polispec::Error, "backup digest mismatch for #{row['target']}" unless digest(backup) == backup_digest
+                write_atomic(row["target"], backup, row["rollback_mode"] || row["mode"], row.key?("rollback_uid") ? row["rollback_uid"] : row["uid"], row.key?("rollback_gid") ? row["rollback_gid"] : row["gid"])
+              elsif File.exist?(row["target"])
+                failed = "#{row['target']}.polispec-failed-#{row['operation_suffix']}"
+                safe_target!(failed)
+                File.rename(row["target"], failed)
+              end
+            rescue StandardError => error
+              failures << { "target" => row["target"], "error" => "#{error.class}: #{error.message}" }
+            end
+          end
+        end
+        lock ? with_locks(prepared.map { |row| row["target"] }, &operation) : operation.call
+        failures
+      rescue StandardError => error
+        [{ "target" => nil, "error" => "#{error.class}: #{error.message}" }]
+      end
+
+      def verify_receipt(receipt)
+        receipt = stringify(receipt)
+        rows = Array(receipt["owned_entries"])
+        findings = []
+        integrity = receipt.fetch("artifact_digests", {}).all? do |path, expected|
+          actual = File.file?(path) ? digest(read(path)) : nil
+          if actual != expected
+            findings << finding("artifact_digest_mismatch", "Installed bytes at #{path} do not match the committed receipt.")
+            false
+          else
+            true
+          end
+        end
+        ownership = rows.all? do |row|
+          owned_entry_present?(row, findings)
+        end
+        { "integrity" => integrity, "ownership" => ownership, "findings" => findings }
+      rescue StandardError => error
+        { "integrity" => false, "ownership" => false, "findings" => [finding("ownership_check_failed", "#{error.class}: #{error.message}")] }
+      end
+
+      def uninstall(receipt, lock: true)
+        prepared = prepare_uninstall(receipt)
+        apply_uninstall(prepared, lock: lock)
+        prepared.map { |row| { "target" => row["target"], "backup_path" => row["uninstall_backup"] } }
+      end
+
+      def prepare_uninstall(receipt)
+        receipt = stringify(receipt)
+        grouped = Array(receipt["owned_entries"]).group_by { |row| row["target"] }
+        grouped.map do |target, rows|
+          safe_target!(target)
+          raise Polispec::Error, "owned target is missing: #{target}" unless File.file?(target)
+          current = read(target)
+          content = remove_rows(current, rows)
+          stat = File.stat(target)
+          { "target" => target, "prior" => current, "prior_digest" => digest(current), "content" => content, "post_digest" => content && digest(content), "mode" => stat.mode & 0o7777, "uid" => stat.uid, "gid" => stat.gid }
+        end
+      end
+
+      def apply_uninstall(prepared, lock: true)
+        operation = proc do
+          prepared.each do |row|
+            current = File.file?(row["target"]) ? digest(read(row["target"])) : nil
+            raise Polispec::Error, "owned target changed during uninstall: #{row['target']}" unless current == row["prior_digest"]
+          end
+          prepared.each do |row|
+            backup = backup_current(row["target"], "uninstall-#{Time.now.utc.strftime('%Y%m%d%H%M%S')}")
+            if row["content"].nil?
+              File.delete(row["target"])
+            else
+              write_atomic(row["target"], row["content"], row["mode"], row["uid"], row["gid"])
+            end
+            row["uninstall_backup"] = backup
+            row["uninstall_backup_digest"] = digest(read(backup))
+          end
+        end
+        lock ? with_locks(prepared.map { |row| row["target"] }, &operation) : operation.call
+        prepared
+      end
+
+      def rollback_uninstall(prepared, lock: true)
+        failures = []
+        operation = proc do
+          prepared.reverse_each do |row|
+            begin
+              current = File.file?(row["target"]) ? digest(read(row["target"])) : nil
+              next if current == row["prior_digest"]
+              raise Polispec::Error, "uninstall rollback refused unexpected bytes at #{row['target']}" unless current == row["post_digest"]
+              backup = read(row["uninstall_backup"])
+              raise Polispec::Error, "uninstall backup digest mismatch at #{row['target']}" unless digest(backup) == row["uninstall_backup_digest"]
+              write_atomic(row["target"], backup, row["mode"], row["uid"], row["gid"])
+            rescue StandardError => error
+              failures << { "target" => row["target"], "error" => "#{error.class}: #{error.message}" }
+            end
+          end
+        end
+        lock ? with_locks(prepared.map { |row| row["target"] }, &operation) : operation.call
+        failures
+      end
+
+      def prepare_artifact(artifact, operation_id)
+        artifact = stringify(artifact)
+        validate_artifact!(artifact)
+        target = artifact["path"]
+        safe_target!(target)
+        prior_exists = File.file?(target)
+        prior = prior_exists ? read(target) : nil
+        merged, owned = merge(prior, artifact)
+        stat = prior_exists ? File.stat(target) : nil
+        suffix = operation_id.to_s.gsub(/[^A-Za-z0-9]/, "")[0, 24]
+        backup_path = prior_exists ? "#{target}.polispec-backup-#{suffix}" : nil
+        {
+          "target" => target,
+          "format" => artifact["format"],
+          "kind" => artifact.dig("ownership", "kind"),
+          "prior_exists" => prior_exists,
+          "prior_digest" => prior && digest(prior),
+          "backup_path" => backup_path,
+          "backup_digest" => prior && digest(prior),
+          "mode" => stat ? stat.mode & 0o7777 : 0o600,
+          "uid" => stat && stat.uid,
+          "gid" => stat && stat.gid,
+          "expected_prior_digest" => prior && digest(prior),
+          "merged_content" => merged,
+          "installed_digest" => digest(merged),
+          "owned_entries" => owned,
+          "operation_suffix" => suffix
+        }
+      end
+      private_class_method :prepare_artifact
+
+      def validate_artifact!(artifact)
+        path = artifact["path"]
+        content = artifact["content"]
+        raise Polispec::Error, "artifact path must be absolute" unless path.is_a?(String) && path.start_with?("/") && !path.include?("\0")
+        raise Polispec::Error, "artifact content must be bounded UTF-8" unless content.is_a?(String) && content.valid_encoding? && content.bytesize <= LIMIT
+        raise Polispec::Error, "artifact digest mismatch for #{path}" unless artifact["digest"] == digest(content)
+        ownership = stringify(artifact["ownership"])
+        entries = ownership["entries"]
+        raise Polispec::Error, "artifact ownership entries are invalid for #{path}" unless entries.is_a?(Array) && !entries.empty? && entries.all? { |entry| entry.is_a?(String) }
+        kind = ownership["kind"]
+        allowed = %w[control_document json_entries yaml_entries toml_block exclusive]
+        raise Polispec::Error, "unsupported artifact ownership #{kind.inspect}" unless allowed.include?(kind)
+        if %w[control_document exclusive].include?(kind) && entries != [""]
+          raise Polispec::Error, "root ownership must use the RFC 6901 empty pointer"
+        end
+      end
+      private_class_method :validate_artifact!
+
+      def merge(prior, artifact)
+        ownership = stringify(artifact["ownership"])
+        kind = ownership["kind"]
+        case kind
+        when "control_document", "exclusive"
+          if prior && prior != artifact["content"]
+            raise Polispec::Error, "exclusive artifact conflicts with existing bytes at #{artifact['path']}" if kind == "exclusive"
+          end
+          row = root_row(artifact, prior)
+          [artifact["content"], [row]]
+        when "json_entries", "yaml_entries"
+          merge_structured(prior, artifact, kind == "json_entries" ? :json : :yaml)
+        when "toml_block"
+          merge_toml(prior, artifact)
+        end
+      end
+      private_class_method :merge
+
+      def merge_structured(prior, artifact, type)
+        fragment = parse_document(artifact["content"], type)
+        current = prior ? parse_document(prior, type) : {}
+        raise Polispec::Error, "shared artifact root must be an object" unless fragment.is_a?(Hash) && current.is_a?(Hash)
+        original = canonical(current)
+        rows = artifact.dig("ownership", "entries").map do |pointer|
+          value = pointer_get(fragment, pointer)
+          raise Polispec::Error, "owned pointer #{pointer} is absent from generated fragment" if value.equal?(MISSING)
+          previous = pointer_get(original, pointer)
+          prior_ancestors = pointer_ancestors(pointer).select { |ancestor| !pointer_get(original, ancestor).equal?(MISSING) }
+          merged, mode, contribution = merge_value(previous, value, pointer)
+          pointer_set(current, pointer, merged)
+          {
+            "target" => artifact["path"], "format" => artifact["format"], "pointer" => pointer,
+            "merge_mode" => mode, "contributed_values" => mode == "array" ? canonical(contribution) : nil,
+            "contributed_value" => mode == "scalar" ? canonical(value) : nil,
+            "contributed_digest" => digest(JSON.generate(canonical(value))),
+            "prior_present" => !previous.equal?(MISSING), "prior_value" => previous.equal?(MISSING) ? nil : canonical(previous),
+            "prior_ancestors" => prior_ancestors,
+            "control_ids" => Array(artifact.dig("ownership", "control_ids"))
+          }
+        end
+        content = type == :json ? JSON.pretty_generate(canonical(current)) + "\n" : YAML.dump(canonical(current))
+        [content, rows]
+      end
+      private_class_method :merge_structured
+
+      def merge_value(previous, value, pointer)
+        return [canonical(value), value.is_a?(Array) ? "array" : "scalar", canonical(value)] if previous.equal?(MISSING)
+        if value.is_a?(Array)
+          raise Polispec::Error, "owned array conflicts with scalar at #{pointer}" unless previous.is_a?(Array)
+          if pointer.downcase.match?(/allow|domain/) && canonical(previous) != canonical(value)
+            raise Polispec::Error, "allowlist widening or uncertain merge refused at #{pointer}"
+          end
+          merged = canonical(previous)
+          contribution = canonical(value).reject { |item| merged.include?(item) }
+          contribution.each { |item| merged << item }
+          return [merged, "array", contribution]
+        end
+        raise Polispec::Error, "owned scalar conflicts at #{pointer}" unless canonical(previous) == canonical(value)
+        [canonical(value), "scalar", canonical(value)]
+      end
+      private_class_method :merge_value
+
+      def merge_toml(prior, artifact)
+        names = artifact.dig("ownership", "entries")
+        raise Polispec::Error, "TOML artifact must own one named block" unless names.length == 1
+        name = names.first
+        content = artifact["content"]
+        begin_line = "# polispec:begin #{name}"
+        end_line = "# polispec:end #{name}"
+        raise Polispec::Error, "TOML ownership markers are missing" unless content.lines.map(&:chomp).include?(begin_line) && content.lines.map(&:chomp).include?(end_line)
+        raise Polispec::Error, "unmanaged TOML merge is unsupported at #{artifact['path']}" if prior && prior != content
+        row = root_row(artifact, prior).merge("pointer" => name, "merge_mode" => "toml_block")
+        [content, [row]]
+      end
+      private_class_method :merge_toml
+
+      def root_row(artifact, prior)
+        {
+          "target" => artifact["path"], "format" => artifact["format"], "pointer" => "",
+          "merge_mode" => "root", "contributed_values" => nil, "contributed_value" => nil,
+          "contributed_digest" => artifact["digest"], "prior_present" => !prior.nil?,
+          "prior_value" => nil, "control_ids" => Array(artifact.dig("ownership", "control_ids"))
+        }
+      end
+      private_class_method :root_row
+
+      def verify_priors!(prepared)
+        prepared.each do |row|
+          current = File.file?(row["target"]) ? digest(read(row["target"])) : nil
+          raise Polispec::Error, "target changed after planning: #{row['target']}" unless current == row["expected_prior_digest"]
+        end
+      end
+      private_class_method :verify_priors!
+
+      def create_backups!(prepared)
+        prepared.each do |row|
+          if row["backup_inherited"]
+            rollback_path = row["rollback_backup_path"]
+            raise Polispec::Error, "transaction rollback path is missing for #{row['target']}" unless rollback_path
+            if File.file?(rollback_path)
+              raise Polispec::Error, "transaction rollback backup differs for #{row['target']}" unless digest(read(rollback_path)) == row["rollback_backup_digest"]
+            else
+              write_atomic(rollback_path, read(row["target"]), row["rollback_mode"], row["rollback_uid"], row["rollback_gid"])
+            end
+            if row["prior_exists"]
+              raise Polispec::Error, "inherited backup is missing for #{row['target']}" unless row["backup_path"] && File.file?(row["backup_path"])
+              raise Polispec::Error, "inherited backup digest mismatch for #{row['target']}" unless digest(read(row["backup_path"])) == row["backup_digest"]
+            end
+            next
+          end
+          next unless row["prior_exists"]
+          if File.file?(row["backup_path"])
+            raise Polispec::Error, "existing backup differs for #{row['target']}" unless read(row["backup_path"]) == read(row["target"])
+          else
+            write_atomic(row["backup_path"], read(row["target"]), row["mode"], row["uid"], row["gid"])
+          end
+        end
+      end
+      private_class_method :create_backups!
+
+      def verify_installed!(prepared)
+        prepared.each do |row|
+          raise Polispec::Error, "installed artifact verification failed: #{row['target']}" unless File.file?(row["target"]) && digest(read(row["target"])) == row["installed_digest"]
+        end
+      end
+      private_class_method :verify_installed!
+
+      def owned_entry_present?(row, findings)
+        row = stringify(row)
+        target = row["target"]
+        unless File.file?(target)
+          findings << finding("owned_target_missing", "Owned target #{target} is missing.")
+          return false
+        end
+        return true if row["merge_mode"] == "root" || row["merge_mode"] == "toml_block"
+        type = row["format"] == "json" ? :json : :yaml
+        value = pointer_get(parse_document(read(target), type), row["pointer"])
+        expected = row["merge_mode"] == "array" ? Array(row["contributed_values"]) : row["contributed_value"]
+        present = row["merge_mode"] == "array" ? expected.all? { |item| value.is_a?(Array) && value.include?(item) } : canonical(value) == canonical(expected)
+        findings << finding("owned_entry_changed", "Owned entry #{row['pointer']} changed at #{target}.") unless present
+        present
+      end
+      private_class_method :owned_entry_present?
+
+      def remove_rows(content, rows)
+        root = rows.any? { |row| %w[root toml_block].include?(row["merge_mode"]) }
+        if root
+          raise Polispec::Error, "root-owned artifact changed" unless digest(content) == rows.first["contributed_digest"]
+          backup_path = rows.first["backup_path"]
+          if backup_path && File.file?(backup_path)
+            backup = read(backup_path)
+            raise Polispec::Error, "root backup digest mismatch" unless digest(backup) == rows.first["backup_digest"]
+            return backup
+          end
+          return nil
+        end
+        type = rows.first["format"] == "json" ? :json : :yaml
+        data = parse_document(content, type)
+        rows.each do |row|
+          current = pointer_get(data, row["pointer"])
+          if row["merge_mode"] == "array"
+            values = Array(row["contributed_values"])
+            raise Polispec::Error, "owned array contribution changed at #{row['pointer']}" unless current.is_a?(Array) && values.all? { |item| current.include?(item) }
+            remaining = current.reject { |item| values.include?(item) }
+            if row["prior_present"] || !remaining.empty?
+              pointer_set(data, row["pointer"], remaining)
+            else
+              pointer_delete(data, row["pointer"], row["prior_ancestors"])
+            end
+          else
+            raise Polispec::Error, "owned scalar contribution changed at #{row['pointer']}" unless canonical(current) == canonical(row["contributed_value"])
+            row["prior_present"] ? pointer_set(data, row["pointer"], row["prior_value"]) : pointer_delete(data, row["pointer"], row["prior_ancestors"])
+          end
+        end
+        type == :json ? JSON.pretty_generate(canonical(data)) + "\n" : YAML.dump(canonical(data))
+      end
+      private_class_method :remove_rows
+
+      MISSING = Object.new.freeze
+
+      def pointer_get(data, pointer)
+        return data if pointer == ""
+        pointer_tokens(pointer).reduce(data) do |value, token|
+          return MISSING unless value.is_a?(Hash) && value.key?(token)
+          value[token]
+        end
+      end
+      private_class_method :pointer_get
+
+      def pointer_set(data, pointer, value)
+        tokens = pointer_tokens(pointer)
+        raise Polispec::Error, "cannot replace shared document root" if tokens.empty?
+        parent = tokens[0...-1].reduce(data) do |memo, token|
+          existing = memo[token]
+          memo[token] = {} if existing.nil?
+          raise Polispec::Error, "pointer container conflicts at #{pointer}" unless memo[token].is_a?(Hash)
+          memo[token]
+        end
+        parent[tokens.last] = value
+      end
+      private_class_method :pointer_set
+
+      def pointer_delete(data, pointer, prior_ancestors = nil)
+        tokens = pointer_tokens(pointer)
+        parent = tokens[0...-1].reduce(data) { |memo, token| memo.is_a?(Hash) ? memo[token] : nil }
+        parent.delete(tokens.last) if parent.is_a?(Hash)
+        return if prior_ancestors.nil?
+        preserved = Array(prior_ancestors)
+        (tokens.length - 1).downto(1) do |length|
+          ancestor = "/" + tokens.first(length).map { |token| token.gsub("~", "~0").gsub("/", "~1") }.join("/")
+          break if preserved.include?(ancestor)
+          container = pointer_get(data, ancestor)
+          break unless container.is_a?(Hash) && container.empty?
+          parent_tokens = tokens.first(length - 1)
+          owner = parent_tokens.reduce(data) { |memo, token| memo.is_a?(Hash) ? memo[token] : nil }
+          owner.delete(tokens[length - 1]) if owner.is_a?(Hash)
+        end
+      end
+      private_class_method :pointer_delete
+
+      def pointer_ancestors(pointer)
+        tokens = pointer_tokens(pointer)
+        (1...tokens.length).map do |length|
+          "/" + tokens.first(length).map { |token| token.gsub("~", "~0").gsub("/", "~1") }.join("/")
+        end
+      end
+      private_class_method :pointer_ancestors
+
+      def pointer_tokens(pointer)
+        raise Polispec::Error, "invalid RFC 6901 pointer #{pointer.inspect}" unless pointer.start_with?("/")
+        pointer.split("/").drop(1).map { |token| token.gsub("~1", "/").gsub("~0", "~") }
+      end
+      private_class_method :pointer_tokens
+
+      def parse_document(content, type)
+        value = type == :json ? JSON.parse(content) : YAML.safe_load(content, aliases: false)
+        canonical(value)
+      rescue JSON::ParserError, Psych::Exception => error
+        raise Polispec::Error, "unsupported existing #{type} document: #{error.message}"
+      end
+      private_class_method :parse_document
+
+      def with_locks(targets)
+        handles = []
+        targets.uniq.sort.each do |target|
+          safe_target!(target)
+          FileUtils.mkdir_p(File.dirname(target), mode: 0o700)
+          lock_path = "#{target}.polispec.lock"
+          safe_target!(lock_path)
+          handle = File.open(lock_path, File::RDWR | File::CREAT | File::NOFOLLOW, 0o600)
+          unless handle.flock(File::LOCK_EX | File::LOCK_NB)
+            handle.close
+            raise Polispec::Error, "target lock unavailable: #{target}"
+          end
+          handles << handle
+        end
+        yield
+      ensure
+        Array(handles).reverse_each do |handle|
+          handle.flock(File::LOCK_UN) rescue nil
+          handle.close rescue nil
+        end
+      end
+      private_class_method :with_locks
+
+      def backup_current(target, suffix)
+        path = "#{target}.polispec-backup-#{suffix}"
+        safe_target!(path)
+        content = read(target)
+        stat = File.stat(target)
+        write_atomic(path, content, stat.mode & 0o7777, stat.uid, stat.gid)
+        path
+      end
+      private_class_method :backup_current
+
+      def write_atomic(path, content, mode, uid = nil, gid = nil)
+        safe_target!(path)
+        FileUtils.mkdir_p(File.dirname(path), mode: 0o700)
+        temp = "#{path}.polispec-tmp-#{Process.pid}-#{Thread.current.object_id}"
+        File.open(temp, File::WRONLY | File::CREAT | File::EXCL, mode) do |file|
+          file.binmode
+          file.write(content)
+          file.flush
+          file.fsync
+        end
+        File.chmod(mode, temp)
+        File.chown(uid, gid, temp) unless uid.nil? && gid.nil?
+        File.rename(temp, path)
+      ensure
+        File.delete(temp) if temp && File.exist?(temp)
+      end
+      private_class_method :write_atomic
+
+      def read(path)
+        safe_target!(path)
+        content = File.binread(path, LIMIT + 1)
+        raise Polispec::Error, "artifact exceeds #{LIMIT} bytes: #{path}" if content.bytesize > LIMIT
+        content
+      end
+      private_class_method :read
+
+      def safe_target!(path)
+        raise Polispec::Error, "artifact path must be absolute" unless path.is_a?(String) && path.start_with?("/") && !path.include?("\0")
+        current = "/"
+        path.split("/").reject(&:empty?).each do |component|
+          current = File.join(current, component)
+          next unless File.exist?(current) || File.symlink?(current)
+          raise Polispec::Error, "symlinked artifact ancestry is refused: #{current}" if File.lstat(current).symlink?
+        end
+        true
+      rescue SystemCallError => error
+        raise Polispec::Error, "artifact ancestry inspection failed for #{path}: #{error.message}"
+      end
+      private_class_method :safe_target!
+
+      def digest(content)
+        Digest::SHA256.hexdigest(content)
+      end
+      private_class_method :digest
+
+      def canonical(value)
+        case value
+        when Hash
+          value.keys.map(&:to_s).sort.each_with_object({}) do |key, result|
+            source = value.key?(key) ? key : value.keys.find { |candidate| candidate.to_s == key }
+            result[key] = canonical(value[source])
+          end
+        when Array
+          value.map { |item| canonical(item) }
+        else
+          value
+        end
+      end
+      private_class_method :canonical
+
+      def stringify(value)
+        return {} unless value.is_a?(Hash)
+        value.each_with_object({}) { |(key, item), result| result[key.to_s] = item }
+      end
+      private_class_method :stringify
+
+      def finding(code, detail)
+        { "code" => code, "detail" => detail, "control_id" => nil, "harness" => nil, "capability" => "ownership", "next_step" => "Inspect the installed artifact and its receipt before retrying." }
+      end
+      private_class_method :finding
+    end
+  end
+end
