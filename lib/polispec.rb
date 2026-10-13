@@ -18,7 +18,7 @@ module Polispec
   ACTION_CLASSES = %w[
     git.commit git.push git.tag git.merge git.rewrite git.branch release.publish
     service.control service.config fs.write fs.delete data.write data.copy secrets.read
-    policy.edit promote deploy
+    policy.edit promote deploy control.edit mcp.call web.fetch agent.spawn shell.exec
   ].freeze
   ENVIRONMENTS = %w[dev test prod].freeze
   LEVELS = %w[allow warn deny].freeze
@@ -40,6 +40,13 @@ module Polispec
   autoload :Environments, File.join(LIB, "environments")
   autoload :AgentsRender, File.join(LIB, "agents_render")
   autoload :GitHook, File.join(LIB, "git_hook")
+  autoload :Controls, File.join(LIB, "controls")
+  autoload :ControlRegistry, File.join(LIB, "control_registry")
+
+  module HarnessControls
+    autoload :Contracts, File.join(LIB, "harness_controls", "contracts")
+    autoload :Backends, File.join(LIB, "harness_controls", "backends")
+  end
 
   module Operator
     autoload :Tty, File.join(LIB, "operator", "tty")
@@ -60,6 +67,10 @@ require_relative "polispec/types"
 require_relative "polispec/state"
 require_relative "polispec/events"
 require_relative "polispec/schema/core"
+require_relative "polispec/control_registry"
+require_relative "polispec/controls"
+require_relative "polispec/harness_controls/contracts"
+require_relative "polispec/harness_controls/backends"
 require_relative "polispec/ledger"
 require_relative "polispec/classify/registry"
 require_relative "polispec/cli"
