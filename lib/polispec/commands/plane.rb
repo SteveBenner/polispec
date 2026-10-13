@@ -105,7 +105,8 @@ module Polispec
 
     def usage(json, action)
       if json
-        emit(result(false, action || "unknown", nil, nil, {}, [finding("invalid_arguments", USAGE, "Provide each supported option once with the required action arguments.")]), true, 2)
+        operation = %w[status verify activate rollback].include?(action) ? action : "unknown"
+        emit(result(false, operation, nil, nil, {}, [finding("invalid_arguments", USAGE, "Provide each supported option once with the required action arguments.")]), true, 2)
       else
         warn USAGE
         2
