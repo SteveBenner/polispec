@@ -38,6 +38,7 @@ module Polispec
           return base_result("broken", findings, ignored, development)
         end
         findings.concat(Authority.protection_findings(active_path, "active_sentinel")) if require_protected
+        findings.concat(Authority.consumer_read_findings(active_path, "active_sentinel")) if require_protected
         generation = active["generation"]
         generation_root = File.join(root, "generations", generation)
         unless File.directory?(generation_root) && !File.symlink?(generation_root)
@@ -45,6 +46,7 @@ module Polispec
           return base_result("broken", findings, ignored, development)
         end
         findings.concat(Authority.protection_findings(generation_root, "generation")) if require_protected
+        findings.concat(Authority.consumer_read_findings(generation_root, "generation")) if require_protected
         plane_path = File.join(generation_root, "plane.json")
         record = read_regular_json(plane_path, "generation record", findings)
         return base_result("broken", findings, ignored, development) unless record
@@ -224,17 +226,20 @@ module Polispec
 
         temp = File.join(GENERATIONS_PATH, ".#{generation}.tmp-#{Process.pid}")
         raise Authority::Failure.new("generation_conflict", "temporary generation path already exists") if File.exist?(temp)
-        FileUtils.mkdir_p(File.join(temp, "source"), mode: 0o700)
+        FileUtils.mkdir_p(File.join(temp, "source"), mode: 0o755)
+        File.chmod(0o755, temp)
+        File.chmod(0o755, File.join(temp, "source"))
         materialize_source(plan["source"], File.join(temp, "source"))
         source_manifest = Authority.canonical_value(plan.dig("source", "manifest"))
         source_findings = Authority.verify_materialized_source(File.join(temp, "source"), source_manifest)
         raise Authority::Failure.new("source_changed", "materialized source differs from the planned authority manifest", source_findings) unless source_findings.empty?
         runtime_manifest = Authority.canonical_value(plan["runtime"])
-        write_json(File.join(temp, "source-manifest.json"), source_manifest)
-        write_json(File.join(temp, "runtime-manifest.json"), runtime_manifest)
+        write_json(File.join(temp, "source-manifest.json"), source_manifest, mode: 0o644)
+        write_json(File.join(temp, "runtime-manifest.json"), runtime_manifest, mode: 0o644)
         record = generation_record(plan, temp)
-        write_json(File.join(temp, "plane.json"), record)
-        FileUtils.mkdir_p(GENERATIONS_PATH, mode: 0o700)
+        write_json(File.join(temp, "plane.json"), record, mode: 0o644)
+        FileUtils.mkdir_p(GENERATIONS_PATH, mode: 0o755)
+        File.chmod(0o755, GENERATIONS_PATH)
         File.rename(temp, destination)
         File.open(GENERATIONS_PATH, File::RDONLY) { |file| file.fsync }
         findings = candidate_findings(destination, plan, require_protected: true)
@@ -262,11 +267,11 @@ module Polispec
         backup_path = "#{ACTIVE_PATH}.backup-#{plan['generation']}"
         backup_record = { "schema" => "polispec.plane.active-backup/v1", "generation" => plan["generation"], "prior_present" => !prior.nil?, "prior_digest" => prior && Digest::SHA256.hexdigest(prior), "recorded_at" => Time.now.utc.iso8601 }
         Authority.write_atomic(backup_path, prior || JSON.pretty_generate(Authority.canonical_value(backup_record)) + "\n", mode: 0o600)
-        Authority.write_atomic(ACTIVE_PATH, JSON.pretty_generate(Authority.canonical_value(active)) + "\n", mode: 0o600)
+        Authority.write_atomic(ACTIVE_PATH, JSON.pretty_generate(Authority.canonical_value(active)) + "\n", mode: 0o644)
         resolved = resolve
         unless resolved["status"] == "active"
           if prior
-            Authority.write_atomic(ACTIVE_PATH, prior, mode: 0o600)
+            Authority.write_atomic(ACTIVE_PATH, prior, mode: 0o644)
             restored = resolve
             raise Authority::Failure.new("recovery_failed", "previous active sentinel could not be restored", restored["findings"]) if restored["status"] == "broken"
           else
@@ -329,6 +334,7 @@ module Polispec
           findings << finding("authority_digest_mismatch", "Generation file #{relative} failed its digest.") unless actual == expected
           if require_protected
             findings.concat(Authority.protection_findings(path, "authority_file").map { |item| finding(item["code"], item["detail"]) })
+            findings.concat(Authority.consumer_read_findings(path, "authority_file").map { |item| finding(item["code"], item["detail"]) })
           end
         end
         findings << finding("authority_manifest_empty", "Generation record contains no authority file digests.") if files.empty?
@@ -418,7 +424,7 @@ module Polispec
         source.fetch("manifest").fetch("files").each do |entry|
           relative = entry.fetch("path")
           target = File.join(destination, relative)
-          FileUtils.mkdir_p(File.dirname(target), mode: 0o700)
+          FileUtils.mkdir_p(File.dirname(target), mode: 0o755)
           bytes = if source["kind"] == "git"
                     output, error, status = Open3.capture3("git", "-C", source["root"], "show", "#{source['ref']}:#{relative}")
                     raise Authority::Failure.new("git_failed", error) unless status.success?
@@ -426,7 +432,10 @@ module Polispec
                   else
                     File.binread(File.join(source["root"], relative))
                   end
-          File.open(target, "wb", entry["mode"] & 0o777) { |file| file.write(bytes) }
+          File.open(target, "wb", entry["mode"] & 0o777) do |file|
+            file.chmod(entry["mode"] & 0o777)
+            file.write(bytes)
+          end
         end
       end
       private_class_method :materialize_source
@@ -439,7 +448,11 @@ module Polispec
         paths = { "ledger" => "source/ledger.yml" }
         paths["global"] = "source/global" if plan.dig("source", "bundle", "has_global")
         paths["code_specs_repo"] = "source/code_specs" if plan.dig("source", "bundle", "has_code_specs")
-        %w[home envs code_state].each { |name| FileUtils.mkdir_p(File.join(root, name), mode: 0o700) }
+        %w[home envs code_state].each do |name|
+          path = File.join(root, name)
+          FileUtils.mkdir_p(path, mode: 0o755)
+          File.chmod(0o755, path)
+        end
         paths["home"] = "home"
         paths["envs_root"] = "envs"
         paths["code_state"] = "code_state"
@@ -481,8 +494,8 @@ module Polispec
       end
       private_class_method :validate_project!
 
-      def write_json(path, value)
-        Authority.write_atomic(path, JSON.pretty_generate(Authority.canonical_value(value)) + "\n", mode: 0o600)
+      def write_json(path, value, mode: 0o644)
+        Authority.write_atomic(path, JSON.pretty_generate(Authority.canonical_value(value)) + "\n", mode: mode)
       end
       private_class_method :write_json
 

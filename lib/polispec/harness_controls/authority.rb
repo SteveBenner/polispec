@@ -45,6 +45,11 @@ module Polispec
       def seal_plan(kind:, source:, revision: nil)
         source_plan = kind.to_s == "git" ? git_source_plan(source, revision) : lock_source_plan(source)
         runtime = runtime_plan
+        source_plan.fetch("manifest", {}).fetch("files", []).each do |entry|
+          if (entry["mode"].to_i & 0o004).zero?
+            source_plan["findings"] << finding("source_file_unreadable", "Authority source #{entry['path']} must be readable by the guard user.", true)
+          end
+        end
         findings = source_plan["findings"] + runtime["findings"]
         lock = kind.to_s != "git"
         findings << finding("lock_launch_proof_unresolved", "Lock requires independently verified pre-interpreter process-loading provenance.", true) if lock
@@ -238,7 +243,7 @@ module Polispec
           "sanitized_before_interpreter" => true,
           "inherited_loader_provenance" => "unresolved"
         }
-        write_exact(File.join(root, "metadata", "#{commit}.json"), JSON.pretty_generate(canonical_value(descriptor)) + "\n", 0o600)
+        write_exact(File.join(root, "metadata", "#{commit}.json"), JSON.pretty_generate(canonical_value(descriptor)) + "\n", 0o644)
         planned = runtime_plan(root: root, require_protected: !development, revision: commit)
         { "development" => development == true, "root" => root, "commit" => commit, "launcher" => launcher, "runtime" => planned }
       end
@@ -313,6 +318,22 @@ module Polispec
         protection_findings(path, "path").empty?
       end
 
+      def consumer_read_findings(path, domain)
+        return [finding("#{domain}_missing", "#{path} does not exist.", true)] unless path && File.exist?(path)
+        findings = []
+        ancestry(path).each do |entry|
+          stat = File.stat(entry)
+          if stat.directory?
+            findings << finding("#{domain}_untraversable", "#{entry} is not traversable by the guard user.", true) if (stat.mode & 0o001).zero?
+          elsif entry == path
+            findings << finding("#{domain}_unreadable", "#{entry} is not readable by the guard user.", true) if (stat.mode & 0o004).zero?
+          end
+        rescue SystemCallError => error
+          findings << finding("#{domain}_unreadable", "Cannot inspect #{entry}: #{error.message}", true)
+        end
+        findings
+      end
+
       def verify_materialized_source(root, manifest)
         findings = []
         expected = Array(manifest["files"])
@@ -341,9 +362,13 @@ module Polispec
 
       def write_atomic(path, bytes, mode: 0o600)
         dir = File.dirname(path)
-        FileUtils.mkdir_p(dir, mode: 0o700)
+        raise Failure.new("unsafe_destination", "destination directory #{dir} cannot be a symlink") if File.symlink?(dir)
+        FileUtils.mkdir_p(dir, mode: 0o755)
+        raise Failure.new("unsafe_destination", "destination parent #{dir} must be a directory") unless File.directory?(dir)
+        File.chmod(0o755, dir)
         temp = File.join(dir, ".#{File.basename(path)}.tmp-#{Process.pid}-#{rand(1_000_000)}")
         File.open(temp, File::WRONLY | File::CREAT | File::EXCL, mode) do |file|
+          file.chmod(mode)
           file.write(bytes)
           file.flush
           file.fsync
@@ -578,12 +603,9 @@ module Polispec
       private_class_method :launcher_interpreter
 
       def launcher_content(interpreter, entrypoint, sdk)
-        unset = %w[RUBYLIB RUBYOPT GEM_HOME GEM_PATH BUNDLE_GEMFILE BUNDLE_PATH BUNDLE_BIN_PATH LD_PRELOAD LD_LIBRARY_PATH DYLD_INSERT_LIBRARIES DYLD_LIBRARY_PATH RPLUGIN_HOME]
         [
           "#!/bin/sh",
-          "unset #{unset.join(' ')}",
-          "export RPLUGIN_HOME=#{Shellwords.escape(File.expand_path(sdk))}",
-          "exec #{Shellwords.escape(File.realpath(interpreter))} #{Shellwords.escape(File.expand_path(entrypoint))} \"$@\""
+          "exec /usr/bin/env -i PATH=/usr/bin:/bin RPLUGIN_HOME=#{Shellwords.escape(File.expand_path(sdk))} #{Shellwords.escape(File.realpath(interpreter))} --disable-gems #{Shellwords.escape(File.expand_path(entrypoint))} \"$@\""
         ].join("\n") + "\n"
       end
       private_class_method :launcher_content
