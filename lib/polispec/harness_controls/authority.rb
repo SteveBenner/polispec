@@ -120,21 +120,21 @@ module Polispec
         raise Failure.new("invalid_source", "cannot inspect lock source: #{error.message}")
       end
 
-      def runtime_plan(root: RUNTIME_PATH, require_protected: true)
-        commit = git(ROOT, "rev-parse", "--verify", "HEAD^{commit}").strip
+      def runtime_plan(root: RUNTIME_PATH, require_protected: true, revision: "HEAD")
+        commit = git(ROOT, "rev-parse", "--verify", "#{revision}^{commit}").strip
         files = git_entries(ROOT, commit, bundle_only: false)
         manifest = files.map { |entry| entry.slice("path", "mode", "type", "digest", "size") }
         source_digest = digest_manifest(manifest)
-        descriptor_path = File.join(root, "runtime.json")
+        descriptor_path = File.join(root, "metadata", "#{commit}.json")
         descriptor = runtime_descriptor(descriptor_path)
         release = descriptor["release"] || File.join(root, "releases", commit)
-        launcher = descriptor["launcher"] || File.join(root, "bin", "polispec")
+        launcher = descriptor["launcher"] || File.join(root, "launchers", commit, "polispec")
         sdk = descriptor["sdk"] || "/usr/local/lib/rplugin"
         interpreter = descriptor["interpreter"] || launcher_interpreter(launcher)
         findings = []
         findings << finding("runtime_metadata_missing", "Protected runtime metadata is missing at #{descriptor_path}.", true) if descriptor.empty?
         findings.concat(protection_findings(descriptor_path, "runtime_metadata")) if require_protected && File.exist?(descriptor_path)
-        findings << finding("runtime_launcher_path", "Runtime metadata must use the fixed launcher #{File.join(root, 'bin', 'polispec')}.", true) unless launcher == File.join(root, "bin", "polispec")
+        findings << finding("runtime_launcher_path", "Runtime metadata must use the immutable pinned launcher #{File.join(root, 'launchers', commit, 'polispec')}.", true) unless launcher == File.join(root, "launchers", commit, "polispec")
         if descriptor["source_commit"] && descriptor["source_commit"] != commit
           findings << finding("runtime_commit_mismatch", "Protected runtime metadata does not name the exact committed polispec release.", true)
         end
@@ -193,16 +193,17 @@ module Polispec
         }
       end
 
-      def prepare_runtime(destination: RUNTIME_PATH, interpreter: "/usr/bin/ruby", sdk: "/usr/local/lib/rplugin", development: false)
+      def prepare_runtime(destination: RUNTIME_PATH, interpreter: "/usr/bin/ruby", sdk: "/usr/local/lib/rplugin", development: false, revision: "HEAD")
         root = File.expand_path(destination.to_s)
+        resolved_interpreter = File.realpath(interpreter.to_s)
         unless development
           bootstrap_identity!("seal.runtime.prepare")
           raise Failure.new("invalid_destination", "protected runtime destination is fixed at #{RUNTIME_PATH}") unless root == RUNTIME_PATH
-          findings = protection_findings(interpreter, "bootstrap_interpreter")
+          findings = protection_findings(resolved_interpreter, "bootstrap_interpreter")
           raise Failure.new("protected_interpreter_required", "runtime preparation requires a protected absolute interpreter", findings) unless findings.empty?
         end
-        raise Failure.new("invalid_interpreter", "runtime interpreter must be an absolute regular file") unless interpreter.to_s.start_with?("/") && File.file?(interpreter)
-        commit = git(ROOT, "rev-parse", "--verify", "HEAD^{commit}").strip
+        raise Failure.new("invalid_interpreter", "runtime interpreter must resolve to an absolute regular file") unless resolved_interpreter.start_with?("/") && File.file?(resolved_interpreter) && !File.symlink?(resolved_interpreter)
+        commit = git(ROOT, "rev-parse", "--verify", "#{revision}^{commit}").strip
         entries = git_entries(ROOT, commit, bundle_only: false)
         release = File.join(root, "releases", commit)
         entries.each do |entry|
@@ -224,26 +225,26 @@ module Polispec
             write_exact(target, bytes, entry["mode"] & 0o777)
           end
         end
-        launcher = File.join(root, "bin", "polispec")
-        launcher_bytes = launcher_content(File.realpath(interpreter), File.join(release, "bin", "polispec"), sdk)
+        launcher = File.join(root, "launchers", commit, "polispec")
+        launcher_bytes = launcher_content(resolved_interpreter, File.join(release, "bin", "polispec"), sdk)
         write_exact(launcher, launcher_bytes, 0o755)
         descriptor = {
           "schema" => "polispec.runtime.bootstrap/v1",
           "source_commit" => commit,
           "release" => release,
           "launcher" => launcher,
-          "interpreter" => File.realpath(interpreter),
+          "interpreter" => resolved_interpreter,
           "sdk" => File.expand_path(sdk),
           "sanitized_before_interpreter" => true,
           "inherited_loader_provenance" => "unresolved"
         }
-        write_exact(File.join(root, "runtime.json"), JSON.pretty_generate(canonical_value(descriptor)) + "\n", 0o600)
-        planned = runtime_plan(root: root, require_protected: !development)
+        write_exact(File.join(root, "metadata", "#{commit}.json"), JSON.pretty_generate(canonical_value(descriptor)) + "\n", 0o600)
+        planned = runtime_plan(root: root, require_protected: !development, revision: commit)
         { "development" => development == true, "root" => root, "commit" => commit, "launcher" => launcher, "runtime" => planned }
       end
 
-      def development_prepare_runtime(destination:, interpreter: RbConfig.ruby, sdk: "/tmp/polispec-development-rplugin")
-        prepare_runtime(destination: destination, interpreter: interpreter, sdk: sdk, development: true)
+      def development_prepare_runtime(destination:, interpreter: RbConfig.ruby, sdk: "/tmp/polispec-development-rplugin", revision: "HEAD")
+        prepare_runtime(destination: destination, interpreter: interpreter, sdk: sdk, development: true, revision: revision)
       end
 
       def operator!(operation, plane: nil)
