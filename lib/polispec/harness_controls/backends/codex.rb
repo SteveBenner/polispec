@@ -41,9 +41,7 @@ module Polispec
             callback = runtime + ["hook", "pretool", "--harness", "codex", "--controls-file", paths["controls"]]
             config_content = config_toml(scope, edition, callback, restrictions)
             raise Polispec::Error, "generated Codex TOML exceeds #{CONFIG_LIMIT} bytes" if config_content.bytesize > CONFIG_LIMIT
-            entries = %w[polispec.codex.permissions polispec.codex.hooks polispec.codex.features]
-            entries.concat(%w[polispec.codex.rules polispec.codex.network]) if scope == "managed"
-            artifacts << artifact(paths["config"], config_content, "toml", "toml_block", entries, control_ids)
+            artifacts << artifact(paths["config"], config_content, "toml", "toml_block", ["codex/v1"], control_ids)
             if scope != "managed"
               artifacts << artifact(paths["rules"], exec_rules, "starlark", "exclusive", ["polispec"], control_ids)
               findings << finding("hook_trust_required", "Codex requires explicit trust for the generated #{scope} PreToolUse hook.", nil, "codex.callback_denial", "Review and trust the generated hook in Codex before relying on it.")
@@ -195,7 +193,7 @@ module Polispec
         def config_toml(scope, edition, callback, restrictions)
           profile = edition == "lock" ? "polispec-lock" : "polispec-standard"
           paths = restrictions["paths"]
-          lines = []
+          lines = ["# polispec:begin codex/v1"]
           lines << "default_permissions = #{toml_string(profile)}"
           lines << "allow_managed_hooks_only = true" if scope == "managed"
           lines << ""
@@ -233,6 +231,8 @@ module Polispec
             lines << "prefix_rules = #{managed_exec_rules}"
           end
           network_toml(lines, edition, restrictions["network"])
+          lines << ""
+          lines << "# polispec:end codex/v1"
           lines.join("\n") + "\n"
         end
         private_class_method :config_toml
@@ -277,7 +277,13 @@ module Polispec
               axes.each do |axis|
                 conditional_paths = true if axis == "paths"
                 conditional_network = true if axis == "network"
-                findings << finding("conditional_native_restriction_unavailable", "Control #{control['id']} has a predicate or non-PreToolUse trigger, so its #{axis} restriction is enforced by the callback without broadening it into global Codex configuration.", control["id"], "codex.#{axis == 'paths' ? 'filesystem' : 'network'}_sandbox", "Use the callback result or split out an unconditional restriction for native sandbox compilation.")
+                detail = if control["trigger"] == "pre_tool"
+                           "Control #{control['id']} has a predicate, so its #{axis} restriction is enforced by the PreToolUse callback without broadening it into global Codex configuration."
+                         else
+                           "Control #{control['id']} uses #{control['trigger']}, for which this backend emits no hook; its #{axis} restriction is not compiled into global Codex configuration."
+                         end
+                next_step = control["trigger"] == "pre_tool" ? "Use the callback result or split out an unconditional restriction for native sandbox compilation." : "Use a backend event with verified #{control['trigger']} support or revise the trigger."
+                findings << finding("conditional_native_restriction_unavailable", detail, control["id"], "codex.#{axis == 'paths' ? 'filesystem' : 'network'}_sandbox", next_step)
               end
               next
             end
