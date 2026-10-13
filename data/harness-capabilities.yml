@@ -1,0 +1,62 @@
+schema: polispec.harness-capabilities/v1
+harnesses:
+  - harness: claude-code
+    surface: cli
+    platform: linux
+    minimum_version: unknown
+    events: unknown
+    native_paths: unknown
+    output_protocol: unknown
+    failure_behavior: unknown
+    config_scope: unknown
+    mutability: unknown
+    coverage_axes: [unknown]
+    sources: [https://code.claude.com/docs/en/hooks]
+  - harness: codex
+    surface: cli
+    platform: linux
+    minimum_version: unknown
+    events: unknown
+    native_paths: unknown
+    output_protocol: unknown
+    failure_behavior: unknown
+    config_scope: unknown
+    mutability: unknown
+    coverage_axes: [unknown]
+    sources: [https://learn.chatgpt.com/docs/hooks, https://learn.chatgpt.com/docs/enterprise/managed-configuration, https://learn.chatgpt.com/docs/permissions]
+  - harness: hermes
+    surface: cli
+    platform: linux
+    minimum_version: unknown
+    events: unknown
+    native_paths: unknown
+    output_protocol: unknown
+    failure_behavior: unknown
+    config_scope: unknown
+    mutability: unknown
+    coverage_axes: [unknown]
+    sources: [https://github.com/NousResearch/hermes-agent]
+  - harness: antigravity
+    surface: cli
+    platform: linux
+    minimum_version: unknown
+    events: unknown
+    native_paths: unknown
+    output_protocol: unknown
+    failure_behavior: unknown
+    config_scope: unknown
+    mutability: unknown
+    coverage_axes: [unknown]
+    sources: [https://antigravity.google/docs/hooks]
+  - harness: os
+    surface: sandbox
+    platform: linux
+    minimum_version: unknown
+    events: unknown
+    native_paths: unknown
+    output_protocol: unknown
+    failure_behavior: unknown
+    config_scope: unknown
+    mutability: unknown
+    coverage_axes: [unknown]
+    sources: []

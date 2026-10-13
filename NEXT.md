@@ -1,0 +1,42 @@
+# Polispec continuation
+
+Recovered on 2026-10-13 from `.specstory/history/2026-10-13_06-21-20-0700-audit-polispec-see-if.md` and the four answered interview exchanges in `DECISIONS.md`. The latest session stopped during design. Its subsequent request to save this handoff did not run. No harness-control implementation, implementation blueprint, or release change from that session was present when continuation began. The starting tree was clean at `5b2b6af`, version `0.17.1`.
+
+The implementation contract is [specs/harness-controls.impl.yml](specs/harness-controls.impl.yml). Product decisions are settled. The native harness accepted GPT-5.6 Terra at medium and it produced the initial foundation. The primary found two contract gaps during review. The operator then explicitly selected GPT-5.6 Sol workers at medium for remaining work and replaced Marc with Linus. The Terra worker was interrupted before further implementation; its changes are retained. Finish and verify the foundation before creating parallel worktrees.
+
+## Recovered questions and decisions
+
+1. **Trust anchor:** what prevents an agent from changing the controls? A root-owned plane, pinned runtime, and managed harness configuration. Privileged operator actions require sudo; a terminal alone is insufficient.
+2. **Failure mode:** what happens when the guard fails? Deny shell, write, edit, MCP, web, and delegation calls in enforce mode; keep positively identified read-only tools available for diagnosis. Operator break-glass requires sudo.
+3. **Agent authority:** how much control can an agent install? Tightening only, at user or project scope. Removal, loosening, managed scope, root scope, and overriding a deny require the operator.
+4. **Translation:** who translates natural language? The calling agent. Polispec supplies a deterministic grammar, vocabulary catalogue, canonical output, and helpful parse errors. No model participates in the control decision path.
+5. **Container risk:** how should Docker/LXD exposure be handled? Advise on the first detection, recommend remediation, and loudly enable the initially disabled root_guard on a follow-up detection. Detect rootless engines separately from actual root-equivalent access; report both honestly. The guard denies risky container operations, but is not a proof of isolation.
+6. **Build variants:** how strong should Claude locking be? Two installable branches: standard polispec and polispec-lock. Lock operates only when the environment actually satisfies its guarantee.
+7. **OS isolation:** standard uses sandbox paths with open network; lock uses sandbox paths and a network allowlist.
+8. **Undeclared MCP:** standard asks unless declared; lock denies unless declared. Harnesses without native ask block pending an operator authorization.
+9. **Branch relationship:** one codebase on main, with polispec-lock carrying only an EDITION difference. A release operation updates the lock branch from main; doctor checks code equivalence.
+10. **Lock and root-equivalent exposure:** refuse certification and arming while such access exists. Explain findings and use regular behavior with root_guard forced on; report clearly that lock is inactive.
+11. **Antigravity:** compile and probe agy CLI hooks and permission rules; root-managed installation may make owned files immutable. IDE and desktop are directive-only and outside the guarantee. No Antigravity surface receives lock certification.
+12. **Existing real-user projects:** activate only after the plane is built and verified, through an operator-run sealed command. Do not flip any project live during development.
+13. **Harness file ownership:** amend the plugin contract to recognize harness-control configuration as polispec's domain. Back up every changed file first; paths come from polispec's capability matrix. All service capabilities continue through rplugin ports. Report stale SDK harness assumptions separately.
+14. **Environment overrides:** retain existing overrides for unsealed development. A sealed guard ignores overrides of ledger, global layers, settings, runtime, and authority, and reports ignored overrides without exposing their values.
+15. **Sealing source:** standard seals an exact committed Git source into the root plane. Lock authors the authoritative source under /etc directly. Record provenance for both; do not pretend the latter is Git authored.
+16. **Lock network baseline:** empty allowlist. Add a TODO for a future baseline provisioned manifest, either repository supplied or available through one hosted entrypoint. Do not provision an entrypoint now.
+
+## What survived and what needs verification
+
+The original research case survives under the stopped session's scratchpad, with four findings files and upstream Codex and Hermes source clones. Researcher findings are evidence to check, not live certification. Hermes was not installed during that research. Antigravity failure behavior and GUI hook coverage were not established by a live run.
+
+The continuation checked the codebase graph generation `2026-10-11T03:39:23Z` and relevant source files. The graph records no parse gaps in the inspected implementation paths; notes, decisions, docs, and entrypoint exclusions require direct reads. The graph trace of the guard contains ambiguous Ruby call edges, so source is authoritative for integration design.
+
+Existing source confirms a generic adapter is used for Hermes and Antigravity, unknown tool classes produce no actions, and several outer hook error paths return success without a denial. The implementation spec addresses these surfaces. Current official Codex documentation confirms that a callback failure may allow a tool to proceed. Root ownership alone therefore cannot justify lock certification. Certification needs evidence from the running harness and every promised control axis; unsupported axes keep lock inactive.
+
+## Resume order
+
+1. Foundation implementation and review repairs are complete: lazy module discovery, effect payloads, inherited predicates, schedule references, and explicit size limits. Schema CLI checks and rplugin check pass. The primary is verified as GPT-6 Astra at xhigh; subsequent workers remain GPT-5.6 Sol at medium.
+2. Checkpoint `chg_b492811fbdcb` is unattestable because this standalone plugin has no matching compiled obligations. The operator explicitly authorized reviewed commits with actual CLI/rplugin verification and an honest record of unavailable attestation. Keep that exception visible; do not mark the gate passed or disable hooks. Parent `chg_dc6a9504c028` remains open for the full feature.
+3. After the green foundation commit, create separate worktrees for grammar and exposure scanning, and reintegrate each wave only after its real-run evidence is complete.
+4. Have the primary independently verify the assembled CLI, then perform the required plugin check, install, and doctor sequence. State plainly which harnesses and privileged paths were not exercised.
+5. Finish documentation, versioning, the tracking lock branch, and shipment only after their gates pass. Keep host sealing and activation of live projects as operator actions.
+
+The continuation opened change session `chg_dc6a9504c028`. The initial foundation worker ran check, install, and doctor successfully at version 0.17.1 with the new flags disabled. No release was committed or pushed during recovery. Keep the active WIP item until the implementation and verification are complete.
