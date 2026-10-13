@@ -138,7 +138,9 @@ module Polispec
         end
         rows = Array(receipt["owned_entries"])
         raise Polispec::Error, "mutable receipt has no ownership entries" if rows.empty?
-        grouped_rows = rows.map { |row| stringify(row) }.group_by { |row| [row["target"], row["pointer"].to_s] }
+        backups = validated_receipt_backups(receipt, targets, owner_uid)
+        normalized_rows = rows.map { |row| stringify(row) }
+        grouped_rows = normalized_rows.group_by { |row| [row["target"], row["pointer"].to_s] }
         allowed.each do |target, selectors|
           actual = grouped_rows.keys.select { |entry| entry.first == target }.map(&:last).sort
           raise Polispec::Error, "mutable receipt ownership selectors are incomplete" unless actual == selectors.keys.sort
@@ -159,21 +161,13 @@ module Polispec
             valid = group.length == 1 && group.first["contributed_digest"] == expected["digest"]
             raise Polispec::Error, "mutable receipt root contribution differs from stored artifact" unless valid
           end
-          group.each { |row| validate_backup_reference!(target, row["backup_path"], row["backup_digest"], owner_uid) }
-        end
-        backups = Array(receipt["backups"])
-        raise Polispec::Error, "mutable receipt backup rows are incomplete" unless backups.map { |row| stringify(row)["target"] }.sort == targets
-        backups.each do |row|
-          row = stringify(row)
-          raise Polispec::Error, "mutable receipt backup names an unplanned target" unless targets.include?(row["target"])
-          validate_backup_reference!(row["target"], row["backup_path"], row["backup_digest"], owner_uid)
-          validate_backup_reference!(row["target"], row["transaction_backup_path"], row["transaction_backup_digest"], owner_uid)
+          normalize_restoration_group!(group, expected, backups.fetch(target), owner_uid)
         end
         Array(receipt["schedules"]).each do |job|
           id = stringify(job)["job_id"].to_s
           raise Polispec::Error, "mutable receipt contains an invalid schedule job" unless id.match?(/\Apolispec-[0-9a-f]{24}\z/)
         end
-        true
+        normalized_rows
       end
 
       def uninstall(receipt, lock: true)
@@ -296,6 +290,97 @@ module Polispec
         end
       end
       private_class_method :expected_ownership
+
+      def validated_receipt_backups(receipt, targets, owner_uid)
+        rows = Array(receipt["backups"]).map { |row| stringify(row) }
+        raise Polispec::Error, "mutable receipt backup rows are incomplete" unless rows.map { |row| row["target"] }.sort == targets
+        rows.each_with_object({}) do |row, result|
+          target = row["target"]
+          raise Polispec::Error, "mutable receipt backup names an unplanned target" unless targets.include?(target)
+          raise Polispec::Error, "mutable receipt backup prior_exists must be boolean" unless [true, false].include?(row["prior_exists"])
+          if row["prior_exists"]
+            raise Polispec::Error, "mutable receipt prior backup is required" if row["backup_path"].nil?
+            validate_backup_reference!(target, row["backup_path"], row["backup_digest"], owner_uid)
+            raise Polispec::Error, "mutable receipt prior digest differs from backup" unless row["prior_digest"] == row["backup_digest"]
+          elsif row["backup_path"] || row["backup_digest"]
+            raise Polispec::Error, "mutable receipt absent prior cannot name a backup"
+          elsif row["prior_digest"]
+            raise Polispec::Error, "mutable receipt absent prior cannot name a digest"
+          end
+          if row["transaction_backup_path"]
+            validate_backup_reference!(target, row["transaction_backup_path"], row["transaction_backup_digest"], owner_uid)
+          elsif row["transaction_backup_digest"]
+            raise Polispec::Error, "mutable receipt transaction backup digest lacks a path"
+          end
+          result[target] = row
+        end
+      end
+      private_class_method :validated_receipt_backups
+
+      def normalize_restoration_group!(group, expected, target_backup, owner_uid)
+        mode = expected["mode"]
+        if %w[root toml_block].include?(mode)
+          row = group.first
+          same_backup = row["backup_path"] == target_backup["backup_path"] && row["backup_digest"] == target_backup["backup_digest"]
+          raise Polispec::Error, "mutable root ownership backup differs from receipt backup" unless same_backup
+          expected_present = target_backup["prior_exists"] == true
+          raise Polispec::Error, "mutable root prior_present differs from receipt backup" unless row["prior_present"] == expected_present
+          raise Polispec::Error, "mutable root restoration fields are invalid" unless row["prior_value"].nil? && Array(row["prior_ancestors"]).empty?
+          row["prior_present"] = expected_present
+          row["prior_value"] = nil
+          row["prior_ancestors"] = []
+          return
+        end
+
+        expected_prior = MISSING
+        group.each_with_index do |row, index|
+          prior, ancestors = restoration_from_backup(row, owner_uid)
+          if index.positive? && !same_value?(prior, expected_prior)
+            raise Polispec::Error, "mutable receipt ownership backup chain is inconsistent"
+          end
+          present = !prior.equal?(MISSING)
+          supplied_ancestors = Array(row["prior_ancestors"])
+          valid = row["prior_present"] == present && canonical(row["prior_value"]) == canonical(present ? prior : nil) && supplied_ancestors == ancestors
+          raise Polispec::Error, "mutable receipt restoration fields differ from owned backup" unless valid
+          row["prior_present"] = present
+          row["prior_value"] = present ? canonical(prior) : nil
+          row["prior_ancestors"] = ancestors
+          expected_prior = contribution_result(prior, row, mode)
+        end
+      end
+      private_class_method :normalize_restoration_group!
+
+      def restoration_from_backup(row, owner_uid)
+        path = row["backup_path"]
+        if path.nil?
+          raise Polispec::Error, "mutable receipt backup digest lacks a path" if row["backup_digest"]
+          return [MISSING, []]
+        end
+        validate_backup_reference!(row["target"], path, row["backup_digest"], owner_uid)
+        type = row["format"] == "json" ? :json : :yaml
+        document = parse_document(read(path), type)
+        prior = pointer_get(document, row["pointer"])
+        ancestors = pointer_ancestors(row["pointer"]).select { |pointer| !pointer_get(document, pointer).equal?(MISSING) }
+        [prior, ancestors]
+      end
+      private_class_method :restoration_from_backup
+
+      def contribution_result(prior, row, mode)
+        return canonical(row["contributed_value"]) if mode == "scalar"
+        base = prior.equal?(MISSING) ? [] : canonical(prior)
+        raise Polispec::Error, "mutable receipt array backup contains a scalar" unless base.is_a?(Array)
+        contribution = Array(row["contributed_values"]).map { |value| canonical(value) }
+        raise Polispec::Error, "mutable receipt array contribution was already present in its backup" unless (base & contribution).empty?
+        base + contribution
+      end
+      private_class_method :contribution_result
+
+      def same_value?(left, right)
+        return true if left.equal?(MISSING) && right.equal?(MISSING)
+        return false if left.equal?(MISSING) || right.equal?(MISSING)
+        canonical(left) == canonical(right)
+      end
+      private_class_method :same_value?
 
       def validate_backup_reference!(target, backup_path, backup_digest, owner_uid)
         return if backup_path.nil?
