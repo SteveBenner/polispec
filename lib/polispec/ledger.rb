@@ -16,6 +16,11 @@ module Polispec
     attr_reader :path, :host, :envs_root, :digest
 
     def self.default_path
+      require_relative "harness_controls/plane"
+      if defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:path)
+        protected_path = HarnessControls::Plane.path("ledger")
+        return File.expand_path(protected_path) if protected_path
+      end
       override = ENV["POLISPEC_LEDGER"].to_s
       return File.expand_path(override) unless override.empty?
 
@@ -34,6 +39,10 @@ module Polispec
       data = Schema::Document.parse(bytes, path)
       raise Invalid, "#{path}: ledger must be a mapping" unless data.is_a?(Hash)
 
+      if defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:activation_overrides)
+        overrides = HarnessControls::Plane.activation_overrides
+        Array(data["projects"]).each { |entry| entry["status"] = overrides[entry["id"].to_s] if overrides.key?(entry["id"].to_s) }
+      end
       new(data, path: path, digest: "sha256:#{Digest::SHA256.hexdigest(bytes)}")
     rescue Schema::Document::ParseError => e
       raise Invalid, e.message

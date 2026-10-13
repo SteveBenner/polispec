@@ -285,7 +285,11 @@ module Polispec
       end
 
       def load_pack(session)
-        pack = Pack.load(ref: ENV["POLISPEC_CODE_REF"])
+        require_relative "../harness_controls/plane"
+        plane = defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:resolve) ? HarnessControls::Plane.resolve : { "status" => "unsealed" }
+        raise PackInvalid, "sealed authority is broken" if plane["status"] == "broken"
+        ref = plane["status"] == "active" ? nil : ENV["POLISPEC_CODE_REF"]
+        pack = Pack.load(ref: ref)
         raise PackInvalid, "no specs found at #{pack.source.label}" if pack.specs.empty?
 
         pack.load_errors.each { |file, message| Telemetry.emit("polispec.code.finding", kind: "spec_invalid", detail: "#{file}: #{message}"[0, 300]) }

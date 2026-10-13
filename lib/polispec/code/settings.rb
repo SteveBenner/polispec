@@ -14,6 +14,15 @@ module Polispec
 
       def value(key)
         options = OPTIONS.fetch(key)
+        require_relative "../harness_controls/plane"
+        if defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:resolve)
+          plane = HarnessControls::Plane.resolve
+          raise Polispec::Error, "sealed authority is broken" if plane["status"] == "broken"
+          if plane["status"] == "active"
+            protected_value = plane.dig("settings", key)
+            return options.include?(protected_value) ? protected_value : options.first
+          end
+        end
         forced = ENV[Engine::Settings.env_name(key)].to_s.strip.downcase
         return forced if options.include?(forced)
 
@@ -38,6 +47,16 @@ module Polispec
       end
 
       def context_on_pre?(harness)
+        require_relative "../harness_controls/plane"
+        if defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:resolve)
+          plane = HarnessControls::Plane.resolve
+          raise Polispec::Error, "sealed authority is broken" if plane["status"] == "broken"
+          if plane["status"] == "active"
+            value = plane.dig("settings", "polispec.code.pre_context").to_s
+            return value == "context" if %w[context deny].include?(value)
+            return %w[claude claude-code].include?(harness.to_s)
+          end
+        end
         forced = ENV["POLISPEC_CODE_PRE_CONTEXT"].to_s.strip.downcase
         return forced == "context" if %w[context deny].include?(forced)
 

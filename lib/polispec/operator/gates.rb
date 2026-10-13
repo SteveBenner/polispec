@@ -145,6 +145,11 @@ module Polispec
       module_function
 
       def polispec_home
+        require_relative "../harness_controls/plane"
+        if defined?(Polispec::HarnessControls::Plane) && Polispec::HarnessControls::Plane.respond_to?(:path)
+          protected_path = Polispec::HarnessControls::Plane.path("home")
+          return File.expand_path(protected_path) if protected_path
+        end
         base = ENV["POLISPEC_HOME"].to_s
         File.expand_path(base.empty? ? "~/.polispec" : base)
       end
@@ -240,14 +245,14 @@ module Polispec
       end
 
       def health_required_errors(policy)
-        (policy["environments"] || {}).filter_map do |name, config|
+        (policy["environments"] || {}).map do |name, config|
           deploy = config.is_a?(Hash) ? config["deploy"] : nil
           next unless deploy.is_a?(Hash)
           next unless Array(deploy["steps"]).any? || Array(deploy["activate"]).any?
           next if deploy["health"].is_a?(Hash)
 
           "env #{name} deploys without a health check; G-TESTED can never pass"
-        end
+        end.compact
       end
 
       def now_ms
@@ -289,6 +294,11 @@ module Polispec
       end
 
       def envs_root(ledger)
+        require_relative "../harness_controls/plane"
+        if defined?(Polispec::HarnessControls::Plane) && Polispec::HarnessControls::Plane.respond_to?(:path)
+          protected_path = Polispec::HarnessControls::Plane.path("envs_root")
+          return File.expand_path(protected_path) if protected_path
+        end
         override = ENV["POLISPEC_ENVS_ROOT"]
         override && !override.empty? ? File.expand_path(override) : ledger.envs_root
       end
@@ -573,11 +583,11 @@ module Polispec
           raise Failure.new("logs_in_window", "gate #{gate['id']}: still in window; #{env} deploy at #{deployed.iso8601} needs #{window} min of logs", "gate_id" => gate["id"])
         end
 
-        noisy = services.filter_map do |service|
+        noisy = services.map do |service|
           after = logs_count(gate, words, service, deployed, deployed + span, context)
           before = logs_count(gate, words, service, deployed - span, deployed, context)
           "#{service}: #{after} after against #{before} before" if after > before + allowed
-        end
+        end.compact
         return if noisy.empty?
 
         raise Failure.new("logs_not_quiet", "gate #{gate['id']}: logs grew after the #{env} deploy (#{noisy.join('; ')})", "gate_id" => gate["id"], "output_tail" => noisy.join("\n"))

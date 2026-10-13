@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require_relative "../harness_controls/plane"
+
 module Polispec
   class PauseCommand
     MAX_MINUTES = 240
