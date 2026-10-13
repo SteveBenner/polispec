@@ -156,14 +156,15 @@ module Polispec
             result["findings"] << finding("operator_persistence_required", "This active-plane scan is diagnostic because the protected transition requires an authenticated operator.", "Run the scan through the protected operator runtime.")
             return result
           end
-          persist_protected(record, plane)
+          confirmed = persist_protected(record, plane)
         else
           state = ports && ports.state
           raise Polispec::Error, "the rplugin state port is unavailable" unless state && state.respond_to?(:append) && state.respond_to?(:read)
           state.append(STREAM, record)
-          confirm_record!(state.read(STREAM), record, false, plane)
+          confirmed = confirm_record!(state.read(STREAM), record, false, plane)
         end
-        result["root_guard"] = record["root_guard"]
+        result["sequence"] = confirmed["sequence"]
+        result["root_guard"] = confirmed["root_guard"]
         emit_notices(ports, findings) unless development
         result
       rescue StandardError => error
@@ -237,6 +238,7 @@ module Polispec
           raise Polispec::Error, "scan state exceeds #{STATE_BYTES} bytes" if size > STATE_BYTES - bytes
           bytes += size
           unless row.is_a?(Hash) && row["schema"] == "polispec.harness.scan/v1"
+            raise Polispec::Error, "protected scan history contains a legacy or malformed record" if protected_records
             legacy = true
             armed ||= row.is_a?(Hash) && row["root_guard"] == true
             next unless row.is_a?(Hash)
@@ -261,7 +263,8 @@ module Polispec
         keys = %w[schema sequence generation subject_uid observations fingerprint detected root_guard scanned_at]
         raise Polispec::Error, "scan record fields are invalid" unless (row.keys.map(&:to_s) - keys - ["authorization"]).empty?
         valid = row["sequence"].is_a?(Integer) && row["sequence"] > prior_sequence && row["subject_uid"].is_a?(Integer) && row["subject_uid"] >= 0
-        valid &&= row["observations"].is_a?(Hash) && row["detected"].is_a?(Array) && row["detected"] == row["detected"].map(&:to_s).uniq.sort
+        valid &&= valid_observations?(row["observations"])
+        valid &&= row["detected"].is_a?(Array) && row["detected"] == detected_categories(row["observations"])
         valid &&= row["root_guard"] == true || row["root_guard"] == false
         valid &&= row["fingerprint"] == Digest::SHA256.hexdigest(JSON.generate(row["observations"]))
         valid &&= Time.parse(row["scanned_at"].to_s)
@@ -275,6 +278,24 @@ module Polispec
         raise Polispec::Error, "scan record timestamp is invalid"
       end
       private_class_method :validate_scan_record!
+
+      def valid_observations?(value)
+        categories = %w[docker effective_identity lxd_incus privilege_path]
+        return false unless value.is_a?(Hash) && value.keys.sort == categories
+        value.values.all? do |item|
+          next false unless item.is_a?(Hash)
+          keys = %w[access evidence potential_root_equivalent presence root_equivalent rootless status]
+          next false unless item.keys.sort == keys
+          valid = %w[clear detected unknown].include?(item["status"])
+          valid &&= %w[denied reachable unknown unreachable].include?(item["access"])
+          valid &&= %w[presence rootless root_equivalent potential_root_equivalent].all? { |key| item[key] == true || item[key] == false }
+          evidence = item["evidence"]
+          valid &&= evidence.is_a?(Array) && !evidence.empty? && evidence.length <= 32
+          valid &&= evidence.all? { |entry| entry.is_a?(String) && !entry.empty? && entry.bytesize <= 256 && !entry.include?("\0") }
+          valid
+        end
+      end
+      private_class_method :valid_observations?
 
       def resolve_plane
         require_relative "plane"
