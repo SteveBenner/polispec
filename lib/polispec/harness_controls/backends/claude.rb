@@ -58,7 +58,7 @@ module Polispec
               format: "json",
               ownership: {
                 "kind" => "control_document",
-                "entries" => ["/"],
+                "entries" => [""],
                 "control_ids" => control_ids
               }
             ),
