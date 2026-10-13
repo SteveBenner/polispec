@@ -15,6 +15,7 @@ module Polispec
       OUTPUT_LIMIT = 65_536
       TRANSACTION_LIMIT = 4096
       TRANSACTION_SCAN_LIMIT = 65_536
+      TRANSACTION_SCAN_BYTES = 16 * 1_048_576
       TRANSACTION_STATUSES = %w[prepared committed rollback_complete recovery_required uninstalled].freeze
 
       class Failure < Polispec::Error
@@ -698,7 +699,15 @@ module Polispec
 
       def fold_installation(records, installation_id)
         raise Failure.new("installation_history_invalid", "installation state exceeds #{TRANSACTION_SCAN_LIMIT} records", exit_status: 3) if records.length > TRANSACTION_SCAN_LIMIT
-        selected = records.select { |row| row["installation_id"] == installation_id }
+        selected = []
+        scanned_bytes = 0
+        records.each do |row|
+          row_bytes = JSON.generate(row).bytesize
+          raise Failure.new("installation_history_invalid", "installation transaction record exceeds #{Files::LIMIT} bytes", exit_status: 3) if row_bytes > Files::LIMIT
+          raise Failure.new("installation_history_invalid", "installation state exceeds #{TRANSACTION_SCAN_BYTES} bytes", exit_status: 3) if row_bytes > TRANSACTION_SCAN_BYTES - scanned_bytes
+          scanned_bytes += row_bytes
+          selected << row if row.is_a?(Hash) && row["installation_id"] == installation_id
+        end
         raise Failure.new("installation_history_invalid", "installation history exceeds #{TRANSACTION_LIMIT} records", exit_status: 3) if selected.length > TRANSACTION_LIMIT
         previous_sequence = 0
         record_ids = {}
@@ -732,6 +741,8 @@ module Polispec
         end
         raise Failure.new("recovery_required", "unresolved transaction #{pending['row']['operation_id']} prevents receipt selection", exit_status: 3, data: pending["row"]) if pending
         { "active" => active, "records" => selected.length }
+      rescue JSON::GeneratorError, SystemStackError
+        raise Failure.new("installation_history_invalid", "installation transaction history cannot be serialized", exit_status: 3)
       end
       private_class_method :fold_installation
 
