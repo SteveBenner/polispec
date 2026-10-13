@@ -77,6 +77,7 @@ module Polispec
       def git_source_plan(repo, revision)
         path = File.expand_path(repo.to_s)
         raise Failure.new("invalid_source", "source repository must be an existing directory") unless File.directory?(path)
+        path = File.realpath(path)
         raise Failure.new("invalid_source", "a full committed Git revision is required") unless revision && !revision.to_s.empty?
 
         commit = git(path, "rev-parse", "--verify", "#{revision}^{commit}").strip
@@ -126,27 +127,54 @@ module Polispec
       end
 
       def runtime_plan(root: RUNTIME_PATH, require_protected: true, revision: "HEAD")
-        commit = git(ROOT, "rev-parse", "--verify", "#{revision}^{commit}").strip
-        files = git_entries(ROOT, commit, bundle_only: false)
-        manifest = files.map { |entry| entry.slice("path", "mode", "type", "digest", "size") }
-        source_digest = digest_manifest(manifest)
+        pinned = pinned_runtime_context(revision)
+        if pinned
+          root = pinned["root"] if root == RUNTIME_PATH
+          commit = pinned["commit"]
+          manifest_record = pinned["manifest"]
+          manifest = manifest_record.fetch("files")
+          source_digest = manifest_record.fetch("source_digest")
+        else
+          commit = git(ROOT, "rev-parse", "--verify", "#{revision}^{commit}").strip
+          files = git_entries(ROOT, commit, bundle_only: false)
+          manifest = files.map { |entry| entry.slice("path", "mode", "type", "digest", "size") }
+          source_digest = digest_manifest(manifest)
+          manifest_record = {
+            "schema" => "polispec.runtime.manifest/v1",
+            "source_commit" => commit,
+            "source_digest" => source_digest,
+            "files" => manifest
+          }
+        end
         descriptor_path = File.join(root, "metadata", "#{commit}.json")
         descriptor = runtime_descriptor(descriptor_path)
+        manifest_path = File.join(root, "manifests", "#{commit}.json")
         release = descriptor["release"] || File.join(root, "releases", commit)
         launcher = descriptor["launcher"] || File.join(root, "launchers", commit, "polispec")
         sdk = descriptor["sdk"] || "/usr/local/lib/rplugin"
         interpreter = descriptor["interpreter"] || launcher_interpreter(launcher)
         findings = []
         findings << finding("runtime_metadata_missing", "Protected runtime metadata is missing at #{descriptor_path}.", true) if descriptor.empty?
+        findings << finding("runtime_manifest_missing", "Protected runtime manifest is missing at #{manifest_path}.", true) unless File.file?(manifest_path)
+        if File.file?(manifest_path)
+          installed_manifest = runtime_manifest(manifest_path)
+          findings << finding("runtime_manifest_content", "Protected runtime manifest differs from the exact committed release manifest.", true) unless canonical_json(installed_manifest) == canonical_json(manifest_record)
+        end
         findings.concat(protection_findings(descriptor_path, "runtime_metadata")) if require_protected && File.exist?(descriptor_path)
+        findings.concat(protection_findings(manifest_path, "runtime_manifest")) if require_protected && File.exist?(manifest_path)
+        findings.concat(consumer_read_findings(descriptor_path, "runtime_metadata")) if require_protected && File.exist?(descriptor_path)
+        findings.concat(consumer_read_findings(manifest_path, "runtime_manifest")) if require_protected && File.exist?(manifest_path)
         findings << finding("runtime_launcher_path", "Runtime metadata must use the immutable pinned launcher #{File.join(root, 'launchers', commit, 'polispec')}.", true) unless launcher == File.join(root, "launchers", commit, "polispec")
         if descriptor["source_commit"] && descriptor["source_commit"] != commit
           findings << finding("runtime_commit_mismatch", "Protected runtime metadata does not name the exact committed polispec release.", true)
         end
+        findings << finding("runtime_manifest_path", "Runtime metadata must use the immutable pinned manifest #{manifest_path}.", true) unless descriptor["manifest"] == manifest_path
+        findings << finding("runtime_manifest_digest", "Runtime metadata does not bind the exact pinned manifest.", true) unless descriptor["manifest_digest"] == Digest::SHA256.hexdigest(canonical_json(manifest_record || {}))
+        findings << finding("runtime_source_digest", "Runtime metadata does not bind the exact committed source manifest.", true) unless descriptor["source_digest"] == source_digest
         findings << finding("runtime_release_missing", "Pinned runtime release is missing at #{release}.", true) unless File.directory?(release)
         if File.exist?(release)
           findings.concat(protection_findings(release, "runtime_release")) if require_protected
-          findings.concat(verify_release(files, release))
+          findings.concat(verify_release(manifest, release))
         end
         findings << finding("sealed_launcher_missing", "Sealed launcher is missing at #{launcher}.", true) unless File.file?(launcher)
         findings.concat(protection_findings(launcher, "sealed_launcher")) if require_protected && File.exist?(launcher)
@@ -174,6 +202,7 @@ module Polispec
           "interpreter" => metadata(interpreter),
           "sdk" => metadata(sdk),
           "runtime_metadata" => metadata(descriptor_path),
+          "runtime_manifest" => metadata(manifest_path),
           "sanitized_before_interpreter" => sanitized,
           "inherited_loader_provenance" => loader.empty? ? "unresolved" : loader
         }
@@ -208,12 +237,20 @@ module Polispec
           raise Failure.new("protected_interpreter_required", "runtime preparation requires a protected absolute interpreter", findings) unless findings.empty?
         end
         raise Failure.new("invalid_interpreter", "runtime interpreter must resolve to an absolute regular file") unless resolved_interpreter.start_with?("/") && File.file?(resolved_interpreter) && !File.symlink?(resolved_interpreter)
-        commit = git(ROOT, "rev-parse", "--verify", "#{revision}^{commit}").strip
-        entries = git_entries(ROOT, commit, bundle_only: false)
+        pinned = pinned_runtime_context(revision)
+        if pinned
+          commit = pinned["commit"]
+          entries = pinned["manifest"].fetch("files")
+          source_root = pinned["release"]
+        else
+          commit = git(ROOT, "rev-parse", "--verify", "#{revision}^{commit}").strip
+          entries = git_entries(ROOT, commit, bundle_only: false)
+          source_root = nil
+        end
         release = File.join(root, "releases", commit)
         entries.each do |entry|
           target = File.join(release, entry["path"])
-          bytes = git_blob(ROOT, commit, entry["path"])
+          bytes = source_root ? runtime_release_blob(source_root, entry) : git_blob(ROOT, commit, entry["path"])
           if entry["type"] == "symlink"
             link_target = bytes.to_s
             invalid = link_target.start_with?("/") || link_target.split("/").include?("..") || link_target.include?("\0")
@@ -233,9 +270,21 @@ module Polispec
         launcher = File.join(root, "launchers", commit, "polispec")
         launcher_bytes = launcher_content(resolved_interpreter, File.join(release, "bin", "polispec"), sdk)
         write_exact(launcher, launcher_bytes, 0o755)
+        manifest = {
+          "schema" => "polispec.runtime.manifest/v1",
+          "source_commit" => commit,
+          "source_digest" => digest_manifest(entries),
+          "files" => entries
+        }
+        manifest_path = File.join(root, "manifests", "#{commit}.json")
+        manifest_bytes = JSON.pretty_generate(canonical_value(manifest)) + "\n"
+        write_exact(manifest_path, manifest_bytes, 0o644)
         descriptor = {
           "schema" => "polispec.runtime.bootstrap/v1",
           "source_commit" => commit,
+          "source_digest" => manifest["source_digest"],
+          "manifest" => manifest_path,
+          "manifest_digest" => Digest::SHA256.hexdigest(canonical_json(manifest)),
           "release" => release,
           "launcher" => launcher,
           "interpreter" => resolved_interpreter,
@@ -358,6 +407,10 @@ module Polispec
 
       def current_metadata(path)
         metadata(path)
+      end
+
+      def committed_blob(repo, commit, path)
+        git_blob(repo, commit, path)
       end
 
       def write_atomic(path, bytes, mode: 0o600)
@@ -535,7 +588,8 @@ module Polispec
       private_class_method :parse_yaml
 
       def git(repo, *args)
-        output, error, status = capture(["git", "-C", repo, *args])
+        selected = File.realpath(repo)
+        output, error, status = capture(["git", "-c", "safe.directory=#{selected}", "-C", selected, *args])
         raise Failure.new("git_failed", error.strip.empty? ? "git #{args.first} failed" : error.strip) unless status.success?
         output
       end
@@ -543,7 +597,8 @@ module Polispec
 
       def git_blob(repo, commit, path)
         validate_relative!(path)
-        output, error, status = capture(["git", "-C", repo, "show", "#{commit}:#{path}"])
+        selected = File.realpath(repo)
+        output, error, status = capture(["git", "-c", "safe.directory=#{selected}", "-C", selected, "show", "#{commit}:#{path}"])
         raise Failure.new("git_failed", error.strip.empty? ? "cannot read #{path} from #{commit}" : error.strip) unless status.success?
         raise Failure.new("oversized_bundle", "#{path} exceeds #{MAX_FILE} bytes") if output.bytesize > MAX_FILE
         output
@@ -628,7 +683,7 @@ module Polispec
         return {} unless File.file?(path) && !File.symlink?(path)
         data = JSON.parse(bounded_read(path))
         return {} unless data.is_a?(Hash)
-        %w[release launcher interpreter sdk].each do |key|
+        %w[release launcher interpreter sdk manifest].each do |key|
           value = data[key]
           raise Failure.new("runtime_metadata_invalid", "runtime metadata #{key} must be an absolute path") if value && (!value.is_a?(String) || !value.start_with?("/") || value.include?("\0"))
         end
@@ -637,6 +692,77 @@ module Polispec
         raise Failure.new("runtime_metadata_invalid", "runtime metadata is malformed: #{error.message}")
       end
       private_class_method :runtime_descriptor
+
+      def pinned_runtime_context(revision)
+        return nil if File.exist?(File.join(ROOT, ".git"))
+        release = File.expand_path(ROOT)
+        releases = File.dirname(release)
+        return nil unless File.basename(releases) == "releases"
+        commit = File.basename(release)
+        return nil unless commit.match?(/\A[0-9a-f]{40,64}\z/)
+        requested = revision.to_s
+        unless requested.empty? || requested == "HEAD" || requested == commit
+          raise Failure.new("runtime_revision_unavailable", "pinned runtime #{commit} cannot derive requested revision #{requested} without a Git object database")
+        end
+        root = File.dirname(releases)
+        descriptor_path = File.join(root, "metadata", "#{commit}.json")
+        descriptor = runtime_descriptor(descriptor_path)
+        raise Failure.new("runtime_metadata_missing", "pinned runtime metadata is missing at #{descriptor_path}") if descriptor.empty?
+        manifest_path = File.join(root, "manifests", "#{commit}.json")
+        manifest = runtime_manifest(manifest_path)
+        expected_release = File.join(root, "releases", commit)
+        expected_manifest = File.join(root, "manifests", "#{commit}.json")
+        raise Failure.new("runtime_metadata_invalid", "pinned runtime metadata names a different commit") unless descriptor["source_commit"] == commit
+        raise Failure.new("runtime_metadata_invalid", "pinned runtime metadata names a different release") unless descriptor["release"] == expected_release && release == expected_release
+        raise Failure.new("runtime_metadata_invalid", "pinned runtime metadata names a different manifest") unless descriptor["manifest"] == expected_manifest
+        manifest_digest = Digest::SHA256.hexdigest(canonical_json(manifest))
+        raise Failure.new("runtime_manifest_invalid", "pinned runtime manifest digest differs from metadata") unless descriptor["manifest_digest"] == manifest_digest
+        raise Failure.new("runtime_manifest_invalid", "pinned runtime manifest names a different commit") unless manifest["source_commit"] == commit
+        raise Failure.new("runtime_manifest_invalid", "pinned runtime source digest differs from metadata") unless manifest["source_digest"] == descriptor["source_digest"]
+        findings = verify_release(manifest.fetch("files"), release)
+        raise Failure.new("runtime_release_invalid", "pinned runtime release differs from its committed manifest", findings) unless findings.empty?
+        { "root" => root, "release" => release, "commit" => commit, "descriptor" => descriptor, "manifest" => manifest }
+      end
+      private_class_method :pinned_runtime_context
+
+      def runtime_manifest(path)
+        raise Failure.new("runtime_manifest_missing", "runtime manifest is missing at #{path}") unless File.file?(path) && !File.symlink?(path)
+        size = File.size(path)
+        raise Failure.new("runtime_manifest_invalid", "runtime manifest exceeds #{MAX_COMMAND_OUTPUT} bytes") if size > MAX_COMMAND_OUTPUT
+        data = JSON.parse(File.binread(path))
+        raise Failure.new("runtime_manifest_invalid", "runtime manifest must contain an object") unless data.is_a?(Hash) && data["schema"] == "polispec.runtime.manifest/v1"
+        files = data["files"]
+        raise Failure.new("runtime_manifest_invalid", "runtime manifest files must be an array") unless files.is_a?(Array) && files.length <= MAX_FILES
+        total = 0
+        paths = {}
+        files.each do |entry|
+          raise Failure.new("runtime_manifest_invalid", "runtime manifest entry must be an object") unless entry.is_a?(Hash)
+          path_value = entry["path"]
+          validate_relative!(path_value)
+          raise Failure.new("runtime_manifest_invalid", "runtime manifest contains duplicate #{path_value}") if paths[path_value]
+          paths[path_value] = true
+          raise Failure.new("runtime_manifest_invalid", "runtime manifest has invalid type for #{path_value}") unless %w[blob symlink].include?(entry["type"])
+          raise Failure.new("runtime_manifest_invalid", "runtime manifest has invalid mode for #{path_value}") unless entry["mode"].is_a?(Integer)
+          raise Failure.new("runtime_manifest_invalid", "runtime manifest has invalid digest for #{path_value}") unless entry["digest"].to_s.match?(/\A[a-f0-9]{64}\z/)
+          raise Failure.new("runtime_manifest_invalid", "runtime manifest has invalid size for #{path_value}") unless entry["size"].is_a?(Integer) && entry["size"] >= 0 && entry["size"] <= MAX_FILE
+          total += entry["size"]
+        end
+        raise Failure.new("runtime_manifest_invalid", "runtime manifest exceeds #{MAX_RUNTIME_BYTES} bytes") if total > MAX_RUNTIME_BYTES
+        raise Failure.new("runtime_manifest_invalid", "runtime manifest file order is not canonical") unless files.map { |entry| entry["path"] } == files.map { |entry| entry["path"] }.sort
+        digest = digest_manifest(files)
+        raise Failure.new("runtime_manifest_invalid", "runtime manifest source digest is invalid") unless data["source_digest"] == digest
+        canonical_value(data)
+      rescue JSON::ParserError => error
+        raise Failure.new("runtime_manifest_invalid", "runtime manifest is malformed: #{error.message}")
+      end
+      private_class_method :runtime_manifest
+
+      def runtime_release_blob(release, entry)
+        path = File.join(release, entry.fetch("path"))
+        return File.readlink(path) if entry["type"] == "symlink"
+        bounded_read(path)
+      end
+      private_class_method :runtime_release_blob
 
       def verify_release(files, release)
         findings = []
