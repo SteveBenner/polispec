@@ -8,8 +8,8 @@ module Polispec
       module_function
 
       def monotonic(current, proposed, _actor)
-        current_errors = Language.validate(current)
         proposed_errors = Language.validate(proposed)
+        current_errors = current.nil? ? [] : Language.validate(current)
         unless current_errors.empty? && proposed_errors.empty?
           return {
             "disposition" => "operator_required",
@@ -17,7 +17,7 @@ module Polispec
           }
         end
 
-        current_controls = controls_by_id(current)
+        current_controls = current.nil? ? {} : controls_by_id(current)
         proposed_controls = controls_by_id(proposed)
         removed = current_controls.keys - proposed_controls.keys
         changed = (current_controls.keys & proposed_controls.keys).reject do |id|
