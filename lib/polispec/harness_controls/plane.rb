@@ -191,9 +191,9 @@ module Polispec
         unless dry_run
           Operator::Tty.confirm!("activate #{ids.sort.join(',')} on #{plane['generation']}", prompt: "Project activation changes protected effective status.")
           require_relative "operator_records"
-          records.each { |record| OperatorRecords.append("activation_transactions", record, identity: identity) }
+          records = records.map { |record| append_operator_record("activation_transactions", record, identity) }
         end
-        { "dry_run" => dry_run == true, "generation" => plane["generation"], "operation_id" => operation_id, "changes" => changes, "identity" => identity }
+        { "dry_run" => dry_run == true, "generation" => plane["generation"], "operation_id" => operation_id, "changes" => changes, "records" => records, "identity" => identity }
       end
 
       def rollback_activation(operation_id, dry_run: false)
@@ -204,14 +204,36 @@ module Polispec
         raise Authority::Failure.new("prerequisite_missing", "rollback requires an active plane") unless plane["status"] == "active"
         identity = operator!("plane.rollback")
         require_relative "operator_records"
-        committed = OperatorRecords.read("activation_transactions").reverse.find { |record| record["operation_id"] == operation_id.to_s && record["state"] == "committed" && record["generation"] == plane["generation"] }
+        transactions = OperatorRecords.read("activation_transactions")
+        committed_index = transactions.rindex { |record| record["operation_id"] == operation_id.to_s && record["state"] == "committed" && record["generation"] == plane["generation"] }
+        committed = committed_index && transactions[committed_index]
         raise Authority::Failure.new("invalid_activation", "no committed activation #{operation_id}") unless committed
+        duplicate = transactions.any? { |record| record["rollback_of"] == operation_id.to_s && record["state"] == "committed" && record["generation"] == plane["generation"] }
+        raise Authority::Failure.new("stale_activation", "activation #{operation_id} has already been rolled back") if duplicate
+        project_ids = Array(committed["changes"]).map { |change| change["project_id"].to_s }
+        superseded = transactions[(committed_index + 1)..].to_a.any? do |record|
+          record["state"] == "committed" && record["generation"] == plane["generation"] && Array(record["changes"]).any? { |change| project_ids.include?(change["project_id"].to_s) }
+        end
+        raise Authority::Failure.new("stale_activation", "activation #{operation_id} has been superseded by a later committed status") if superseded
+        effective = activation_overrides
+        stale = Array(committed["changes"]).any? { |change| effective[change["project_id"].to_s] != change["status"].to_s }
+        raise Authority::Failure.new("stale_activation", "activation #{operation_id} no longer matches effective project status") if stale
         changes = Array(committed["changes"]).map { |change| { "project_id" => change["project_id"], "prior_status" => change["status"], "status" => change["prior_status"] } }
-        record = { "schema" => "polispec.plane.activation/v1", "operation_id" => Digest::SHA256.hexdigest(Authority.canonical_json(changes)), "rollback_of" => operation_id.to_s, "generation" => plane["generation"], "state" => "committed", "changes" => changes, "recorded_at" => Time.now.utc.iso8601 }
+        recorded_at = Time.now.utc.iso8601
+        rollback_id = Digest::SHA256.hexdigest(Authority.canonical_json({ "generation" => plane["generation"], "rollback_of" => operation_id.to_s, "changes" => changes, "recorded_at" => recorded_at }))
+        record = { "schema" => "polispec.plane.activation/v1", "operation_id" => rollback_id, "rollback_of" => operation_id.to_s, "generation" => plane["generation"], "state" => "committed", "changes" => changes, "recorded_at" => recorded_at }
         Operator::Tty.confirm!("rollback activation #{operation_id}", prompt: "Rollback restores exact prior protected project statuses.") unless dry_run
-        OperatorRecords.append("activation_transactions", record, identity: identity) unless dry_run
+        record = append_operator_record("activation_transactions", record, identity) unless dry_run
         { "dry_run" => dry_run == true, "record" => record }
       end
+
+      def append_operator_record(stream, record, identity)
+        authenticated = OperatorRecords.append(stream, record, identity: identity)
+        found = OperatorRecords.read(stream).any? { |stored| Authority.canonical_json(stored) == Authority.canonical_json(authenticated) }
+        raise Authority::Failure.new("operator_record_unconfirmed", "authenticated operator record was not confirmed by readback") unless found
+        authenticated
+      end
+      private_class_method :append_operator_record
 
       def build_generation(plan)
         raise Authority::Failure.new("prerequisite_missing", "authority source has blocking prerequisites", plan["source"]["findings"]) unless plan["preparation_ready"]
@@ -356,7 +378,7 @@ module Polispec
         argv = Array(runtime["argv"])
         findings << finding("runtime_argv_invalid", "Generation runtime argv is invalid.") unless !argv.empty? && argv.all? { |item| item.is_a?(String) && !item.empty? && !item.include?("\0") } && argv.first.start_with?("/")
         provenance = stringify_hash(runtime["provenance"])
-        %w[launcher entrypoint interpreter sdk].each do |key|
+        %w[launcher entrypoint interpreter sdk runtime_metadata runtime_manifest].each do |key|
           path = provenance.dig(key, "realpath")
           findings << finding("runtime_#{key}_missing", "Runtime #{key} provenance is missing.") unless path
           findings.concat(Authority.protection_findings(path, "runtime_#{key}").map { |item| finding(item["code"], item["detail"]) }) if require_protected && path
@@ -426,9 +448,7 @@ module Polispec
           target = File.join(destination, relative)
           FileUtils.mkdir_p(File.dirname(target), mode: 0o755)
           bytes = if source["kind"] == "git"
-                    output, error, status = Open3.capture3("git", "-C", source["root"], "show", "#{source['ref']}:#{relative}")
-                    raise Authority::Failure.new("git_failed", error) unless status.success?
-                    output
+                    Authority.committed_blob(source["root"], source["ref"], relative)
                   else
                     File.binread(File.join(source["root"], relative))
                   end
