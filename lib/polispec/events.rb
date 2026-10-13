@@ -43,6 +43,13 @@ module Polispec
     def port_set
       return @port_set unless @port_set.nil?
 
+      require_relative "harness_controls/plane"
+      if defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:resolve)
+        plane = HarnessControls::Plane.resolve
+        return @port_set = false if plane["status"] == "broken"
+        return @port_set = (defined?(::Rplugin::Ports) ? ::Rplugin::Ports.for(ID, root: ROOT) : false) if plane["status"] == "active"
+      end
+
       @port_set = load_sdk && defined?(::Rplugin::Ports) ? ::Rplugin::Ports.for(ID, root: ROOT) : false
     rescue StandardError, LoadError
       @port_set = false

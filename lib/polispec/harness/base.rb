@@ -10,13 +10,15 @@ module Polispec
       EDIT_TOOLS = %w[Edit MultiEdit NotebookEdit patch edit_file str_replace_editor str_replace_based_edit_tool].freeze
       WRITE_TOOLS = %w[Write write_file create_file].freeze
       PATCH_TOOLS = %w[apply_patch].freeze
+      READ_TOOLS = %w[Read NotebookRead read_file view grep search_file_content read_many_files view_image].freeze
       PATH_KEYS = %w[file_path path filepath filename notebook_path].freeze
       INLINE_PROD = /\bgit\b.*\b(push|merge|tag|reset)\b.*\b(test|stable)\b|\bsystemctl\b|\bgh\s+release\b/.freeze
 
-      attr_reader :name
+      attr_reader :name, :exit_status
 
       def initialize(name)
         @name = name.to_s
+        @exit_status = 0
       end
 
       def ask?
@@ -60,6 +62,7 @@ module Polispec
       end
 
       def render(verdict)
+        @exit_status = 0
         case verdict.level.to_s
         when "deny" then decision("deny", reason_text(verdict))
         when "warn" then decision(ask? ? "ask" : "deny", reason_text(verdict))
@@ -67,11 +70,17 @@ module Polispec
       end
 
       def render_deny(text)
+        @exit_status = 0
         decision("deny", text)
       end
 
       def render_session(text, event)
         JSON.generate("hookSpecificOutput" => { "hookEventName" => event.to_s.empty? ? "SessionStart" : event, "additionalContext" => text })
+      end
+
+      def render_context(text, event = nil)
+        @exit_status = 0
+        JSON.generate("hookSpecificOutput" => { "hookEventName" => event.to_s.empty? ? "PreToolUse" : event, "additionalContext" => text.to_s })
       end
 
       def reason_text(verdict)
@@ -132,9 +141,26 @@ module Polispec
 
       def patch_calls(data)
         text = (data["input"] || data["patch"] || data["command"] || data["content"]).to_s
-        paths = text.scan(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/).flatten.map(&:strip)
-        paths = [data["file_path"] || data["path"]].compact if paths.empty?
-        paths.map { |path| ["Edit", { "file_path" => path }] }
+        calls = []
+        current = nil
+        text.each_line do |line|
+          if (match = line.match(/^\*\*\* (Update|Add|Delete) File: (.+)$/))
+            kind = match[1]
+            path = match[2].strip
+            current = { "old" => kind == "Add" ? nil : path, "new" => kind == "Delete" ? nil : path, "delete" => kind == "Delete" }
+            calls << current
+          elsif current && (match = line.match(/^\*\*\* Move to: (.+)$/))
+            current["new"] = match[1].strip
+            current["delete"] = true
+          end
+        end
+        return [["Edit", data]] if calls.empty? && (data["file_path"] || data["path"])
+        calls.flat_map do |change|
+          rows = []
+          rows << ["Delete", { "file_path" => change["old"] }] if change["delete"] && change["old"]
+          rows << ["Edit", { "file_path" => change["new"] }] if change["new"]
+          rows
+        end
       end
     end
   end

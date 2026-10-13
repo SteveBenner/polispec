@@ -1,0 +1,179 @@
+require_relative "root_guard"
+
+module Polispec
+  module HarnessControls
+    module Evaluate
+      EFFECT_LEVEL = { "deny" => "deny", "ask" => "warn", "restrict" => "deny" }.freeze
+
+      module_function
+
+      def call(input, context)
+        values = stringify(context)
+        actions = Array(values["actions"])
+        controls = Array(values["documents"]).flat_map { |entry| document_controls(entry) }
+        matches = controls.select { |control| matches?(control, input, actions, values) }
+        denies = matches.select { |control| control["effect"] == "deny" || control["effect"] == "restrict" && restriction_violated?(control, actions) }
+        asks = matches.select { |control| control["effect"] == "ask" }
+        observations = matches.select { |control| control["effect"] == "observe" }
+        injections = matches.select { |control| control["effect"] == "inject" }
+        root_risks = actions.select { |action| action.action_class == "shell.exec" && action.raw.is_a?(Hash) && action.raw["root_guard_risk"] }
+        protected = actions.select { |action| protected_action?(action, Array(values["protected_paths"])) }
+        if !protected.empty?
+          denies << { "id" => "POLISPEC-CONTROL-PROTECTION", "reason" => "the call changes protected polispec authority" }
+        end
+        if values["root_guard"] == true && !root_risks.empty?
+          denies << { "id" => "POLISPEC-ROOT-GUARD", "reason" => root_risks.first.raw["root_guard_risk"]["detail"] }
+        end
+        if denies.any?
+          control = denies.sort_by { |item| item["id"].to_s }.first
+          return result("deny", control, asks, observations, injections)
+        end
+        return result("warn", asks.sort_by { |item| item["id"].to_s }.first, asks, observations, injections) unless asks.empty?
+
+        result("allow", nil, asks, observations, injections)
+      end
+
+      def declared?(documents, action, input, context, protected_only: true)
+        Array(documents).any? do |entry|
+          values = stringify(entry)
+          next false if protected_only && values["protected"] != true
+          Array(values.dig("document", "controls")).any? do |control|
+            control["action"] == action && matches?(control, input, Array(context["actions"]), stringify(context))
+          end
+        end
+      end
+
+      def effective_digest(documents)
+        material = Array(documents).map do |entry|
+          values = stringify(entry)
+          [values["protected"] == true, values["installation_id"], values["control_digest"], values["scope"]]
+        end.sort_by { |row| row.map(&:to_s) }
+        Digest::SHA256.hexdigest(JSON.generate(material))
+      end
+
+      def protected_paths(plane, documents, ledger = nil)
+        paths = []
+        values = stringify(plane)
+        paths.concat(Array(values["authority_files"]))
+        paths.concat(Array(values["controls"]&.values)) if values["controls"].is_a?(Hash)
+        paths << values["operator_records"]
+        paths.concat(runtime_paths(values.dig("provenance", "runtime")))
+        paths.concat(Array(values["runtime_argv"]).select { |item| item.to_s.start_with?("/") })
+        paths.concat(Array(documents).flat_map { |entry| Array(stringify(entry)["owned_paths"]) })
+        paths << ledger.path if ledger && ledger.respond_to?(:path)
+        program = File.expand_path($PROGRAM_NAME.to_s)
+        paths << program if File.file?(program)
+        paths.concat($LOADED_FEATURES.select { |path| path.include?("/rplugin/") && path.start_with?("/") })
+        paths.concat(%w[/etc/polispec /usr/local/lib/polispec /var/lib/polispec /run/polispec])
+        paths << Authorizations::DISABLED_PATH if defined?(Authorizations::DISABLED_PATH)
+        paths.compact.map { |path| canonical_path(path) }.uniq.sort
+      end
+
+      def document_controls(entry)
+        values = stringify(entry)
+        Array(values.dig("document", "controls"))
+      end
+      private_class_method :document_controls
+
+      def matches?(control, input, actions, context)
+        return false unless control.is_a?(Hash) && control["trigger"] == "pre_tool"
+        candidates = actions.select { |action| action.action_class == control["action"] }
+        return false if candidates.empty?
+        candidates.any? { |action| match_fields?(control["match"] || {}, action, input, context) }
+      end
+      private_class_method :matches?
+
+      def match_fields?(match, action, input, context)
+        extensions = %w[path tool server operation domain role]
+        local = match.select { |key, _| extensions.include?(key.to_s) }
+        target = context["target_for"].respond_to?(:call) ? context["target_for"].call(action) : context["target"]
+        env = target && target.respond_to?(:env) ? target.env : context["env"] || "dev"
+        engine_context = context["engine_context"].is_a?(Hash) ? context["engine_context"] : {}
+        legacy = match.reject { |key, _| extensions.include?(key.to_s) }
+        return false unless Engine::Match.rule?(legacy, action, env, target, engine_context)
+        local.all? do |key, expected|
+          case key.to_s
+          when "path" then File.fnmatch?(expected.to_s, action.env_hint["path"].to_s, File::FNM_PATHNAME | File::FNM_DOTMATCH)
+          when "tool" then expected.to_s == input.tool_name.to_s
+          when "server" then expected.to_s == action.env_hint["server"].to_s
+          when "operation" then expected.to_s == action.env_hint["operation"].to_s
+          when "domain" then expected.to_s == action.env_hint["domain"].to_s
+          when "role" then expected.to_s == context["role"].to_s
+          else false
+          end
+        end
+      rescue StandardError
+        false
+      end
+      private_class_method :match_fields?
+
+      def restriction_violated?(control, actions)
+        params = control["effect_params"] || {}
+        paths = params["paths"] || {}
+        network = params["network"] || {}
+        actions.any? do |action|
+          path = action.env_hint["path"].to_s
+          if action.action_class == "fs.write" || action.action_class == "fs.delete" || action.action_class == "control.edit"
+            allowed = Array(paths["write"])
+            paths.key?("write") && allowed.none? { |glob| File.fnmatch?(glob, path, File::FNM_PATHNAME | File::FNM_DOTMATCH) }
+          elsif action.action_class == "secrets.read"
+            allowed = Array(paths["read"])
+            paths.key?("read") && allowed.none? { |glob| File.fnmatch?(glob, path, File::FNM_PATHNAME | File::FNM_DOTMATCH) }
+          elsif %w[web.fetch mcp.call].include?(action.action_class) && network["mode"] == "allowlist"
+            !Array(network["domains"]).include?(action.env_hint["domain"].to_s)
+          else
+            false
+          end
+        end
+      end
+      private_class_method :restriction_violated?
+
+      def protected_action?(action, paths)
+        return false unless %w[fs.write fs.delete control.edit].include?(action.action_class)
+        target = action.env_hint["path"].to_s
+        return false if target.empty?
+        absolute = canonical_path(target)
+        paths.any? do |path|
+          protected = canonical_path(path)
+          absolute == protected || absolute.start_with?("#{protected}/") || protected.start_with?("#{absolute}/")
+        end
+      end
+      private_class_method :protected_action?
+
+      def runtime_paths(value)
+        case value
+        when Hash
+          value.flat_map { |key, item| key.to_s.end_with?("path", "realpath") ? [item] : runtime_paths(item) }
+        when Array then value.flat_map { |item| runtime_paths(item) }
+        else []
+        end
+      end
+      private_class_method :runtime_paths
+
+      def canonical_path(path)
+        expanded = File.expand_path(path.to_s)
+        existing = expanded
+        existing = File.dirname(existing) until File.exist?(existing) || existing == "/"
+        File.join(File.realpath(existing), expanded[existing.length..-1].to_s).sub(%r{/+\z}, "").yield_self { |item| item.empty? ? "/" : item }
+      rescue SystemCallError
+        expanded
+      end
+      private_class_method :canonical_path
+
+      def result(level, control, asks, observations, injections)
+        reason = control && control["reason"].to_s
+        reason = "polispec control #{control && control['id']} requires this disposition" if reason.to_s.empty?
+        verdict = Verdict.new(level: level, rule_id: control && control["id"] || "POLISPEC-CONTROLS", reason: reason,
+                              next_step: level == "allow" ? nil : "Use an operator-authorized control change or exact one-use authorization.")
+        { "verdict" => verdict, "ask_ids" => asks.map { |item| item["id"].to_s }.sort, "observations" => observations, "injections" => injections }
+      end
+      private_class_method :result
+
+      def stringify(value)
+        return {} unless value.is_a?(Hash)
+        value.each_with_object({}) { |(key, item), result| result[key.to_s] = item }
+      end
+      private_class_method :stringify
+    end
+  end
+end
