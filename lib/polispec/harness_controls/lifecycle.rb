@@ -5,6 +5,7 @@ require_relative "files"
 require_relative "schedule"
 require_relative "verification"
 require_relative "environment"
+require_relative "owner_handoff"
 
 module Polispec
   module HarnessControls
@@ -12,6 +13,10 @@ module Polispec
       STREAM = "harness_installations"
       VERSION_TIMEOUT = 5
       OUTPUT_LIMIT = 65_536
+      TRANSACTION_LIMIT = 4096
+      TRANSACTION_SCAN_LIMIT = 65_536
+      TRANSACTION_SCAN_BYTES = 16 * 1_048_576
+      TRANSACTION_STATUSES = %w[prepared committed rollback_complete recovery_required uninstalled].freeze
 
       class Failure < Polispec::Error
         attr_reader :code, :exit_status, :data, :findings
@@ -73,7 +78,7 @@ module Polispec
         Files.with_target_locks(targets, access: access) do
           records = read_records(state, identity)
           block_unresolved!(records, targets)
-          latest = latest_installation(records, installation_id)
+          latest = active_installation(records, installation_id)
           if latest && latest["status"] == "committed"
             receipt = stringify(latest["receipt"])
             checked = Files.verify_receipt(receipt)
@@ -105,9 +110,7 @@ module Polispec
             ensure_schedules_verified!(schedules)
             receipt["schedule_results"] = schedules ? schedules["installed"] : []
             receipt["artifact_digests"] = prepared.each_with_object({}) { |row, memo| memo[row["target"]] = row["installed_digest"] }
-            receipt["owned_entries"] = prepared.flat_map do |row|
-              row["owned_entries"].map { |entry| entry.merge("backup_path" => row["backup_path"], "backup_digest" => row["backup_digest"]) }
-            end
+            receipt["owned_entries"] = receipt_owned_entries(prepared)
             committed = transaction_record(proposed, receipt, "committed", sequence + 1, targets)
             append_confirm!(state, committed, identity)
             emit_committed(port_set, proposed, receipt)
@@ -134,19 +137,50 @@ module Polispec
         Verifier.verify(installation_id, port_set: port_set, runner: runner)
       end
 
-      def uninstall(installation_id, port_set: nil, schedule_port_set: nil)
+      def uninstall(installation_id, port_set: nil, schedule_port_set: nil, owner: nil, scope: nil, project: nil, state_home: nil, dry_run: false)
+        selectors = [scope, project, state_home]
+        if owner
+          raise Failure.new("owner_port_conflict", "owner selection cannot use injected development ports", exit_status: 3) if port_set || schedule_port_set
+          identity = operator_identity!("harness.uninstall.overlay")
+          plane = resolve_plane
+          bind_operator_plane!(identity, plane)
+          profile = OwnerHandoff.profile(owner: owner, scope: scope, project: project, state_home: state_home, plane: plane)
+          return OwnerHandoff.run(profile) do |selected, ports|
+            state = state_adapter(false, nil, ports, read_only: dry_run)
+            uninstall_from_state(installation_id, state, ports, nil, dry_run, selected, plane)
+          end
+        end
+        raise Failure.new("owner_required", "scope, project, and state_home require an explicit owner", exit_status: 3) if selectors.any?
         identity = operator_identity!("harness.uninstall")
-        state, records, committed = installation_source(installation_id, port_set, identity: identity, include_privileged: true)
+        state = state_adapter(true, identity, nil, read_only: dry_run)
+        uninstall_from_state(installation_id, state, schedule_port_set, identity, dry_run, nil, {})
+      end
+
+      def uninstall_from_state(installation_id, state, schedule_port_set, identity, dry_run, owner_profile, plane)
+        records = read_records(state, identity)
+        committed = active_installation(records, installation_id)
         raise Failure.new("installation_not_found", "installation #{installation_id} was not found") unless committed
         receipt = stringify(committed["receipt"])
+        if owner_profile
+          validate_mutable_receipt!(committed, receipt, owner_profile, plane)
+        elsif receipt["protected"] != true
+          raise Failure.new("protected_receipt_required", "uninstall without an owner accepts protected receipts only", exit_status: 3)
+        end
         targets = receipt.fetch("artifact_digests", {}).keys
         access = receipt["file_access"] || file_access(receipt["protected"] == true)
         receipt["file_access"] = access if access
+        if dry_run
+          return {
+            "installation_id" => installation_id, "dry_run" => true, "operator_required" => true,
+            "owner" => owner_profile && owner_profile["owner"], "scope" => receipt["scope"],
+            "targets" => targets.sort, "schedule_job_ids" => Array(receipt["schedules"]).map { |job| job["job_id"] }
+          }
+        end
         result = nil
         Files.with_target_locks(targets, access: access) do
           records = read_records(state, identity)
-          current = latest_installation(records, installation_id)
-          unless current && current["status"] == "committed" && current["record_id"] == committed["record_id"]
+          current = active_installation(records, installation_id)
+          unless current && current["record_id"] == committed["record_id"]
             raise Failure.new("installation_state_changed", "installation state changed before uninstall acquired its target locks", exit_status: 3)
           end
           block_unresolved!(records, targets, except_operation: committed["operation_id"])
@@ -183,6 +217,7 @@ module Polispec
         end
         result
       end
+      private_class_method :uninstall_from_state
 
       def scan(context = {})
         values = stringify(context)
@@ -194,10 +229,59 @@ module Polispec
         requested_edition.first
       end
 
-      def receipt(installation_id, port_set: nil)
+      def receipt(installation_id, port_set: nil, owner: nil, scope: nil, project: nil, state_home: nil)
+        selectors = [scope, project, state_home]
+        if owner
+          raise Failure.new("owner_port_conflict", "owner selection cannot use an injected development port", exit_status: 3) if port_set
+          identity = operator_identity!("harness.receipt.overlay")
+          plane = resolve_plane
+          bind_operator_plane!(identity, plane)
+          profile = OwnerHandoff.profile(owner: owner, scope: scope, project: project, state_home: state_home, plane: plane)
+          return OwnerHandoff.run(profile) do |selected, ports|
+            state = state_adapter(false, nil, ports, read_only: true)
+            records = read_records(state, nil)
+            record = active_installation(records, installation_id)
+            raise Failure.new("installation_not_found", "installation #{installation_id} was not found") unless record
+            selected_receipt = stringify(record["receipt"])
+            validate_mutable_receipt!(record, selected_receipt, selected, plane)
+            selected_receipt
+          end
+        end
+        raise Failure.new("owner_required", "scope, project, and state_home require an explicit owner", exit_status: 3) if selectors.any?
         _state, _records, record = installation_source(installation_id, port_set, identity: nil, include_privileged: true)
         record && stringify(record["receipt"])
       end
+
+      def validate_mutable_receipt!(record, receipt, profile, plane)
+        raise Failure.new("mutable_receipt_invalid", "mutable overlay record exceeds #{Files::LIMIT} bytes", exit_status: 3) if JSON.generate(record).bytesize > Files::LIMIT
+        valid = record["schema"] == "polispec.harness.transaction/v1" && receipt["schema"] == "polispec.harness.receipt/v1"
+        valid &&= record["installation_id"] == receipt["installation_id"]
+        valid &&= record["operation_id"] == receipt["operation_id"]
+        valid &&= record["control_digest"] == receipt["control_digest"]
+        valid &&= record["harness"] == receipt["harness"] && record["scope"] == receipt["scope"]
+        valid &&= receipt["protected"] == false && receipt["file_access"].nil?
+        valid &&= receipt["scope"] == profile["scope"]
+        raise Failure.new("mutable_receipt_invalid", "mutable overlay receipt identity or authority fields are invalid", exit_status: 3) unless valid
+        controls = receipt["controls"]
+        validate_document!(controls)
+        digest = Digest::SHA256.hexdigest(JSON.generate(canonical(controls)))
+        raise Failure.new("mutable_receipt_invalid", "mutable overlay control digest does not match its document", exit_status: 3) unless digest == receipt["control_digest"]
+        receipt_targets = receipt.fetch("artifact_digests", {}).keys.sort
+        raise Failure.new("mutable_receipt_invalid", "mutable overlay transaction targets do not match its receipt", exit_status: 3) unless Array(record["targets"]).sort == receipt_targets
+        context = { "scope" => profile["scope"], "edition" => receipt["edition"], "home" => profile["home"] }
+        context["project"] = profile["project"] if profile["scope"] == "project"
+        trusted = plan(controls, receipt["harness"], context)
+        historical_schedule_context = context.merge("runtime_argv" => receipt["runtime_argv"])
+        expected_schedules = Schedule.plan(controls, receipt, historical_schedule_context)["jobs"]
+        raise Failure.new("mutable_receipt_invalid", "mutable overlay schedules differ from canonical planning", exit_status: 3) unless canonical(receipt["schedules"]) == canonical(expected_schedules)
+        receipt["owned_entries"] = Files.validate_mutable_receipt!(receipt, trusted["artifacts"], owner_uid: profile["uid"], boundary: profile["scope"] == "project" ? profile["project"] : profile["home"], home: profile["home"], protected_paths: profile["protected_paths"])
+        true
+      rescue Failure
+        raise
+      rescue StandardError => error
+        raise Failure.new("mutable_receipt_invalid", "mutable overlay receipt validation failed: #{error.class}: #{error.message}", exit_status: 3)
+      end
+      private_class_method :validate_mutable_receipt!
 
       def validate_document!(document)
         errors = Controls.validate(document)
@@ -306,7 +390,7 @@ module Polispec
           "schema" => "polispec.harness.receipt/v1", "installation_id" => installation_id,
           "operation_id" => plan["operation_id"], "control_digest" => plan["control_digest"],
           "edition" => plan["edition"], "harness" => plan["harness"], "scope" => plan["scope"],
-          "owned_entries" => prepared.flat_map { |row| row["owned_entries"].map { |entry| entry.merge("backup_path" => row["backup_path"], "backup_digest" => row["backup_digest"]) } },
+          "owned_entries" => receipt_owned_entries(prepared),
           "artifact_digests" => prepared.each_with_object({}) { |row, memo| memo[row["target"]] = row["installed_digest"] },
           "backups" => backups, "runtime_argv" => runtime, "runtime_provenance" => provenance,
           "runtime_digest" => Digest::SHA256.hexdigest(JSON.generate(canonical(provenance))), "installed_at" => Time.now.utc.iso8601,
@@ -319,6 +403,18 @@ module Polispec
         }
       end
       private_class_method :build_receipt
+
+      def receipt_owned_entries(prepared)
+        prepared.flat_map do |row|
+          row["owned_entries"].map do |entry|
+            value = stringify(entry)
+            value["backup_path"] = row["backup_path"] unless value.key?("backup_path")
+            value["backup_digest"] = row["backup_digest"] unless value.key?("backup_digest")
+            value
+          end
+        end
+      end
+      private_class_method :receipt_owned_entries
 
       def idempotent_match?(receipt, plan, context)
         canonical(receipt["artifacts"]) == canonical(plan["artifacts"]) &&
@@ -357,6 +453,11 @@ module Polispec
             row["uid"] = backup["uid"] if backup && backup.key?("uid")
             row["gid"] = backup["gid"] if backup && backup.key?("gid")
             row["backup_inherited"] = true
+            row["owned_entries"].each do |entry|
+              entry["prior_present"] = row["prior_exists"] == true
+              entry["prior_value"] = nil
+              entry["prior_ancestors"] = []
+            end
           else
             prior_pointers = prior_entries.map { |entry| entry["pointer"] }.uniq
             current = row["owned_entries"].reject do |entry|
@@ -456,7 +557,7 @@ module Polispec
         end
         raise Failure.new("state_unavailable", "no installation record source is available", exit_status: 3) if sources.empty?
         matches = sources.map do |state, records|
-          latest = latest_installation(records, installation_id)
+          latest = active_installation(records, installation_id)
           [state, records, latest] if latest && latest["status"] == "committed"
         end.compact
         raise Failure.new("ambiguous_installation", "installation #{installation_id} exists in multiple authority stores", exit_status: 3) if matches.length > 1
@@ -515,6 +616,13 @@ module Polispec
         raise Failure.new(code.empty? ? "operator_required" : code, error.message, exit_status: 3)
       end
       private_class_method :operator_identity!
+
+      def bind_operator_plane!(identity, plane)
+        valid = plane["status"] == "active" && identity["generation"].to_s == plane["generation"].to_s && !plane["generation"].to_s.empty?
+        raise Failure.new("operator_plane_changed", "protected plane changed during operator authentication", exit_status: 3) unless valid
+        true
+      end
+      private_class_method :bind_operator_plane!
 
       def load_plane_implementation
         path = File.join(LIB, "harness_controls", "plane.rb")
@@ -583,6 +691,92 @@ module Polispec
         records.select { |row| row["installation_id"] == installation_id }.max_by { |row| row["sequence"].to_i }
       end
       private_class_method :latest_installation
+
+      def active_installation(records, installation_id)
+        fold_installation(records, installation_id)["active"]
+      end
+      private_class_method :active_installation
+
+      def fold_installation(records, installation_id)
+        raise Failure.new("installation_history_invalid", "installation state exceeds #{TRANSACTION_SCAN_LIMIT} records", exit_status: 3) if records.length > TRANSACTION_SCAN_LIMIT
+        selected = []
+        scanned_bytes = 0
+        records.each do |row|
+          row_bytes = JSON.generate(row).bytesize
+          raise Failure.new("installation_history_invalid", "installation transaction record exceeds #{Files::LIMIT} bytes", exit_status: 3) if row_bytes > Files::LIMIT
+          raise Failure.new("installation_history_invalid", "installation state exceeds #{TRANSACTION_SCAN_BYTES} bytes", exit_status: 3) if row_bytes > TRANSACTION_SCAN_BYTES - scanned_bytes
+          scanned_bytes += row_bytes
+          selected << row if row.is_a?(Hash) && row["installation_id"] == installation_id
+        end
+        raise Failure.new("installation_history_invalid", "installation history exceeds #{TRANSACTION_LIMIT} records", exit_status: 3) if selected.length > TRANSACTION_LIMIT
+        previous_sequence = 0
+        record_ids = {}
+        pending = nil
+        active = nil
+        selected.each do |row|
+          validate_transaction_row!(row, installation_id, previous_sequence, record_ids)
+          previous_sequence = row["sequence"]
+          if row["status"] == "prepared"
+            raise Failure.new("installation_history_invalid", "transaction #{pending['row']['operation_id']} has no terminal record", exit_status: 3, data: pending["row"]) if pending
+            operation = row["operation"]
+            raise Failure.new("installation_history_invalid", "prepared transaction has an unknown operation", exit_status: 3, data: row) unless operation.nil? || operation == "uninstall"
+            pending = { "row" => row, "operation" => operation || "install" }
+            next
+          end
+          raise Failure.new("installation_history_invalid", "terminal transaction lacks a prepared record", exit_status: 3, data: row) unless pending
+          prepared = pending["row"]
+          unless row["operation_id"] == prepared["operation_id"] && transaction_identity(row) == transaction_identity(prepared)
+            raise Failure.new("installation_history_invalid", "terminal transaction does not match its prepared record", exit_status: 3, data: row)
+          end
+          allowed = pending["operation"] == "uninstall" ? %w[uninstalled rollback_complete recovery_required] : %w[committed rollback_complete recovery_required]
+          raise Failure.new("installation_history_invalid", "transaction terminal status is invalid for #{pending['operation']}", exit_status: 3, data: row) unless allowed.include?(row["status"])
+          if row["status"] == "recovery_required"
+            raise Failure.new("recovery_required", "unresolved transaction #{row['operation_id']} prevents receipt selection", exit_status: 3, data: row)
+          elsif row["status"] == "committed"
+            active = row
+          elsif row["status"] == "uninstalled"
+            active = nil
+          end
+          pending = nil
+        end
+        raise Failure.new("recovery_required", "unresolved transaction #{pending['row']['operation_id']} prevents receipt selection", exit_status: 3, data: pending["row"]) if pending
+        { "active" => active, "records" => selected.length }
+      rescue JSON::GeneratorError, SystemStackError
+        raise Failure.new("installation_history_invalid", "installation transaction history cannot be serialized", exit_status: 3)
+      end
+      private_class_method :fold_installation
+
+      def validate_transaction_row!(row, installation_id, previous_sequence, record_ids)
+        valid = row.is_a?(Hash) && row["schema"] == "polispec.harness.transaction/v1" && row["installation_id"] == installation_id
+        valid &&= row["operation_id"].is_a?(String) && !row["operation_id"].empty? && row["operation_id"].bytesize <= 128 && !row["operation_id"].include?("\0")
+        valid &&= TRANSACTION_STATUSES.include?(row["status"])
+        valid &&= row["sequence"].is_a?(Integer) && row["sequence"].positive? && row["sequence"] > previous_sequence
+        valid &&= row["record_id"] == "tx_#{Digest::SHA256.hexdigest("#{row['operation_id']}\0#{row['status']}\0#{row['sequence']}")[0, 24]}"
+        valid &&= row["receipt"].is_a?(Hash) && row["receipt"]["schema"] == "polispec.harness.receipt/v1"
+        targets = row["targets"]
+        valid &&= targets.is_a?(Array) && !targets.empty? && targets.length <= 64 && targets == targets.uniq.sort
+        valid &&= targets.all? { |path| path.is_a?(String) && path.start_with?("/") && !path.include?("\0") }
+        valid &&= targets == row["receipt"].fetch("artifact_digests", {}).keys.sort
+        valid &&= row["installation_id"] == row["receipt"]["installation_id"]
+        valid &&= row["control_digest"] == row["receipt"]["control_digest"] && row["harness"] == row["receipt"]["harness"]
+        valid &&= row["scope"] == row["receipt"]["scope"] && row["edition"] == row["receipt"]["edition"]
+        valid &&= JSON.generate(row).bytesize <= Files::LIMIT
+        raise Failure.new("installation_history_invalid", "installation transaction history is malformed or nonmonotonic", exit_status: 3, data: row) unless valid
+        raise Failure.new("installation_history_invalid", "installation transaction record_id is duplicated", exit_status: 3, data: row) if record_ids[row["record_id"]]
+        record_ids[row["record_id"]] = true
+      rescue KeyError, JSON::GeneratorError
+        raise Failure.new("installation_history_invalid", "installation transaction history is malformed", exit_status: 3, data: row)
+      end
+      private_class_method :validate_transaction_row!
+
+      def transaction_identity(row)
+        canonical({
+          "installation_id" => row["installation_id"], "operation_id" => row["operation_id"],
+          "targets" => row["targets"], "control_digest" => row["control_digest"],
+          "harness" => row["harness"], "scope" => row["scope"], "edition" => row["edition"]
+        })
+      end
+      private_class_method :transaction_identity
 
       def native_version(harness)
         executable = { "claude-code" => "claude", "codex" => "codex", "hermes" => "hermes", "antigravity" => "agy" }[harness.to_s]

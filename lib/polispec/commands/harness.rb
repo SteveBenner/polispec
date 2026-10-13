@@ -105,17 +105,28 @@ module Polispec
     end
 
     def run_uninstall(args)
-      dry_run = take_flag!(args, "--dry-run")
-      raise_usage unless args.length == 1 && valid_id?(args.first)
-      if dry_run
-        receipt = HarnessControls::Lifecycle.receipt(args.first)
-        raise HarnessControls::Lifecycle::Failure.new("installation_not_found", "installation #{args.first} was not found") unless receipt
-        return { "installation_id" => args.first, "dry_run" => true, "operator_required" => true, "targets" => receipt.fetch("artifact_digests", {}).keys.sort, "schedule_job_ids" => Array(receipt["schedules"]).map { |job| job["job_id"] } }
+      installation_id = args.shift
+      raise_usage unless installation_id && valid_id?(installation_id)
+      values = strict_options(args, %w[--owner --scope --project --state-home --dry-run])
+      owner = values["--owner"]
+      scope = values["--scope"]
+      project = values["--project"]
+      state_home = values["--state-home"]
+      dry_run = values["--dry-run"] == true
+      raise_usage if !owner && [scope, project, state_home].any?
+      if owner
+        raise_usage unless %w[user project].include?(scope)
+        raise_usage unless state_home.nil? || absolute_path?(state_home)
+        if scope == "project"
+          raise_usage unless project && absolute_path?(project)
+        else
+          raise_usage if project
+        end
       end
       unless HarnessControls::Features.enabled?("harness_controls")
-        raise HarnessControls::Lifecycle::Failure.new("feature_disabled", "harness mutation remains disabled during construction", exit_status: 3)
+        raise HarnessControls::Lifecycle::Failure.new("feature_disabled", "harness mutation remains disabled during construction", exit_status: 3) unless dry_run
       end
-      HarnessControls::Lifecycle.uninstall(args.first)
+      HarnessControls::Lifecycle.uninstall(installation_id, owner: owner, scope: scope, project: project && File.expand_path(project), state_home: state_home && File.expand_path(state_home), dry_run: dry_run)
     end
 
     def run_scan(args)
