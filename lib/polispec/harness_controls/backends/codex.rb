@@ -21,6 +21,7 @@ module Polispec
           edition = edition_for(values)
           paths = paths_for(scope, values)
           controls = canonical_value(document)
+          restrictions = native_restrictions(controls)
           control_content = JSON.pretty_generate(controls) + "\n"
           raise Polispec::Error, "control document exceeds #{CONTROL_LIMIT} bytes" if control_content.bytesize > CONTROL_LIMIT
 
@@ -38,7 +39,7 @@ module Polispec
 
           if config_generated
             callback = runtime + ["hook", "pretool", "--harness", "codex", "--controls-file", paths["controls"]]
-            config_content = config_toml(scope, edition, callback, controls)
+            config_content = config_toml(scope, edition, callback, restrictions)
             raise Polispec::Error, "generated Codex TOML exceeds #{CONFIG_LIMIT} bytes" if config_content.bytesize > CONFIG_LIMIT
             entries = %w[polispec.codex.permissions polispec.codex.hooks polispec.codex.features]
             entries.concat(%w[polispec.codex.rules polispec.codex.network]) if scope == "managed"
@@ -49,8 +50,9 @@ module Polispec
             end
           end
 
+          findings.concat(restrictions["findings"])
           findings.concat(control_findings(controls, config_generated))
-          capabilities = capabilities_for(controls, scope, edition, config_generated)
+          capabilities = capabilities_for(controls, scope, edition, config_generated, restrictions)
           operation_id = Digest::SHA256.hexdigest(([control_digest, "codex", scope, edition] + artifacts.map { |item| item["path"] }.sort).join("\0"))
           {
             "schema" => "polispec.harness.plan/v1",
@@ -190,9 +192,9 @@ module Polispec
         end
         private_class_method :runtime_argv
 
-        def config_toml(scope, edition, callback, document)
+        def config_toml(scope, edition, callback, restrictions)
           profile = edition == "lock" ? "polispec-lock" : "polispec-standard"
-          paths = path_restriction(document)
+          paths = restrictions["paths"]
           lines = []
           lines << "default_permissions = #{toml_string(profile)}"
           lines << "allow_managed_hooks_only = true" if scope == "managed"
@@ -230,7 +232,7 @@ module Polispec
             lines << "[rules]"
             lines << "prefix_rules = #{managed_exec_rules}"
           end
-          network_toml(lines, edition, document)
+          network_toml(lines, edition, restrictions["network"])
           lines.join("\n") + "\n"
         end
         private_class_method :config_toml
@@ -245,24 +247,7 @@ module Polispec
         end
         private_class_method :filesystem_toml
 
-        def path_restriction(document)
-          restrictions = Array(document["controls"]).filter_map do |control|
-            next unless control.is_a?(Hash) && control["effect"] == "restrict"
-
-            paths = control.dig("effect_params", "paths")
-            paths if paths.is_a?(Hash)
-          end
-          return nil if restrictions.empty?
-
-          {
-            "read" => restrictions.flat_map { |paths| Array(paths["read"]) }.uniq.sort,
-            "write" => restrictions.flat_map { |paths| Array(paths["write"]) }.uniq.sort
-          }
-        end
-        private_class_method :path_restriction
-
-        def network_toml(lines, edition, document)
-          network = network_restriction(document)
+        def network_toml(lines, edition, network)
           return if edition == "standard" && network.nil?
 
           domains = edition == "lock" ? [] : network.fetch("domains", [])
@@ -276,18 +261,75 @@ module Polispec
         end
         private_class_method :network_toml
 
-        def network_restriction(document)
-          restrictions = Array(document["controls"]).filter_map do |control|
+        def native_restrictions(document)
+          path_entries = []
+          network_entries = []
+          conditional_paths = false
+          conditional_network = false
+          findings = []
+          Array(document["controls"]).each do |control|
             next unless control.is_a?(Hash) && control["effect"] == "restrict"
 
-            network = control.dig("effect_params", "network")
-            network if network.is_a?(Hash)
+            params = control["effect_params"]
+            next unless params.is_a?(Hash)
+            if control["trigger"] != "pre_tool" || !control.fetch("match", {}).empty?
+              axes = %w[paths network].select { |axis| params[axis].is_a?(Hash) }
+              axes.each do |axis|
+                conditional_paths = true if axis == "paths"
+                conditional_network = true if axis == "network"
+                findings << finding("conditional_native_restriction_unavailable", "Control #{control['id']} has a predicate or non-PreToolUse trigger, so its #{axis} restriction is enforced by the callback without broadening it into global Codex configuration.", control["id"], "codex.#{axis == 'paths' ? 'filesystem' : 'network'}_sandbox", "Use the callback result or split out an unconditional restriction for native sandbox compilation.")
+              end
+              next
+            end
+            paths = params["paths"]
+            path_entries << normalized_paths(paths) if paths.is_a?(Hash)
+            network = params["network"]
+            network_entries << normalized_network(network) if network.is_a?(Hash)
           end
-          return nil if restrictions.empty? || restrictions.any? { |network| network["mode"] == "open" }
 
-          { "domains" => restrictions.flat_map { |network| Array(network["domains"]) }.uniq.sort }
+          paths, paths_status = compatible_restriction(path_entries)
+          network, network_status = compatible_restriction(network_entries)
+          paths_conflict = paths_status == "unsupported"
+          network_conflict = network_status == "unsupported"
+          paths_status = "unsupported" if conditional_paths
+          network_status = "unsupported" if conditional_network
+          if paths_conflict
+            findings << finding("conflicting_native_path_restrictions", "Distinct path allowlists cannot be intersected safely by the bounded Codex emitter, so none were widened or compiled globally.", nil, "codex.filesystem_sandbox", "Use one unconditional path restriction set or rely on callback enforcement.")
+          end
+          if network_conflict
+            findings << finding("conflicting_native_network_restrictions", "Distinct network modes or allowlists cannot be combined without changing a control, so none were widened or compiled globally.", nil, "codex.network_sandbox", "Use one unconditional network restriction set or rely on callback enforcement.")
+          end
+          network = nil if network && network["mode"] == "open"
+          {
+            "paths" => paths,
+            "paths_status" => paths_status,
+            "network" => network,
+            "network_status" => network_status,
+            "findings" => findings
+          }
         end
-        private_class_method :network_restriction
+        private_class_method :native_restrictions
+
+        def normalized_paths(paths)
+          { "read" => Array(paths["read"]).uniq.sort, "write" => Array(paths["write"]).uniq.sort }
+        end
+        private_class_method :normalized_paths
+
+        def normalized_network(network)
+          mode = network["mode"]
+          { "mode" => mode, "domains" => mode == "allowlist" ? Array(network["domains"]).uniq.sort : [] }
+        end
+        private_class_method :normalized_network
+
+        def compatible_restriction(entries)
+          return [nil, "generated"] if entries.empty?
+
+          distinct = entries.uniq
+          return [distinct.first, "generated"] if distinct.length == 1
+
+          [nil, "unsupported"]
+        end
+        private_class_method :compatible_restriction
 
         def managed_exec_rules
           rules = ["--dangerously-bypass-approvals-and-sandbox", "--yolo"].map do |flag|
@@ -304,29 +346,39 @@ module Polispec
         end
         private_class_method :exec_rules
 
-        def capabilities_for(document, scope, edition, generated)
+        def capabilities_for(document, scope, edition, generated, restrictions)
           rows = Array(document["controls"]).map do |control|
             effect = control["effect"].to_s
             disposition = generated ? "generated" : "unavailable"
             detail = if control["trigger"] == "schedule"
                        disposition = "unsupported"
-                       "Codex has no native scheduled enforcement event; the control remains in the canonical document."
+                       "Schedules use the lifecycle schedule port; this PreToolUse backend does not install or claim them."
+                     elsif control["trigger"] != "pre_tool"
+                       disposition = "unsupported"
+                       "Codex backend emits only PreToolUse hooks and cannot enforce the #{control['trigger']} trigger."
                      elsif %w[inject observe].include?(effect)
                        disposition = "unsupported"
                        "This effect is not emitted by the Codex PreToolUse denial adapter."
+                     elsif effect == "restrict" && !control.fetch("match", {}).empty?
+                       "The callback evaluates this predicate exactly; no equivalent global sandbox restriction is claimed."
                      elsif effect == "ask"
                        "Codex native ask is unsafe; the callback emits deny pending exact operator authorization."
                      else
                        "The canonical control is evaluated by the generated PreToolUse callback."
                      end
-            capability(control["id"], effect == "ask" ? "codex.callback_deny_for_ask" : "codex.pre_tool_use", disposition, detail)
+            capability_name = if control["trigger"] == "pre_tool"
+                                effect == "ask" ? "codex.callback_deny_for_ask" : "codex.pre_tool_use"
+                              else
+                                "codex.#{control['trigger']}"
+                              end
+            capability(control["id"], capability_name, disposition, detail)
           end
           generated_disposition = generated ? "generated" : "unavailable"
           rows.concat([
             capability(nil, "codex.callback_denial", generated_disposition, "PreToolUse explicit deny is generated, but callback errors and timeouts can fail open."),
             capability(nil, "codex.exec_policy", generated_disposition, "Native rules forbid direct nested Codex sandbox-bypass flags; prefix coverage is incomplete."),
-            capability(nil, "codex.filesystem_sandbox", generated_disposition, "A workspace permission profile is generated; live containment remains unverified."),
-            capability(nil, "codex.network_sandbox", generated_disposition, edition == "lock" ? "Managed proxy requirements carry an empty domain allowlist; live egress remains unverified." : "Standard uses the workspace permission profile with open network unless a declared allowlist is supplied."),
+            capability(nil, "codex.filesystem_sandbox", generated ? restrictions["paths_status"] : "unavailable", restrictions["paths_status"] == "unsupported" ? "Conflicting or conditional path restrictions remain callback-only; the baseline profile is not claimed equivalent." : "A workspace or declared path permission profile is generated; live containment remains unverified."),
+            capability(nil, "codex.network_sandbox", generated ? (edition == "lock" ? "generated" : restrictions["network_status"]) : "unavailable", network_capability_detail(edition, restrictions)),
             capability(nil, "codex.hosted_tools", "unverified", "Hosted and specialized tool coverage is not established by generated hooks."),
             capability(nil, "codex.nested_execution", "unverified", scope == "managed" ? "Requirements are expected to bind nested processes but need native evidence." : "Same-user configuration can be bypassed by a nested Codex home or flags.")
           ])
@@ -334,10 +386,22 @@ module Polispec
         end
         private_class_method :capabilities_for
 
+        def network_capability_detail(edition, restrictions)
+          return "Managed proxy requirements carry an empty domain allowlist; live egress remains unverified." if edition == "lock"
+          return "Conflicting or conditional network restrictions remain callback-only; open native network is not claimed equivalent." if restrictions["network_status"] == "unsupported"
+
+          "Standard uses open network unless one unconditional declared allowlist is compiled."
+        end
+        private_class_method :network_capability_detail
+
         def control_findings(document, generated)
           findings = []
           Array(document["controls"]).each do |control|
-            if control["effect"] == "ask"
+            if control["trigger"] == "schedule"
+              findings << finding("schedule_port_required", "Control #{control['id']} requires lifecycle installation through the schedule port; the Codex hook plan does not install it.", control["id"], "codex.schedule", "Install the schedule through the lifecycle schedule adapter.")
+            elsif control["trigger"] != "pre_tool"
+              findings << finding("unsupported_codex_trigger", "Codex backend emits only PreToolUse and cannot enforce #{control['trigger']} for control #{control['id']}.", control["id"], "codex.pre_tool_use", "Use a backend event with verified #{control['trigger']} support or revise the trigger.")
+            elsif control["effect"] == "ask"
               findings << finding("native_ask_unavailable", "Codex native ask can fail and continue, so control #{control['id']} is rendered as deny.", control["id"], "codex.callback_deny_for_ask", "Obtain exact operator authorization before retrying the denied call.")
             elsif %w[inject observe].include?(control["effect"])
               findings << finding("unsupported_codex_effect", "Codex backend does not emit #{control['effect']} for control #{control['id']}.", control["id"], "codex.pre_tool_use", "Use a backend with verified native support or revise the control.")
