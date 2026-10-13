@@ -380,8 +380,24 @@ class ReleaseLock
     status = nil
     input_bytes = stdin.to_s.b
     raise Failure.new("git_input_limit", "Git command input exceeded #{MAX_OUTPUT} bytes") if input_bytes.bytesize > MAX_OUTPUT
-    base_env = { "LC_ALL" => "C", "GIT_TERMINAL_PROMPT" => "0" }
-    Open3.popen3(base_env.merge(env), "git", *command, pgroup: true) do |input, output, error, waiter|
+    invalid_env = env.keys.map(&:to_s) - ["GIT_INDEX_FILE"]
+    raise Failure.new("git_environment_invalid", "release Git environment contains an unsupported override") unless invalid_env.empty?
+    selected_env = {}
+    if env.any?
+      index = env["GIT_INDEX_FILE"] || env[:GIT_INDEX_FILE]
+      valid_index = index.is_a?(String) && index.start_with?("/") && !index.include?("\0")
+      raise Failure.new("git_environment_invalid", "temporary Git index path is invalid") unless valid_index
+      selected_env["GIT_INDEX_FILE"] = index
+    end
+    base_env = {
+      "LC_ALL" => "C", "GIT_TERMINAL_PROMPT" => "0", "GIT_NO_REPLACE_OBJECTS" => "1",
+      "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_COMMON_DIR" => nil,
+      "GIT_OBJECT_DIRECTORY" => nil, "GIT_ALTERNATE_OBJECT_DIRECTORIES" => nil, "GIT_REPLACE_REF_BASE" => nil,
+      "GIT_SHALLOW_FILE" => nil, "GIT_GRAFT_FILE" => nil, "GIT_NAMESPACE" => nil,
+      "GIT_CONFIG_PARAMETERS" => nil, "GIT_CONFIG_COUNT" => nil, "GIT_CONFIG" => nil,
+      "GIT_CONFIG_GLOBAL" => nil, "GIT_CONFIG_SYSTEM" => nil, "GIT_CONFIG_NOSYSTEM" => nil
+    }
+    Open3.popen3(base_env.merge(selected_env), "git", *command, pgroup: true) do |input, output, error, waiter|
       input.binmode
       output.binmode
       error.binmode
