@@ -5,6 +5,7 @@ require_relative "files"
 require_relative "schedule"
 require_relative "verification"
 require_relative "environment"
+require_relative "owner_handoff"
 
 module Polispec
   module HarnessControls
@@ -73,7 +74,7 @@ module Polispec
         Files.with_target_locks(targets, access: access) do
           records = read_records(state, identity)
           block_unresolved!(records, targets)
-          latest = latest_installation(records, installation_id)
+          latest = active_installation(records, installation_id)
           if latest && latest["status"] == "committed"
             receipt = stringify(latest["receipt"])
             checked = Files.verify_receipt(receipt)
@@ -134,19 +135,50 @@ module Polispec
         Verifier.verify(installation_id, port_set: port_set, runner: runner)
       end
 
-      def uninstall(installation_id, port_set: nil, schedule_port_set: nil)
+      def uninstall(installation_id, port_set: nil, schedule_port_set: nil, owner: nil, scope: nil, project: nil, state_home: nil, dry_run: false)
+        selectors = [scope, project, state_home]
+        if owner
+          raise Failure.new("owner_port_conflict", "owner selection cannot use injected development ports", exit_status: 3) if port_set || schedule_port_set
+          identity = operator_identity!("harness.uninstall.overlay")
+          plane = resolve_plane
+          bind_operator_plane!(identity, plane)
+          profile = OwnerHandoff.profile(owner: owner, scope: scope, project: project, state_home: state_home, plane: plane)
+          return OwnerHandoff.run(profile) do |selected, ports|
+            state = state_adapter(false, nil, ports, read_only: dry_run)
+            uninstall_from_state(installation_id, state, ports, nil, dry_run, selected, plane)
+          end
+        end
+        raise Failure.new("owner_required", "scope, project, and state_home require an explicit owner", exit_status: 3) if selectors.any?
         identity = operator_identity!("harness.uninstall")
-        state, records, committed = installation_source(installation_id, port_set, identity: identity, include_privileged: true)
+        state = state_adapter(true, identity, nil, read_only: dry_run)
+        uninstall_from_state(installation_id, state, schedule_port_set, identity, dry_run, nil, {})
+      end
+
+      def uninstall_from_state(installation_id, state, schedule_port_set, identity, dry_run, owner_profile, plane)
+        records = read_records(state, identity)
+        committed = active_installation(records, installation_id)
         raise Failure.new("installation_not_found", "installation #{installation_id} was not found") unless committed
         receipt = stringify(committed["receipt"])
+        if owner_profile
+          validate_mutable_receipt!(committed, receipt, owner_profile, plane)
+        elsif receipt["protected"] != true
+          raise Failure.new("protected_receipt_required", "uninstall without an owner accepts protected receipts only", exit_status: 3)
+        end
         targets = receipt.fetch("artifact_digests", {}).keys
         access = receipt["file_access"] || file_access(receipt["protected"] == true)
         receipt["file_access"] = access if access
+        if dry_run
+          return {
+            "installation_id" => installation_id, "dry_run" => true, "operator_required" => true,
+            "owner" => owner_profile && owner_profile["owner"], "scope" => receipt["scope"],
+            "targets" => targets.sort, "schedule_job_ids" => Array(receipt["schedules"]).map { |job| job["job_id"] }
+          }
+        end
         result = nil
         Files.with_target_locks(targets, access: access) do
           records = read_records(state, identity)
-          current = latest_installation(records, installation_id)
-          unless current && current["status"] == "committed" && current["record_id"] == committed["record_id"]
+          current = active_installation(records, installation_id)
+          unless current && current["record_id"] == committed["record_id"]
             raise Failure.new("installation_state_changed", "installation state changed before uninstall acquired its target locks", exit_status: 3)
           end
           block_unresolved!(records, targets, except_operation: committed["operation_id"])
@@ -183,6 +215,7 @@ module Polispec
         end
         result
       end
+      private_class_method :uninstall_from_state
 
       def scan(context = {})
         values = stringify(context)
@@ -194,10 +227,58 @@ module Polispec
         requested_edition.first
       end
 
-      def receipt(installation_id, port_set: nil)
+      def receipt(installation_id, port_set: nil, owner: nil, scope: nil, project: nil, state_home: nil)
+        selectors = [scope, project, state_home]
+        if owner
+          raise Failure.new("owner_port_conflict", "owner selection cannot use an injected development port", exit_status: 3) if port_set
+          identity = operator_identity!("harness.receipt.overlay")
+          plane = resolve_plane
+          bind_operator_plane!(identity, plane)
+          profile = OwnerHandoff.profile(owner: owner, scope: scope, project: project, state_home: state_home, plane: plane)
+          return OwnerHandoff.run(profile) do |selected, ports|
+            state = state_adapter(false, nil, ports, read_only: true)
+            records = read_records(state, nil)
+            record = active_installation(records, installation_id)
+            raise Failure.new("installation_not_found", "installation #{installation_id} was not found") unless record
+            selected_receipt = stringify(record["receipt"])
+            validate_mutable_receipt!(record, selected_receipt, selected, plane)
+            selected_receipt
+          end
+        end
+        raise Failure.new("owner_required", "scope, project, and state_home require an explicit owner", exit_status: 3) if selectors.any?
         _state, _records, record = installation_source(installation_id, port_set, identity: nil, include_privileged: true)
         record && stringify(record["receipt"])
       end
+
+      def validate_mutable_receipt!(record, receipt, profile, plane)
+        raise Failure.new("mutable_receipt_invalid", "mutable overlay record exceeds #{Files::LIMIT} bytes", exit_status: 3) if JSON.generate(record).bytesize > Files::LIMIT
+        valid = record["schema"] == "polispec.harness.transaction/v1" && receipt["schema"] == "polispec.harness.receipt/v1"
+        valid &&= record["installation_id"] == receipt["installation_id"]
+        valid &&= record["operation_id"] == receipt["operation_id"]
+        valid &&= record["control_digest"] == receipt["control_digest"]
+        valid &&= record["harness"] == receipt["harness"] && record["scope"] == receipt["scope"]
+        valid &&= receipt["protected"] == false && receipt["file_access"].nil?
+        valid &&= receipt["scope"] == profile["scope"]
+        raise Failure.new("mutable_receipt_invalid", "mutable overlay receipt identity or authority fields are invalid", exit_status: 3) unless valid
+        controls = receipt["controls"]
+        validate_document!(controls)
+        digest = Digest::SHA256.hexdigest(JSON.generate(canonical(controls)))
+        raise Failure.new("mutable_receipt_invalid", "mutable overlay control digest does not match its document", exit_status: 3) unless digest == receipt["control_digest"]
+        receipt_targets = receipt.fetch("artifact_digests", {}).keys.sort
+        raise Failure.new("mutable_receipt_invalid", "mutable overlay transaction targets do not match its receipt", exit_status: 3) unless Array(record["targets"]).sort == receipt_targets
+        context = { "scope" => profile["scope"], "edition" => receipt["edition"] }
+        context[profile["scope"] == "project" ? "project" : "home"] = profile["scope"] == "project" ? profile["project"] : profile["home"]
+        trusted = plan(controls, receipt["harness"], context)
+        expected_schedules = Schedule.plan(controls, receipt, context)["jobs"]
+        raise Failure.new("mutable_receipt_invalid", "mutable overlay schedules differ from canonical planning", exit_status: 3) unless canonical(receipt["schedules"]) == canonical(expected_schedules)
+        Files.validate_mutable_receipt!(receipt, trusted["artifacts"], owner_uid: profile["uid"], boundary: profile["scope"] == "project" ? profile["project"] : profile["home"], protected_paths: profile["protected_paths"])
+        true
+      rescue Failure
+        raise
+      rescue StandardError => error
+        raise Failure.new("mutable_receipt_invalid", "mutable overlay receipt validation failed: #{error.class}: #{error.message}", exit_status: 3)
+      end
+      private_class_method :validate_mutable_receipt!
 
       def validate_document!(document)
         errors = Controls.validate(document)
@@ -456,7 +537,7 @@ module Polispec
         end
         raise Failure.new("state_unavailable", "no installation record source is available", exit_status: 3) if sources.empty?
         matches = sources.map do |state, records|
-          latest = latest_installation(records, installation_id)
+          latest = active_installation(records, installation_id)
           [state, records, latest] if latest && latest["status"] == "committed"
         end.compact
         raise Failure.new("ambiguous_installation", "installation #{installation_id} exists in multiple authority stores", exit_status: 3) if matches.length > 1
@@ -515,6 +596,13 @@ module Polispec
         raise Failure.new(code.empty? ? "operator_required" : code, error.message, exit_status: 3)
       end
       private_class_method :operator_identity!
+
+      def bind_operator_plane!(identity, plane)
+        valid = plane["status"] == "active" && identity["generation"].to_s == plane["generation"].to_s && !plane["generation"].to_s.empty?
+        raise Failure.new("operator_plane_changed", "protected plane changed during operator authentication", exit_status: 3) unless valid
+        true
+      end
+      private_class_method :bind_operator_plane!
 
       def load_plane_implementation
         path = File.join(LIB, "harness_controls", "plane.rb")
@@ -583,6 +671,23 @@ module Polispec
         records.select { |row| row["installation_id"] == installation_id }.max_by { |row| row["sequence"].to_i }
       end
       private_class_method :latest_installation
+
+      def active_installation(records, installation_id)
+        selected = records.select { |row| row["installation_id"] == installation_id }.sort_by { |row| row["sequence"].to_i }
+        uninstall_operations = selected.each_with_object({}) do |row, result|
+          result[row["operation_id"]] = true if row["operation"] == "uninstall" || row["operation_id"].to_s.start_with?("uninstall_")
+        end
+        active = nil
+        selected.each do |row|
+          if uninstall_operations[row["operation_id"]]
+            active = nil if row["status"] == "uninstalled"
+          elsif row["status"] == "committed"
+            active = row
+          end
+        end
+        active
+      end
+      private_class_method :active_installation
 
       def native_version(harness)
         executable = { "claude-code" => "claude", "codex" => "codex", "hermes" => "hermes", "antigravity" => "agy" }[harness.to_s]
