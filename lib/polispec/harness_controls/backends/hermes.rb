@@ -5,6 +5,7 @@ require "json"
 require "yaml"
 require "digest"
 require "shellwords"
+require_relative "../../harness/base"
 
 module Polispec
   module HarnessControls
@@ -28,12 +29,13 @@ module Polispec
           control_digest = Digest::SHA256.hexdigest(canonical_json(controls))
           findings = base_findings(scope, edition)
           runtime = runtime_argv(values, scope, findings)
-          artifacts = [artifact(paths["controls"], controls_content, "json", "control_document", ["/"], control_ids)]
+          artifacts = [artifact(paths["controls"], controls_content, "json", "control_document", [""], control_ids)]
 
           if runtime
             callback = runtime + ["hook", "pretool", "--harness", "hermes", "--controls-file", paths["controls"]]
-            fragment = hook_fragment(callback, scope)
-            artifacts << artifact(paths["config"], yaml_content(fragment), "yaml", "yaml_entries", hook_entries(scope), control_ids)
+            callback += ["--controls-project", values["project"]] if scope == "project"
+            fragment = hook_fragment(callback)
+            artifacts << artifact(paths["config"], yaml_content(fragment), "yaml", "yaml_entries", ["/hooks/pre_tool_call"], control_ids)
           end
 
           capabilities = capabilities_for(controls, !runtime.nil?, scope, edition)
@@ -117,8 +119,8 @@ module Polispec
           ]
         end
 
-        def hook_fragment(callback, scope)
-          fragment = {
+        def hook_fragment(callback)
+          {
             "hooks" => {
               "pre_tool_call" => [
                 {
@@ -130,17 +132,8 @@ module Polispec
               ]
             }
           }
-          fragment["hooks_auto_accept"] = true if scope == "managed"
-          fragment
         end
         private_class_method :hook_fragment
-
-        def hook_entries(scope)
-          entries = ["/hooks/pre_tool_call"]
-          entries << "/hooks_auto_accept" if scope == "managed"
-          entries
-        end
-        private_class_method :hook_entries
 
         def paths_for(scope, values)
           home = home_for(values)
@@ -175,7 +168,13 @@ module Polispec
                        disposition = "unsupported"
                        "Hermes blocking hooks are limited to pre_tool_call."
                      elsif %w[deny ask restrict].include?(effect)
-                       effect == "ask" ? "Hermes action approve requests human approval and never grants the call." : "The pre_tool_call callback evaluates the canonical control."
+                       if effect == "ask"
+                         "Hermes action approve requests human approval and never grants the call."
+                       elsif scope == "project"
+                         "The pre_tool_call callback applies this document only within the validated project root."
+                       else
+                         "The pre_tool_call callback evaluates the canonical control."
+                       end
                      else
                        disposition = "unsupported"
                        "Hermes pre_tool_call output does not implement this effect."
@@ -185,7 +184,7 @@ module Polispec
           generated_disposition = generated ? "generated" : "unavailable"
           rows.concat([
             capability(nil, "hermes.callback_denial", generated_disposition, "A fail-closed pre_tool_call hook is generated; native error and timeout behavior remains unverified."),
-            capability(nil, "hermes.hook_consent", scope == "managed" && generated ? "generated" : "unverified", scope == "managed" ? "Managed configuration pins hook consent, but installed provenance remains unverified." : "Hermes requires human consent for the exact hook command."),
+            capability(nil, "hermes.hook_consent", generated ? "unverified" : "unavailable", "Hermes requires human consent for the exact hook command; no process-wide auto-consent is emitted."),
             capability(nil, "hermes.filesystem_restriction", "unsupported", "Path restrictions remain callback-only because no equivalent native Hermes allowlist is emitted."),
             capability(nil, "hermes.network_restriction", "unsupported", "Network restrictions remain callback-only because no equivalent native Hermes allowlist is emitted."),
             capability(nil, "hermes.process_boundary", "unverified", "Configuration does not prove containment of nested Hermes processes."),
@@ -197,9 +196,10 @@ module Polispec
         def base_findings(scope, edition)
           rows = []
           if scope == "project"
-            rows << finding("hermes_project_config_is_user_global", "Hermes has no project hook configuration file; the project control document is referenced by a hook in the user configuration.", nil, "hermes.configuration", "Review the user-global consequence before installation.")
+            rows << finding("hermes_project_config_is_user_global", "Hermes has no project hook configuration file; the profile-global hook passes an absolute project root so this document is skipped for unrelated calls.", nil, "hermes.configuration", "Verify the callback project-root guard before relying on project enforcement.")
           elsif scope == "managed"
             rows << finding("hermes_managed_event_replacement", "Managed pre_tool_call hooks replace the corresponding user hook list for that event.", nil, "hermes.configuration", "Review the complete managed event fragment before installation.")
+            rows << finding("hermes_managed_consent_pending", "Managed configuration does not auto-consent to hooks; the exact polispec command remains subject to Hermes consent.", nil, "hermes.hook_consent", "Approve only the exact reviewed callback command through Hermes native consent.")
           end
           rows << finding("hermes_lock_uncertified", "Hermes lock cannot be certified without protected runtime ancestry and native behavioral evidence.", nil, "hermes.lock", "Use a protected process boundary and verify every required axis.") if edition == "lock"
           rows
