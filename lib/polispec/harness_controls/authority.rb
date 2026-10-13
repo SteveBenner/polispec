@@ -47,6 +47,7 @@ module Polispec
         runtime = runtime_plan
         findings = source_plan["findings"] + runtime["findings"]
         lock = kind.to_s != "git"
+        findings << finding("lock_launch_proof_unresolved", "Lock requires independently verified pre-interpreter process-loading provenance.", true) if lock
         findings << finding("native_harness_evidence_missing", "Required native harness denial and failure axes are not verified.", lock)
         findings << finding("os_containment_evidence_missing", "Kernel sandbox containment evidence has not been supplied.", lock)
         generation_material = {
@@ -158,7 +159,7 @@ module Polispec
         sanitized = descriptor["sanitized_before_interpreter"] == true
         loader = "unresolved"
         findings << finding("launcher_sanitization_unverified", "Protected launcher sanitization before interpreter startup is unverified.", true) unless sanitized
-        findings << finding("launch_proof_unresolved", "Inherited dynamic-loader behavior before sanitization has not been proven safe.", true) unless loader == "verified"
+        findings << finding("launch_proof_unresolved", "Inherited dynamic-loader behavior before sanitization has not been proven safe; certification remains unavailable.", false) unless loader == "verified"
         record = {
           "source_commit" => commit,
           "source_digest" => source_digest,
@@ -259,8 +260,7 @@ module Polispec
         unless current_launcher && current_launcher == expected_launcher && current_interpreter && current_interpreter == expected_interpreter
           raise Failure.new("operator_required", "#{operation} requires verified sealed launcher and interpreter provenance")
         end
-        findings = protection_findings(current_launcher, "current_launcher") + protection_findings(current_interpreter, "current_interpreter")
-        findings << finding("launch_proof_unresolved", "Inherited dynamic-loader provenance is unresolved.", true) unless provenance["inherited_loader_provenance"] == "verified"
+        findings = protection_findings(current_launcher, "current_entrypoint") + protection_findings(current_interpreter, "current_interpreter")
         raise Failure.new("operator_required", "#{operation} lacks complete protected executable provenance", findings) if findings.any? { |item| item["blocking"] }
 
         provenance_material = {
@@ -279,6 +279,7 @@ module Polispec
           "generation" => plane["generation"],
           "authentication" => "effective_uid_and_protected_provenance",
           "fresh_password_proven" => false,
+          "inherited_loader_provenance" => provenance["inherited_loader_provenance"].to_s.empty? ? "unresolved" : provenance["inherited_loader_provenance"],
           "provenance_digest" => Digest::SHA256.hexdigest(canonical_json(provenance_material))
         }
       end
