@@ -16,22 +16,22 @@ module Polispec
         end
       end
 
-      def prepare(artifacts, operation_id)
-        Array(artifacts).map { |artifact| prepare_artifact(artifact, operation_id) }
+      def prepare(artifacts, operation_id, access: nil)
+        Array(artifacts).map { |artifact| prepare_artifact(artifact, operation_id, access) }
       end
 
-      def with_target_locks(targets, &block)
-        with_locks(targets, &block)
+      def with_target_locks(targets, access: nil, &block)
+        with_locks(targets, access: access, &block)
       end
 
       def apply(prepared, lock: true)
         operation = proc do
           verify_priors!(prepared)
           create_backups!(prepared)
-          prepared.each { |row| write_atomic(row["target"], row["merged_content"], row["mode"], row["uid"], row["gid"]) }
+          prepared.each { |row| write_atomic(row["target"], row["merged_content"], row["mode"], row["uid"], row["gid"], row["access"]) }
           verify_installed!(prepared)
         end
-        lock ? with_locks(prepared.map { |row| row["target"] }, &operation) : operation.call
+        lock ? with_locks(prepared.map { |row| row["target"] }, access: shared_access(prepared), &operation) : operation.call
         prepared
       end
 
@@ -51,7 +51,7 @@ module Polispec
               if prior_exists
                 backup = read(backup_path)
                 raise Polispec::Error, "backup digest mismatch for #{row['target']}" unless digest(backup) == backup_digest
-                write_atomic(row["target"], backup, row["rollback_mode"] || row["mode"], row.key?("rollback_uid") ? row["rollback_uid"] : row["uid"], row.key?("rollback_gid") ? row["rollback_gid"] : row["gid"])
+                write_atomic(row["target"], backup, row["rollback_mode"] || row["mode"], row.key?("rollback_uid") ? row["rollback_uid"] : row["uid"], row.key?("rollback_gid") ? row["rollback_gid"] : row["gid"], row["access"])
               elsif File.exist?(row["target"])
                 failed = "#{row['target']}.polispec-failed-#{row['operation_suffix']}"
                 safe_target!(failed)
@@ -62,7 +62,7 @@ module Polispec
             end
           end
         end
-        lock ? with_locks(prepared.map { |row| row["target"] }, &operation) : operation.call
+        lock ? with_locks(prepared.map { |row| row["target"] }, access: shared_access(prepared), &operation) : operation.call
         failures
       rescue StandardError => error
         [{ "target" => nil, "error" => "#{error.class}: #{error.message}" }]
@@ -72,6 +72,7 @@ module Polispec
         receipt = stringify(receipt)
         rows = Array(receipt["owned_entries"])
         findings = []
+        access = normalize_access(receipt["file_access"])
         integrity = receipt.fetch("artifact_digests", {}).all? do |path, expected|
           actual = File.file?(path) ? digest(read(path)) : nil
           if actual != expected
@@ -81,10 +82,22 @@ module Polispec
             true
           end
         end
+        access_integrity = receipt.fetch("artifact_digests", {}).keys.all? do |path|
+          next true unless access
+          begin
+            safe_target!(path)
+            validate_existing_parent!(path, access)
+            validate_access_target!(path, access)
+            true
+          rescue StandardError => error
+            findings << finding("artifact_access_invalid", "Installed access at #{path} is invalid: #{error.class}: #{error.message}")
+            false
+          end
+        end
         ownership = rows.all? do |row|
           owned_entry_present?(row, findings)
         end
-        { "integrity" => integrity, "ownership" => ownership, "findings" => findings }
+        { "integrity" => integrity && access_integrity, "ownership" => ownership, "findings" => findings }
       rescue StandardError => error
         { "integrity" => false, "ownership" => false, "findings" => [finding("ownership_check_failed", "#{error.class}: #{error.message}")] }
       end
@@ -97,14 +110,17 @@ module Polispec
 
       def prepare_uninstall(receipt)
         receipt = stringify(receipt)
+        access = normalize_access(receipt["file_access"])
         grouped = Array(receipt["owned_entries"]).group_by { |row| row["target"] }
         grouped.map do |target, rows|
           safe_target!(target)
+          ensure_parent!(target, access)
+          validate_access_target!(target, access) if File.exist?(target)
           raise Polispec::Error, "owned target is missing: #{target}" unless File.file?(target)
           current = read(target)
           content = remove_rows(current, rows)
           stat = File.stat(target)
-          { "target" => target, "prior" => current, "prior_digest" => digest(current), "content" => content, "post_digest" => content && digest(content), "mode" => stat.mode & 0o7777, "uid" => stat.uid, "gid" => stat.gid }
+          { "target" => target, "prior" => current, "prior_digest" => digest(current), "content" => content, "post_digest" => content && digest(content), "mode" => stat.mode & 0o7777, "uid" => stat.uid, "gid" => stat.gid, "access" => access }
         end
       end
 
@@ -115,17 +131,17 @@ module Polispec
             raise Polispec::Error, "owned target changed during uninstall: #{row['target']}" unless current == row["prior_digest"]
           end
           prepared.each do |row|
-            backup = backup_current(row["target"], "uninstall-#{Time.now.utc.strftime('%Y%m%d%H%M%S')}")
+            backup = backup_current(row["target"], "uninstall-#{Time.now.utc.strftime('%Y%m%d%H%M%S')}", row["access"])
             if row["content"].nil?
               File.delete(row["target"])
             else
-              write_atomic(row["target"], row["content"], row["mode"], row["uid"], row["gid"])
+              write_atomic(row["target"], row["content"], row["mode"], row["uid"], row["gid"], row["access"])
             end
             row["uninstall_backup"] = backup
             row["uninstall_backup_digest"] = digest(read(backup))
           end
         end
-        lock ? with_locks(prepared.map { |row| row["target"] }, &operation) : operation.call
+        lock ? with_locks(prepared.map { |row| row["target"] }, access: shared_access(prepared), &operation) : operation.call
         prepared
       end
 
@@ -139,21 +155,24 @@ module Polispec
               raise Polispec::Error, "uninstall rollback refused unexpected bytes at #{row['target']}" unless current == row["post_digest"]
               backup = read(row["uninstall_backup"])
               raise Polispec::Error, "uninstall backup digest mismatch at #{row['target']}" unless digest(backup) == row["uninstall_backup_digest"]
-              write_atomic(row["target"], backup, row["mode"], row["uid"], row["gid"])
+              write_atomic(row["target"], backup, row["mode"], row["uid"], row["gid"], row["access"])
             rescue StandardError => error
               failures << { "target" => row["target"], "error" => "#{error.class}: #{error.message}" }
             end
           end
         end
-        lock ? with_locks(prepared.map { |row| row["target"] }, &operation) : operation.call
+        lock ? with_locks(prepared.map { |row| row["target"] }, access: shared_access(prepared), &operation) : operation.call
         failures
       end
 
-      def prepare_artifact(artifact, operation_id)
+      def prepare_artifact(artifact, operation_id, access)
         artifact = stringify(artifact)
         validate_artifact!(artifact)
         target = artifact["path"]
+        access = normalize_access(access)
         safe_target!(target)
+        ensure_parent!(target, access)
+        validate_access_target!(target, access) if File.exist?(target)
         prior_exists = File.file?(target)
         prior = prior_exists ? read(target) : nil
         merged, owned = merge(prior, artifact)
@@ -168,14 +187,15 @@ module Polispec
           "prior_digest" => prior && digest(prior),
           "backup_path" => backup_path,
           "backup_digest" => prior && digest(prior),
-          "mode" => stat ? stat.mode & 0o7777 : 0o600,
-          "uid" => stat && stat.uid,
-          "gid" => stat && stat.gid,
+          "mode" => stat ? stat.mode & 0o7777 : access ? access["file_mode"] : 0o600,
+          "uid" => stat ? stat.uid : access && access["owner_uid"],
+          "gid" => stat ? stat.gid : access && access["owner_gid"],
           "expected_prior_digest" => prior && digest(prior),
           "merged_content" => merged,
           "installed_digest" => digest(merged),
           "owned_entries" => owned,
-          "operation_suffix" => suffix
+          "operation_suffix" => suffix,
+          "access" => access
         }
       end
       private_class_method :prepare_artifact
@@ -300,7 +320,7 @@ module Polispec
             if File.file?(rollback_path)
               raise Polispec::Error, "transaction rollback backup differs for #{row['target']}" unless digest(read(rollback_path)) == row["rollback_backup_digest"]
             else
-              write_atomic(rollback_path, read(row["target"]), row["rollback_mode"], row["rollback_uid"], row["rollback_gid"])
+              write_atomic(rollback_path, read(row["target"]), 0o600, row["rollback_uid"], row["rollback_gid"], row["access"])
             end
             if row["prior_exists"]
               raise Polispec::Error, "inherited backup is missing for #{row['target']}" unless row["backup_path"] && File.file?(row["backup_path"])
@@ -312,7 +332,7 @@ module Polispec
           if File.file?(row["backup_path"])
             raise Polispec::Error, "existing backup differs for #{row['target']}" unless read(row["backup_path"]) == read(row["target"])
           else
-            write_atomic(row["backup_path"], read(row["target"]), row["mode"], row["uid"], row["gid"])
+            write_atomic(row["backup_path"], read(row["target"]), 0o600, row["uid"], row["gid"], row["access"])
           end
         end
       end
@@ -440,11 +460,13 @@ module Polispec
       end
       private_class_method :parse_document
 
-      def with_locks(targets)
+      def with_locks(targets, access: nil)
+        access = normalize_access(access)
         handles = []
         targets.uniq.sort.each do |target|
           safe_target!(target)
-          FileUtils.mkdir_p(File.dirname(target), mode: 0o700)
+          ensure_parent!(target, access)
+          validate_access_target!(target, access) if access && File.exist?(target)
           lock_path = "#{target}.polispec.lock"
           safe_target!(lock_path)
           handle = File.open(lock_path, File::RDWR | File::CREAT | File::NOFOLLOW, 0o600)
@@ -463,19 +485,19 @@ module Polispec
       end
       private_class_method :with_locks
 
-      def backup_current(target, suffix)
+      def backup_current(target, suffix, access = nil)
         path = "#{target}.polispec-backup-#{suffix}"
         safe_target!(path)
         content = read(target)
         stat = File.stat(target)
-        write_atomic(path, content, stat.mode & 0o7777, stat.uid, stat.gid)
+        write_atomic(path, content, 0o600, stat.uid, stat.gid, access)
         path
       end
       private_class_method :backup_current
 
-      def write_atomic(path, content, mode, uid = nil, gid = nil)
+      def write_atomic(path, content, mode, uid = nil, gid = nil, access = nil)
         safe_target!(path)
-        FileUtils.mkdir_p(File.dirname(path), mode: 0o700)
+        ensure_parent!(path, access)
         temp = "#{path}.polispec-tmp-#{Process.pid}-#{Thread.current.object_id}"
         File.open(temp, File::WRONLY | File::CREAT | File::EXCL, mode) do |file|
           file.binmode
@@ -512,6 +534,87 @@ module Polispec
         raise Polispec::Error, "artifact ancestry inspection failed for #{path}: #{error.message}"
       end
       private_class_method :safe_target!
+
+      def normalize_access(value)
+        return nil if value.nil? || value == {}
+        access = stringify(value)
+        raise Polispec::Error, "file access policy must be protected" unless access["protected"] == true
+        raise Polispec::Error, "file access owner uid is invalid" unless access["owner_uid"].is_a?(Integer) && access["owner_uid"] >= 0
+        raise Polispec::Error, "file access owner gid is invalid" unless access["owner_gid"].is_a?(Integer) && access["owner_gid"] >= 0
+        raise Polispec::Error, "file access directory mode is invalid" unless access["directory_mode"] == 0o755
+        raise Polispec::Error, "file access file mode is invalid" unless access["file_mode"] == 0o644
+        boundary = access["boundary"].to_s
+        raise Polispec::Error, "file access boundary must be absolute" unless boundary.start_with?("/") && !boundary.include?("\0")
+        access.merge("boundary" => File.expand_path(boundary))
+      end
+      private_class_method :normalize_access
+
+      def ensure_parent!(path, access)
+        parent = File.dirname(path)
+        unless access
+          FileUtils.mkdir_p(parent, mode: 0o700)
+          return
+        end
+        access_chain(path, access).reverse_each do |directory|
+          if File.exist?(directory) || File.symlink?(directory)
+            validate_access_directory!(directory, access)
+          else
+            Dir.mkdir(directory, access["directory_mode"])
+            File.chmod(access["directory_mode"], directory)
+            File.chown(access["owner_uid"], access["owner_gid"], directory)
+            validate_access_directory!(directory, access)
+          end
+        end
+      end
+      private_class_method :ensure_parent!
+
+      def validate_existing_parent!(path, access)
+        access_chain(path, access).reverse_each { |directory| validate_access_directory!(directory, access) }
+      end
+      private_class_method :validate_existing_parent!
+
+      def access_chain(path, access)
+        parent = File.dirname(path)
+        boundary = access["boundary"]
+        unless parent == boundary || parent.start_with?("#{boundary == '/' ? '' : boundary}/")
+          raise Polispec::Error, "managed target escapes its access boundary: #{path}"
+        end
+        chain = []
+        current = parent
+        loop do
+          chain << current
+          break if current == boundary
+          ancestor = File.dirname(current)
+          raise Polispec::Error, "managed access boundary is not an ancestor of #{path}" if ancestor == current
+          current = ancestor
+        end
+        chain
+      end
+      private_class_method :access_chain
+
+      def validate_access_directory!(path, access)
+        stat = File.lstat(path)
+        mode = stat.mode & 0o7777
+        valid = stat.directory? && !stat.symlink? && stat.uid == access["owner_uid"] && (mode & 0o022).zero? && (mode & 0o005) == 0o005
+        raise Polispec::Error, "managed directory is not protected and guard-readable: #{path}" unless valid
+      end
+      private_class_method :validate_access_directory!
+
+      def validate_access_target!(path, access)
+        return unless access
+        stat = File.lstat(path)
+        mode = stat.mode & 0o7777
+        valid = stat.file? && !stat.symlink? && stat.uid == access["owner_uid"] && (mode & 0o022).zero? && (mode & 0o004) == 0o004
+        raise Polispec::Error, "managed target is not protected and guard-readable: #{path}" unless valid
+      end
+      private_class_method :validate_access_target!
+
+      def shared_access(prepared)
+        values = Array(prepared).map { |row| row["access"] }.compact.uniq
+        raise Polispec::Error, "mixed file access policies are unsupported" if values.length > 1
+        values.first
+      end
+      private_class_method :shared_access
 
       def digest(content)
         Digest::SHA256.hexdigest(content)
