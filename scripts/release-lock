@@ -72,12 +72,18 @@ class ReleaseLock
     target = construct_commit(base, intended_blob)
     verify_target!(base, target, intended_tree)
     @failure_data = common.merge("target" => target)
+    revalidate_remote_endpoint!(remote)
     archive = archive_local(local_before)
     @failure_data = @failure_data.merge("archive" => archive)
     live_final = live_refs(remote)
     validate_live_refs!(live_final)
+    revalidate_remote_endpoint!(remote)
     push_lock(remote, target)
-    pushed = live_refs(remote)
+    begin
+      pushed = live_refs(remote)
+    rescue Failure
+      raise Failure.new("recovery_required", "lock push completed without a confirmable remote postcondition; inspect the reported target and archive", 4)
+    end
     unless pushed[MAIN_REF] == base && pushed[LOCK_REF] == target
       raise Failure.new("recovery_required", "remote post-push state could not be confirmed; preserve the reported target and archive", 4)
     end
@@ -150,6 +156,7 @@ class ReleaseLock
     main = commit_ref(MAIN_REF)
     remotes = git!(%w[remote]).stdout.lines.map(&:strip)
     raise Failure.new("remote_missing", "selected remote does not exist") unless remotes.include?(@options.fetch("remote"))
+    validate_remote_endpoint!(@options.fetch("remote"))
     tracking_ref = "refs/remotes/#{@options.fetch('remote')}/main"
     tracking = commit_ref(tracking_ref)
     raise Failure.new("base_mismatch", "HEAD, local main, and --base must be identical") unless head == base && main == base
@@ -184,6 +191,32 @@ class ReleaseLock
     raise Failure.new("remote_main_diverged", "live remote main differs from --base") unless live[MAIN_REF] == @options.fetch("base")
   end
 
+  def validate_remote_endpoint!(remote)
+    fetch = remote_urls(remote, false)
+    push = remote_urls(remote, true)
+    exact = fetch.length == 1 && push.length == 1 && fetch.first == push.first
+    raise Failure.new("remote_endpoint_ambiguous", "selected remote must have one identical effective fetch and push endpoint") unless exact
+    @remote_endpoint = fetch.first
+  end
+
+  def revalidate_remote_endpoint!(remote)
+    expected = @remote_endpoint
+    fetch = remote_urls(remote, false)
+    push = remote_urls(remote, true)
+    exact = fetch == [expected] && push == [expected]
+    raise Failure.new("remote_endpoint_changed", "selected remote endpoint changed during the release transaction") unless exact
+  end
+
+  def remote_urls(remote, push)
+    argv = ["remote", "get-url"]
+    argv << "--push" if push
+    argv.concat(["--all", remote])
+    result = git!(*argv).stdout
+    urls = result.lines.map(&:chomp)
+    raise Failure.new("remote_endpoint_ambiguous", "selected remote endpoint is invalid") if urls.any? { |url| url.empty? || url.include?("\0") }
+    urls
+  end
+
   def object_length
     format = git!(%w[rev-parse --show-object-format]).stdout.strip
     return 40 if format == "sha1"
@@ -210,7 +243,8 @@ class ReleaseLock
   end
 
   def live_refs(remote)
-    result = git!("ls-remote", "--heads", "--refs", remote, MAIN_REF, LOCK_REF, timeout: TIMEOUT_SECONDS)
+    raise Failure.new("remote_endpoint_ambiguous", "selected remote endpoint is not pinned") unless @remote_endpoint && remote == @options.fetch("remote")
+    result = git!("ls-remote", "--heads", "--refs", @remote_endpoint, MAIN_REF, LOCK_REF, timeout: TIMEOUT_SECONDS)
     refs = {}
     result.stdout.lines.each do |line|
       oid, ref, extra = line.chomp.split("\t", 3)
@@ -235,7 +269,8 @@ class ReleaseLock
     raise Failure.new("invalid_edition", "base root tree does not contain EDITION") unless edition && edition["mode"] == "100644" && edition["type"] == "blob" && edition["oid"] == old_blob
     edition["oid"] = new_blob
     payload = rows.sort_by { |row| git_tree_sort_key(row) }.map do |row|
-      "#{row['mode']} #{row['name']}\0".b + [row["oid"]].pack("H*")
+      mode = row["type"] == "tree" ? "40000" : row["mode"]
+      "#{mode} #{row['name']}\0".b + [row["oid"]].pack("H*")
     end.join
     object_hash("tree", payload)
   end
@@ -298,8 +333,29 @@ class ReleaseLock
   def push_lock(remote, target)
     expected = @options.fetch("expected_remote")
     lease = expected == "absent" ? "#{LOCK_REF}:" : "#{LOCK_REF}:#{expected}"
-    result = git("-c", "push.followTags=false", "push", "--porcelain", "--no-follow-tags", "--force-with-lease=#{lease}", "--", remote, "#{target}:#{LOCK_REF}", allowed: [0, 1, 128], timeout: TIMEOUT_SECONDS)
-    raise Failure.new("push_refused", "exact lock-ref push was refused; review remote state before retrying") unless result.status.zero?
+    begin
+      result = git("-c", "push.followTags=false", "push", "--porcelain", "--no-follow-tags", "--force-with-lease=#{lease}", "--", @remote_endpoint, "#{target}:#{LOCK_REF}", allowed: [0, 1, 128], timeout: TIMEOUT_SECONDS)
+    rescue Failure
+      begin
+        observed = live_refs(remote)
+        return if observed[MAIN_REF] == @options.fetch("base") && observed[LOCK_REF] == target
+      rescue Failure
+        nil
+      end
+      raise Failure.new("recovery_required", "lock push outcome is indeterminate; inspect the reported target and archive", 4)
+    end
+    return if result.status.zero?
+    begin
+      observed = live_refs(remote)
+    rescue Failure
+      raise Failure.new("recovery_required", "lock push outcome is indeterminate; inspect the reported target and archive", 4)
+    end
+    return if observed[MAIN_REF] == @options.fetch("base") && observed[LOCK_REF] == target
+    expected_lock = expected == "absent" ? nil : expected
+    if observed[MAIN_REF] == @options.fetch("base") && observed[LOCK_REF] == expected_lock
+      raise Failure.new("push_refused", "exact lock-ref push was refused; remote target was not updated")
+    end
+    raise Failure.new("recovery_required", "lock push returned failure with an unexpected remote state; inspect the reported target and archive", 4)
   end
 
   def update_local_lock(target, local_before)
@@ -322,31 +378,59 @@ class ReleaseLock
     stdout = +""
     stderr = +""
     status = nil
+    input_bytes = stdin.to_s.b
+    raise Failure.new("git_input_limit", "Git command input exceeded #{MAX_OUTPUT} bytes") if input_bytes.bytesize > MAX_OUTPUT
     base_env = { "LC_ALL" => "C", "GIT_TERMINAL_PROMPT" => "0" }
     Open3.popen3(base_env.merge(env), "git", *command, pgroup: true) do |input, output, error, waiter|
       input.binmode
-      input.write(stdin) if stdin
-      input.close
-      readers = [[output, stdout], [error, stderr]].map do |io, target|
-        Thread.new do
-          loop do
-            chunk = io.readpartial(4096)
-            raise Failure.new("git_output_limit", "Git command output exceeded #{MAX_OUTPUT} bytes") if target.bytesize + chunk.bytesize > MAX_OUTPUT
-            target << chunk
+      output.binmode
+      error.binmode
+      deadline = monotonic + timeout
+      write_offset = 0
+      input_open = !input_bytes.empty?
+      input.close unless input_open
+      streams = { output => stdout, error => stderr }
+      begin
+        loop do
+          break if !waiter.alive? && streams.empty? && !input_open
+          remaining = deadline - monotonic
+          if remaining <= 0
+            raise Failure.new("git_timeout", "Git command exceeded #{timeout} seconds")
           end
-        rescue EOFError
-          nil
+          readable, writable = IO.select(streams.keys, input_open ? [input] : [], nil, [remaining, 0.05].min)
+          Array(readable).each do |io|
+            loop do
+              chunk = io.read_nonblock(4096, exception: false)
+              break if chunk == :wait_readable
+              if chunk.nil?
+                streams.delete(io)
+                io.close unless io.closed?
+                break
+              end
+              target = streams.fetch(io)
+              raise Failure.new("git_output_limit", "Git command output exceeded #{MAX_OUTPUT} bytes") if target.bytesize + chunk.bytesize > MAX_OUTPUT
+              target << chunk
+            end
+          end
+          Array(writable).each do |io|
+            count = io.write_nonblock(input_bytes.byteslice(write_offset..), exception: false)
+            next if count == :wait_writable
+            raise Failure.new("git_failed", "Git command closed its input") unless count
+            write_offset += count
+            if write_offset >= input_bytes.bytesize
+              io.close
+              input_open = false
+            end
+          end
         end
-      end
-      unless waiter.join(timeout)
+      rescue StandardError
         terminate(waiter)
-        raise Failure.new("git_timeout", "Git command exceeded #{timeout} seconds")
+        raise
       end
-      readers.each(&:join)
-      readers.each { |reader| raise reader.value if reader.status.nil? }
+      waiter.join(0)
       status = waiter.value.exitstatus
     ensure
-      [output, error].compact.each { |io| io.close unless io.closed? }
+      [input, output, error].compact.each { |io| io.close unless io.closed? }
     end
     raise Failure.new("git_failed", "Git command failed: git #{command.first}") unless allowed.include?(status)
     Result.new(stdout, stderr, status)
@@ -356,11 +440,27 @@ class ReleaseLock
 
   def terminate(waiter)
     Process.kill("TERM", -waiter.pid)
-    return if waiter.join(0.2)
-    Process.kill("KILL", -waiter.pid)
+    cutoff = monotonic + 0.2
+    while monotonic < cutoff && process_group_alive?(waiter.pid)
+      IO.select(nil, nil, nil, 0.01)
+    end
+    Process.kill("KILL", -waiter.pid) if process_group_alive?(waiter.pid)
     waiter.join(0.2)
   rescue Errno::ESRCH, Errno::ECHILD
     nil
+  end
+
+  def process_group_alive?(pid)
+    Process.kill(0, -pid)
+    true
+  rescue Errno::ESRCH
+    false
+  rescue Errno::EPERM
+    true
+  end
+
+  def monotonic
+    Process.clock_gettime(Process::CLOCK_MONOTONIC)
   end
 
   def emit(ok, status, code, message, data, exit_status)
@@ -397,4 +497,4 @@ class ReleaseLock
   end
 end
 
-exit ReleaseLock.run(ARGV)
+exit ReleaseLock.run(ARGV) if $PROGRAM_NAME == __FILE__
