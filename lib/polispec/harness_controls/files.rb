@@ -102,23 +102,29 @@ module Polispec
         { "integrity" => false, "ownership" => false, "findings" => [finding("ownership_check_failed", "#{error.class}: #{error.message}")] }
       end
 
-      def validate_mutable_receipt!(receipt, planned_artifacts, owner_uid:, boundary:, protected_paths:)
+      def validate_mutable_receipt!(receipt, planned_artifacts, owner_uid:, boundary:, home:, protected_paths:)
         receipt = stringify(receipt)
         planned = Array(planned_artifacts).map { |artifact| stringify(artifact) }
         stored = Array(receipt["artifacts"]).map { |artifact| stringify(artifact) }
+        stored.each { |artifact| validate_artifact!(artifact) }
         planned_signatures = planned.map { |artifact| artifact_signature(artifact) }.sort_by { |row| row["path"] }
         stored_signatures = stored.map { |artifact| artifact_signature(artifact) }.sort_by { |row| row["path"] }
         raise Polispec::Error, "mutable receipt artifact targets or ownership differ from canonical planning" unless stored_signatures == planned_signatures
         targets = receipt.fetch("artifact_digests", {}).keys.sort
         expected_targets = planned_signatures.map { |row| row["path"] }.sort
+        planned_by_path = planned_signatures.each_with_object({}) { |row, result| result[row["path"]] = row }
         raise Polispec::Error, "mutable receipt artifact digest targets are incomplete" unless targets == expected_targets
         valid_digests = receipt.fetch("artifact_digests", {}).values.all? { |value| value.to_s.match?(/\A[0-9a-f]{64}\z/) }
         raise Polispec::Error, "mutable receipt artifact digests are invalid" unless valid_digests
         boundary = File.realpath(boundary)
+        home = File.realpath(home)
         targets.each do |target|
           safe_target!(target)
           real = File.realpath(target)
-          raise Polispec::Error, "mutable target escapes selected scope: #{target}" unless path_within?(real, boundary)
+          canonical_planned = expected_targets.include?(target) && File.realpath(target) == real
+          control_document = planned_by_path.dig(target, "kind") == "control_document"
+          allowed_home_target = boundary != home && canonical_planned && !control_document && path_within?(real, home)
+          raise Polispec::Error, "mutable target escapes selected scope: #{target}" unless path_within?(real, boundary) || allowed_home_target
           protected = Array(protected_paths).any? do |path|
             protected_real = canonical_existing(path)
             protected_real && (path_within?(real, protected_real) || path_within?(protected_real, real))
@@ -127,38 +133,33 @@ module Polispec
           stat = File.lstat(target)
           raise Polispec::Error, "mutable target is not a selected-owner regular file: #{target}" unless stat.file? && !stat.symlink? && stat.uid == owner_uid
         end
-        allowed = planned.each_with_object({}) do |artifact, result|
+        allowed = stored.each_with_object({}) do |artifact, result|
           result[artifact["path"]] = expected_ownership(artifact)
         end
         rows = Array(receipt["owned_entries"])
         raise Polispec::Error, "mutable receipt has no ownership entries" if rows.empty?
-        rows.each do |row|
-          row = stringify(row)
-          selectors = allowed[row["target"]]
-          raise Polispec::Error, "mutable receipt owns an unplanned target" unless selectors
-          pointer = row["merge_mode"] == "toml_block" ? row["pointer"] : row["pointer"].to_s
-          expected = selectors[pointer]
-          raise Polispec::Error, "mutable receipt owns an unplanned selector" unless expected
-          raise Polispec::Error, "mutable receipt ownership mode differs from canonical planning" unless row["merge_mode"] == expected["mode"]
-          if expected["mode"] == "array"
-            contribution = Array(row["contributed_values"])
-            valid = contribution.uniq.length == contribution.length && contribution.all? { |value| expected["value"].include?(canonical(value)) }
-            raise Polispec::Error, "mutable receipt array contribution differs from canonical planning" unless valid
-          elsif expected["mode"] == "scalar"
-            raise Polispec::Error, "mutable receipt scalar contribution differs from canonical planning" unless canonical(row["contributed_value"]) == expected["value"]
-          else
-            raise Polispec::Error, "mutable receipt root contribution differs from canonical planning" unless row["contributed_digest"] == expected["digest"]
-          end
-          validate_backup_reference!(row["target"], row["backup_path"], row["backup_digest"], owner_uid)
-        end
-        actual_selectors = rows.each_with_object({}) do |row, result|
-          row = stringify(row)
-          (result[row["target"]] ||= []) << row["pointer"].to_s
-        end
+        grouped_rows = rows.map { |row| stringify(row) }.group_by { |row| [row["target"], row["pointer"].to_s] }
         allowed.each do |target, selectors|
-          actual = Array(actual_selectors[target])
-          expected = selectors.keys.sort
-          raise Polispec::Error, "mutable receipt ownership selectors are incomplete" unless actual.length == actual.uniq.length && actual.sort == expected
+          actual = grouped_rows.keys.select { |entry| entry.first == target }.map(&:last).sort
+          raise Polispec::Error, "mutable receipt ownership selectors are incomplete" unless actual == selectors.keys.sort
+        end
+        grouped_rows.each do |(target, pointer), group|
+          expected = allowed.dig(target, pointer)
+          raise Polispec::Error, "mutable receipt owns an unplanned selector" unless expected
+          modes = group.map { |row| row["merge_mode"] }.uniq
+          raise Polispec::Error, "mutable receipt ownership mode differs from stored artifact" unless modes == [expected["mode"]]
+          if expected["mode"] == "array"
+            contributions = group.flat_map { |row| Array(row["contributed_values"]).map { |value| canonical(value) } }
+            valid = contributions.length == contributions.uniq.length && contributions.all? { |value| expected["value"].include?(value) }
+            raise Polispec::Error, "mutable receipt array contributions differ from stored artifact" unless valid
+          elsif expected["mode"] == "scalar"
+            valid = group.length == 1 && canonical(group.first["contributed_value"]) == expected["value"]
+            raise Polispec::Error, "mutable receipt scalar contribution differs from stored artifact" unless valid
+          else
+            valid = group.length == 1 && group.first["contributed_digest"] == expected["digest"]
+            raise Polispec::Error, "mutable receipt root contribution differs from stored artifact" unless valid
+          end
+          group.each { |row| validate_backup_reference!(target, row["backup_path"], row["backup_digest"], owner_uid) }
         end
         backups = Array(receipt["backups"])
         raise Polispec::Error, "mutable receipt backup rows are incomplete" unless backups.map { |row| stringify(row)["target"] }.sort == targets
