@@ -224,6 +224,7 @@ module Polispec
               path_controls << {
                 "control_id" => control.fetch("id"),
                 "conditional" => !control.fetch("match").empty?,
+                "trigger_supported" => control.fetch("trigger") == "pre_tool",
                 "read" => Array(paths["read"]).uniq.sort,
                 "write" => Array(paths["write"]).uniq.sort
               }
@@ -233,13 +234,14 @@ module Polispec
               network_controls << {
                 "control_id" => control.fetch("id"),
                 "conditional" => !control.fetch("match").empty?,
+                "trigger_supported" => control.fetch("trigger") == "pre_tool",
                 "mode" => network_params.fetch("mode"),
                 "domains" => Array(network_params["domains"]).uniq.sort
               }
             end
           end
           reject_conflicting_restrictions!(path_controls, network_controls)
-          unconditional_network = network_controls.reject { |item| item.fetch("conditional") }
+          unconditional_network = network_controls.select { |item| item.fetch("trigger_supported") && !item.fetch("conditional") }
           compiled_network = unconditional_network.first
           network = if edition == "lock"
                       {
@@ -293,18 +295,27 @@ module Polispec
               sandbox_state = sandbox_version_state(version)
               params = control.fetch("effect_params")
               if params.key?("paths")
-                rows << capability(control, "sandbox.filesystem", "unsupported", "Claude sandbox allowRead and allowWrite add access for Bash commands rather than express the control's path allowlist; file tools, MCP servers, and hooks also run outside the sandbox. The callback remains authoritative.")
+                path_detail = if trigger != "pre_tool"
+                                "This trigger has no generated Claude hook, and its path restriction is not converted into a global sandbox policy."
+                              else
+                                "Claude sandbox allowRead and allowWrite add access for Bash commands rather than express the control's path allowlist; file tools, MCP servers, and hooks also run outside the sandbox. The callback remains authoritative."
+                              end
+                rows << capability(control, "sandbox.filesystem", "unsupported", path_detail)
               end
               if params.key?("network")
                 native_network = restriction_for_control(restrictions.fetch("network_controls"), control.fetch("id"))
-                network_state = if native_network.fetch("conditional")
+                network_state = if !native_network.fetch("trigger_supported")
+                                  "unsupported"
+                                elsif native_network.fetch("conditional")
                                   "unsupported"
                                 elsif native_network.fetch("mode") == "open"
                                   "unsupported"
                                 else
                                   sandbox_state
                                 end
-                network_detail = if native_network.fetch("conditional")
+                network_detail = if !native_network.fetch("trigger_supported")
+                                   "This trigger has no generated Claude hook, and its network restriction is not converted into a global sandbox policy."
+                                 elsif native_network.fetch("conditional")
                                    "A conditional network restriction cannot be converted into a global sandbox allowlist without broadening its scope; the callback remains authoritative."
                                  elsif native_network.fetch("mode") == "open"
                                    "Claude exposes no explicit sandbox setting for open network; allowed domains start empty and prompt, and WebFetch and MCP run outside the Bash sandbox."
@@ -347,13 +358,20 @@ module Polispec
           if edition == "lock" && scope != "managed"
             findings << finding("lock_scope_unenforceable", "Lock edition settings outside managed scope remain mutable by the user.", nil, "edition.lock", "Generate the lock edition in managed scope with operator authority.")
           end
-          unless restrictions.fetch("path_controls").empty?
+          supported_paths = restrictions.fetch("path_controls").select { |item| item.fetch("trigger_supported") }
+          unless supported_paths.empty?
             findings << finding("path_restriction_hook_authority", "Claude sandbox path entries grant Bash access and do not encode per-control path allowlists; path restrictions remain callback-enforced.", nil, "sandbox.filesystem", "Require native callback denial evidence across file tools and Bash before certification.")
           end
-          conditional = (restrictions.fetch("path_controls") + restrictions.fetch("network_controls")).select { |item| item.fetch("conditional") }
+          restrictions_all = restrictions.fetch("path_controls") + restrictions.fetch("network_controls")
+          conditional = restrictions_all.select { |item| item.fetch("trigger_supported") && item.fetch("conditional") }
           unless conditional.empty?
             ids = conditional.map { |item| item.fetch("control_id") }.uniq.sort.join(", ")
             findings << finding("conditional_restriction_hook_only", "Conditional restrictions #{ids} are not compiled into global sandbox allowlists because that would broaden their scope.", nil, "sandbox.conditional", "Keep the callback authoritative and require native matched and unmatched journeys.")
+          end
+          unsupported_triggers = restrictions_all.reject { |item| item.fetch("trigger_supported") }
+          unless unsupported_triggers.empty?
+            ids = unsupported_triggers.map { |item| item.fetch("control_id") }.uniq.sort.join(", ")
+            findings << finding("restriction_trigger_unsupported", "Restrictions #{ids} use triggers with no generated Claude hook and are not converted into global sandbox settings.", nil, "sandbox.trigger", "Use a supported pre_tool trigger or leave the restriction unavailable.")
           end
           if edition == "standard"
             findings << finding("standard_network_open_unsupported", "Claude sandbox allowed domains start empty and prompt on new domains; the backend cannot encode explicit open-network semantics.", nil, "sandbox.network.standard_open", "Treat standard open network as unsupported and retain callback policy until a native open setting exists.")
@@ -401,16 +419,17 @@ module Polispec
 
         def reject_conflicting_restrictions!(path_controls, network_controls)
           %w[read write].each do |axis|
-            constrained = path_controls.reject { |item| item.fetch(axis).empty? }
+            constrained = path_controls.select { |item| item.fetch("trigger_supported") && !item.fetch("conditional") && !item.fetch(axis).empty? }
             next if constrained.map { |item| item.fetch(axis) }.uniq.length <= 1
 
             ids = constrained.map { |item| item.fetch("control_id") }.uniq.sort.join(", ")
             raise Polispec::Error, "conflicting #{axis} path restrictions cannot be safely intersected for Claude: #{ids}"
           end
-          signatures = network_controls.map { |item| [item.fetch("mode"), item.fetch("domains")] }.uniq
+          convertible = network_controls.select { |item| item.fetch("trigger_supported") && !item.fetch("conditional") }
+          signatures = convertible.map { |item| [item.fetch("mode"), item.fetch("domains")] }.uniq
           return if signatures.length <= 1
 
-          ids = network_controls.map { |item| item.fetch("control_id") }.uniq.sort.join(", ")
+          ids = convertible.map { |item| item.fetch("control_id") }.uniq.sort.join(", ")
           raise Polispec::Error, "conflicting network restrictions cannot be safely intersected for Claude: #{ids}"
         end
 
