@@ -174,11 +174,12 @@ module Polispec
         raise Polispec::Error, "sealed authority is broken" if @plane["status"] == "broken"
         ledger = Ledger.load
         actions = calls.flat_map { |tool, data| Array(Classify.call(tool, data, cwd)) }
-        actions.concat(HarnessControls::RootGuard.classify(input.tool_name, input.tool_input, cwd))
         baseline = Layers.baseline?
         option_applies = options["controls_file"] && (!options["controls_project"] || project_applies?(options["controls_project"], cwd, actions))
+        control_gate = @plane["status"] == "active" || option_applies || HarnessControls::Features.enabled?("harness_controls")
+        actions.concat(HarnessControls::RootGuard.classify(input.tool_name, input.tool_input, cwd)) if control_gate
         governed = baseline || relevant?(ledger, cwd, calls) || @plane["status"] == "active" || option_applies
-        actions << unknown_action(input, cwd) if actions.empty? && governed && !diagnostic_read?(input.tool_name)
+        actions << unknown_action(input, cwd) if control_gate && actions.empty? && governed && !diagnostic_read?(input.tool_name)
         groups = group(actions, ledger, cwd, baseline)
         mode = enforce_mode
         @policy_digests = []
@@ -195,6 +196,7 @@ module Polispec
         raise
       end
       legacy = outcomes.max_by { |outcome| outcome.verdict.severity }
+      return mode == "enforce" && legacy ? adapter.render(legacy.verdict) : nil unless control_gate
       documents = control_documents(adapter, input, cwd, actions, options)
       governed ||= !documents.empty?
       return nil unless governed
