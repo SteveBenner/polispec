@@ -79,6 +79,10 @@ module Polispec
           return unavailable_probes("No bounded native runner was supplied.") unless runner
 
           prefix = validated_probe_prefix(sandbox)
+          _fixture, fixture_error = filesystem_fixture(sandbox, receipt)
+          if fixture_error
+            return [fixture_error, probe_row("network", "unavailable", "filesystem_fixture_invalid", "Namespace startup was not attempted because the filesystem probe fixture is invalid.")]
+          end
           readiness = run_probe(runner, prefix + ["/usr/bin/true"])
           unless readiness["exit_status"] == 0
             evidence = readiness["stderr"].to_s.include?("No permissions to create a new namespace") ? "user_namespaces_unavailable" : "sandbox_start_failed"
@@ -326,20 +330,10 @@ module Polispec
         private_class_method :sandbox_from
 
         def filesystem_probe(sandbox, receipt, runner, prefix)
-          values = stringify(receipt.respond_to?(:to_h) ? receipt.to_h : receipt)
-          root = values["probe_root"].to_s
-          unless safe_scratch_root?(root)
-            return probe_row("filesystem", "unavailable", "scratch_root_required", "A safe absolute probe_root under /tmp is required for the denial journey.")
-          end
+          fixture, error = filesystem_fixture(sandbox, receipt)
+          return error if error
 
-          outside_dir = File.join(root, "outside")
-          unless File.executable?("/usr/bin/ruby") && safe_scratch_root?(outside_dir)
-            return probe_row("filesystem", "unavailable", "scratch_fixture_required", "The fixed Ruby probe runtime and pre-created inert outside directory are required.")
-          end
-
-          outside = File.join(outside_dir, "blocked.txt")
-          return probe_row("filesystem", "unavailable", "scratch_target_exists", "The outside probe target already exists and will not be overwritten.") if File.exist?(outside) || File.symlink?(outside)
-
+          outside = fixture["outside"]
           program = "begin; File.open(ARGV.fetch(0), File::WRONLY|File::CREAT|File::EXCL){|f| f.write(\"blocked\\n\")}; STDOUT.write(\"POLISPEC_OS_WRITE_SUCCEEDED\\n\"); exit 72; rescue Errno::EACCES, Errno::EROFS, Errno::EPERM; STDOUT.write(\"POLISPEC_OS_DENIED\\n\"); exit 73; rescue; STDERR.write(\"POLISPEC_OS_ERROR\\n\"); exit 74; end"
           result = run_probe(runner, prefix + ["/usr/bin/ruby", "-e", program, outside])
           return probe_row("filesystem", "failed", "outside_write_created_target", "The sandbox created the outside probe target.") if File.exist?(outside) || File.symlink?(outside)
@@ -353,6 +347,50 @@ module Polispec
           probe_row("filesystem", "unavailable", "probe_result_unrecognized", "The fixed denial probe returned no recognized permission-denial evidence.")
         end
         private_class_method :filesystem_probe
+
+        def filesystem_fixture(sandbox, receipt)
+          values = stringify(receipt.respond_to?(:to_h) ? receipt.to_h : receipt)
+          root = values["probe_root"].to_s
+          unless safe_scratch_root?(root)
+            return [nil, probe_row("filesystem", "unavailable", "scratch_root_required", "A safe absolute probe_root under /tmp is required for the denial journey.")]
+          end
+
+          outside_dir = File.join(root, "outside")
+          unless File.executable?("/usr/bin/ruby") && safe_scratch_root?(outside_dir)
+            return [nil, probe_row("filesystem", "unavailable", "scratch_fixture_required", "The fixed Ruby probe runtime and pre-created inert outside directory are required.")]
+          end
+          unless File.writable?(outside_dir)
+            return [nil, probe_row("filesystem", "unavailable", "scratch_fixture_unwritable", "The outside probe directory is not writable by the host caller, so a permission denial cannot prove sandbox containment.")]
+          end
+
+          outside = File.join(File.realpath(outside_dir), "blocked.txt")
+          if File.exist?(outside) || File.symlink?(outside)
+            return [nil, probe_row("filesystem", "unavailable", "scratch_target_exists", "The outside probe target already exists and will not be overwritten.")]
+          end
+
+          Array(sandbox.dig("filesystem", "writable_paths")).each do |path|
+            writable = File.realpath(path)
+            if path_within?(outside, writable)
+              return [nil, probe_row("filesystem", "unavailable", "scratch_target_writable", "The outside probe target lies inside a configured writable bind and cannot prove root-filesystem denial.")]
+            end
+          end
+          [{ "outside" => outside }, nil]
+        rescue SystemCallError
+          [nil, probe_row("filesystem", "unavailable", "writable_bind_unresolved", "Every configured writable bind must resolve canonically before the denial probe runs.")]
+        end
+        private_class_method :filesystem_fixture
+
+        def path_within?(path, ancestor)
+          current = path
+          loop do
+            return true if current == ancestor
+            parent = File.dirname(current)
+            return false if parent == current
+
+            current = parent
+          end
+        end
+        private_class_method :path_within?
 
         def safe_scratch_root?(path)
           return false unless path.start_with?("/tmp/") && !path.split("/").include?("..") && File.directory?(path)
