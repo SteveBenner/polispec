@@ -63,19 +63,28 @@ module Polispec
 
       def risks_for(command, arguments, argv)
         risks = []
-        risks << risk("privileged_container", "#{command} requests privileged container execution.") if privileged?(arguments)
+        risks << risk("privileged_container", "#{command} requests privileged container execution.") if privileged?(arguments) || lxd_privileged?(command, arguments)
         risks << risk("host_mount", "#{command} requests a host bind mount.") if host_mount?(arguments)
         risks << risk("daemon_socket", "#{command} requests container daemon socket access.") if daemon_socket?(argv)
         risks << risk("host_namespace", "#{command} requests a host namespace or device boundary.") if host_boundary?(arguments)
-        risks << risk("host_mount", "#{command} requests a host filesystem device.") if lxd_host_device?(command, arguments)
+        risks << risk("host_device", "#{command} requests a host device.") if lxd_host_device?(command, arguments)
         risks.uniq { |item| item["code"] }
       end
       private_class_method :risks_for
 
       def privileged?(arguments)
-        arguments.any? { |item| item == "--privileged" || item.start_with?("--privileged=") }
+        arguments.each_with_index.any? do |item, index|
+          item == "--privileged" || item.start_with?("--privileged=") ||
+            item == "--cap-add=ALL" || item == "--cap-add=SYS_ADMIN" ||
+            (item == "--cap-add" && %w[ALL SYS_ADMIN].include?(arguments[index + 1]))
+        end
       end
       private_class_method :privileged?
+
+      def lxd_privileged?(command, arguments)
+        %w[lxc incus].include?(command) && arguments.any? { |item| item == "security.privileged=true" }
+      end
+      private_class_method :lxd_privileged?
 
       def host_mount?(arguments)
         arguments.each_with_index.any? do |item, index|
@@ -83,6 +92,8 @@ module Polispec
             bind_source?(arguments[index + 1])
           elsif item.start_with?("--volume=") || item.start_with?("-v=")
             bind_source?(item.split("=", 2).last)
+          elsif item.start_with?("-v") && item.length > 2
+            bind_source?(item[2..-1])
           elsif item == "--mount"
             mount_spec_risky?(arguments[index + 1])
           elsif item.start_with?("--mount=")
@@ -91,6 +102,8 @@ module Polispec
             false
           end
         end
+      rescue StandardError
+        false
       end
       private_class_method :host_mount?
 
@@ -98,7 +111,7 @@ module Polispec
         return false unless value
 
         source = value.to_s.split(":", 2).first
-        source.start_with?("/")
+        source.start_with?("/", "./", "../", "~/") || source == "." || source == ".." || source.include?("/")
       end
       private_class_method :bind_source?
 
@@ -108,7 +121,9 @@ module Polispec
         fields = value.to_s.split(",").map { |field| field.split("=", 2) }.to_h
         type = fields["type"]
         source = fields["source"] || fields["src"]
-        type == "bind" && source.to_s.start_with?("/")
+        type == "bind" && !source.to_s.empty?
+      rescue StandardError
+        false
       end
       private_class_method :mount_spec_risky?
 
@@ -135,7 +150,8 @@ module Polispec
         return false unless %w[lxc incus].include?(command)
         return false unless arguments.each_cons(3).any? { |items| items == %w[config device add] }
 
-        arguments.any? { |item| item == "disk" } && arguments.any? { |item| item.start_with?("source=/") }
+        device_types = %w[disk unix-char unix-block gpu usb pci proxy]
+        arguments.any? { |item| device_types.include?(item) } || arguments.any? { |item| item.start_with?("source=/", "path=/dev/") }
       end
       private_class_method :lxd_host_device?
 
