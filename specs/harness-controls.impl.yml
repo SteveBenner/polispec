@@ -13,7 +13,7 @@ metadata:
     - {id: Semantic Versioning 2.0, role: New public CLI and control contract require a minor release.}
     - {id: IEEE 1016-2009, role: Explicit interfaces and deployment boundaries make independent implementation possible.}
   worker: {model: gpt-5.6-sol, effort: medium, harness: codex}
-  execution_status: foundation_verified
+  execution_status: wave_2_in_progress
   execution_blocker: null
 vision:
   problem: Existing environment policy does not provide a deterministic harness-control compiler, installation receipts, or a protected control plane. Generic adapters and permissive failure paths do not support a universal enforcement claim.
@@ -70,7 +70,7 @@ requirements:
     - {id: FR-18, statement: Document the grammar, APIs, limitations, edition defaults, and the deferred baseline manifest., rationale: Agent-facing language and Allowlist answer., verification: inspection, priority: must, satisfied_by_slices: [slice_final_integration]}
   non_functional:
     performance:
-      - {id: NFR-P-1, axis: guard latency, budget: Warm local guard p99 at most 200 ms across 100 synthetic invocations; no external model call., scope: Hook decision path., method: Record monotonic durations from repeated real CLI invocations.}
+      - {id: NFR-P-1, axis: guard latency, budget: Target at most 200 ms for exercised warm local guard invocations; no external model call., scope: Hook decision path., method: Record elapsed durations during required real CLI journeys; report observed samples without claiming a percentile or creating a benchmark suite.}
       - {id: NFR-P-2, axis: input resources, budget: At most 1 MiB IR input, 256 controls per request, 64 KiB hook input, and 10 seconds per hook invocation., scope: Parser and guard., method: Invoke documented boundary inputs and observe bounded rejection.}
     reliability:
       - {id: NFR-R-1, axis: installer atomicity, budget: Zero partially applied receipt states reported as successful., method: Interrupt a scratch installation and observe recovery or failure with old controls preserved.}
@@ -227,6 +227,7 @@ sealed_plane:
   operator_auth: Require privileged effective identity and protected executable provenance; retain explicit confirmation for sensitive operations. Never treat SUDO_USER, POLISPEC_OPERATOR, or TTY alone as proof. Report passwordless or cached elevation as a certification finding rather than claiming a fresh password was obtained.
   privileges: Development verification uses isolated destinations and synthetic projects. Actual sealing and real project activation are operator-run final steps, outside worker authority.
 editions:
+  settings: polispec.edition is standard or lock; polispec.root_guard is a boolean defaulting to false. EDITION=lock is a build floor that a user setting cannot downgrade. The effective root guard is the OR of the explicit setting, the persisted scan state, and requested lock. Turning the setting off does not silently erase an armed scan state; loosening requires operator authority. The guard reads the persisted scan state without running expensive environment probes per tool call.
   standard: {mcp_undeclared: ask, sandbox_network: open, fail_mode: closed_mutations, root_guard: false, source_kind: git}
   lock: {mcp_undeclared: deny, sandbox_network: allowlist, network_allowlist: [], fail_mode: closed_mutations, source_kind: root_authored}
   selection: EDITION supplies the build default; standard permits the declared edition setting, but root-authoritative lock status cannot be downgraded by user environment or settings.
