@@ -51,7 +51,10 @@ module Polispec
       def known_names
         @known_names ||= begin
           data = YAML.safe_load(File.read(File.join(ROOT, "data", "harness-capabilities.yml")), aliases: false) || {}
-          Array(data["harnesses"]).filter_map { |entry| entry["harness"] if entry.is_a?(Hash) }.uniq
+          Array(data["harnesses"]).each_with_object([]) do |entry, names|
+            name = entry["harness"] if entry.is_a?(Hash)
+            names << name if name
+          end.uniq
         rescue SystemCallError, Psych::Exception
           []
         end
