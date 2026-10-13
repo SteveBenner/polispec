@@ -33,12 +33,19 @@ module Polispec
         result("allow", nil, asks, observations, injections)
       end
 
-      def declared?(documents, action, input, context, protected_only: true)
+      def declared?(documents, action_class, input, context, protected_only: true)
+        actions = Array(context["actions"]).select { |action| action.action_class == action_class }
+        !actions.empty? && actions.all? { |action| declared_action?(documents, action, input, context, protected_only: protected_only) }
+      end
+
+      def declared_action?(documents, action, input, context, protected_only: true)
         Array(documents).any? do |entry|
           values = stringify(entry)
           next false if protected_only && values["protected"] != true
           Array(values.dig("document", "controls")).any? do |control|
-            control["action"] == action && matches?(control, input, Array(context["actions"]), stringify(context))
+            match = control["match"] || {}
+            exact = match["server"].to_s == action.env_hint["server"].to_s && match["operation"].to_s == action.env_hint["operation"].to_s
+            exact && !match["server"].to_s.empty? && !match["operation"].to_s.empty? && control["action"] == action.action_class && matches_action?(control, input, action, stringify(context))
           end
         end
       end
@@ -79,9 +86,14 @@ module Polispec
         return false unless control.is_a?(Hash) && control["trigger"] == "pre_tool"
         candidates = actions.select { |action| action.action_class == control["action"] }
         return false if candidates.empty?
-        candidates.any? { |action| match_fields?(control["match"] || {}, action, input, context) }
+        candidates.any? { |action| matches_action?(control, input, action, context) }
       end
       private_class_method :matches?
+
+      def matches_action?(control, input, action, context)
+        control.is_a?(Hash) && control["trigger"] == "pre_tool" && control["action"] == action.action_class && match_fields?(control["match"] || {}, action, input, context)
+      end
+      private_class_method :matches_action?
 
       def match_fields?(match, action, input, context)
         extensions = %w[path tool server operation domain role]
@@ -90,7 +102,13 @@ module Polispec
         env = target && target.respond_to?(:env) ? target.env : context["env"] || "dev"
         engine_context = context["engine_context"].is_a?(Hash) ? context["engine_context"] : {}
         legacy = match.reject { |key, _| extensions.include?(key.to_s) }
-        return false unless Engine::Match.rule?(legacy, action, env, target, engine_context)
+        findings = engine_context[:findings] || engine_context["findings"]
+        before = findings.is_a?(Array) ? findings.length : 0
+        legacy_match = Engine::Match.rule?(legacy, action, env, target, engine_context)
+        if findings.is_a?(Array) && findings.length > before
+          raise Polispec::Error, "control predicate evidence is unavailable"
+        end
+        return false unless legacy_match
         local.all? do |key, expected|
           case key.to_s
           when "path" then File.fnmatch?(expected.to_s, action.env_hint["path"].to_s, File::FNM_PATHNAME | File::FNM_DOTMATCH)
@@ -102,8 +120,6 @@ module Polispec
           else false
           end
         end
-      rescue StandardError
-        false
       end
       private_class_method :match_fields?
 
@@ -168,6 +184,37 @@ module Polispec
         { "verdict" => verdict, "ask_ids" => asks.map { |item| item["id"].to_s }.sort, "observations" => observations, "injections" => injections }
       end
       private_class_method :result
+
+      def stringify(value)
+        return {} unless value.is_a?(Hash)
+        value.each_with_object({}) { |(key, item), result| result[key.to_s] = item }
+      end
+      private_class_method :stringify
+    end
+
+
+    module Guard
+      module_function
+
+      def evaluate(input, context)
+        values = stringify(context)
+        result = Evaluate.call(input, values)
+        return result if result["verdict"].deny?
+        actions = Array(values["actions"])
+        undeclared = actions.select { |action| action.action_class == "mcp.call" }.reject do |action|
+          protected = Evaluate.declared_action?(values["documents"], action, input, values, protected_only: true)
+          trusted = values["trusted_declaration"].respond_to?(:call) && values["trusted_declaration"].call(action)
+          protected || trusted
+        end
+        unknown = actions.select { |action| action.raw.is_a?(Hash) && action.raw["unknown_tool"] == true }
+        return result if undeclared.empty? && unknown.empty?
+        code = undeclared.empty? ? "POLISPEC-TOOL-UNKNOWN" : "POLISPEC-MCP-UNDECLARED"
+        reason = undeclared.empty? ? "the non-read-only tool could not be positively classified" : "one or more MCP operations are not declared by protected controls or committed policy"
+        level = values["edition"] == "lock" ? "deny" : "warn"
+        result["verdict"] = Verdict.new(level: level, rule_id: code, reason: reason, next_step: "Ask the operator to declare the exact operation.")
+        result["ask_ids"] = Array(result["ask_ids"]) + [code] if level == "warn"
+        result
+      end
 
       def stringify(value)
         return {} unless value.is_a?(Hash)

@@ -42,6 +42,11 @@ module Polispec
       end
 
       def write_paths(input)
+        if input.is_a?(Hash) && input["edits"].is_a?(Array)
+          edits = input["edits"]
+          return [] if edits.empty? || edits.length > Harness::Base::MULTI_LIMIT
+          return edits.map { |entry| entry.is_a?(Hash) ? Support.dig(entry, *PATH_KEYS) : nil }.select { |value| value.is_a?(String) && !value.empty? }
+        end
         value = Support.dig(input, *PATH_KEYS)
         value.is_a?(String) && !value.empty? ? [value] : []
       end

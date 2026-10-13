@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require "timeout"
 require_relative "../harness/hermes"
 require_relative "../harness/antigravity"
 require_relative "../harness_controls/plane"
@@ -32,6 +33,15 @@ module Polispec
     ADAPTERS = { "claude" => :Claude, "codex" => :Codex, "hermes" => :Hermes, "antigravity" => :Antigravity }.freeze
     SESSION_LIMIT = 1200
     INPUT_LIMIT = 65_536
+    HOOK_BUDGET = 9.5
+    FIXED_DENIALS = {
+      "claude" => ["{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[POLISPEC internal] guard unavailable; call denied.\"}}\n", 0],
+      "codex" => ["{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[POLISPEC internal] guard unavailable; call denied.\"}}\n", 0],
+      "hermes" => ["{\"action\":\"block\",\"message\":\"[POLISPEC internal] guard unavailable; call denied.\"}\n", 2],
+      "antigravity" => ["{\"decision\":\"deny\",\"reason\":\"[POLISPEC internal] guard unavailable; call denied.\"}\n", 0],
+      "pi" => ["{\"decision\":\"block\",\"reason\":\"[POLISPEC internal] guard unavailable; call denied.\"}\n", 0],
+      "deepseek" => ["{\"decision\":\"block\",\"reason\":\"[POLISPEC internal] guard unavailable; call denied.\"}\n", 0]
+    }.freeze
     USAGE = "usage: polispec hook pretool|session --harness <claude|codex|hermes|pi|deepseek|antigravity>\n       polispec hook git <pre-commit|pre-push|reference-transaction|install|uninstall> [args...]"
 
     def self.run(args)
@@ -52,11 +62,9 @@ module Polispec
         return usage
       end
       @native_harness = harness
-      @plane = HarnessControls::Plane.resolve
-      raise Polispec::Error, "sealed authority is broken" if @plane["status"] == "broken"
       adapter = Harness.const_get(ADAPTERS.fetch(harness, :Generic)).new(harness)
       DeferredEvents.active = true
-      sub == "pretool" ? pretool(adapter, options) : session(adapter)
+      sub == "pretool" ? pretool(adapter, options) : Timeout.timeout(HOOK_BUDGET) { session(adapter) }
     rescue StandardError, ScriptError => error
       hard_deny(@native_harness, error)
     ensure
@@ -131,38 +139,49 @@ module Polispec
     end
 
     def pretool(adapter, options)
-      started = clock
-      raw = bounded_input
-      input = adapter.parse(raw)
-      output = decide(adapter, input, started, options)
-      $stdout.write(output) if output
-      adapter.exit_status.to_i
+      Timeout.timeout(HOOK_BUDGET) do
+        started = clock
+        raw = bounded_input
+        input = adapter.parse(raw)
+        @diagnostic_read = diagnostic_input?(adapter, input)
+        output = decide(adapter, input, started, options)
+        $stdout.write(output) if output
+        adapter.exit_status.to_i
+      end
     end
 
     def decide(adapter, input, started, options)
-      ledger = Ledger.load
       cwd = input.cwd.to_s.empty? ? Dir.pwd : input.cwd.to_s
       calls = adapter.calls(input)
-      actions = calls.flat_map { |tool, data| Array(Classify.call(tool, data, cwd)) }
-      actions.concat(HarnessControls::RootGuard.classify(input.tool_name, input.tool_input, cwd))
-      baseline = Layers.baseline?
-      option_applies = options["controls_file"] && (!options["controls_project"] || project_applies?(options["controls_project"], cwd, actions))
-      governed = baseline || relevant?(ledger, cwd, calls) || @plane["status"] == "active" || option_applies
-      actions << unknown_action(input, cwd) if actions.empty? && governed && !diagnostic_read?(input.tool_name)
+      begin
+        @plane = HarnessControls::Plane.resolve
+        raise Polispec::Error, "sealed authority is broken" if @plane["status"] == "broken"
+        ledger = Ledger.load
+        actions = calls.flat_map { |tool, data| Array(Classify.call(tool, data, cwd)) }
+        actions.concat(HarnessControls::RootGuard.classify(input.tool_name, input.tool_input, cwd))
+        baseline = Layers.baseline?
+        option_applies = options["controls_file"] && (!options["controls_project"] || project_applies?(options["controls_project"], cwd, actions))
+        governed = baseline || relevant?(ledger, cwd, calls) || @plane["status"] == "active" || option_applies
+        actions << unknown_action(input, cwd) if actions.empty? && governed && !diagnostic_read?(input.tool_name)
+        groups = group(actions, ledger, cwd, baseline)
+        mode = enforce_mode
+        @policy_digests = []
+        outcomes = groups.map do |kind, project, list|
+          if kind == :live
+            evaluate(adapter, input, ledger, cwd, project, list, mode, started)
+          else
+            evaluate_baseline(adapter, input, ledger, cwd, project, list, mode, started)
+          end
+        end
+      rescue StandardError, ScriptError
+        return nil if @diagnostic_read
+        raise
+      end
+      legacy = outcomes.max_by { |outcome| outcome.verdict.severity }
       documents = control_documents(adapter, input, cwd, actions, options)
       governed ||= !documents.empty?
       return nil unless governed
 
-      groups = group(actions, ledger, cwd, baseline)
-      mode = enforce_mode
-      outcomes = groups.map do |kind, project, list|
-        if kind == :live
-          evaluate(adapter, input, ledger, cwd, project, list, mode, started)
-        else
-          evaluate_baseline(adapter, input, ledger, cwd, project, list, mode, started)
-        end
-      end
-      legacy = outcomes.max_by { |outcome| outcome.verdict.severity }
       edition = HarnessControls::Plane.requested_edition
       scan = HarnessControls::Environment.guard_state(plane: @plane)
       explicit_root_guard = Engine::Settings.root_guard
@@ -172,21 +191,15 @@ module Polispec
                        "mcp_default" => edition == "lock" ? "deny" : "ask")
       protected_paths = HarnessControls::Evaluate.protected_paths(@plane, documents, ledger)
       target_for = control_target_resolver(ledger, cwd, baseline)
-      control = HarnessControls::Evaluate.call(input, {
+      control = Controls.evaluate(input, {
         "actions" => actions, "documents" => documents, "edition" => edition,
         "root_guard" => edition == "lock" || explicit_root_guard || scan["root_guard"] == true,
         "protected_paths" => protected_paths, "role" => input.agent_type,
         "env" => legacy && legacy.env, "target" => nil, "target_for" => target_for,
-        "engine_context" => { cwd: cwd, ledger: ledger, predicate_memo: {}, findings: [] }
+        "engine_context" => { cwd: cwd, ledger: ledger, predicate_memo: {}, findings: [] },
+        "trusted_declaration" => trusted_declaration(ledger, cwd, baseline, input)
       })
-      control = undeclared_ceiling(control, adapter, input, actions, documents, edition, ledger, cwd)
-      if @plane["status"] == "active" && legacy && legacy.verdict.warn? && control["verdict"].allow?
-        control["verdict"] = legacy.verdict
-        control["ask_ids"] = Array(control["ask_ids"]) + [legacy.verdict.rule_id.to_s]
-      end
-      control = authorize_ask(control, adapter, input, actions, documents, edition, legacy, ledger, cwd)
-      verdicts = [legacy && legacy.verdict, control["verdict"]].compact
-      worst = Verdict.worst(verdicts)
+      worst = compose_ask_authority(control, adapter, input, actions, documents, edition, legacy, ledger, cwd)
       emit_control_events(control, adapter, input, cwd)
       output = mode == "enforce" ? adapter.render(worst) : nil
       if output.nil? && worst.allow? && !control["injections"].empty?
@@ -207,19 +220,9 @@ module Polispec
       bytes
     end
 
-    def hard_deny(harness, error)
+    def hard_deny(harness, _error)
       return usage unless @subcommand == "pretool" && HARNESSES.include?(harness)
-      reason = "[POLISPEC internal] the guard could not safely judge this call and denied it (#{error.class})."
-      bytes, status = case harness
-                      when "hermes"
-                        [JSON.generate("action" => "block", "message" => reason) + "\n", 2]
-                      when "antigravity"
-                        [JSON.generate("decision" => "deny", "reason" => reason) + "\n", 0]
-                      when "pi", "deepseek"
-                        [JSON.generate("decision" => "block", "reason" => reason) + "\n", 0]
-                      else
-                        [JSON.generate("hookSpecificOutput" => { "hookEventName" => "PreToolUse", "permissionDecision" => "deny", "permissionDecisionReason" => reason }) + "\n", 0]
-                      end
+      bytes, status = FIXED_DENIALS.fetch(harness)
       $stdout.write(bytes)
       status
     rescue Errno::EPIPE, IOError
@@ -280,6 +283,7 @@ module Polispec
         owner = Engine::Envs.owner(action, ledger, cwd)
         if owner && owner.status == "live"
           loaded = PolicySource.resolve(owner, ledger: ledger)
+          raise Polispec::Error, "committed policy is unavailable for #{owner.id}" if loaded.source == "defaults"
           env = Engine::Envs.cwd_env(loaded.policy, ledger, owner.id, cwd)
           cache[key] = Target.new(project: owner.id, env: env, policy: loaded.policy, roster: nil, policy_source: loaded.source, digest: loaded.digest)
         elsif baseline
@@ -292,59 +296,69 @@ module Polispec
       end
     end
 
-    def undeclared_ceiling(control, _adapter, input, actions, documents, edition, ledger, cwd)
-      return control if control["verdict"].deny?
-      mcp = actions.select { |action| action.action_class == "mcp.call" }
-      unknown = actions.select { |action| action.raw.is_a?(Hash) && action.raw["unknown_tool"] == true }
-      undeclared = !mcp.empty? && !HarnessControls::Evaluate.declared?(documents, "mcp.call", input, { "actions" => actions }, protected_only: true) && !policy_declares?(ledger, cwd, "mcp.call")
-      return control unless undeclared || !unknown.empty?
-      code = undeclared ? "POLISPEC-MCP-UNDECLARED" : "POLISPEC-TOOL-UNKNOWN"
-      level = edition == "lock" ? "deny" : "warn"
-      reason = undeclared ? "the MCP operation is not declared by protected controls or committed policy" : "the non-read-only tool could not be positively classified"
-      control["verdict"] = Verdict.new(level: level, rule_id: code, reason: reason, next_step: "Ask the operator to declare the exact operation.")
-      control["ask_ids"] = Array(control["ask_ids"]) + [code] if level == "warn"
-      control
+    def trusted_declaration(ledger, cwd, baseline, input)
+      target_for = control_target_resolver(ledger, cwd, baseline)
+      lambda do |action|
+        target = target_for.call(action)
+        next false unless target && target.policy.is_a?(Hash) && target.policy_source != "controls"
+        Array(target.policy["rules"]).any? do |rule|
+          match = rule["match"] || {}
+          exact = match["server"].to_s == action.env_hint["server"].to_s && match["operation"].to_s == action.env_hint["operation"].to_s
+          next false unless exact && !match["server"].to_s.empty? && !match["operation"].to_s.empty?
+          legacy = match.reject { |key, _| %w[server operation domain tool role path].include?(key.to_s) }
+          context = { cwd: cwd, ledger: ledger, predicate_memo: {}, findings: [] }
+          matched = Engine::Match.rule?(legacy, action, target.env, target, context)
+          raise Polispec::Error, "policy declaration predicate evidence is unavailable" unless context[:findings].empty?
+          matched
+        end
+      end
     end
 
-    def authorize_ask(control, adapter, input, actions, documents, edition, legacy, ledger, cwd)
-      return control unless control["verdict"].warn? && !adapter.ask?
-      return control if legacy && legacy.verdict.deny?
-      return control if edition == "lock"
-      ask_ids = Array(control["ask_ids"]).uniq.sort
-      digest = HarnessControls::Evaluate.effective_digest(documents)
-      rule_id = "ask_#{Digest::SHA256.hexdigest(JSON.generate([ask_ids, digest]))}"
-      action_material = canonical_value({ "tool" => input.tool_name.to_s, "arguments" => input.tool_input, "cwd" => canonical_path(cwd), "actions" => actions.map(&:to_h) })
+    def compose_ask_authority(control, adapter, input, actions, documents, edition, legacy, ledger, cwd)
+      legacy_verdict = legacy && legacy.verdict
+      control_verdict = control["verdict"]
+      independent = [legacy_verdict, control_verdict].compact
+      return Verdict.worst(independent) if independent.any?(&:deny?)
+      return Verdict.worst(independent) if adapter.ask?
+      legacy_warn = legacy_verdict && legacy_verdict.warn?
+      control_warn = control_verdict.warn?
+      return Verdict.worst(independent) unless legacy_warn || control_warn
+      return Verdict.worst(independent) if edition == "lock" && (control_warn || !legacy_warn)
+
+      ask_set = []
+      ask_set << "environment:#{legacy_verdict.rule_id}" if legacy_warn
+      ask_set.concat(Array(control["ask_ids"]).map { |id| "control:#{id}" }) if control_warn
+      ask_set = ask_set.uniq.sort
+      control_digest = HarnessControls::Evaluate.effective_digest(documents)
+      policy_digests = Array(@policy_digests).compact.map(&:to_s).uniq.sort
+      rule_id = "ask_#{Digest::SHA256.hexdigest(JSON.generate([ask_set, policy_digests, control_digest]))}"
+      session = input.session_id.to_s
+      return authorization_denial(rule_id, "protected authorization requires an actual nonempty session identity") if session.empty?
+      action_material = canonical_value({
+        "tool" => input.tool_name.to_s, "arguments" => input.tool_input, "cwd" => canonical_path(cwd),
+        "actions" => actions.map(&:to_h), "asks" => ask_set, "policy_digests" => policy_digests,
+        "control_digest" => control_digest, "harness" => adapter.name, "session" => session
+      })
       action_digest = Digest::SHA256.hexdigest(JSON.generate(action_material))
-      located = begin
-        ledger.locate(cwd)
-      rescue StandardError
-        nil
-      end
+      located = ledger.locate(cwd)
       scopes = documents.map { |entry| [entry["scope"], entry["boundary"], entry["control_digest"]] }.sort_by { |row| row.map(&:to_s) }
       project = located ? located.project.id : "scope_#{Digest::SHA256.hexdigest(JSON.generate(scopes))[0, 24]}"
-      session = input.session_id.to_s
-      session = "session_#{Digest::SHA256.hexdigest([adapter.name, cwd].join("\0"))[0, 16]}" if session.empty?
+      return authorization_denial(rule_id, "exact operator authorization requires an active protected plane") unless @plane["status"] == "active"
       context = {
         "generation" => @plane["generation"].to_s, "project" => project, "action_digest" => action_digest,
         "rule_id" => rule_id, "session_id" => session, "harness" => adapter.name,
-        "action_class" => (legacy && legacy.action_class || actions.first && actions.first.action_class || "unknown").to_s,
+        "action_class" => actions.map(&:action_class).uniq.sort.join(","),
         "env" => (legacy && legacy.env || "dev").to_s
       }
-      unless @plane["status"] == "active"
-        control["verdict"] = Verdict.new(level: "deny", rule_id: rule_id, reason: "exact operator authorization requires an active protected plane", next_step: "Seal the plane and start the protected authorization service.")
-        return control
-      end
-      consumed = HarnessControls::Authorizations.consume(context)
-      if consumed
-        control["verdict"] = Verdict.new(level: "allow", rule_id: rule_id, reason: "the exact protected one-use authorization was consumed")
-        return control
-      end
+      return Verdict.new(level: "allow", rule_id: rule_id, reason: "the exact protected one-use authorization was consumed") if HarnessControls::Authorizations.consume(context)
       id = HarnessControls::Authorizations.request(context)
-      control["verdict"] = Verdict.new(level: "deny", rule_id: rule_id, reason: "the exact call awaits operator authorization", next_step: "The operator may redeem #{id} through the protected authorizations command.", allow_once_id: id)
-      control
+      Verdict.new(level: "deny", rule_id: rule_id, reason: "the exact composed ask set awaits operator authorization", next_step: "The operator may redeem #{id} through the protected authorizations command.", allow_once_id: id)
     rescue HarnessControls::Authorizations::Failure => error
-      control["verdict"] = Verdict.new(level: "deny", rule_id: "POLISPEC-AUTHORIZATION-UNAVAILABLE", reason: "protected authorization is unavailable (#{error.code})", next_step: "Restore the protected authorization service and retry.")
-      control
+      authorization_denial("POLISPEC-AUTHORIZATION-UNAVAILABLE", "protected authorization is unavailable (#{error.code})")
+    end
+
+    def authorization_denial(rule_id, reason)
+      Verdict.new(level: "deny", rule_id: rule_id, reason: reason, next_step: "Restore the protected authorization service and retry.")
     end
 
     def emit_control_events(control, adapter, input, cwd)
@@ -367,6 +381,18 @@ module Polispec
 
     def diagnostic_read?(tool_name)
       Harness::Base::READ_TOOLS.map(&:downcase).include?(tool_name.to_s.downcase)
+    end
+
+    def diagnostic_input?(adapter, input)
+      calls = adapter.calls(input)
+      names = Harness::Base::READ_TOOLS.map(&:downcase)
+      !calls.empty? && calls.all? do |tool, data|
+        next false unless names.include?(tool.to_s.downcase) && data.is_a?(Hash)
+        path = Harness::Base::PATH_KEYS.map { |key| data[key] }.find { |value| value.is_a?(String) && !value.empty? }
+        !path.nil?
+      end
+    rescue StandardError
+      false
     end
 
     def unknown_action(input, cwd)
@@ -437,7 +463,9 @@ module Polispec
 
     def evaluate_baseline(adapter, input, ledger, cwd, id, actions, mode, started)
       env = id == GLOBAL_ID ? "dev" : Engine::Envs.cwd_env({}, ledger, id, cwd)
-      target = Target.new(project: id, env: env, policy: { "rules" => [] }, roster: nil, policy_source: "global", digest: Layers.fingerprint)
+      digest = Layers.fingerprint
+      @policy_digests << digest unless digest.to_s.empty?
+      target = Target.new(project: id, env: env, policy: { "rules" => [] }, roster: nil, policy_source: "global", digest: digest)
       context = { ledger: ledger, cwd: cwd, session_id: input.session_id, role: (input.agent_type.to_s.empty? ? nil : input.agent_type), issue_allow_once: mode == "enforce" && !adapter.ask? }
       outcome = Engine.explain(actions, target, context)
       record(adapter, input, cwd, target, outcome, mode, started)
@@ -446,6 +474,8 @@ module Polispec
 
     def evaluate(adapter, input, ledger, cwd, project, actions, mode, started)
       loaded = PolicySource.resolve(project, ledger: ledger)
+      raise Polispec::Error, "committed policy is unavailable for #{project.id}" if loaded.source == "defaults"
+      @policy_digests << loaded.digest unless loaded.digest.to_s.empty?
       target = Target.new(
         project: project.id, env: Engine::Envs.cwd_env(loaded.policy, ledger, project.id, cwd), policy: loaded.policy,
         roster: nil, policy_source: loaded.source, digest: loaded.digest
@@ -509,7 +539,7 @@ module Polispec
     end
 
     def session(adapter)
-      input = adapter.parse(bounded_input)
+      input = session_input(adapter, bounded_input)
       cwd = input.cwd.to_s.empty? ? Dir.pwd : input.cwd.to_s
       ledger = Ledger.load
       located = ledger.locate(cwd)
@@ -520,6 +550,19 @@ module Polispec
       0
     rescue Errno::EPIPE, IOError, Polispec::Error
       1
+    end
+
+    def session_input(_adapter, raw)
+      data = JSON.parse(raw)
+      raise Polispec::Error, "session hook input must be an object" unless data.is_a?(Hash)
+      workspaces = data["workspacePaths"]
+      cwd = data["cwd"] || data["workdir"] || data["working_directory"]
+      cwd ||= workspaces.first if workspaces.is_a?(Array) && workspaces.first.is_a?(String)
+      session_id = data["session_id"] || data["sessionId"] || data["session"] || data["conversationId"]
+      event = data["hook_event_name"] || data["event"] || "SessionStart"
+      Harness::Input.new(tool_name: nil, tool_input: {}, cwd: cwd, session_id: session_id, agent_type: data["agent_type"] || data["profile"] || data["modelName"], event: event)
+    rescue JSON::ParserError => error
+      raise Polispec::Error, "invalid session hook JSON: #{error.message}"
     end
 
     class SessionText
