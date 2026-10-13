@@ -35,14 +35,14 @@ module Polispec
           unless File.executable?(BWRAP)
             findings << finding("bubblewrap_unavailable", "The required bubblewrap executable #{BWRAP} is absent or not executable.", nil, "os.executable", "Install a supported native sandbox before relying on OS containment.")
           end
-          artifacts = [artifact(paths["controls"], controls_content, "json", "control_document", ["/"], control_ids)]
+          artifacts = [artifact(paths["controls"], controls_content, "json", "control_document", [""], control_ids)]
 
           if runtime && restrictions["compilable"]
             sandbox = sandbox_document(runtime, restrictions, edition)
             content = JSON.pretty_generate(canonical_value(sandbox)) + "\n"
             raise Polispec::Error, "generated OS sandbox plan exceeds #{CONFIG_LIMIT} bytes" if content.bytesize > CONFIG_LIMIT
 
-            artifacts << artifact(paths["sandbox"], content, "json", "exclusive", ["/"], control_ids)
+            artifacts << artifact(paths["sandbox"], content, "json", "exclusive", [""], control_ids)
             findings << finding("native_os_probe_required", "The bubblewrap plan is generated but namespace startup, filesystem denial, and network behavior are not yet native-verified.", nil, "os.sandbox", "Run the bounded scratch probe before treating any containment axis as supported.")
           else
             findings << finding("os_sandbox_plan_unavailable", "A runnable OS sandbox artifact was not generated because required runtime or restriction prerequisites are unavailable.", nil, "os.sandbox", "Resolve every reported prerequisite and plan again.")
@@ -78,7 +78,7 @@ module Polispec
           return unavailable_probes("The planned bubblewrap executable is absent or not executable.") unless File.file?(sandbox["executable"].to_s) && File.executable?(sandbox["executable"].to_s)
           return unavailable_probes("No bounded native runner was supplied.") unless runner
 
-          prefix = Array(sandbox["argv_prefix"])
+          prefix = validated_probe_prefix(sandbox)
           readiness = run_probe(runner, prefix + ["/usr/bin/true"])
           unless readiness["exit_status"] == 0
             evidence = readiness["stderr"].to_s.include?("No permissions to create a new namespace") ? "user_namespaces_unavailable" : "sandbox_start_failed"
@@ -237,11 +237,8 @@ module Polispec
         private_class_method :identical_or_refused
 
         def sandbox_document(runtime, restrictions, edition)
-          argv = [BWRAP, "--die-with-parent", "--new-session", "--unshare-all"]
-          argv << "--share-net" if edition == "standard"
-          argv.concat(["--ro-bind", "/", "/"])
-          restrictions["writable_paths"].sort.each { |path| argv.concat(["--bind", path, path]) }
-          argv.concat(["--proc", "/proc", "--dev", "/dev", "--"])
+          mode = edition == "lock" ? "deny" : "open"
+          argv = bwrap_prefix(restrictions["writable_paths"], mode)
           {
             "schema" => "polispec.os-sandbox/v1",
             "backend" => "bubblewrap",
@@ -250,11 +247,37 @@ module Polispec
             "runtime_argv" => runtime,
             "launch_argv" => argv + runtime,
             "filesystem" => { "root" => "read_only", "writable_paths" => restrictions["writable_paths"].sort },
-            "network" => { "mode" => restrictions["network_mode"], "allowlist" => [] },
+            "network" => { "mode" => mode, "allowlist" => [] },
             "certified" => false
           }
         end
         private_class_method :sandbox_document
+
+        def bwrap_prefix(writable_paths, network_mode)
+          argv = [BWRAP, "--die-with-parent", "--new-session", "--unshare-all"]
+          argv << "--share-net" if network_mode == "open"
+          argv.concat(["--ro-bind", "/", "/"])
+          writable_paths.sort.each { |path| argv.concat(["--bind", path, path]) }
+          argv.concat(["--proc", "/proc", "--dev", "/dev", "--"])
+        end
+        private_class_method :bwrap_prefix
+
+        def validated_probe_prefix(sandbox)
+          raise Polispec::Error, "invalid OS sandbox schema" unless sandbox["schema"] == "polispec.os-sandbox/v1"
+          raise Polispec::Error, "invalid OS sandbox backend" unless sandbox["backend"] == "bubblewrap" && sandbox["executable"] == BWRAP
+          filesystem = stringify(sandbox["filesystem"])
+          raise Polispec::Error, "invalid OS sandbox filesystem root" unless filesystem["root"] == "read_only"
+          writable_paths = filesystem["writable_paths"]
+          valid_paths = writable_paths.is_a?(Array) && writable_paths.length <= 256 && writable_paths.all? { |path| absolute_path?(path) && !glob_path?(path) } && writable_paths == writable_paths.uniq.sort
+          raise Polispec::Error, "invalid OS sandbox writable paths" unless valid_paths
+          network = stringify(sandbox["network"])
+          raise Polispec::Error, "invalid OS sandbox network" unless %w[open deny].include?(network["mode"]) && network["allowlist"] == []
+          expected = bwrap_prefix(writable_paths, network["mode"])
+          raise Polispec::Error, "OS sandbox argv_prefix does not match the bounded plan" unless sandbox["argv_prefix"] == expected
+
+          expected
+        end
+        private_class_method :validated_probe_prefix
 
         def capabilities_for(document, restrictions, runtime_available)
           generated = restrictions["compilable"] && runtime_available
@@ -305,21 +328,48 @@ module Polispec
         def filesystem_probe(sandbox, receipt, runner, prefix)
           values = stringify(receipt.respond_to?(:to_h) ? receipt.to_h : receipt)
           root = values["probe_root"].to_s
-          unless root.start_with?("/tmp/") && !root.split("/").include?("..")
+          unless safe_scratch_root?(root)
             return probe_row("filesystem", "unavailable", "scratch_root_required", "A safe absolute probe_root under /tmp is required for the denial journey.")
           end
 
-          unless File.executable?("/usr/bin/ruby") && File.directory?(File.join(root, "outside"))
+          outside_dir = File.join(root, "outside")
+          unless File.executable?("/usr/bin/ruby") && safe_scratch_root?(outside_dir)
             return probe_row("filesystem", "unavailable", "scratch_fixture_required", "The fixed Ruby probe runtime and pre-created inert outside directory are required.")
           end
 
-          outside = File.join(root, "outside", "blocked.txt")
-          result = run_probe(runner, prefix + ["/usr/bin/ruby", "-e", "File.binwrite(ARGV.fetch(0), \"blocked\\n\")", outside])
-          return probe_row("filesystem", "failed", "outside_write_succeeded", "The sandbox allowed a write outside configured writable roots.") if result["exit_status"] == 0
+          outside = File.join(outside_dir, "blocked.txt")
+          return probe_row("filesystem", "unavailable", "scratch_target_exists", "The outside probe target already exists and will not be overwritten.") if File.exist?(outside) || File.symlink?(outside)
 
-          probe_row("filesystem", "supported", "outside_write_denied", "A native bubblewrap invocation denied the inert scratch write outside configured writable roots.")
+          program = "begin; File.open(ARGV.fetch(0), File::WRONLY|File::CREAT|File::EXCL){|f| f.write(\"blocked\\n\")}; STDOUT.write(\"POLISPEC_OS_WRITE_SUCCEEDED\\n\"); exit 72; rescue Errno::EACCES, Errno::EROFS, Errno::EPERM; STDOUT.write(\"POLISPEC_OS_DENIED\\n\"); exit 73; rescue; STDERR.write(\"POLISPEC_OS_ERROR\\n\"); exit 74; end"
+          result = run_probe(runner, prefix + ["/usr/bin/ruby", "-e", program, outside])
+          return probe_row("filesystem", "failed", "outside_write_created_target", "The sandbox created the outside probe target.") if File.exist?(outside) || File.symlink?(outside)
+          if result["exit_status"] == 73 && result["stdout"].to_s == "POLISPEC_OS_DENIED\n"
+            return probe_row("filesystem", "supported", "outside_write_denied", "A native bubblewrap invocation returned the dedicated permission-denial sentinel without creating the outside target.")
+          end
+          if result["exit_status"] == 72 && result["stdout"].to_s == "POLISPEC_OS_WRITE_SUCCEEDED\n"
+            return probe_row("filesystem", "failed", "outside_write_succeeded", "The sandbox reported that the outside write succeeded.")
+          end
+
+          probe_row("filesystem", "unavailable", "probe_result_unrecognized", "The fixed denial probe returned no recognized permission-denial evidence.")
         end
         private_class_method :filesystem_probe
+
+        def safe_scratch_root?(path)
+          return false unless path.start_with?("/tmp/") && !path.split("/").include?("..") && File.directory?(path)
+          expanded = File.expand_path(path)
+          return false unless File.realpath(path) == expanded
+
+          components = expanded.split(File::SEPARATOR).reject(&:empty?)
+          current = File::SEPARATOR
+          components.each do |component|
+            current = File.join(current, component)
+            return false if File.lstat(current).symlink?
+          end
+          true
+        rescue SystemCallError
+          false
+        end
+        private_class_method :safe_scratch_root?
 
         def run_probe(runner, argv)
           stringify(runner.call(argv, timeout: PROBE_TIMEOUT, max_output: PROBE_LIMIT))

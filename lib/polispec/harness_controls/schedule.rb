@@ -6,6 +6,7 @@ module Polispec
     module Schedule
       CALENDAR_LIMIT = 256
       INSTALLATION_PATTERN = /\A[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\z/.freeze
+      JOB_ID_PATTERN = /\Apolispec-[0-9a-f]{24}\z/.freeze
 
       module_function
 
@@ -89,14 +90,15 @@ module Polispec
       end
 
       def uninstall(job_ids, port_set: nil)
+        ids = Array(job_ids).map(&:to_s)
+        invalid = ids.find { |id| !id.match?(JOB_ID_PATTERN) }
+        raise Polispec::Error, "invalid polispec schedule job id #{invalid.inspect}" if invalid
+
         load_sdk!
         ports = port_set || sdk_ports!
         rows = []
         findings = []
-        Array(job_ids).each do |job_id|
-          id = job_id.to_s
-          raise Polispec::Error, "invalid schedule job id #{id.inspect}" unless id.match?(Rplugin::ScheduleJob::ID_PATTERN)
-
+        ids.each do |id|
           begin
             response = ports.schedule.uninstall(id)
             status, status_error = schedule_status(ports, id)
