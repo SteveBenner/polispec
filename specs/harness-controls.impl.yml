@@ -13,7 +13,7 @@ metadata:
     - {id: Semantic Versioning 2.0, role: New public CLI and control contract require a minor release.}
     - {id: IEEE 1016-2009, role: Explicit interfaces and deployment boundaries make independent implementation possible.}
   worker: {model: gpt-5.6-sol, effort: medium, harness: codex}
-  execution_status: wave_4_in_progress
+  execution_status: wave_5_ready
   execution_blocker: null
 vision:
   problem: Existing environment policy does not provide a deterministic harness-control compiler, installation receipts, or a protected control plane. Generic adapters and permissive failure paths do not support a universal enforcement claim.
