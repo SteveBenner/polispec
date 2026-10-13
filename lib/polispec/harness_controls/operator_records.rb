@@ -88,6 +88,33 @@ module Polispec
         rows
       end
 
+      def synchronize(stream, identity:)
+        name = stream_name(stream)
+        actual = Plane.operator!("operator_records.synchronize.#{name}")
+        supplied = stringify(identity)
+        unless supplied["provenance_digest"] == actual["provenance_digest"] && supplied["generation"] == actual["generation"]
+          raise Authority::Failure.new("operator_required", "operator identity does not match current protected executable provenance")
+        end
+        raise Authority::Failure.new("operator_records_unsafe", "operator record root cannot be a symlink") if File.symlink?(ROOT)
+        FileUtils.mkdir_p(ROOT, mode: 0o755)
+        File.chmod(0o755, ROOT)
+        findings = Authority.protection_findings(ROOT, "operator_records")
+        findings.concat(Authority.consumer_read_findings(ROOT, "operator_records"))
+        raise Authority::Failure.new("operator_records_unsafe", "operator record root is not protected", findings) unless findings.empty?
+        path = File.join(ROOT, ".#{name}.lock")
+        flags = File::RDWR | File::CREAT
+        flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+        File.open(path, flags, 0o600) do |file|
+          stat = file.stat
+          safe = stat.file? && stat.uid.zero? && (stat.mode & 0o077).zero? && stat.nlink == 1
+          raise Authority::Failure.new("operator_records_unsafe", "operator transaction lock must be a protected root-owned regular file") unless safe
+          file.flock(File::LOCK_EX)
+          yield
+        end
+      rescue Errno::ELOOP
+        raise Authority::Failure.new("operator_records_unsafe", "operator transaction lock cannot be a symlink")
+      end
+
       def stream_path(name)
         File.join(ROOT, "#{name}.jsonl")
       end

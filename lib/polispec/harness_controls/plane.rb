@@ -132,14 +132,7 @@ module Polispec
         raise Authority::Failure.new("broken_plane", "sealed plane is broken", plane["findings"]) if plane["status"] == "broken"
         return {} unless plane["status"] == "active"
         require_relative "operator_records"
-        OperatorRecords.read("activation_transactions").each_with_object({}) do |record, result|
-          next unless record["generation"] == plane["generation"] && record["state"] == "committed"
-          Array(record["changes"]).each do |change|
-            project = change["project_id"].to_s
-            status = change["status"].to_s
-            result[project] = status if !project.empty? && %w[live paused onboarding retired].include?(status)
-          end
-        end
+        validated_activation_overrides(plane, OperatorRecords.read("activation_transactions"))
       end
 
       def verify
@@ -176,24 +169,13 @@ module Polispec
           validate_project!(project, ledger)
           project
         end
-        changes = projects.map do |project|
-          {
-            "project_id" => project.id,
-            "prior_status" => activation_overrides.fetch(project.id, project.status),
-            "status" => "live"
-          }
+        payload = activation_payload(projects, plane, identity, dry_run)
+        return payload if dry_run
+        Operator::Tty.confirm!("activate #{ids.sort.join(',')} on #{plane['generation']}", prompt: "Project activation changes protected effective status.")
+        require_relative "operator_records"
+        OperatorRecords.synchronize("activation_transactions", identity: identity) do
+          activation_payload(projects, plane, identity, false)
         end
-        operation_id = Digest::SHA256.hexdigest(Authority.canonical_json({ "generation" => plane["generation"], "changes" => changes, "recorded_at" => Time.now.utc.iso8601 }))
-        records = [
-          { "schema" => "polispec.plane.activation/v1", "operation_id" => operation_id, "generation" => plane["generation"], "state" => "prepared", "changes" => changes, "recorded_at" => Time.now.utc.iso8601 },
-          { "schema" => "polispec.plane.activation/v1", "operation_id" => operation_id, "generation" => plane["generation"], "state" => "committed", "changes" => changes, "recorded_at" => Time.now.utc.iso8601 }
-        ]
-        unless dry_run
-          Operator::Tty.confirm!("activate #{ids.sort.join(',')} on #{plane['generation']}", prompt: "Project activation changes protected effective status.")
-          require_relative "operator_records"
-          records = records.map { |record| append_operator_record("activation_transactions", record, identity) }
-        end
-        { "dry_run" => dry_run == true, "generation" => plane["generation"], "operation_id" => operation_id, "changes" => changes, "records" => records, "identity" => identity }
       end
 
       def rollback_activation(operation_id, dry_run: false)
@@ -204,7 +186,16 @@ module Polispec
         raise Authority::Failure.new("prerequisite_missing", "rollback requires an active plane") unless plane["status"] == "active"
         identity = operator!("plane.rollback")
         require_relative "operator_records"
+        Operator::Tty.confirm!("rollback activation #{operation_id}", prompt: "Rollback restores exact prior protected project statuses.") unless dry_run
+        return rollback_activation_locked(operation_id, plane, identity, true) if dry_run
+        OperatorRecords.synchronize("activation_transactions", identity: identity) do
+          rollback_activation_locked(operation_id, plane, identity, false)
+        end
+      end
+
+      def rollback_activation_locked(operation_id, plane, identity, dry_run)
         transactions = OperatorRecords.read("activation_transactions")
+        validated_activation_overrides(plane, transactions)
         committed_index = transactions.rindex { |record| record["operation_id"] == operation_id.to_s && record["state"] == "committed" && record["generation"] == plane["generation"] }
         committed = committed_index && transactions[committed_index]
         raise Authority::Failure.new("invalid_activation", "no committed activation #{operation_id}") unless committed
@@ -221,11 +212,28 @@ module Polispec
         changes = Array(committed["changes"]).map { |change| { "project_id" => change["project_id"], "prior_status" => change["status"], "status" => change["prior_status"] } }
         recorded_at = Time.now.utc.iso8601
         rollback_id = Digest::SHA256.hexdigest(Authority.canonical_json({ "generation" => plane["generation"], "rollback_of" => operation_id.to_s, "changes" => changes, "recorded_at" => recorded_at }))
-        record = { "schema" => "polispec.plane.activation/v1", "operation_id" => rollback_id, "rollback_of" => operation_id.to_s, "generation" => plane["generation"], "state" => "committed", "changes" => changes, "recorded_at" => recorded_at }
-        Operator::Tty.confirm!("rollback activation #{operation_id}", prompt: "Rollback restores exact prior protected project statuses.") unless dry_run
-        record = append_operator_record("activation_transactions", record, identity) unless dry_run
-        { "dry_run" => dry_run == true, "record" => record }
+        records = %w[prepared committed].map do |state|
+          { "schema" => "polispec.plane.activation/v1", "operation_id" => rollback_id, "rollback_of" => operation_id.to_s, "generation" => plane["generation"], "state" => state, "changes" => changes, "recorded_at" => recorded_at }
+        end
+        records = records.map { |record| append_operator_record("activation_transactions", record, identity) } unless dry_run
+        { "dry_run" => dry_run == true, "record" => records.last, "records" => records }
       end
+      private_class_method :rollback_activation_locked
+
+      def activation_payload(projects, plane, identity, dry_run)
+        overrides = activation_overrides
+        changes = projects.map do |project|
+          { "project_id" => project.id, "prior_status" => overrides.fetch(project.id, project.status), "status" => "live" }
+        end
+        recorded_at = Time.now.utc.iso8601
+        operation_id = Digest::SHA256.hexdigest(Authority.canonical_json({ "generation" => plane["generation"], "changes" => changes, "recorded_at" => recorded_at }))
+        records = %w[prepared committed].map do |state|
+          { "schema" => "polispec.plane.activation/v1", "operation_id" => operation_id, "generation" => plane["generation"], "state" => state, "changes" => changes, "recorded_at" => recorded_at }
+        end
+        records = records.map { |record| append_operator_record("activation_transactions", record, identity) } unless dry_run
+        { "dry_run" => dry_run == true, "generation" => plane["generation"], "operation_id" => operation_id, "changes" => changes, "records" => records, "identity" => identity }
+      end
+      private_class_method :activation_payload
 
       def append_operator_record(stream, record, identity)
         authenticated = OperatorRecords.append(stream, record, identity: identity)
@@ -234,6 +242,64 @@ module Polispec
         authenticated
       end
       private_class_method :append_operator_record
+
+      def validated_activation_overrides(plane, records)
+        result = {}
+        prepared = {}
+        committed = {}
+        rolled_back = {}
+        expected_digest = Authority.operator_provenance_digest(plane)
+        Array(records).each do |record|
+          raise Authority::Failure.new("operator_records_invalid", "activation transaction must be an object") unless record.is_a?(Hash)
+          invalid = record["schema"] != "polispec.plane.activation/v1" || !record["generation"].to_s.match?(/\A[a-f0-9]{32}\z/) || !%w[prepared committed].include?(record["state"]) || !record["operation_id"].to_s.match?(/\A[a-f0-9]{64}\z/)
+          raise Authority::Failure.new("operator_records_invalid", "activation transaction has invalid identity fields") if invalid
+          changes = validated_activation_changes(record["changes"])
+          next unless record["generation"] == plane["generation"]
+          authorization = record["authorization"]
+          authorized = authorization.is_a?(Hash) && authorization["generation"] == plane["generation"] && authorization["euid"] == 0 && authorization["provenance_digest"] == expected_digest && authorization["append_operation"] == "operator_records.append.activation_transactions"
+          raise Authority::Failure.new("operator_records_invalid", "activation transaction lacks current authenticated provenance") unless authorized
+          rollback_of = record["rollback_of"]
+          caller = rollback_of ? "plane.rollback" : "plane.activate"
+          raise Authority::Failure.new("operator_records_invalid", "activation transaction has the wrong authorized operation") unless authorization["caller_operation"] == caller
+          operation_id = record["operation_id"]
+          signature = Authority.canonical_json({ "rollback_of" => rollback_of, "changes" => changes })
+          if record["state"] == "prepared"
+            raise Authority::Failure.new("operator_records_invalid", "activation transaction has duplicate preparation") if prepared.key?(operation_id) || committed.key?(operation_id)
+            prepared[operation_id] = signature
+            next
+          end
+          raise Authority::Failure.new("operator_records_invalid", "activation commit lacks an exact prepared record") unless prepared[operation_id] == signature
+          raise Authority::Failure.new("operator_records_invalid", "activation transaction has duplicate commit") if committed.key?(operation_id)
+          if rollback_of
+            target = committed[rollback_of]
+            raise Authority::Failure.new("operator_records_invalid", "activation rollback has no prior committed target") unless target && !rolled_back[rollback_of]
+            expected = target["changes"].map { |change| { "project_id" => change["project_id"], "prior_status" => change["status"], "status" => change["prior_status"] } }
+            raise Authority::Failure.new("operator_records_invalid", "activation rollback does not restore exact prior statuses") unless Authority.canonical_json(changes) == Authority.canonical_json(expected)
+            rolled_back[rollback_of] = true
+          end
+          committed[operation_id] = { "changes" => changes, "rollback_of" => rollback_of }
+          changes.each { |change| result[change["project_id"]] = change["status"] }
+        end
+        result
+      end
+      private_class_method :validated_activation_overrides
+
+      def validated_activation_changes(value)
+        raise Authority::Failure.new("operator_records_invalid", "activation changes must be a nonempty array") unless value.is_a?(Array) && !value.empty? && value.length <= 256
+        statuses = %w[live paused onboarding retired]
+        seen = {}
+        value.map do |change|
+          raise Authority::Failure.new("operator_records_invalid", "activation change must be an object") unless change.is_a?(Hash)
+          project = change["project_id"]
+          prior = change["prior_status"]
+          status = change["status"]
+          valid = project.is_a?(String) && !project.empty? && project.bytesize <= 256 && statuses.include?(prior) && statuses.include?(status) && !seen[project]
+          raise Authority::Failure.new("operator_records_invalid", "activation change is invalid or duplicated") unless valid
+          seen[project] = true
+          { "project_id" => project, "prior_status" => prior, "status" => status }
+        end
+      end
+      private_class_method :validated_activation_changes
 
       def build_generation(plan)
         raise Authority::Failure.new("prerequisite_missing", "authority source has blocking prerequisites", plan["source"]["findings"]) unless plan["preparation_ready"]
@@ -384,6 +450,7 @@ module Polispec
           findings.concat(Authority.protection_findings(path, "runtime_#{key}").map { |item| finding(item["code"], item["detail"]) }) if require_protected && path
           if path
             recorded = stringify_hash(provenance[key])
+            findings << finding("runtime_#{key}_unverified", "Runtime #{key} provenance was not completely verified.") unless recorded["present"] == true && recorded["digest"] && !recorded["error"]
             current = Authority.current_metadata(path)
             %w[realpath uid mode digest].each do |field|
               findings << finding("runtime_#{key}_changed", "Runtime #{key} #{field} differs from recorded provenance.") unless current[field] == recorded[field]

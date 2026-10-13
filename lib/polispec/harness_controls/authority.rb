@@ -9,6 +9,7 @@ require "open3"
 require "timeout"
 require "rbconfig"
 require "shellwords"
+require "find"
 
 module Polispec
   module HarnessControls
@@ -206,6 +207,10 @@ module Polispec
           "sanitized_before_interpreter" => sanitized,
           "inherited_loader_provenance" => loader.empty? ? "unresolved" : loader
         }
+        record.each do |key, value|
+          next unless value.is_a?(Hash) && value["error"]
+          findings << finding("runtime_#{key}_unverified", "Runtime #{key} provenance is bounded and unverified: #{value['error']}", true)
+        end
         {
           "commit" => commit,
           "digest" => Digest::SHA256.hexdigest(canonical_json(record)),
@@ -318,14 +323,6 @@ module Polispec
         findings = protection_findings(current_launcher, "current_entrypoint") + protection_findings(current_interpreter, "current_interpreter")
         raise Failure.new("operator_required", "#{operation} lacks complete protected executable provenance", findings) if findings.any? { |item| item["blocking"] }
 
-        provenance_material = {
-          "euid" => Process.euid,
-          "executable" => current_launcher,
-          "interpreter" => current_interpreter,
-          "generation" => plane["generation"],
-          "entrypoint_metadata" => metadata(current_launcher),
-          "interpreter_metadata" => metadata(current_interpreter)
-        }
         {
           "euid" => Process.euid,
           "executable" => current_launcher,
@@ -335,8 +332,24 @@ module Polispec
           "authentication" => "effective_uid_and_protected_provenance",
           "fresh_password_proven" => false,
           "inherited_loader_provenance" => provenance["inherited_loader_provenance"].to_s.empty? ? "unresolved" : provenance["inherited_loader_provenance"],
-          "provenance_digest" => Digest::SHA256.hexdigest(canonical_json(provenance_material))
+          "provenance_digest" => operator_provenance_digest(plane)
         }
+      end
+
+      def operator_provenance_digest(plane)
+        provenance = plane.dig("provenance", "runtime") || {}
+        executable = provenance.dig("entrypoint", "realpath")
+        interpreter = provenance.dig("interpreter", "realpath")
+        raise Failure.new("operator_required", "plane lacks protected executable provenance") unless executable && interpreter
+        material = {
+          "euid" => 0,
+          "executable" => executable,
+          "interpreter" => interpreter,
+          "generation" => plane["generation"],
+          "entrypoint_metadata" => metadata(executable),
+          "interpreter_metadata" => metadata(interpreter)
+        }
+        Digest::SHA256.hexdigest(canonical_json(material))
       end
 
       def bootstrap_identity!(operation)
@@ -708,6 +721,7 @@ module Polispec
         descriptor_path = File.join(root, "metadata", "#{commit}.json")
         descriptor = runtime_descriptor(descriptor_path)
         raise Failure.new("runtime_metadata_missing", "pinned runtime metadata is missing at #{descriptor_path}") if descriptor.empty?
+        raise Failure.new("runtime_metadata_invalid", "pinned runtime metadata schema is invalid") unless descriptor["schema"] == "polispec.runtime.bootstrap/v1"
         manifest_path = File.join(root, "manifests", "#{commit}.json")
         manifest = runtime_manifest(manifest_path)
         expected_release = File.join(root, "releases", commit)
@@ -767,10 +781,7 @@ module Polispec
       def verify_release(files, release)
         findings = []
         expected_paths = files.map { |entry| entry["path"] }.sort
-        actual_paths = Dir.glob(File.join(release, "**", "*"), File::FNM_DOTMATCH).sort.each_with_object([]) do |path, rows|
-          next if [".", ".."].include?(File.basename(path)) || File.directory?(path) && !File.symlink?(path)
-          rows << path.delete_prefix("#{release}/")
-        end.sort
+        actual_paths = bounded_tree(release).reject { |row| row["type"] == "directory" }.map { |row| row["path"] }.sort
         findings << finding("runtime_release_file_set", "Pinned runtime contains missing or extra entries.", true) unless actual_paths == expected_paths
         files.each do |entry|
           path = File.join(release, entry["path"])
@@ -804,24 +815,41 @@ module Polispec
         result = { "path" => path, "realpath" => File.realpath(path), "uid" => stat.uid, "mode" => stat.mode & 0o7777, "present" => true }
         result["digest"] = stat.file? ? Digest::SHA256.file(path).hexdigest : tree_digest(path)
         result
+      rescue Failure => error
+        { "path" => path, "realpath" => realpath_or_nil(path), "present" => File.exist?(path), "error" => error.message, "verified" => false }
       rescue SystemCallError => error
         { "path" => path, "present" => false, "error" => error.message }
       end
       private_class_method :metadata
 
       def tree_digest(root)
-        rows = Dir.glob(File.join(root, "**", "*"), File::FNM_DOTMATCH).sort.each_with_object([]) do |path, result|
-          next if [".", ".."].include?(File.basename(path))
-          stat = File.lstat(path)
-          relative = path.delete_prefix("#{root}/")
-          row = { "path" => relative, "mode" => stat.mode & 0o7777, "type" => stat.ftype }
-          row["digest"] = Digest::SHA256.file(path).hexdigest if stat.file? && !stat.symlink?
-          row["digest"] = Digest::SHA256.hexdigest(File.readlink(path)) if stat.symlink?
-          result << row
+        rows = bounded_tree(root).map do |entry|
+          path = File.join(root, entry["path"])
+          row = entry.slice("path", "mode", "type")
+          row["digest"] = Digest::SHA256.file(path).hexdigest if entry["type"] == "file"
+          row["digest"] = Digest::SHA256.hexdigest(File.readlink(path)) if entry["type"] == "link"
+          row
         end
         Digest::SHA256.hexdigest(canonical_json(rows))
       end
       private_class_method :tree_digest
+
+      def bounded_tree(root)
+        rows = []
+        total = 0
+        Find.find(root) do |path|
+          next if path == root
+          stat = File.lstat(path)
+          relative = path.delete_prefix("#{root}/")
+          rows << { "path" => relative, "mode" => stat.mode & 0o7777, "type" => stat.ftype }
+          raise Failure.new("runtime_tree_too_large", "protected tree #{root} exceeds #{MAX_FILES} entries") if rows.length > MAX_FILES
+          total += stat.file? ? stat.size : (stat.symlink? ? File.readlink(path).bytesize : 0)
+          raise Failure.new("runtime_tree_too_large", "protected tree #{root} exceeds #{MAX_RUNTIME_BYTES} bytes") if total > MAX_RUNTIME_BYTES
+          Find.prune if stat.symlink?
+        end
+        rows.sort_by { |row| row["path"] }
+      end
+      private_class_method :bounded_tree
 
       def ancestry(path)
         expanded = File.expand_path(path)
