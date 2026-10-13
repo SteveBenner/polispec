@@ -34,6 +34,7 @@ module Polispec
     SESSION_LIMIT = 1200
     INPUT_LIMIT = 65_536
     HOOK_BUDGET = 9.5
+    AUTH_MATERIAL_LIMIT = 262_144
     FIXED_DENIALS = {
       "claude" => ["{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[POLISPEC internal] guard unavailable; call denied.\"}}\n", 0],
       "codex" => ["{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[POLISPEC internal] guard unavailable; call denied.\"}}\n", 0],
@@ -62,9 +63,10 @@ module Polispec
         return usage
       end
       @native_harness = harness
+      @deadline = clock + HOOK_BUDGET
       adapter = Harness.const_get(ADAPTERS.fetch(harness, :Generic)).new(harness)
       DeferredEvents.active = true
-      sub == "pretool" ? pretool(adapter, options) : Timeout.timeout(HOOK_BUDGET) { session(adapter) }
+      sub == "pretool" ? pretool(adapter, options) : within_budget { session(adapter) }
     rescue StandardError, ScriptError => error
       hard_deny(@native_harness, error)
     ensure
@@ -83,9 +85,12 @@ module Polispec
       DeferredEvents.queue.clear
       DeferredEvents.active = false
       return if queue.empty?
-
-      $stdout.flush
-      emit_all(queue) unless detached(queue)
+      remaining = remaining_budget
+      return unless remaining.positive?
+      Timeout.timeout(remaining) do
+        $stdout.flush
+        detached(queue)
+      end
     rescue StandardError
       nil
     end
@@ -138,8 +143,19 @@ module Polispec
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
+    def remaining_budget
+      return 0.0 unless @deadline
+      [@deadline - clock, 0.0].max
+    end
+
+    def within_budget(&block)
+      remaining = remaining_budget
+      raise Timeout::Error, "hook budget exhausted" unless remaining.positive?
+      Timeout.timeout(remaining, &block)
+    end
+
     def pretool(adapter, options)
-      Timeout.timeout(HOOK_BUDGET) do
+      within_budget do
         started = clock
         raw = bounded_input
         input = adapter.parse(raw)
@@ -166,6 +182,7 @@ module Polispec
         groups = group(actions, ledger, cwd, baseline)
         mode = enforce_mode
         @policy_digests = []
+        @outcome_authority = {}
         outcomes = groups.map do |kind, project, list|
           if kind == :live
             evaluate(adapter, input, ledger, cwd, project, list, mode, started)
@@ -199,7 +216,7 @@ module Polispec
         "engine_context" => { cwd: cwd, ledger: ledger, predicate_memo: {}, findings: [] },
         "trusted_declaration" => trusted_declaration(ledger, cwd, baseline, input)
       })
-      worst = compose_ask_authority(control, adapter, input, actions, documents, edition, legacy, ledger, cwd)
+      worst = compose_ask_authority(control, adapter, input, actions, documents, edition, outcomes, ledger, cwd)
       emit_control_events(control, adapter, input, cwd)
       output = mode == "enforce" ? adapter.render(worst) : nil
       if output.nil? && worst.allow? && !control["injections"].empty?
@@ -285,11 +302,15 @@ module Polispec
           loaded = PolicySource.resolve(owner, ledger: ledger)
           raise Polispec::Error, "committed policy is unavailable for #{owner.id}" if loaded.source == "defaults"
           env = Engine::Envs.cwd_env(loaded.policy, ledger, owner.id, cwd)
-          cache[key] = Target.new(project: owner.id, env: env, policy: loaded.policy, roster: nil, policy_source: loaded.source, digest: loaded.digest)
+          target = Target.new(project: owner.id, env: env, policy: loaded.policy, roster: nil, policy_source: loaded.source, digest: loaded.digest)
+          target.env = Engine::Envs.for_action(action, target, { cwd: cwd, ledger: ledger })
+          cache[key] = target
         elsif baseline
           id = owner ? owner.id : GLOBAL_ID
           env = id == GLOBAL_ID ? "dev" : Engine::Envs.cwd_env({}, ledger, id, cwd)
-          cache[key] = Target.new(project: id, env: env, policy: { "rules" => [] }, roster: nil, policy_source: "global", digest: Layers.fingerprint)
+          target = Target.new(project: id, env: env, policy: { "rules" => [] }, roster: nil, policy_source: "global", digest: Layers.fingerprint)
+          target.env = Engine::Envs.for_action(action, target, { cwd: cwd, ledger: ledger })
+          cache[key] = target
         else
           cache[key] = Target.new(project: GLOBAL_ID, env: "dev", policy: { "rules" => [] }, roster: nil, policy_source: "controls", digest: nil)
         end
@@ -305,56 +326,83 @@ module Polispec
           match = rule["match"] || {}
           exact = match["server"].to_s == action.env_hint["server"].to_s && match["operation"].to_s == action.env_hint["operation"].to_s
           next false unless exact && !match["server"].to_s.empty? && !match["operation"].to_s.empty?
-          legacy = match.reject { |key, _| %w[server operation domain tool role path].include?(key.to_s) }
-          context = { cwd: cwd, ledger: ledger, predicate_memo: {}, findings: [] }
-          matched = Engine::Match.rule?(legacy, action, target.env, target, context)
+          context = { cwd: cwd, ledger: ledger, predicate_memo: {}, findings: [], tool: input.tool_name.to_s, role: input.agent_type.to_s }
+          matched = Engine::Match.rule?(match, action, target.env, target, context)
           raise Polispec::Error, "policy declaration predicate evidence is unavailable" unless context[:findings].empty?
           matched
         end
       end
     end
 
-    def compose_ask_authority(control, adapter, input, actions, documents, edition, legacy, ledger, cwd)
-      legacy_verdict = legacy && legacy.verdict
+    def compose_ask_authority(control, adapter, input, actions, documents, edition, outcomes, ledger, cwd)
+      legacy_verdicts = Array(outcomes).map(&:verdict).compact
       control_verdict = control["verdict"]
-      independent = [legacy_verdict, control_verdict].compact
+      independent = legacy_verdicts + [control_verdict]
       return Verdict.worst(independent) if independent.any?(&:deny?)
       return Verdict.worst(independent) if adapter.ask?
-      legacy_warn = legacy_verdict && legacy_verdict.warn?
+      warning_rows = environment_warning_rows(outcomes)
+      legacy_warn = !warning_rows.empty?
       control_warn = control_verdict.warn?
       return Verdict.worst(independent) unless legacy_warn || control_warn
       return Verdict.worst(independent) if edition == "lock" && (control_warn || !legacy_warn)
 
-      ask_set = []
-      ask_set << "environment:#{legacy_verdict.rule_id}" if legacy_warn
-      ask_set.concat(Array(control["ask_ids"]).map { |id| "control:#{id}" }) if control_warn
-      ask_set = ask_set.uniq.sort
+      ask_set = warning_rows.map { |row| ["environment", *row] }
+      ask_set.concat(Array(control["ask_ids"]).map { |id| ["control", id.to_s] }) if control_warn
+      ask_set = ask_set.uniq.sort_by { |row| row.map(&:to_s) }
       control_digest = HarnessControls::Evaluate.effective_digest(documents)
       policy_digests = Array(@policy_digests).compact.map(&:to_s).uniq.sort
       rule_id = "ask_#{Digest::SHA256.hexdigest(JSON.generate([ask_set, policy_digests, control_digest]))}"
       session = input.session_id.to_s
       return authorization_denial(rule_id, "protected authorization requires an actual nonempty session identity") if session.empty?
+      target_pairs = warning_rows.map { |row| row.values_at(0, 1) }.uniq.sort
+      project, env = authorization_target(target_pairs, documents)
       action_material = canonical_value({
         "tool" => input.tool_name.to_s, "arguments" => input.tool_input, "cwd" => canonical_path(cwd),
         "actions" => actions.map(&:to_h), "asks" => ask_set, "policy_digests" => policy_digests,
-        "control_digest" => control_digest, "harness" => adapter.name, "session" => session
+        "control_digest" => control_digest, "harness" => adapter.name, "session" => session,
+        "governed_targets" => target_pairs
       })
-      action_digest = Digest::SHA256.hexdigest(JSON.generate(action_material))
-      located = ledger.locate(cwd)
-      scopes = documents.map { |entry| [entry["scope"], entry["boundary"], entry["control_digest"]] }.sort_by { |row| row.map(&:to_s) }
-      project = located ? located.project.id : "scope_#{Digest::SHA256.hexdigest(JSON.generate(scopes))[0, 24]}"
+      material_bytes = JSON.generate(action_material)
+      raise Polispec::Error, "authorization material exceeds its bounded representation" if material_bytes.bytesize > AUTH_MATERIAL_LIMIT
+      action_digest = Digest::SHA256.hexdigest(material_bytes)
       return authorization_denial(rule_id, "exact operator authorization requires an active protected plane") unless @plane["status"] == "active"
       context = {
         "generation" => @plane["generation"].to_s, "project" => project, "action_digest" => action_digest,
         "rule_id" => rule_id, "session_id" => session, "harness" => adapter.name,
         "action_class" => actions.map(&:action_class).uniq.sort.join(","),
-        "env" => (legacy && legacy.env || "dev").to_s
+        "env" => env
       }
       return Verdict.new(level: "allow", rule_id: rule_id, reason: "the exact protected one-use authorization was consumed") if HarnessControls::Authorizations.consume(context)
       id = HarnessControls::Authorizations.request(context)
       Verdict.new(level: "deny", rule_id: rule_id, reason: "the exact composed ask set awaits operator authorization", next_step: "The operator may redeem #{id} through the protected authorizations command.", allow_once_id: id)
     rescue HarnessControls::Authorizations::Failure => error
       authorization_denial("POLISPEC-AUTHORIZATION-UNAVAILABLE", "protected authorization is unavailable (#{error.code})")
+    end
+
+    def environment_warning_rows(outcomes)
+      Array(outcomes).flat_map do |outcome|
+        authority = @outcome_authority[outcome.object_id] || {}
+        Array(outcome.rows).select { |row| row.verdict.warn? }.map do |row|
+          [authority["project"].to_s, row.env.to_s, row.verdict.rule_id.to_s, authority["policy_digest"].to_s]
+        end
+      end.uniq.sort
+    end
+
+    def authorization_target(pairs, documents)
+      if pairs.empty?
+        scopes = Array(documents).map { |entry| [entry["scope"], entry["boundary"], entry["control_digest"]] }.sort_by { |row| row.map(&:to_s) }
+        bytes = JSON.generate(scopes)
+        raise Polispec::Error, "control scope identity exceeds its bounded representation" if bytes.bytesize > AUTH_MATERIAL_LIMIT
+        return ["scope_#{Digest::SHA256.hexdigest(bytes)}", "controls"]
+      end
+      pairs.each do |project, env|
+        raise Polispec::Error, "governed authorization target is invalid" if project.empty? || env.empty? || project.bytesize > 256 || env.bytesize > 256
+      end
+      return pairs.first if pairs.length == 1
+      bytes = JSON.generate(pairs)
+      raise Polispec::Error, "governed authorization targets exceed their bounded representation" if bytes.bytesize > AUTH_MATERIAL_LIMIT
+      digest = Digest::SHA256.hexdigest(bytes)
+      ["multi_#{digest}", "multi_#{digest}"]
     end
 
     def authorization_denial(rule_id, reason)
@@ -466,8 +514,9 @@ module Polispec
       digest = Layers.fingerprint
       @policy_digests << digest unless digest.to_s.empty?
       target = Target.new(project: id, env: env, policy: { "rules" => [] }, roster: nil, policy_source: "global", digest: digest)
-      context = { ledger: ledger, cwd: cwd, session_id: input.session_id, role: (input.agent_type.to_s.empty? ? nil : input.agent_type), issue_allow_once: mode == "enforce" && !adapter.ask? }
+      context = { ledger: ledger, cwd: cwd, session_id: input.session_id, role: (input.agent_type.to_s.empty? ? nil : input.agent_type), tool: input.tool_name.to_s, issue_allow_once: mode == "enforce" && !adapter.ask? }
       outcome = Engine.explain(actions, target, context)
+      @outcome_authority[outcome.object_id] = { "project" => target.project, "policy_digest" => target.digest }
       record(adapter, input, cwd, target, outcome, mode, started)
       outcome
     end
@@ -480,8 +529,9 @@ module Polispec
         project: project.id, env: Engine::Envs.cwd_env(loaded.policy, ledger, project.id, cwd), policy: loaded.policy,
         roster: nil, policy_source: loaded.source, digest: loaded.digest
       )
-      context = { ledger: ledger, cwd: cwd, session_id: input.session_id, role: (input.agent_type.to_s.empty? ? nil : input.agent_type), issue_allow_once: mode == "enforce" && !adapter.ask? }
+      context = { ledger: ledger, cwd: cwd, session_id: input.session_id, role: (input.agent_type.to_s.empty? ? nil : input.agent_type), tool: input.tool_name.to_s, issue_allow_once: mode == "enforce" && !adapter.ask? }
       outcome = Engine.explain(actions, target, context)
+      @outcome_authority[outcome.object_id] = { "project" => target.project, "policy_digest" => target.digest }
       record(adapter, input, cwd, target, outcome, mode, started)
       outcome
     end
