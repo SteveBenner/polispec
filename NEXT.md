@@ -40,3 +40,5 @@ Existing source confirms a generic adapter is used for Hermes and Antigravity, u
 5. Finish documentation, versioning, the tracking lock branch, and shipment only after their gates pass. Keep host sealing and activation of live projects as operator actions.
 
 The continuation opened change session `chg_dc6a9504c028`. The initial foundation worker ran check, install, and doctor successfully at version 0.17.1 with the new flags disabled. No release was committed or pushed during recovery. Keep the active WIP item until the implementation and verification are complete.
+
+The installed SDK catalogue was inspected at `~/.rplugin/extensions/harnesses.yml`. Hermes currently has the correct `pre_tool_call` event and fail-closed entry renderer; its consent and profile-global scope still need native verification. Antigravity has `hooks: null`, so SDK packaging alone does not install the new CLI hooks. The polispec-owned backend supplies that explicit lifecycle instead. Record this SDK capability gap without editing the SDK or calling its current Hermes mapping stale.
