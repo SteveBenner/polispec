@@ -1,0 +1,400 @@
+#!/usr/bin/env ruby
+# SPDX-License-Identifier: MIT
+
+require "digest"
+require "json"
+require "open3"
+require "tempfile"
+require "timeout"
+
+class ReleaseLock
+  USAGE = "usage: scripts/release-lock --base FULL_MAIN_SHA --expected-local FULL_SHA_OR_absent --expected-remote FULL_SHA_OR_absent [--remote NAME] [--dry-run] [--json]".freeze
+  MAIN_REF = "refs/heads/main".freeze
+  LOCK_REF = "refs/heads/polispec-lock".freeze
+  MAX_OUTPUT = 65_536
+  TIMEOUT_SECONDS = 10
+  REMOTE = /\A[A-Za-z0-9][A-Za-z0-9._\/-]{0,127}\z/
+
+  class Failure < StandardError
+    attr_reader :code, :status
+
+    def initialize(code, message, status = 3)
+      @code = code
+      @status = status
+      super(message)
+    end
+  end
+
+  Result = Struct.new(:stdout, :stderr, :status)
+
+  def self.run(argv)
+    new.run(argv)
+  end
+
+  def run(argv)
+    @json_requested = argv.include?("--json")
+    @failure_data = {}
+    if argv == ["--help"] || argv == ["-h"]
+      puts USAGE
+      return 0
+    end
+    @options = parse(argv)
+    return usage unless @options
+    @object_length = object_length
+    validate_options!
+    validate_repository!
+    base = @options.fetch("base")
+    remote = @options.fetch("remote")
+    local_before = local_ref(LOCK_REF)
+    live_before = live_refs(remote)
+    validate_reviewed_state!(local_before, live_before)
+    edition = base_edition(base)
+    intended_blob = object_hash("blob", "lock\n")
+    intended_tree = intended_root_tree(base, edition.fetch("oid"), intended_blob)
+    common = {
+      "base" => base,
+      "remote" => remote,
+      "main_ref" => MAIN_REF,
+      "lock_ref" => LOCK_REF,
+      "expected_local" => @options.fetch("expected_local"),
+      "expected_remote" => @options.fetch("expected_remote"),
+      "observed_local" => local_before || "absent",
+      "observed_remote" => live_before.fetch(LOCK_REF, "absent"),
+      "edition_blob" => intended_blob,
+      "intended_tree" => intended_tree
+    }
+    @failure_data = common
+    if @options["dry_run"]
+      live_final = live_refs(remote)
+      validate_live_refs!(live_final)
+      return emit(true, "dry_run", nil, "release-lock transaction validated without mutation", common.merge("remote_recheck" => live_final.fetch(LOCK_REF, "absent")), 0)
+    end
+    target = construct_commit(base, intended_blob)
+    verify_target!(base, target, intended_tree)
+    @failure_data = common.merge("target" => target)
+    archive = archive_local(local_before)
+    @failure_data = @failure_data.merge("archive" => archive)
+    live_final = live_refs(remote)
+    validate_live_refs!(live_final)
+    push_lock(remote, target)
+    pushed = live_refs(remote)
+    unless pushed[MAIN_REF] == base && pushed[LOCK_REF] == target
+      raise Failure.new("recovery_required", "remote post-push state could not be confirmed; preserve the reported target and archive", 4)
+    end
+    begin
+      update_local_lock(target, local_before)
+    rescue Failure
+      return emit(false, "recovery_required", "local_cas_failed", "remote lock updated but local lock changed concurrently", common.merge("target" => target, "archive" => archive, "remote_after" => pushed[LOCK_REF]), 4)
+    end
+    action = local_before ? "refreshed" : "created"
+    emit(true, action, nil, "polispec-lock now differs from main only by EDITION", common.merge("target" => target, "archive" => archive, "remote_after" => pushed[LOCK_REF]), 0)
+  rescue Failure => error
+    emit(false, error.status == 4 ? "recovery_required" : "refused", error.code, error.message, @failure_data || {}, error.status)
+  rescue StandardError => error
+    emit(false, "error", "internal_error", error.message.to_s.byteslice(0, 512), {}, 1)
+  end
+
+  private
+
+  def parse(argv)
+    values = argv.dup
+    result = { "remote" => "origin", "dry_run" => false, "json" => false }
+    seen = {}
+    until values.empty?
+      token = values.shift
+      case token
+      when "--base", "--expected-local", "--expected-remote", "--remote"
+        return nil if seen[token]
+        seen[token] = true
+        value = values.shift
+        return nil unless value && !value.empty? && !value.start_with?("--")
+        result[token.delete_prefix("--").tr("-", "_")] = value
+      when "--dry-run", "--json"
+        return nil if seen[token]
+        seen[token] = true
+        result[token.delete_prefix("--").tr("-", "_")] = true
+      else
+        return nil
+      end
+    end
+    return nil unless %w[base expected_local expected_remote].all? { |key| result.key?(key) }
+    result
+  end
+
+  def validate_options!
+    sha = full_sha
+    raise Failure.new("invalid_base", "--base must be a lowercase full object ID", 2) unless sha.match?(@options["base"])
+    %w[expected_local expected_remote].each do |key|
+      value = @options[key]
+      raise Failure.new("invalid_expectation", "--#{key.tr('_', '-')} must be a lowercase full object ID or absent", 2) unless value == "absent" || sha.match?(value)
+    end
+    local_absent = @options["expected_local"] == "absent"
+    remote_absent = @options["expected_remote"] == "absent"
+    raise Failure.new("invalid_expectation", "initial creation requires both expectations to be absent; refresh requires two reviewed object IDs", 2) unless local_absent == remote_absent
+    remote = @options["remote"]
+    invalid_remote = !REMOTE.match?(remote) || remote.start_with?("-") || remote.include?("..") || remote.include?("@{") || remote.include?("//")
+    raise Failure.new("invalid_remote", "--remote is invalid", 2) if invalid_remote
+  end
+
+  def validate_repository!
+    root = git!(%w[rev-parse --show-toplevel]).stdout.strip
+    cwd = File.expand_path(Dir.pwd)
+    exact = root == cwd && File.realpath(root) == File.realpath(cwd)
+    raise Failure.new("wrong_directory", "run release-lock from the exact repository root") unless exact
+    dirty = git!(%w[status --porcelain=v1 -z --untracked-files=all]).stdout
+    raise Failure.new("dirty_worktree", "repository has tracked or untracked changes") unless dirty.empty?
+    branch = git!(%w[symbolic-ref --quiet --short HEAD]).stdout.strip
+    raise Failure.new("wrong_branch", "current branch must be main") unless branch == "main"
+    base = @options.fetch("base")
+    head = commit_ref("HEAD")
+    main = commit_ref(MAIN_REF)
+    remotes = git!(%w[remote]).stdout.lines.map(&:strip)
+    raise Failure.new("remote_missing", "selected remote does not exist") unless remotes.include?(@options.fetch("remote"))
+    tracking_ref = "refs/remotes/#{@options.fetch('remote')}/main"
+    tracking = commit_ref(tracking_ref)
+    raise Failure.new("base_mismatch", "HEAD, local main, and --base must be identical") unless head == base && main == base
+    raise Failure.new("tracking_mismatch", "selected remote-tracking main must equal --base") unless tracking == base
+  end
+
+  def validate_reviewed_state!(local, live)
+    validate_live_main!(live)
+    expected_local = @options.fetch("expected_local")
+    expected_remote = @options.fetch("expected_remote")
+    if expected_local == "absent"
+      raise Failure.new("local_diverged", "local polispec-lock exists but reviewed expectation is absent") if local
+      raise Failure.new("remote_diverged", "remote polispec-lock exists but reviewed expectation is absent") if live[LOCK_REF]
+    else
+      raise Failure.new("local_diverged", "local polispec-lock differs from the reviewed object ID") unless local == expected_local
+      raise Failure.new("remote_diverged", "remote polispec-lock differs from the reviewed object ID") unless live[LOCK_REF] == expected_remote
+    end
+  end
+
+  def validate_live_refs!(live)
+    validate_live_main!(live)
+    expected = @options.fetch("expected_remote")
+    observed = live[LOCK_REF]
+    if expected == "absent"
+      raise Failure.new("remote_diverged", "remote polispec-lock appeared after review") if observed
+    else
+      raise Failure.new("remote_diverged", "remote polispec-lock changed after review") unless observed == expected
+    end
+  end
+
+  def validate_live_main!(live)
+    raise Failure.new("remote_main_diverged", "live remote main differs from --base") unless live[MAIN_REF] == @options.fetch("base")
+  end
+
+  def object_length
+    format = git!(%w[rev-parse --show-object-format]).stdout.strip
+    return 40 if format == "sha1"
+    return 64 if format == "sha256"
+    raise Failure.new("unsupported_object_format", "Git object format is unsupported")
+  end
+
+  def full_sha
+    @object_length == 40 ? /\A[0-9a-f]{40}\z/ : /\A[0-9a-f]{64}\z/
+  end
+
+  def commit_ref(ref)
+    value = git!("rev-parse", "--verify", "#{ref}^{commit}").stdout.strip
+    raise Failure.new("invalid_ref", "#{ref} did not resolve to a full commit") unless full_sha.match?(value)
+    value
+  end
+
+  def local_ref(ref)
+    result = git(%W[show-ref --verify --hash #{ref}], allowed: [0, 1, 128])
+    return nil unless result.status.zero?
+    value = result.stdout.strip
+    raise Failure.new("invalid_ref", "#{ref} did not resolve to a full object ID") unless full_sha.match?(value)
+    value
+  end
+
+  def live_refs(remote)
+    result = git!("ls-remote", "--heads", "--refs", remote, MAIN_REF, LOCK_REF, timeout: TIMEOUT_SECONDS)
+    refs = {}
+    result.stdout.lines.each do |line|
+      oid, ref, extra = line.chomp.split("\t", 3)
+      raise Failure.new("remote_invalid", "remote returned an invalid ref advertisement") if extra || !full_sha.match?(oid.to_s) || ![MAIN_REF, LOCK_REF].include?(ref) || refs.key?(ref)
+      refs[ref] = oid
+    end
+    refs
+  end
+
+  def base_edition(base)
+    row = git!("ls-tree", "-z", base, "--", "EDITION").stdout
+    match = row.match(/\A100644 blob ([0-9a-f]{#{@object_length}})\tEDITION\0\z/)
+    raise Failure.new("invalid_edition", "base EDITION must be one regular 100644 blob") unless match
+    bytes = git!("show", "#{base}:EDITION").stdout
+    raise Failure.new("invalid_edition", "base EDITION must contain exact standard newline") unless bytes == "standard\n"
+    { "oid" => match[1], "bytes" => bytes }
+  end
+
+  def intended_root_tree(base, old_blob, new_blob)
+    rows = parse_tree(git!("ls-tree", "-z", "#{base}^{tree}").stdout)
+    edition = rows.find { |row| row["name"] == "EDITION" }
+    raise Failure.new("invalid_edition", "base root tree does not contain EDITION") unless edition && edition["mode"] == "100644" && edition["type"] == "blob" && edition["oid"] == old_blob
+    edition["oid"] = new_blob
+    payload = rows.sort_by { |row| git_tree_sort_key(row) }.map do |row|
+      "#{row['mode']} #{row['name']}\0".b + [row["oid"]].pack("H*")
+    end.join
+    object_hash("tree", payload)
+  end
+
+  def parse_tree(bytes)
+    bytes.split("\0", -1).reject(&:empty?).map do |entry|
+      header, name = entry.split("\t", 2)
+      mode, type, oid = header.to_s.split(" ", 3)
+      valid = name && !name.empty? && !name.include?("/") && %w[blob tree commit].include?(type) && mode.to_s.match?(/\A[0-7]{6}\z/) && full_sha.match?(oid.to_s)
+      raise Failure.new("invalid_tree", "base root tree is malformed") unless valid
+      { "mode" => mode, "type" => type, "oid" => oid, "name" => name }
+    end
+  end
+
+  def git_tree_sort_key(row)
+    row["type"] == "tree" ? "#{row['name']}/".b : row["name"].b
+  end
+
+  def object_hash(type, bytes)
+    material = "#{type} #{bytes.bytesize}\0".b + bytes.b
+    @object_length == 40 ? Digest::SHA1.hexdigest(material) : Digest::SHA256.hexdigest(material)
+  end
+
+  def construct_commit(base, expected_blob)
+    Dir.mktmpdir("polispec-release-lock-") do |directory|
+      index = File.join(directory, "index")
+      env = { "GIT_INDEX_FILE" => index }
+      git!("read-tree", base, env: env)
+      blob = git!("hash-object", "-w", "--stdin", stdin: "lock\n").stdout.strip
+      raise Failure.new("object_mismatch", "Git produced an unexpected EDITION object") unless blob == expected_blob
+      git!("update-index", "--add", "--cacheinfo", "100644,#{blob},EDITION", env: env)
+      tree = git!("write-tree", env: env).stdout.strip
+      message = "Release lock edition for #{base}\n"
+      commit = git!("commit-tree", tree, "-p", base, stdin: message).stdout.strip
+      raise Failure.new("invalid_target", "Git produced an invalid lock commit") unless full_sha.match?(commit)
+      commit
+    end
+  end
+
+  def verify_target!(base, target, expected_tree)
+    parents = git!("rev-list", "--parents", "-n", "1", target).stdout.strip.split
+    raise Failure.new("invalid_target", "lock commit must have main as its sole parent") unless parents == [target, base]
+    tree = git!("rev-parse", "--verify", "#{target}^{tree}").stdout.strip
+    raise Failure.new("invalid_target", "lock commit tree differs from the calculated edition-only tree") unless tree == expected_tree
+    changed = git!("diff-tree", "--no-commit-id", "--name-only", "-r", "-z", base, target).stdout
+    raise Failure.new("invalid_target", "lock commit changes paths other than EDITION") unless changed == "EDITION\0"
+    bytes = git!("show", "#{target}:EDITION").stdout
+    raise Failure.new("invalid_target", "lock commit EDITION is not exact lock newline") unless bytes == "lock\n"
+  end
+
+  def archive_local(local_before)
+    return nil unless local_before
+    archive = "refs/polispec/release-lock/archive/#{local_before}"
+    existing = local_ref(archive)
+    raise Failure.new("archive_conflict", "archive ref exists with different content") if existing && existing != local_before
+    git!("update-ref", archive, local_before, zero_oid) unless existing
+    archive
+  end
+
+  def push_lock(remote, target)
+    expected = @options.fetch("expected_remote")
+    lease = expected == "absent" ? "#{LOCK_REF}:" : "#{LOCK_REF}:#{expected}"
+    result = git("-c", "push.followTags=false", "push", "--porcelain", "--no-follow-tags", "--force-with-lease=#{lease}", "--", remote, "#{target}:#{LOCK_REF}", allowed: [0, 1, 128], timeout: TIMEOUT_SECONDS)
+    raise Failure.new("push_refused", "exact lock-ref push was refused; review remote state before retrying") unless result.status.zero?
+  end
+
+  def update_local_lock(target, local_before)
+    git!("update-ref", LOCK_REF, target, local_before || zero_oid)
+  rescue Failure
+    raise Failure.new("recovery_required", "remote lock updated but local compare-and-swap failed", 4)
+  end
+
+  def zero_oid
+    "0" * @object_length
+  end
+
+  def git!(*argv, env: {}, stdin: nil, timeout: TIMEOUT_SECONDS)
+    git(*argv, env: env, stdin: stdin, timeout: timeout, allowed: [0])
+  end
+
+  def git(*argv, env: {}, stdin: nil, timeout: TIMEOUT_SECONDS, allowed: [0])
+    command = argv.length == 1 && argv.first.is_a?(Array) ? argv.first : argv
+    command = command.map(&:to_s)
+    stdout = +""
+    stderr = +""
+    status = nil
+    base_env = { "LC_ALL" => "C", "GIT_TERMINAL_PROMPT" => "0" }
+    Open3.popen3(base_env.merge(env), "git", *command, pgroup: true) do |input, output, error, waiter|
+      input.binmode
+      input.write(stdin) if stdin
+      input.close
+      readers = [[output, stdout], [error, stderr]].map do |io, target|
+        Thread.new do
+          loop do
+            chunk = io.readpartial(4096)
+            raise Failure.new("git_output_limit", "Git command output exceeded #{MAX_OUTPUT} bytes") if target.bytesize + chunk.bytesize > MAX_OUTPUT
+            target << chunk
+          end
+        rescue EOFError
+          nil
+        end
+      end
+      unless waiter.join(timeout)
+        terminate(waiter)
+        raise Failure.new("git_timeout", "Git command exceeded #{timeout} seconds")
+      end
+      readers.each(&:join)
+      readers.each { |reader| raise reader.value if reader.status.nil? }
+      status = waiter.value.exitstatus
+    ensure
+      [output, error].compact.each { |io| io.close unless io.closed? }
+    end
+    raise Failure.new("git_failed", "Git command failed: git #{command.first}") unless allowed.include?(status)
+    Result.new(stdout, stderr, status)
+  rescue Errno::ENOENT
+    raise Failure.new("git_unavailable", "Git executable is unavailable")
+  end
+
+  def terminate(waiter)
+    Process.kill("TERM", -waiter.pid)
+    return if waiter.join(0.2)
+    Process.kill("KILL", -waiter.pid)
+    waiter.join(0.2)
+  rescue Errno::ESRCH, Errno::ECHILD
+    nil
+  end
+
+  def emit(ok, status, code, message, data, exit_status)
+    payload = {
+      "schema" => "polispec.release-lock/v1",
+      "ok" => ok == true,
+      "status" => status,
+      "code" => code,
+      "message" => message,
+      "data" => data
+    }
+    if @json_requested
+      bytes = JSON.generate(payload)
+      if bytes.bytesize > MAX_OUTPUT
+        puts JSON.generate({ "schema" => "polispec.release-lock/v1", "ok" => false, "status" => "error", "code" => "output_limit", "message" => "result exceeded output limit", "data" => {} })
+        return 1
+      end
+      puts bytes
+    else
+      puts "release-lock: #{status}: #{message}"
+      puts "  target: #{data['target']}" if data["target"]
+      puts "  archive: #{data['archive']}" if data["archive"]
+    end
+    exit_status
+  end
+
+  def usage
+    if @json_requested
+      emit(false, "refused", "invalid_arguments", USAGE, {}, 2)
+    else
+      warn USAGE
+      2
+    end
+  end
+end
+
+exit ReleaseLock.run(ARGV)
