@@ -12,8 +12,9 @@ module Polispec
     end
 
     def run(args)
+      json_requested = args.include?("--json")
       options = parse(args)
-      return usage unless options
+      return usage(json_requested) unless options
       plan = if options["from"]
                repo, revision = split_source(options["from"])
                HarnessControls::Authority.seal_plan(kind: "git", source: repo, revision: revision)
@@ -64,14 +65,19 @@ module Polispec
     def parse(args)
       values = args.dup
       options = { "dry_run" => false, "json" => false }
+      seen = {}
       until values.empty?
         token = values.shift
         case token
-        when "--dry-run" then options["dry_run"] = true
-        when "--json" then options["json"] = true
+        when "--dry-run", "--json"
+          return nil if seen[token]
+          seen[token] = true
+          options[token.delete_prefix("--").tr("-", "_")] = true
         when "--from", "--source"
+          return nil if seen[token]
+          seen[token] = true
           value = values.shift
-          return nil unless value && !value.empty?
+          return nil unless value && !value.empty? && !value.start_with?("--")
           options[token.delete_prefix("--")] = value
         else
           return nil
@@ -118,9 +124,13 @@ module Polispec
       status
     end
 
-    def usage
-      warn USAGE
-      2
+    def usage(json)
+      if json
+        emit(result(false, nil, nil, {}, [finding("invalid_arguments", USAGE, "Provide each supported option once and select exactly one authority source.")]), true, 2)
+      else
+        warn USAGE
+        2
+      end
     end
   end
 end

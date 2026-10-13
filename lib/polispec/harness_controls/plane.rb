@@ -256,7 +256,9 @@ module Polispec
           changes = validated_activation_changes(record["changes"])
           next unless record["generation"] == plane["generation"]
           authorization = record["authorization"]
-          authorized = authorization.is_a?(Hash) && authorization["generation"] == plane["generation"] && authorization["euid"] == 0 && authorization["provenance_digest"] == expected_digest && authorization["append_operation"] == "operator_records.append.activation_transactions"
+          launch = authorization.is_a?(Hash) ? authorization["launch_evidence"] : nil
+          expected_launcher = plane.dig("provenance", "runtime", "launcher", "realpath")
+          authorized = authorization.is_a?(Hash) && authorization["generation"] == plane["generation"] && authorization["euid"] == 0 && authorization["provenance_digest"] == expected_digest && authorization["append_operation"] == "operator_records.append.activation_transactions" && launch.is_a?(Hash) && launch["verified"] == true && launch["launcher"] == expected_launcher
           raise Authority::Failure.new("operator_records_invalid", "activation transaction lacks current authenticated provenance") unless authorized
           rollback_of = record["rollback_of"]
           caller = rollback_of ? "plane.rollback" : "plane.activate"

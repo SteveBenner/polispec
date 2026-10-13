@@ -36,7 +36,8 @@ module Polispec
             "append_operation" => actual["operation"],
             "generation" => actual["generation"],
             "provenance_digest" => actual["provenance_digest"],
-            "euid" => actual["euid"]
+            "euid" => actual["euid"],
+            "launch_evidence" => actual["launch_evidence"]
           }
         )
         line = JSON.generate(Authority.canonical_value(authenticated)) + "\n"

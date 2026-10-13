@@ -24,6 +24,7 @@ module Polispec
       MAX_COMMAND_OUTPUT = 16_777_216
       MAX_FILES = 20_000
       MAX_RUNTIME_BYTES = 67_108_864
+      MAX_PROC_BYTES = 65_536
       ALLOWED_ROOTS = %w[ledger.yml settings.json controls global code_specs].freeze
       IGNORED_ENV = %w[
         POLISPEC_ROOT POLISPEC_LEDGER POLISPEC_EDITION POLISPEC_RUNTIME POLISPEC_SOURCE
@@ -312,42 +313,99 @@ module Polispec
         unless plane.is_a?(Hash) && plane["status"] == "active"
           raise Failure.new("operator_required", "#{operation} requires an active protected plane and re-execution through its sealed launcher")
         end
-        current_launcher = realpath_or_nil($PROGRAM_NAME)
+        current_entrypoint = realpath_or_nil($PROGRAM_NAME)
         current_interpreter = realpath_or_nil(RbConfig.ruby)
         provenance = plane.dig("provenance", "runtime") || {}
-        expected_launcher = provenance.dig("entrypoint", "realpath")
+        expected_entrypoint = provenance.dig("entrypoint", "realpath")
         expected_interpreter = provenance.dig("interpreter", "realpath")
-        unless current_launcher && current_launcher == expected_launcher && current_interpreter && current_interpreter == expected_interpreter
-          raise Failure.new("operator_required", "#{operation} requires verified sealed launcher and interpreter provenance")
+        expected_launcher = provenance.dig("launcher", "realpath")
+        unless current_entrypoint && current_entrypoint == expected_entrypoint && current_interpreter && current_interpreter == expected_interpreter && expected_launcher
+          raise Failure.new("operator_required", "#{operation} requires verified sealed entrypoint and interpreter provenance")
         end
-        findings = protection_findings(current_launcher, "current_entrypoint") + protection_findings(current_interpreter, "current_interpreter")
+        evidence = launch_evidence(plane)
+        raise Failure.new("operator_required", "#{operation} requires observed protected launcher ancestry", evidence["findings"]) unless evidence["verified"]
+        findings = protection_findings(current_entrypoint, "current_entrypoint") + protection_findings(current_interpreter, "current_interpreter") + protection_findings(expected_launcher, "current_launcher")
         raise Failure.new("operator_required", "#{operation} lacks complete protected executable provenance", findings) if findings.any? { |item| item["blocking"] }
 
         {
           "euid" => Process.euid,
-          "executable" => current_launcher,
+          "executable" => current_entrypoint,
+          "launcher" => expected_launcher,
           "interpreter" => current_interpreter,
           "operation" => operation.to_s,
           "generation" => plane["generation"],
-          "authentication" => "effective_uid_and_protected_provenance",
+          "authentication" => "effective_uid_protected_provenance_and_observed_launch",
           "fresh_password_proven" => false,
           "inherited_loader_provenance" => provenance["inherited_loader_provenance"].to_s.empty? ? "unresolved" : provenance["inherited_loader_provenance"],
-          "provenance_digest" => operator_provenance_digest(plane)
+          "provenance_digest" => operator_provenance_digest(plane),
+          "launch_evidence" => evidence
         }
+      end
+
+      def launch_evidence(plane)
+        provenance = plane.dig("provenance", "runtime") || {}
+        launcher = provenance.dig("launcher", "realpath")
+        entrypoint = provenance.dig("entrypoint", "realpath")
+        interpreter = provenance.dig("interpreter", "realpath")
+        sdk = provenance.dig("sdk", "path")
+        findings = []
+        raise Failure.new("launch_evidence_unavailable", "protected runtime launch provenance is incomplete") unless launcher && entrypoint && interpreter && sdk
+        self_argv = proc_vector("/proc/self/cmdline")
+        parent_pid = Process.ppid
+        parent_argv = proc_vector("/proc/#{parent_pid}/cmdline")
+        parent_executable = File.realpath("/proc/#{parent_pid}/exe")
+        environment = proc_environment("/proc/self/environ")
+        parent_launcher = parent_argv[1]
+        findings << finding("launch_parent_missing", "Observed parent command line does not name the protected launcher.", true) unless parent_launcher && realpath_or_nil(parent_launcher) == launcher
+        findings << finding("launch_parent_executable", "Observed parent executable does not match its command line.", true) unless parent_argv[0] && realpath_or_nil(parent_argv[0]) == parent_executable
+        findings.concat(protection_findings(parent_executable, "launch_parent"))
+        findings.concat(protection_findings(launcher, "observed_launcher"))
+        interpreter_index = self_argv.index { |item| realpath_or_nil(item) == interpreter }
+        disable_index = self_argv.index("--disable-gems")
+        entrypoint_index = self_argv.index { |item| realpath_or_nil(item) == entrypoint }
+        ordered = interpreter_index == 0 && disable_index && entrypoint_index && disable_index < entrypoint_index
+        findings << finding("launch_argv_invalid", "Observed process argv lacks canonical interpreter, --disable-gems, or pinned entrypoint ordering.", true) unless ordered
+        findings << finding("launch_entrypoint_mismatch", "Observed Ruby program does not match the pinned entrypoint.", true) unless realpath_or_nil($PROGRAM_NAME) == entrypoint
+        findings << finding("launch_environment_path", "Observed effective PATH is not the protected deterministic value.", true) unless environment["PATH"] == "/usr/bin:/bin"
+        findings << finding("launch_environment_sdk", "Observed effective SDK root differs from protected provenance.", true) unless environment["RPLUGIN_HOME"] == sdk
+        unexpected = environment.keys - %w[PATH RPLUGIN_HOME]
+        findings << finding("launch_environment_unsanitized", "Observed effective environment contains unexpected keys: #{unexpected.sort.join(', ')}.", true) unless unexpected.empty?
+        {
+          "verified" => findings.empty?,
+          "parent_pid" => parent_pid,
+          "parent_executable" => parent_executable,
+          "parent_launcher" => parent_launcher,
+          "parent_argv_digest" => Digest::SHA256.hexdigest(canonical_json(parent_argv)),
+          "launcher" => launcher,
+          "self_argv_digest" => Digest::SHA256.hexdigest(canonical_json(self_argv)),
+          "disable_gems" => !disable_index.nil?,
+          "entrypoint" => entrypoint,
+          "interpreter" => interpreter,
+          "environment_keys" => environment.keys.sort,
+          "environment_digest" => Digest::SHA256.hexdigest(canonical_json(environment)),
+          "findings" => findings
+        }
+      rescue Failure => error
+        { "verified" => false, "findings" => [finding(error.code, error.message, true)] }
+      rescue SystemCallError => error
+        { "verified" => false, "findings" => [finding("launch_evidence_unavailable", "Cannot inspect Linux launch provenance: #{error.message}", true)] }
       end
 
       def operator_provenance_digest(plane)
         provenance = plane.dig("provenance", "runtime") || {}
         executable = provenance.dig("entrypoint", "realpath")
         interpreter = provenance.dig("interpreter", "realpath")
-        raise Failure.new("operator_required", "plane lacks protected executable provenance") unless executable && interpreter
+        launcher = provenance.dig("launcher", "realpath")
+        raise Failure.new("operator_required", "plane lacks protected executable provenance") unless executable && interpreter && launcher
         material = {
           "euid" => 0,
           "executable" => executable,
           "interpreter" => interpreter,
+          "launcher" => launcher,
           "generation" => plane["generation"],
           "entrypoint_metadata" => metadata(executable),
-          "interpreter_metadata" => metadata(interpreter)
+          "interpreter_metadata" => metadata(interpreter),
+          "launcher_metadata" => metadata(launcher)
         }
         Digest::SHA256.hexdigest(canonical_json(material))
       end
@@ -658,6 +716,33 @@ module Polispec
       end
       private_class_method :bounded_read
 
+      def proc_vector(path)
+        bytes = read_proc(path)
+        values = bytes.split("\0", -1)
+        values.pop if values.last == ""
+        raise Failure.new("launch_evidence_unavailable", "#{path} contains an empty or invalid argv") if values.empty? || values.any? { |value| value.empty? }
+        values
+      end
+      private_class_method :proc_vector
+
+      def proc_environment(path)
+        proc_vector(path).each_with_object({}) do |entry, result|
+          key, value = entry.split("=", 2)
+          raise Failure.new("launch_evidence_unavailable", "#{path} contains a malformed environment entry") unless key && value && !key.empty? && !result.key?(key)
+          result[key] = value
+        end
+      end
+      private_class_method :proc_environment
+
+      def read_proc(path)
+        File.open(path, "rb") do |file|
+          bytes = file.read(MAX_PROC_BYTES + 1)
+          raise Failure.new("launch_evidence_unavailable", "#{path} exceeds #{MAX_PROC_BYTES} bytes") if bytes.bytesize > MAX_PROC_BYTES
+          bytes
+        end
+      end
+      private_class_method :read_proc
+
       def launcher_interpreter(path)
         return nil unless File.file?(path) && !File.symlink?(path)
         first = File.open(path, "rb", &:gets).to_s.strip
@@ -673,7 +758,9 @@ module Polispec
       def launcher_content(interpreter, entrypoint, sdk)
         [
           "#!/bin/sh",
-          "exec /usr/bin/env -i PATH=/usr/bin:/bin RPLUGIN_HOME=#{Shellwords.escape(File.expand_path(sdk))} #{Shellwords.escape(File.realpath(interpreter))} --disable-gems #{Shellwords.escape(File.expand_path(entrypoint))} \"$@\""
+          "/usr/bin/env -i PATH=/usr/bin:/bin RPLUGIN_HOME=#{Shellwords.escape(File.expand_path(sdk))} #{Shellwords.escape(File.realpath(interpreter))} --disable-gems #{Shellwords.escape(File.expand_path(entrypoint))} \"$@\"",
+          "status=$?",
+          "exit \"$status\""
         ].join("\n") + "\n"
       end
       private_class_method :launcher_content

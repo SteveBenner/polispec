@@ -14,13 +14,16 @@ module Polispec
     def run(args)
       values = args.dup
       action = values.shift
-      json = values.delete("--json")
-      dry_run = values.delete("--dry-run")
-      return usage unless %w[status verify activate rollback].include?(action)
-      return usage if dry_run && !%w[activate rollback].include?(action)
-      return usage unless %w[activate rollback].include?(action) || values.empty?
-      return usage if %w[activate rollback].include?(action) && values.empty?
-      return usage if action == "rollback" && values.length != 1
+      json_requested = args.include?("--json")
+      parsed = parse(values)
+      return usage(json_requested, action) unless parsed && %w[status verify activate rollback].include?(action)
+      json = parsed["json"]
+      dry_run = parsed["dry_run"]
+      values = parsed["values"]
+      return usage(json_requested, action) if dry_run && !%w[activate rollback].include?(action)
+      return usage(json_requested, action) unless %w[activate rollback].include?(action) || values.empty?
+      return usage(json_requested, action) if %w[activate rollback].include?(action) && values.empty?
+      return usage(json_requested, action) if action == "rollback" && values.length != 1
 
       data = case action
              when "status" then HarnessControls::Plane.resolve
@@ -50,6 +53,23 @@ module Polispec
     end
 
     private
+
+    def parse(values)
+      options = { "json" => false, "dry_run" => false, "values" => [] }
+      seen = {}
+      values.each do |token|
+        if %w[--json --dry-run].include?(token)
+          return nil if seen[token]
+          seen[token] = true
+          options[token.delete_prefix("--").tr("-", "_")] = true
+        elsif token.start_with?("--")
+          return nil
+        else
+          options["values"] << token
+        end
+      end
+      options
+    end
 
     def result(ok, action, operation_id, edition, data, findings)
       { "schema" => "polispec.harness.result/v1", "ok" => ok == true, "operation" => "plane.#{action}", "operation_id" => operation_id, "edition" => edition, "data" => data, "findings" => findings }
@@ -83,9 +103,13 @@ module Polispec
       status
     end
 
-    def usage
-      warn USAGE
-      2
+    def usage(json, action)
+      if json
+        emit(result(false, action || "unknown", nil, nil, {}, [finding("invalid_arguments", USAGE, "Provide each supported option once with the required action arguments.")]), true, 2)
+      else
+        warn USAGE
+        2
+      end
     end
   end
 end
