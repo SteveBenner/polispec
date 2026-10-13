@@ -5,7 +5,7 @@ require_relative "../harness_controls/plane"
 
 module Polispec
   class PlaneCommand
-    USAGE = "usage: polispec plane (status|verify [--json] | activate PROJECT_ID... [--dry-run] [--json])"
+    USAGE = "usage: polispec plane (status|verify [--json] | activate PROJECT_ID... [--dry-run] [--json] | rollback OPERATION_ID [--dry-run] [--json])"
 
     def self.run(args)
       new.run(args)
@@ -16,15 +16,17 @@ module Polispec
       action = values.shift
       json = values.delete("--json")
       dry_run = values.delete("--dry-run")
-      return usage unless %w[status verify activate].include?(action)
-      return usage if dry_run && action != "activate"
-      return usage unless action == "activate" || values.empty?
-      return usage if action == "activate" && values.empty?
+      return usage unless %w[status verify activate rollback].include?(action)
+      return usage if dry_run && !%w[activate rollback].include?(action)
+      return usage unless %w[activate rollback].include?(action) || values.empty?
+      return usage if %w[activate rollback].include?(action) && values.empty?
+      return usage if action == "rollback" && values.length != 1
 
       data = case action
              when "status" then HarnessControls::Plane.resolve
              when "verify" then HarnessControls::Plane.verify
-             else HarnessControls::Plane.activate(values, dry_run: !!dry_run)
+             when "activate" then HarnessControls::Plane.activate(values, dry_run: !!dry_run)
+             else HarnessControls::Plane.rollback_activation(values.first, dry_run: !!dry_run)
              end
       edition = data["edition"] || data.dig("plane", "edition")
       generation = data["generation"] || data.dig("plane", "generation")
@@ -67,7 +69,12 @@ module Polispec
 
     def emit(payload, json, status)
       if json
-        puts JSON.generate(payload)
+        bytes = JSON.generate(payload)
+        if bytes.bytesize > HarnessControls::Authority::MAX_COMMAND_OUTPUT
+          puts JSON.generate(result(false, payload["operation"].to_s.delete_prefix("plane."), nil, payload["edition"], {}, [finding("result_too_large", "plane result exceeds the bounded output limit", "Inspect a bounded subset through the relevant command.")]))
+          return 1
+        end
+        puts bytes
       else
         puts "polispec #{payload['operation']}: #{payload['ok'] ? 'ok' : 'blocked'}"
         puts "  status: #{payload.dig('data', 'status')}" if payload.dig("data", "status")
