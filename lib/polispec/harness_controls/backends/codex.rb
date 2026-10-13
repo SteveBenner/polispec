@@ -27,7 +27,7 @@ module Polispec
 
           control_ids = Array(controls["controls"]).map { |control| control["id"].to_s }
           control_digest = Digest::SHA256.hexdigest(canonical_json(controls))
-          artifacts = [artifact(paths["controls"], control_content, "json", "control_document", ["/"], control_ids)]
+          artifacts = [artifact(paths["controls"], control_content, "json", "control_document", [""], control_ids)]
           findings = []
           runtime = runtime_argv(values, scope, findings)
           existing_unsafe = unsafe_existing_toml?(values["existing"], paths["config"])
