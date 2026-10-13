@@ -94,7 +94,7 @@ module Polispec
       end
 
       def edit_strings(input)
-        direct = EDIT_KEYS.filter_map { |key| dig(input, key) }.grep(String)
+        direct = EDIT_KEYS.map { |key| dig(input, key) }.compact.grep(String)
         nested = Array(dig(input, "edits")).flat_map { |entry| entry.is_a?(Hash) ? edit_strings(entry) : [] }
         direct + nested
       end
