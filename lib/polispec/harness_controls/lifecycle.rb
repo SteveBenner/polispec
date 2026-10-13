@@ -266,12 +266,13 @@ module Polispec
         raise Failure.new("mutable_receipt_invalid", "mutable overlay control digest does not match its document", exit_status: 3) unless digest == receipt["control_digest"]
         receipt_targets = receipt.fetch("artifact_digests", {}).keys.sort
         raise Failure.new("mutable_receipt_invalid", "mutable overlay transaction targets do not match its receipt", exit_status: 3) unless Array(record["targets"]).sort == receipt_targets
-        context = { "scope" => profile["scope"], "edition" => receipt["edition"] }
-        context[profile["scope"] == "project" ? "project" : "home"] = profile["scope"] == "project" ? profile["project"] : profile["home"]
+        context = { "scope" => profile["scope"], "edition" => receipt["edition"], "home" => profile["home"] }
+        context["project"] = profile["project"] if profile["scope"] == "project"
         trusted = plan(controls, receipt["harness"], context)
-        expected_schedules = Schedule.plan(controls, receipt, context)["jobs"]
+        historical_schedule_context = context.merge("runtime_argv" => receipt["runtime_argv"])
+        expected_schedules = Schedule.plan(controls, receipt, historical_schedule_context)["jobs"]
         raise Failure.new("mutable_receipt_invalid", "mutable overlay schedules differ from canonical planning", exit_status: 3) unless canonical(receipt["schedules"]) == canonical(expected_schedules)
-        Files.validate_mutable_receipt!(receipt, trusted["artifacts"], owner_uid: profile["uid"], boundary: profile["scope"] == "project" ? profile["project"] : profile["home"], protected_paths: profile["protected_paths"])
+        Files.validate_mutable_receipt!(receipt, trusted["artifacts"], owner_uid: profile["uid"], boundary: profile["scope"] == "project" ? profile["project"] : profile["home"], home: profile["home"], protected_paths: profile["protected_paths"])
         true
       rescue Failure
         raise
@@ -674,6 +675,9 @@ module Polispec
 
       def active_installation(records, installation_id)
         selected = records.select { |row| row["installation_id"] == installation_id }.sort_by { |row| row["sequence"].to_i }
+        terminals = selected.group_by { |row| row["operation_id"] }.values.map { |rows| rows.max_by { |row| row["sequence"].to_i } }
+        unresolved = terminals.find { |row| %w[prepared recovery_required].include?(row["status"]) }
+        raise Failure.new("recovery_required", "unresolved transaction #{unresolved['operation_id']} prevents receipt selection", exit_status: 3, data: unresolved) if unresolved
         uninstall_operations = selected.each_with_object({}) do |row, result|
           result[row["operation_id"]] = true if row["operation"] == "uninstall" || row["operation_id"].to_s.start_with?("uninstall_")
         end
