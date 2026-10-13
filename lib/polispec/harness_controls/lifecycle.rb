@@ -68,8 +68,9 @@ module Polispec
         identity = privileged ? operator_identity!("harness.install") : nil
         state = state_adapter(privileged, identity, port_set)
         installation_id = installation_id_for(proposed)
+        access = file_access(privileged)
         result = nil
-        Files.with_target_locks(targets) do
+        Files.with_target_locks(targets, access: access) do
           records = read_records(state, identity)
           block_unresolved!(records, targets)
           latest = latest_installation(records, installation_id)
@@ -88,7 +89,7 @@ module Polispec
             raise Failure.new("operator_required", monotonic["reasons"].join("; "), exit_status: 3, data: monotonic)
           end
           operator_identity!("harness.install.loosen") if monotonic["disposition"] == "operator_required" && privileged
-          prepared = Files.prepare(proposed["artifacts"], proposed["operation_id"])
+          prepared = Files.prepare(proposed["artifacts"], proposed["operation_id"], access: access)
           supersedes = inherit_ownership!(prepared, records, installation_id)
           receipt = build_receipt(proposed, document, installation_id, prepared, plane, context, privileged)
           receipt["supersedes"] = supersedes unless supersedes.empty?
@@ -139,8 +140,10 @@ module Polispec
         raise Failure.new("installation_not_found", "installation #{installation_id} was not found") unless committed
         receipt = stringify(committed["receipt"])
         targets = receipt.fetch("artifact_digests", {}).keys
+        access = receipt["file_access"] || file_access(receipt["protected"] == true)
+        receipt["file_access"] = access if access
         result = nil
-        Files.with_target_locks(targets) do
+        Files.with_target_locks(targets, access: access) do
           records = read_records(state, identity)
           current = latest_installation(records, installation_id)
           unless current && current["status"] == "committed" && current["record_id"] == committed["record_id"]
@@ -310,6 +313,7 @@ module Polispec
           "controls" => canonical(document), "artifacts" => canonical(plan["artifacts"]),
           "capabilities" => canonical(plan["capabilities"]), "plan_findings" => canonical(plan["findings"]),
           "plane" => { "status" => plane["status"], "generation" => plane["generation"] },
+          "file_access" => prepared.first && prepared.first["access"],
           "protected" => privileged == true,
           "certified" => false
         }
@@ -558,6 +562,12 @@ module Polispec
         raise Failure.new("runtime_unavailable", "runtime provenance failed: #{error.class}: #{error.message}", exit_status: 3)
       end
       private_class_method :runtime_provenance
+
+      def file_access(protected_artifacts)
+        return nil unless protected_artifacts
+        { "protected" => true, "owner_uid" => 0, "owner_gid" => 0, "directory_mode" => 0o755, "file_mode" => 0o644, "boundary" => "/" }
+      end
+      private_class_method :file_access
 
       def installation_id_for(plan)
         "install_#{Digest::SHA256.hexdigest([plan['operation_id'], plan['harness'], plan['scope'], plan['edition']].join("\0"))[0, 24]}"
