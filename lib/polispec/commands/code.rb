@@ -61,7 +61,10 @@ module Polispec
           else opts.rest << arg
           end
         end
-        opts.ref ||= ENV["POLISPEC_CODE_REF"] unless ENV["POLISPEC_CODE_REF"].to_s.empty?
+        require_relative "../harness_controls/plane"
+        plane = defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:resolve) ? HarnessControls::Plane.resolve : { "status" => "unsealed" }
+        raise Polispec::Error, "sealed authority is broken" if plane["status"] == "broken"
+        opts.ref ||= ENV["POLISPEC_CODE_REF"] if plane["status"] == "unsealed" && !ENV["POLISPEC_CODE_REF"].to_s.empty?
         opts.ref ||= AUTHORING.include?(verb) ? Code::AUTHORING_REF : Code::DEFAULT_REF
         opts
       end

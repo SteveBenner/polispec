@@ -252,6 +252,27 @@ module Polispec
         record && stringify(record["receipt"])
       end
 
+      def effective_receipts(harness:, cwd:, port_set: nil)
+        name = harness.to_s == "claude" ? "claude-code" : harness.to_s
+        raise Failure.new("invalid_harness", "harness is required", exit_status: 3) if name.empty?
+        directory = canonical_path(cwd.to_s.empty? ? Dir.pwd : cwd)
+        state = state_adapter(false, nil, port_set, read_only: true)
+        records = read_records(state, nil)
+        active = fold_effective_records(records)
+        plane = resolve_plane
+        protected = protected_paths_for(plane)
+        validated = active.values.select { |row| row["harness"] == name }.map do |row|
+          validate_effective_receipt(row, directory, protected)
+        end.compact
+        inherited = validated.flat_map { |entry| Array(entry.delete("supersedes")) }.uniq
+        validated.reject! { |entry| inherited.include?(entry["installation_id"]) }
+        { "status" => "available", "receipts" => validated.sort_by { |entry| [entry["scope"], entry["boundary"], entry["installation_id"]] }, "findings" => [] }
+      rescue Failure
+        raise
+      rescue StandardError => error
+        raise Failure.new("overlay_state_unavailable", "mutable overlay state is unavailable: #{error.class}: #{error.message}", exit_status: 3)
+      end
+
       def validate_mutable_receipt!(record, receipt, profile, plane)
         raise Failure.new("mutable_receipt_invalid", "mutable overlay record exceeds #{Files::LIMIT} bytes", exit_status: 3) if JSON.generate(record).bytesize > Files::LIMIT
         valid = record["schema"] == "polispec.harness.transaction/v1" && receipt["schema"] == "polispec.harness.receipt/v1"
@@ -282,6 +303,137 @@ module Polispec
         raise Failure.new("mutable_receipt_invalid", "mutable overlay receipt validation failed: #{error.class}: #{error.message}", exit_status: 3)
       end
       private_class_method :validate_mutable_receipt!
+
+      def fold_effective_records(records)
+        raise Failure.new("installation_history_invalid", "installation state exceeds #{TRANSACTION_SCAN_LIMIT} records", exit_status: 3) if records.length > TRANSACTION_SCAN_LIMIT
+        scanned = 0
+        previous_sequence = 0
+        record_ids = {}
+        per_installation = {}
+        records.each do |row|
+          bytes = JSON.generate(row).bytesize
+          raise Failure.new("installation_history_invalid", "installation transaction record exceeds #{Files::LIMIT} bytes", exit_status: 3) if bytes > Files::LIMIT
+          raise Failure.new("installation_history_invalid", "installation state exceeds #{TRANSACTION_SCAN_BYTES} bytes", exit_status: 3) if bytes > TRANSACTION_SCAN_BYTES - scanned
+          scanned += bytes
+          installation_id = row.is_a?(Hash) ? row["installation_id"].to_s : ""
+          slot = (per_installation[installation_id] ||= { "previous" => 0, "count" => 0, "pending" => nil, "active" => nil })
+          slot["count"] += 1
+          raise Failure.new("installation_history_invalid", "installation history exceeds #{TRANSACTION_LIMIT} records", exit_status: 3) if slot["count"] > TRANSACTION_LIMIT
+          validate_transaction_row!(row, installation_id, slot["previous"], record_ids)
+          raise Failure.new("installation_history_invalid", "installation transaction sequence is duplicated or nonmonotonic", exit_status: 3, data: row) unless row["sequence"] > previous_sequence
+          previous_sequence = row["sequence"]
+          slot["previous"] = row["sequence"]
+          fold_effective_row!(slot, row)
+        end
+        unresolved = per_installation.values.find { |slot| slot["pending"] }
+        if unresolved
+          row = unresolved["pending"]["row"]
+          raise Failure.new("recovery_required", "unresolved transaction #{row['operation_id']} prevents overlay selection", exit_status: 3, data: row)
+        end
+        per_installation.each_with_object({}) { |(id, slot), result| result[id] = slot["active"] if slot["active"] }
+      rescue JSON::GeneratorError, SystemStackError
+        raise Failure.new("installation_history_invalid", "installation transaction history cannot be serialized", exit_status: 3)
+      end
+      private_class_method :fold_effective_records
+
+      def fold_effective_row!(slot, row)
+        if row["status"] == "prepared"
+          raise Failure.new("installation_history_invalid", "transaction #{slot['pending']['row']['operation_id']} has no terminal record", exit_status: 3) if slot["pending"]
+          operation = row["operation"]
+          raise Failure.new("installation_history_invalid", "prepared transaction has an unknown operation", exit_status: 3, data: row) unless operation.nil? || operation == "uninstall"
+          slot["pending"] = { "row" => row, "operation" => operation || "install", "prior" => slot["active"] }
+          return
+        end
+        pending = slot["pending"]
+        raise Failure.new("installation_history_invalid", "terminal transaction lacks a prepared record", exit_status: 3, data: row) unless pending
+        prepared = pending["row"]
+        unless row["operation_id"] == prepared["operation_id"] && transaction_identity(row) == transaction_identity(prepared)
+          raise Failure.new("installation_history_invalid", "terminal transaction does not match its prepared record", exit_status: 3, data: row)
+        end
+        allowed = pending["operation"] == "uninstall" ? %w[uninstalled rollback_complete recovery_required] : %w[committed rollback_complete recovery_required]
+        raise Failure.new("installation_history_invalid", "transaction terminal status is invalid for #{pending['operation']}", exit_status: 3, data: row) unless allowed.include?(row["status"])
+        raise Failure.new("recovery_required", "unresolved transaction #{row['operation_id']} prevents overlay selection", exit_status: 3, data: row) if row["status"] == "recovery_required"
+        slot["active"] = row if row["status"] == "committed"
+        slot["active"] = nil if row["status"] == "uninstalled"
+        slot["active"] = pending["prior"] if row["status"] == "rollback_complete"
+        slot["pending"] = nil
+      end
+      private_class_method :fold_effective_row!
+
+      def validate_effective_receipt(record, cwd, protected_paths)
+        receipt = stringify(record["receipt"])
+        valid = receipt["protected"] == false && %w[user project].include?(receipt["scope"]) && receipt["file_access"].nil?
+        raise Failure.new("mutable_receipt_invalid", "mutable overlay claims protected or unsupported authority", exit_status: 3) unless valid
+        controls = receipt["controls"]
+        validate_document!(controls)
+        digest = Digest::SHA256.hexdigest(JSON.generate(canonical(controls)))
+        raise Failure.new("mutable_receipt_invalid", "mutable overlay control digest does not match its document", exit_status: 3) unless digest == receipt["control_digest"]
+        control_artifact = Array(receipt["artifacts"]).find { |item| item.dig("ownership", "kind") == "control_document" }
+        raise Failure.new("mutable_receipt_invalid", "mutable overlay has no control document artifact", exit_status: 3) unless control_artifact
+        control_path = canonical_path(control_artifact["path"])
+        context = { "scope" => receipt["scope"], "edition" => receipt["edition"], "runtime_argv" => receipt["runtime_argv"] }
+        if receipt["scope"] == "project"
+          marker = "/.polispec/harness/"
+          raise Failure.new("mutable_receipt_invalid", "project overlay control path is not canonical", exit_status: 3) unless control_path.include?(marker)
+          boundary = canonical_path(control_path.split(marker, 2).first)
+          return nil unless cwd == boundary || cwd.start_with?("#{boundary}/")
+          context["project"] = boundary
+          context["home"] = Dir.home
+        else
+          marker = "/.config/polispec/harness/"
+          raise Failure.new("mutable_receipt_invalid", "user overlay control path is not canonical", exit_status: 3) unless control_path.include?(marker)
+          boundary = canonical_path(control_path.split(marker, 2).first)
+          raise Failure.new("mutable_receipt_invalid", "user overlay belongs to another profile", exit_status: 3) unless boundary == canonical_path(Dir.home)
+          context["home"] = boundary
+        end
+        planned = stringify(Backends.fetch(receipt["harness"]).plan(canonical(controls), context))
+        trusted = Array(planned["artifacts"])
+        Files.validate_mutable_receipt!(receipt, trusted, owner_uid: Process.uid, boundary: boundary, home: canonical_path(Dir.home), protected_paths: protected_paths)
+        owned_paths = receipt.fetch("artifact_digests", {}).keys.map { |path| canonical_path(path) }
+        if owned_paths.any? { |path| protected_paths.any? { |protected| path == protected || path.start_with?("#{protected}/") || protected.start_with?("#{path}/") } }
+          raise Failure.new("mutable_receipt_invalid", "mutable overlay collides with protected authority", exit_status: 3)
+        end
+        {
+          "installation_id" => receipt["installation_id"], "control_digest" => receipt["control_digest"],
+          "scope" => receipt["scope"], "boundary" => boundary, "document" => canonical(controls),
+          "owned_paths" => owned_paths.sort, "protected" => false, "supersedes" => Array(receipt["supersedes"])
+        }
+      end
+      private_class_method :validate_effective_receipt
+
+      def protected_paths_for(plane)
+        values = stringify(plane)
+        paths = Array(values["authority_files"])
+        paths.concat(values["controls"].values) if values["controls"].is_a?(Hash)
+        paths << values["operator_records"]
+        paths.concat(Array(values["runtime_argv"]).select { |item| item.to_s.start_with?("/") })
+        paths.concat(absolute_values(values["paths"]))
+        paths.concat(absolute_values(values.dig("provenance", "runtime")))
+        paths.concat(["/etc/polispec", "/usr/local/lib/polispec", "/var/lib/polispec", "/run/polispec"])
+        paths.compact.map { |path| canonical_path(path) }.uniq.sort
+      end
+      private_class_method :protected_paths_for
+
+      def absolute_values(value)
+        case value
+        when Hash then value.values.flat_map { |item| absolute_values(item) }
+        when Array then value.flat_map { |item| absolute_values(item) }
+        when String then value.start_with?("/") ? [value] : []
+        else []
+        end
+      end
+      private_class_method :absolute_values
+
+      def canonical_path(path)
+        expanded = File.expand_path(path.to_s)
+        existing = expanded
+        existing = File.dirname(existing) until File.exist?(existing) || existing == "/"
+        joined = File.join(File.realpath(existing), expanded[existing.length..-1].to_s).sub(%r{/+\z}, "")
+        joined.empty? ? "/" : joined
+      rescue SystemCallError
+        expanded
+      end
+      private_class_method :canonical_path
 
       def validate_document!(document)
         errors = Controls.validate(document)

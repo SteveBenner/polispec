@@ -25,9 +25,16 @@ module Polispec
       OPERATOR_DEFAULT = "the operator".freeze
       LEDGER_KEY = "polispec.ledger"
       SUPERVISOR_KEY = "polispec.supervisor.status_command"
+      ROOT_GUARD_KEY = "polispec.root_guard"
       module_function
 
       def argv(key)
+        plane = plane_settings
+        if plane
+          machine = plane[key.to_s]
+          return machine.map(&:to_s) if machine.is_a?(Array)
+          return machine.is_a?(String) && !machine.strip.empty? ? Shellwords.split(machine) : []
+        end
         forced = ENV[env_name(key)].to_s.strip
         return Shellwords.split(forced) unless forced.empty?
 
@@ -40,6 +47,11 @@ module Polispec
       end
 
       def text(key, default)
+        plane = plane_settings
+        if plane
+          machine = plane[key.to_s]
+          return machine.is_a?(String) && !machine.strip.empty? ? machine.strip : default
+        end
         forced = ENV[env_name(key)].to_s.strip
         return forced unless forced.empty?
 
@@ -56,6 +68,8 @@ module Polispec
       end
 
       def enforce_mode
+        plane = plane_settings
+        return MODES.include?(plane[KEY]) ? plane[KEY] : "enforce" if plane
         forced = ENV[env_name(KEY)].to_s.strip.downcase
         return forced if MODES.include?(forced)
 
@@ -68,13 +82,34 @@ module Polispec
       end
 
       def snapshot
+        plane = plane_settings
+        return { "machine" => plane } if plane
         base = ENV["XDG_STATE_HOME"]
         base = File.join(Dir.home, ".local", "state") if base.nil? || base.empty?
         data = JSON.parse(File.read(File.join(base, "rplugin", ID, "settings.resolved.json")))
         data.is_a?(Hash) ? data : {}
-      rescue StandardError
+      rescue JSON::ParserError, SystemCallError
         {}
       end
+
+      def root_guard
+        plane = plane_settings
+        value = plane ? plane[ROOT_GUARD_KEY] : snapshot.dig("machine", ROOT_GUARD_KEY)
+        if plane.nil?
+          forced = ENV[env_name(ROOT_GUARD_KEY)].to_s.strip.downcase
+          value = forced unless forced.empty?
+        end
+        value == true || value.to_s.downcase == "true"
+      end
+
+      def plane_settings
+        require_relative "harness_controls/plane"
+        return nil unless defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:resolve)
+        plane = HarnessControls::Plane.resolve
+        raise Polispec::Error, "sealed authority is broken" if plane["status"] == "broken"
+        plane["status"] == "active" ? plane.fetch("settings", {}) : nil
+      end
+      private_class_method :plane_settings
     end
 
     module Logs
@@ -103,10 +138,18 @@ module Polispec
     end
 
     module Pauses
+      STREAM = "harness_pauses"
       module_function
 
       def active(ledger, project_id, now = Time.now)
-        records = Logs.read(ledger.pauses_log).select do |record|
+        plane = resolved_plane
+        records = if plane["status"] == "active"
+                    require_relative "harness_controls/operator_records"
+                    HarnessControls::OperatorRecords.read(STREAM).map { |record| validate_protected_pause(record, plane) }
+                  else
+                    Logs.read(ledger.pauses_log)
+                  end
+        records = records.select do |record|
           record["project"] == project_id.to_s && parse(record["expires_at"]) && parse(record["expires_at"]) > now
         end
         records.max_by { |record| record["started_at"].to_s }
@@ -118,8 +161,59 @@ module Polispec
           "project" => project_id.to_s, "minutes" => minutes, "reason" => reason, "actor" => "operator",
           "started_at" => now.utc.iso8601, "expires_at" => expires.utc.iso8601
         }
+        plane = resolved_plane
+        if plane["status"] == "active"
+          require_relative "harness_controls/operator_records"
+          identity = HarnessControls::Plane.operator!("pause")
+          record = record.merge("schema" => "polispec.pause/v1", "generation" => plane["generation"])
+          appended = nil
+          HarnessControls::OperatorRecords.synchronize(STREAM, identity: identity) do
+            appended = HarnessControls::OperatorRecords.append(STREAM, record, identity: identity)
+            confirmed = HarnessControls::OperatorRecords.read(STREAM).any? { |row| canonical(row) == canonical(appended) }
+            raise Polispec::Error, "protected pause was not confirmed by readback" unless confirmed
+          end
+          return appended
+        end
         Logs.append(ledger.pauses_log, record)
       end
+
+      def resolved_plane
+        return { "status" => "unsealed" } unless defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:resolve)
+        plane = HarnessControls::Plane.resolve
+        raise Polispec::Error, "sealed authority is broken" if plane["status"] == "broken"
+        plane
+      end
+      private_class_method :resolved_plane
+
+      def validate_protected_pause(record, plane)
+        auth = record.is_a?(Hash) ? record["authorization"] : nil
+        valid = record.is_a?(Hash) && record["schema"] == "polispec.pause/v1" && record["generation"] == plane["generation"]
+        valid &&= record["project"].is_a?(String) && !record["project"].empty? && record["project"].bytesize <= 128
+        valid &&= record["minutes"].is_a?(Integer) && record["minutes"].between?(1, 240)
+        valid &&= record["reason"].is_a?(String) && !record["reason"].empty? && record["reason"].bytesize <= 1024 && record["actor"] == "operator"
+        started = parse(record["started_at"])
+        expires = parse(record["expires_at"])
+        valid &&= started && expires && expires.to_i - started.to_i == record["minutes"] * 60
+        valid &&= auth.is_a?(Hash) && auth["generation"] == record["generation"] && auth["caller_operation"] == "pause" && auth["euid"] == 0
+        valid &&= auth["append_operation"] == "operator_records.append.#{STREAM}" && auth.dig("launch_evidence", "verified") == true
+        valid &&= auth["provenance_digest"].to_s.match?(/\A[a-f0-9]{64}\z/)
+        raise Polispec::Error, "protected pause history is invalid" unless valid
+        record
+      end
+      private_class_method :validate_protected_pause
+
+      def canonical(value)
+        case value
+        when Hash
+          value.keys.map(&:to_s).sort.each_with_object({}) do |key, result|
+            source = value.key?(key) ? key : value.keys.find { |candidate| candidate.to_s == key }
+            result[key] = canonical(value[source])
+          end
+        when Array then value.map { |item| canonical(item) }
+        else value
+        end
+      end
+      private_class_method :canonical
 
       def parse(value)
         Time.parse(value.to_s)
@@ -138,6 +232,17 @@ module Polispec
       end
 
       def fold(ledger)
+        if protected_plane?
+          require_relative "harness_controls/authorizations"
+          return HarnessControls::Authorizations.fold.each_with_object({}) do |(id, entry), result|
+            context = entry["context"].is_a?(Hash) ? entry["context"] : {}
+            result[id] = entry.merge(
+              "id" => id,
+              "project" => context["project"],
+              "consumed_at" => entry["state"] == "consumed" ? entry["consumed_at"] : nil
+            )
+          end
+        end
         Logs.read(ledger.allow_once_log).each_with_object({}) do |record, memo|
           id = record["id"]
           next unless id
@@ -147,7 +252,11 @@ module Polispec
         end
       end
 
-      def issue!(ledger, project_id, rows, verdict, now = Time.now)
+      def issue!(ledger, project_id, rows, verdict, now = Time.now, context: nil)
+        if protected_plane?
+          require_relative "harness_controls/authorizations"
+          return HarnessControls::Authorizations.request(authorization_context!(context))
+        end
         digest = digest(project_id, rows)
         reusable = fold(ledger).values.find do |entry|
           entry["project"] == project_id && entry["action_digest"] == digest && entry["redeemed_at"].nil? && Time.parse(entry["issued_at"]) + TTL > now
@@ -165,6 +274,10 @@ module Polispec
       end
 
       def redeem!(ledger, id, now = Time.now)
+        if protected_plane?
+          require_relative "harness_controls/authorizations"
+          return HarnessControls::Authorizations.redeem(id)
+        end
         entry = fold(ledger)[id]
         raise Polispec::Error, "unknown allow-once id #{id}" unless entry
         raise Polispec::Error, "#{id} was already consumed" if entry["consumed_at"]
@@ -173,7 +286,11 @@ module Polispec
         entry
       end
 
-      def consume!(ledger, project_id, digest, session_id, now = Time.now)
+      def consume!(ledger, project_id, digest, session_id, now = Time.now, context: nil)
+        if protected_plane?
+          require_relative "harness_controls/authorizations"
+          return HarnessControls::Authorizations.consume(authorization_context!(context))
+        end
         entry = fold(ledger).values.select { |item| usable?(item, project_id, digest, now) }.min_by { |item| item["redeemed_at"] }
         return nil unless entry
 
@@ -186,6 +303,20 @@ module Polispec
         item["project"] == project_id && item["action_digest"] == digest && item["redeemed_at"] && item["consumed_at"].nil? &&
           Time.parse(item["redeemed_at"]) + TTL > now
       end
+
+      def protected_plane?
+        require_relative "harness_controls/plane"
+        plane = HarnessControls::Plane.resolve
+        raise Polispec::Error, "sealed authority is broken" if plane["status"] == "broken"
+        plane["status"] == "active"
+      end
+      private_class_method :protected_plane?
+
+      def authorization_context!(context)
+        raise Polispec::Error, "sealed allow-once requires complete protected authorization context" unless context.is_a?(Hash)
+        context
+      end
+      private_class_method :authorization_context!
     end
 
     module Envs
@@ -670,7 +801,7 @@ module Polispec
       def of(ctx)
         source = ctx[:global]
         list = source.respond_to?(:protected_roots) ? source.protected_roots : (source.is_a?(Hash) ? (source["protected_roots"] || source[:protected_roots]) : nil)
-        Array(list).filter_map { |entry| root(entry) }
+        Array(list).map { |entry| root(entry) }.compact
       end
 
       def root(entry)
@@ -698,7 +829,8 @@ module Polispec
     end
 
     module Match
-      KEYS = (%w[env class ref crosses destructive shape] + Predicates::NAMES).freeze
+      EXTENSIONS = %w[server operation domain tool role path].freeze
+      KEYS = (%w[env class ref crosses destructive shape] + EXTENSIONS + Predicates::NAMES).freeze
 
       module_function
 
@@ -706,8 +838,17 @@ module Polispec
         return false unless match.is_a?(Hash)
         return false unless (match.keys - KEYS).empty?
 
-        env_ok?(match, env) && class_ok?(match, action) && ref_ok?(match, action, env, target, ctx) && crosses_ok?(match, action, target, ctx) &&
+        env_ok?(match, env) && class_ok?(match, action) && extensions_ok?(match, action, ctx) && ref_ok?(match, action, env, target, ctx) && crosses_ok?(match, action, target, ctx) &&
           destructive_ok?(match, action, ctx) && shape_ok?(match, action) && predicates_ok?(match, action, ctx)
+      end
+
+      def extensions_ok?(match, action, ctx)
+        hint = action.env_hint || {}
+        EXTENSIONS.all? do |key|
+          next true if match[key].nil?
+          actual = key == "tool" ? ctx[:tool] : key == "role" ? ctx[:role] : hint[key]
+          key == "path" ? File.fnmatch?(match[key].to_s, actual.to_s, File::FNM_PATHNAME | File::FNM_DOTMATCH) : match[key].to_s == actual.to_s
+        end
       end
 
       def shape_ok?(match, action)
@@ -892,6 +1033,11 @@ module Polispec
       def settle_warn(rows, worst, target, ctx)
         ledger = ctx[:ledger]
         return worst unless ledger
+        if defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:resolve)
+          plane = HarnessControls::Plane.resolve
+          raise Polispec::Error, "sealed authority is broken" if plane["status"] == "broken"
+          return worst if plane["status"] == "active"
+        end
 
         warns = rows.select { |row| row.verdict.warn? }
         digest = Passes.digest(target.project, warns)

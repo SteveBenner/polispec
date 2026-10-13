@@ -10,6 +10,11 @@ module Polispec
       module_function
 
       def home
+        require_relative "../harness_controls/plane"
+        if defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:path)
+          protected_path = HarnessControls::Plane.path("home")
+          return File.expand_path(protected_path) if protected_path
+        end
         base = ENV["POLISPEC_HOME"].to_s
         File.expand_path(base.empty? ? "~/.polispec" : base)
       end
@@ -19,6 +24,11 @@ module Polispec
       end
 
       def specs_repo
+        require_relative "../harness_controls/plane"
+        if defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:path)
+          protected_path = HarnessControls::Plane.path("code_specs_repo")
+          return File.expand_path(protected_path) if protected_path
+        end
         forced = ENV["POLISPEC_SPECS_REPO"].to_s
         return File.expand_path(forced) unless forced.empty?
 
@@ -29,6 +39,11 @@ module Polispec
       end
 
       def state_dir
+        require_relative "../harness_controls/plane"
+        if defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:path)
+          protected_path = HarnessControls::Plane.path("code_state")
+          return File.expand_path(protected_path) if protected_path
+        end
         forced = ENV["POLISPEC_CODE_STATE"].to_s
         forced.empty? ? State.home : File.expand_path(forced)
       end

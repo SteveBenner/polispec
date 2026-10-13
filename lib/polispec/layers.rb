@@ -158,6 +158,15 @@ module Polispec
 
     class << self
       def source
+        require_relative "harness_controls/plane"
+        if defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:resolve)
+          plane = HarnessControls::Plane.resolve
+          raise Polispec::Error, "sealed authority is broken" if plane["status"] == "broken"
+          if plane["status"] == "active"
+            root = plane.dig("paths", "global")
+            return root ? Source.new(kind: :dir, root: File.expand_path(root)) : nil
+          end
+        end
         dir = ENV["POLISPEC_GLOBAL"].to_s.strip
         return Source.new(kind: :dir, root: File.expand_path(dir)) unless dir.empty?
 
