@@ -36,6 +36,7 @@ module Polispec
           runtime_argv = runtime_argv_for(context)
           control_ids = document.fetch("controls").map { |control| control.fetch("id") }.sort
           controls_content = artifact_content(document)
+          control_digest = Digest::SHA256.hexdigest(canonical_json(document))
           version = parse_version(context["version"])
           version_state = failure_closed_version_state(context["version"], version)
           restrictions = restrictions_for(document, edition)
@@ -67,12 +68,12 @@ module Polispec
               format: "json",
               ownership: {
                 "kind" => "json_entries",
-                "entries" => settings_ownership_entries(settings, callback),
+                "entries" => settings_ownership_entries(settings),
                 "control_ids" => control_ids
               }
             )
           ]
-          capabilities = capabilities_for(document, version, version_state, restrictions)
+          capabilities = capabilities_for(document, version, version_state, restrictions, edition)
           findings = findings_for(
             document: document,
             context: context,
@@ -84,7 +85,6 @@ module Polispec
             controls_path: controls_path,
             restrictions: restrictions
           )
-          control_digest = Digest::SHA256.hexdigest(controls_content)
           operation_material = {
             "artifact_paths" => artifacts.map { |item| item.fetch("path") }.sort,
             "control_digest" => control_digest,
@@ -95,7 +95,7 @@ module Polispec
 
           {
             "schema" => "polispec.harness.plan/v1",
-            "operation_id" => Digest::SHA256.hexdigest(JSON.generate(operation_material)),
+            "operation_id" => Digest::SHA256.hexdigest(canonical_json(operation_material)),
             "control_digest" => control_digest,
             "edition" => edition,
             "harness" => "claude-code",
@@ -184,8 +184,6 @@ module Polispec
             "denyWrite" => deny_paths,
             "denyRead" => deny_paths
           }
-          filesystem["allowRead"] = restrictions.fetch("read_paths") unless restrictions.fetch("read_paths").empty?
-          filesystem["allowWrite"] = restrictions.fetch("write_paths") unless restrictions.fetch("write_paths").empty?
           filesystem["allowManagedReadPathsOnly"] = true if scope == "managed"
           sandbox = {
             "enabled" => true,
@@ -215,25 +213,34 @@ module Polispec
         end
 
         def restrictions_for(document, edition)
-          read_paths = []
-          write_paths = []
-          domains = []
-          network_allowlist = false
+          path_controls = []
+          network_controls = []
           document.fetch("controls").each do |control|
             next unless control.fetch("effect") == "restrict"
 
             params = control.fetch("effect_params")
             paths = params["paths"]
             if paths
-              read_paths.concat(Array(paths["read"]))
-              write_paths.concat(Array(paths["write"]))
+              path_controls << {
+                "control_id" => control.fetch("id"),
+                "conditional" => !control.fetch("match").empty?,
+                "read" => Array(paths["read"]).uniq.sort,
+                "write" => Array(paths["write"]).uniq.sort
+              }
             end
             network_params = params["network"]
-            if network_params && network_params["mode"] == "allowlist"
-              network_allowlist = true
-              domains.concat(Array(network_params["domains"]))
+            if network_params
+              network_controls << {
+                "control_id" => control.fetch("id"),
+                "conditional" => !control.fetch("match").empty?,
+                "mode" => network_params.fetch("mode"),
+                "domains" => Array(network_params["domains"]).uniq.sort
+              }
             end
           end
+          reject_conflicting_restrictions!(path_controls, network_controls)
+          unconditional_network = network_controls.reject { |item| item.fetch("conditional") }
+          compiled_network = unconditional_network.first
           network = if edition == "lock"
                       {
                         "allowedDomains" => [],
@@ -242,9 +249,9 @@ module Polispec
                         "allowUnixSockets" => [],
                         "allowAllUnixSockets" => false
                       }
-                    elsif network_allowlist
+                    elsif compiled_network && compiled_network.fetch("mode") == "allowlist"
                       {
-                        "allowedDomains" => domains.uniq.sort,
+                        "allowedDomains" => compiled_network.fetch("domains"),
                         "strictAllowlist" => true,
                         "allowAllUnixSockets" => false
                       }
@@ -252,13 +259,13 @@ module Polispec
                       {}
                     end
           {
-            "read_paths" => read_paths.uniq.sort,
-            "write_paths" => write_paths.uniq.sort,
+            "path_controls" => path_controls,
+            "network_controls" => network_controls,
             "network" => network
           }
         end
 
-        def capabilities_for(document, version, version_state, restrictions)
+        def capabilities_for(document, version, version_state, restrictions, edition)
           document.fetch("controls").flat_map do |control|
             rows = []
             trigger = control.fetch("trigger")
@@ -279,20 +286,36 @@ module Polispec
             effect = control.fetch("effect")
             effect_state, effect_detail = effect_disposition(effect, trigger_state)
             rows << capability(control, "effect.#{effect}", effect_state, effect_detail)
+            if edition == "standard"
+              rows << capability(control, "sandbox.network.standard_open", "unsupported", "Claude sandbox allowed domains start empty and prompt on new domains; no explicit native setting establishes the standard edition's open-network semantics.")
+            end
             if control.fetch("effect") == "restrict"
               sandbox_state = sandbox_version_state(version)
-              detail = if sandbox_state == "supported"
-                         "Claude sandbox settings are generated as defense in depth; the PreToolUse callback remains the per-control authority, and native evidence is still required."
-                       elsif sandbox_state == "unsupported"
-                         "The declared Claude version predates the supported sandbox configuration surface."
-                       else
-                         "The Claude version is missing or unparseable, so sandbox support is unverified."
-                       end
               params = control.fetch("effect_params")
-              rows << capability(control, "sandbox.filesystem", sandbox_state, detail) if params.key?("paths")
-              rows << capability(control, "sandbox.network", sandbox_state, detail) if params.key?("network")
-              if params.dig("paths", "write") && !Array(params.dig("paths", "write")).empty?
-                rows << capability(control, "sandbox.filesystem.write_allowlist", "unverified", "Claude does not expose a managed-only write-path allowlist switch; the hook must enforce each control and native denial evidence is required.")
+              if params.key?("paths")
+                rows << capability(control, "sandbox.filesystem", "unsupported", "Claude sandbox allowRead and allowWrite add access for Bash commands rather than express the control's path allowlist; file tools, MCP servers, and hooks also run outside the sandbox. The callback remains authoritative.")
+              end
+              if params.key?("network")
+                native_network = restriction_for_control(restrictions.fetch("network_controls"), control.fetch("id"))
+                network_state = if native_network.fetch("conditional")
+                                  "unsupported"
+                                elsif native_network.fetch("mode") == "open"
+                                  "unsupported"
+                                else
+                                  sandbox_state
+                                end
+                network_detail = if native_network.fetch("conditional")
+                                   "A conditional network restriction cannot be converted into a global sandbox allowlist without broadening its scope; the callback remains authoritative."
+                                 elsif native_network.fetch("mode") == "open"
+                                   "Claude exposes no explicit sandbox setting for open network; allowed domains start empty and prompt, and WebFetch and MCP run outside the Bash sandbox."
+                                 elsif sandbox_state == "unsupported"
+                                   "The declared Claude version predates the managed sandbox-lock semantics used by this plan."
+                                 elsif sandbox_state == "unverified"
+                                   "The Claude version is missing or unparseable, so managed sandbox-lock support is unverified."
+                                 else
+                                   "The generated strict domain allowlist applies to sandboxed Bash network access only; WebFetch, MCP servers, file tools, and hooks remain callback-controlled, and native evidence is required."
+                                 end
+                rows << capability(control, "sandbox.network", network_state, network_detail)
               end
             end
             rows
@@ -324,9 +347,18 @@ module Polispec
           if edition == "lock" && scope != "managed"
             findings << finding("lock_scope_unenforceable", "Lock edition settings outside managed scope remain mutable by the user.", nil, "edition.lock", "Generate the lock edition in managed scope with operator authority.")
           end
-          unless restrictions.fetch("write_paths").empty?
-            findings << finding("write_allowlist_hook_authority", "Claude sandbox settings cannot lock write allowlists to managed configuration; the callback enforces these paths.", nil, "sandbox.filesystem.write_allowlist", "Require native hook denial and timeout evidence before certification.")
+          unless restrictions.fetch("path_controls").empty?
+            findings << finding("path_restriction_hook_authority", "Claude sandbox path entries grant Bash access and do not encode per-control path allowlists; path restrictions remain callback-enforced.", nil, "sandbox.filesystem", "Require native callback denial evidence across file tools and Bash before certification.")
           end
+          conditional = (restrictions.fetch("path_controls") + restrictions.fetch("network_controls")).select { |item| item.fetch("conditional") }
+          unless conditional.empty?
+            ids = conditional.map { |item| item.fetch("control_id") }.uniq.sort.join(", ")
+            findings << finding("conditional_restriction_hook_only", "Conditional restrictions #{ids} are not compiled into global sandbox allowlists because that would broaden their scope.", nil, "sandbox.conditional", "Keep the callback authoritative and require native matched and unmatched journeys.")
+          end
+          if edition == "standard"
+            findings << finding("standard_network_open_unsupported", "Claude sandbox allowed domains start empty and prompt on new domains; the backend cannot encode explicit open-network semantics.", nil, "sandbox.network.standard_open", "Treat standard open network as unsupported and retain callback policy until a native open setting exists.")
+          end
+          findings << finding("sandbox_surface_limited", "Claude sandbox covers Bash commands; file and web tools, MCP servers, and hooks run outside it.", nil, "sandbox.coverage", "Verify each governed surface through the PreToolUse callback and native denial journeys.")
           findings << finding("native_probe_required", "The plan and generated JSON do not establish native hook, provenance, filesystem, or network behavior.", nil, "probe.native", "Run the bounded isolated Claude probe before certification.")
           document.fetch("controls").each do |control|
             next unless control.fetch("trigger") == "schedule"
@@ -347,42 +379,60 @@ module Polispec
         end
 
         def artifact_content(value)
-          "#{JSON.pretty_generate(value)}\n"
+          "#{JSON.pretty_generate(canonical_value(value))}\n"
         end
 
-        def settings_ownership_entries(settings, callback)
+        def canonical_json(value)
+          JSON.generate(canonical_value(value))
+        end
+
+        def canonical_value(value)
+          case value
+          when Hash
+            value.keys.sort_by(&:to_s).each_with_object({}) do |key, result|
+              result[key.to_s] = canonical_value(value.fetch(key))
+            end
+          when Array
+            value.map { |item| canonical_value(item) }
+          else
+            value
+          end
+        end
+
+        def reject_conflicting_restrictions!(path_controls, network_controls)
+          %w[read write].each do |axis|
+            constrained = path_controls.reject { |item| item.fetch(axis).empty? }
+            next if constrained.map { |item| item.fetch(axis) }.uniq.length <= 1
+
+            ids = constrained.map { |item| item.fetch("control_id") }.uniq.sort.join(", ")
+            raise Polispec::Error, "conflicting #{axis} path restrictions cannot be safely intersected for Claude: #{ids}"
+          end
+          signatures = network_controls.map { |item| [item.fetch("mode"), item.fetch("domains")] }.uniq
+          return if signatures.length <= 1
+
+          ids = network_controls.map { |item| item.fetch("control_id") }.uniq.sort.join(", ")
+          raise Polispec::Error, "conflicting network restrictions cannot be safely intersected for Claude: #{ids}"
+        end
+
+        def restriction_for_control(restrictions, control_id)
+          restrictions.find { |item| item.fetch("control_id") == control_id }
+        end
+
+        def settings_ownership_entries(settings)
           entries = [
-            "/hooks/PreToolUse/polispec-#{Digest::SHA256.hexdigest(JSON.generate(callback))[0, 16]}",
+            "/hooks/PreToolUse",
+            "/permissions/deny",
             "/sandbox/enabled",
             "/sandbox/failIfUnavailable",
             "/sandbox/allowUnsandboxedCommands",
             "/sandbox/enableWeakerNestedSandbox"
           ]
-          settings.fetch("permissions").fetch("deny").each do |rule|
-            entries << "/permissions/deny/#{pointer_segment(rule)}"
-          end
-          settings.fetch("sandbox").fetch("filesystem").each do |key, values|
-            if values.is_a?(Array)
-              if values.empty?
-                entries << "/sandbox/filesystem/#{key}"
-              else
-                values.each { |value| entries << "/sandbox/filesystem/#{key}/#{pointer_segment(value)}" }
-              end
-            else
-              entries << "/sandbox/filesystem/#{key}"
-            end
+          settings.fetch("sandbox").fetch("filesystem").each do |key, _values|
+            entries << "/sandbox/filesystem/#{pointer_segment(key)}"
           end
           if settings.fetch("sandbox").key?("network")
-            settings.fetch("sandbox").fetch("network").each do |key, value|
-              if value.is_a?(Array)
-                if value.empty?
-                  entries << "/sandbox/network/#{key}"
-                else
-                  value.each { |item| entries << "/sandbox/network/#{key}/#{pointer_segment(item)}" }
-                end
-              else
-                entries << "/sandbox/network/#{key}"
-              end
+            settings.fetch("sandbox").fetch("network").each do |key, _value|
+              entries << "/sandbox/network/#{pointer_segment(key)}"
             end
           end
           entries << "/allowManagedHooksOnly" if settings.key?("allowManagedHooksOnly")
@@ -403,15 +453,17 @@ module Polispec
         def runtime_argv_for(context)
           argv = context["runtime_argv"]
           if argv
-            unless argv.is_a?(Array) && !argv.empty? && argv.all? { |value| value.is_a?(String) && !value.empty? }
-              raise Polispec::Error, "runtime_argv must be a nonempty array of strings"
+            unless argv.is_a?(Array) && !argv.empty? && argv.all? { |value| value.is_a?(String) && !value.empty? && !value.include?("\0") }
+              raise Polispec::Error, "runtime_argv must be a nonempty array of nonempty strings without NUL bytes"
             end
             raise Polispec::Error, "runtime_argv executable must be absolute" unless Pathname.new(argv.first).absolute?
 
             return argv.dup
           end
           runtime_path = context["runtime_path"] || File.join(Polispec::ROOT, "bin", "polispec")
-          raise Polispec::Error, "runtime_path must be an absolute path" unless runtime_path.is_a?(String) && Pathname.new(runtime_path).absolute?
+          unless runtime_path.is_a?(String) && !runtime_path.include?("\0") && Pathname.new(runtime_path).absolute?
+            raise Polispec::Error, "runtime_path must be an absolute path without NUL bytes"
+          end
 
           [runtime_path]
         end
