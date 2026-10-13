@@ -120,10 +120,11 @@ module Polispec
         continuing_transition = continuing && !read_only
         previously_armed = previous && previous["root_guard"] == true
         requested_lock = values["edition"].to_s == "lock" || values["requested_edition"].to_s == "lock"
-        root_guard = previously_armed || requested_lock || continuing_transition
+        root_guard = previously_armed == true || requested_lock || continuing_transition
         unknown = observations.values.any? { |item| item["status"] == "unknown" || item["access"] == "unknown" }
         root_equivalent = observations.values.any? { |item| item["root_equivalent"] == true }
-        lock_eligible = !root_equivalent && !unknown && !development
+        potential_root_equivalent = observations.values.any? { |item| item["potential_root_equivalent"] == true }
+        lock_eligible = !root_equivalent && !potential_root_equivalent && !unknown && !development && !state.nil?
         findings = build_findings(observations, continuing_transition, requested_lock, lock_eligible, development)
 
         result = {
@@ -168,6 +169,7 @@ module Polispec
           "access" => probe.euid == 0 ? "reachable" : "unreachable",
           "rootless" => false,
           "root_equivalent" => probe.euid == 0,
+          "potential_root_equivalent" => false,
           "evidence" => probe.euid == 0 ? ["effective_uid_root"] : ["effective_uid_unprivileged"]
         }
         { "effective_identity" => identity, "docker" => docker, "lxd_incus" => lxd, "privilege_path" => privilege }
@@ -186,7 +188,8 @@ module Polispec
         rootless_context = context_host.start_with?("unix:///run/user/")
         rootless = rootless_socket == "reachable" || rootless_info == true || rootless_context
         daemon_reachable = info && info["status"] == "success"
-        reachable_rootful = (rootful["access"] == "reachable" || daemon_reachable) && !rootless
+        reachable_rootful = rootful["access"] == "reachable" || (daemon_reachable && !rootless)
+        group_authority = groups.include?("docker")
         evidence = []
         evidence << "docker_group" if groups.include?("docker")
         evidence << "rootful_socket_#{rootful['access']}" unless rootful["access"] == "absent"
@@ -200,6 +203,7 @@ module Polispec
           "access" => reachable_rootful || rootless ? "reachable" : (installed ? "unreachable" : "unknown"),
           "rootless" => rootless,
           "root_equivalent" => reachable_rootful,
+          "potential_root_equivalent" => group_authority && !reachable_rootful,
           "evidence" => evidence.empty? ? ["docker_scanner_unavailable"] : evidence
         }
       end
@@ -219,6 +223,7 @@ module Polispec
           "access" => reachable ? "reachable" : (scanners.empty? ? "unknown" : "unreachable"),
           "rootless" => false,
           "root_equivalent" => reachable,
+          "potential_root_equivalent" => group_access && !reachable,
           "evidence" => evidence.empty? ? ["lxd_incus_scanner_unavailable"] : evidence
         }
       end
@@ -226,10 +231,13 @@ module Polispec
 
       def privilege_observation(probe)
         unless probe.executable("sudo")
-          return { "status" => "unknown", "presence" => false, "access" => "unknown", "rootless" => false, "root_equivalent" => false, "evidence" => ["sudo_scanner_unavailable"] }
+          return { "status" => "unknown", "presence" => false, "access" => "unknown", "rootless" => false, "root_equivalent" => false, "potential_root_equivalent" => false, "evidence" => ["sudo_scanner_unavailable"] }
         end
 
         result = probe.run(["sudo", "-n", "true"])
+        if %w[timeout unavailable].include?(result["status"])
+          return { "status" => "unknown", "presence" => true, "access" => "unknown", "rootless" => false, "root_equivalent" => false, "potential_root_equivalent" => false, "evidence" => ["sudo_probe_#{result['status']}"] }
+        end
         reachable = result["status"] == "success"
         {
           "status" => "detected",
@@ -237,6 +245,7 @@ module Polispec
           "access" => reachable ? "reachable" : "denied",
           "rootless" => false,
           "root_equivalent" => reachable,
+          "potential_root_equivalent" => false,
           "evidence" => [reachable ? "noninteractive_sudo_reachable" : "sudo_present_not_noninteractive"]
         }
       end
@@ -258,7 +267,9 @@ module Polispec
       private_class_method :socket_summary
 
       def detected_categories(observations)
-        observations.select { |_, item| item["presence"] == true }.keys.sort
+        observations.select do |_, item|
+          item["root_equivalent"] == true || item["potential_root_equivalent"] == true || item["rootless"] == true
+        end.keys.sort
       end
       private_class_method :detected_categories
 
@@ -274,6 +285,7 @@ module Polispec
       def build_findings(observations, continuing, requested_lock, lock_eligible, development)
         findings = []
         root_equivalent = observations.select { |_, item| item["root_equivalent"] == true }.keys
+        potential_root_equivalent = observations.select { |_, item| item["potential_root_equivalent"] == true }.keys
         rootless = observations.select { |_, item| item["rootless"] == true }.keys
         unknown = observations.select { |_, item| item["status"] == "unknown" || item["access"] == "unknown" }.keys
         unless root_equivalent.empty?
@@ -281,6 +293,9 @@ module Polispec
         end
         unless rootless.empty?
           findings << finding("rootless_container_access", "Rootless container access is reachable through #{rootless.join(', ')}.", "Review the rootless container boundary; it is not classified as host-root authority.")
+        end
+        unless potential_root_equivalent.empty?
+          findings << finding("potential_root_equivalent_access", "Group authority may permit root-equivalent access through #{potential_root_equivalent.join(', ')}.", "Remove the risky group authority or restore a conclusive bounded access probe.")
         end
         unless unknown.empty?
           findings << finding("exposure_unknown", "Exposure status is unknown for #{unknown.join(', ')}.", "Install or restore the bounded scanner and repeat the scan.")
