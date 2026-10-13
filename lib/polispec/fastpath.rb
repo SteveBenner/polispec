@@ -14,27 +14,29 @@ module Polispec
       File.join(State.home, "fastpath.txt")
     end
 
-    def refresh(ledger)
-      return unless stale?(ledger)
+    def refresh(ledger, context = {})
+      return unless stale?(ledger, context)
 
       FileUtils.mkdir_p(State.home, mode: 0o700)
       tmp = "#{path}.#{Process.pid}"
-      File.write(tmp, ([key(ledger)] + needles(ledger)).join("\n") + "\n")
+      File.write(tmp, ([key(ledger, context)] + needles(ledger)).join("\n") + "\n")
       File.rename(tmp, path)
     rescue SystemCallError
       nil
     end
 
-    def stale?(ledger)
+    def stale?(ledger, context = {})
       return true unless File.file?(path)
       return true if ledger.path && File.file?(ledger.path) && File.mtime(ledger.path) > File.mtime(path)
 
-      File.open(path, &:gets).to_s.chomp != key(ledger)
+      File.open(path, &:gets).to_s.chomp != key(ledger, context)
     end
 
-    def key(ledger)
+    def key(ledger, context = {})
       global = Layers.fingerprint
-      global.empty? ? ledger.digest.to_s : "#{ledger.digest}+#{global}"
+      plane = context["plane"].is_a?(Hash) ? context["plane"] : { "status" => "unsealed" }
+      material = [ledger.digest.to_s, global, plane["status"], plane["generation"], context["control_digest"], context["edition"], context["fail_mode"], context["root_guard"], context["mcp_default"]]
+      Digest::SHA256.hexdigest(material.map(&:to_s).join("\0"))
     end
 
     def tool_needles

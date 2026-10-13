@@ -1,6 +1,9 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require_relative "../harness_controls/plane"
+require_relative "../harness_controls/authorizations"
+
 module Polispec
   class AllowOnceCommand
     USAGE = "usage: polispec allow-once <alo_id>"
@@ -13,6 +16,13 @@ module Polispec
       id = args.first
       return usage unless args.length == 1 && id.to_s.match?(/\Aalo_[0-9a-f]{12}\z/)
 
+      plane = HarnessControls::Plane.resolve
+      raise Polispec::Error, "sealed authority is broken" if plane["status"] == "broken"
+      if plane["status"] == "active"
+        result = HarnessControls::Authorizations.redeem(id)
+        puts "polispec: #{id} redeemed through protected authorization records"
+        return result ? 0 : 1
+      end
       ledger = Ledger.load
       entry = Engine::Passes.fold(ledger)[id]
       raise Polispec::Error, "unknown allow-once id #{id}" unless entry
