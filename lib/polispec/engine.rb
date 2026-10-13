@@ -232,6 +232,10 @@ module Polispec
       end
 
       def fold(ledger)
+        if protected_plane?
+          require_relative "harness_controls/authorizations"
+          return HarnessControls::Authorizations.fold
+        end
         Logs.read(ledger.allow_once_log).each_with_object({}) do |record, memo|
           id = record["id"]
           next unless id
@@ -241,7 +245,11 @@ module Polispec
         end
       end
 
-      def issue!(ledger, project_id, rows, verdict, now = Time.now)
+      def issue!(ledger, project_id, rows, verdict, now = Time.now, context: nil)
+        if protected_plane?
+          require_relative "harness_controls/authorizations"
+          return HarnessControls::Authorizations.request(authorization_context!(context))
+        end
         digest = digest(project_id, rows)
         reusable = fold(ledger).values.find do |entry|
           entry["project"] == project_id && entry["action_digest"] == digest && entry["redeemed_at"].nil? && Time.parse(entry["issued_at"]) + TTL > now
@@ -259,6 +267,10 @@ module Polispec
       end
 
       def redeem!(ledger, id, now = Time.now)
+        if protected_plane?
+          require_relative "harness_controls/authorizations"
+          return HarnessControls::Authorizations.redeem(id)
+        end
         entry = fold(ledger)[id]
         raise Polispec::Error, "unknown allow-once id #{id}" unless entry
         raise Polispec::Error, "#{id} was already consumed" if entry["consumed_at"]
@@ -267,7 +279,11 @@ module Polispec
         entry
       end
 
-      def consume!(ledger, project_id, digest, session_id, now = Time.now)
+      def consume!(ledger, project_id, digest, session_id, now = Time.now, context: nil)
+        if protected_plane?
+          require_relative "harness_controls/authorizations"
+          return HarnessControls::Authorizations.consume(authorization_context!(context))
+        end
         entry = fold(ledger).values.select { |item| usable?(item, project_id, digest, now) }.min_by { |item| item["redeemed_at"] }
         return nil unless entry
 
@@ -280,6 +296,20 @@ module Polispec
         item["project"] == project_id && item["action_digest"] == digest && item["redeemed_at"] && item["consumed_at"].nil? &&
           Time.parse(item["redeemed_at"]) + TTL > now
       end
+
+      def protected_plane?
+        require_relative "harness_controls/plane"
+        plane = HarnessControls::Plane.resolve
+        raise Polispec::Error, "sealed authority is broken" if plane["status"] == "broken"
+        plane["status"] == "active"
+      end
+      private_class_method :protected_plane?
+
+      def authorization_context!(context)
+        raise Polispec::Error, "sealed allow-once requires complete protected authorization context" unless context.is_a?(Hash)
+        context
+      end
+      private_class_method :authorization_context!
     end
 
     module Envs

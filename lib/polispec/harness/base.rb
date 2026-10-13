@@ -12,6 +12,7 @@ module Polispec
       PATCH_TOOLS = %w[apply_patch].freeze
       READ_TOOLS = %w[Read NotebookRead read_file view grep search_file_content read_many_files view_image].freeze
       PATH_KEYS = %w[file_path path filepath filename notebook_path].freeze
+      MULTI_LIMIT = 128
       INLINE_PROD = /\bgit\b.*\b(push|merge|tag|reset)\b.*\b(test|stable)\b|\bsystemctl\b|\bgh\s+release\b/.freeze
 
       attr_reader :name, :exit_status
@@ -41,6 +42,13 @@ module Polispec
         data = input.tool_input.is_a?(Hash) ? input.tool_input : { "command" => input.tool_input.to_s }
         return [[tool, data]] if tool.empty?
         return patch_calls(data) if PATCH_TOOLS.include?(tool)
+        return multi_edit_calls(data) if tool == "MultiEdit"
+        if writer?(input)
+          normalized = normalize(tool, data)
+          path = PATH_KEYS.find { |key| normalized[key].is_a?(String) && !normalized[key].empty? }
+          raise Polispec::Error, "known writer #{tool} requires a valid target" unless path
+          return [[canonical(tool), normalized]]
+        end
 
         [[canonical(tool), normalize(tool, data)]]
       end
@@ -155,11 +163,23 @@ module Polispec
           end
         end
         return [["Edit", data]] if calls.empty? && (data["file_path"] || data["path"])
+        raise Polispec::Error, "patch writer requires at least one valid target" if calls.empty?
         calls.flat_map do |change|
           rows = []
           rows << ["Delete", { "file_path" => change["old"] }] if change["delete"] && change["old"]
           rows << ["Edit", { "file_path" => change["new"] }] if change["new"]
           rows
+        end
+      end
+
+      def multi_edit_calls(data)
+        edits = data["edits"]
+        raise Polispec::Error, "MultiEdit edits must be a nonempty bounded array" unless edits.is_a?(Array) && !edits.empty? && edits.length <= MULTI_LIMIT
+        edits.map do |entry|
+          raise Polispec::Error, "MultiEdit entry must be an object" unless entry.is_a?(Hash)
+          path = PATH_KEYS.map { |key| entry[key] }.find { |value| value.is_a?(String) && !value.empty? }
+          raise Polispec::Error, "MultiEdit entry requires a valid target" unless path
+          ["Edit", entry.merge("file_path" => path)]
         end
       end
     end
