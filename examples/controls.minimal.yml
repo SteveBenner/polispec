@@ -1,0 +1,18 @@
+schema: polispec.control/v1
+controls:
+  - id: ctl_minimal_write_guard
+    trigger: pre_tool
+    action: fs.write
+    match:
+      path: /tmp/polispec-control-fixtures/*
+    effect: deny
+    reason: Protect the synthetic fixture directory.
+    fixture:
+      input:
+        tool_name: Write
+        tool_input:
+          file_path: /tmp/polispec-control-fixtures/fixture.txt
+          content: "polispec fixture\n"
+        cwd: /tmp/polispec-control-fixtures
+        action: fs.write
+      expected: deny
