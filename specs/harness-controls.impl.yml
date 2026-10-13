@@ -64,7 +64,7 @@ requirements:
     - {id: FR-12, statement: Standard uses path sandboxing and open network; lock uses path sandboxing and an empty network allowlist., rationale: OS sandbox and Allowlist., verification: demonstration, priority: must, satisfied_by_slices: [slice_2_claude, slice_2_codex, slice_3_other_harnesses, slice_3_os]}
     - {id: FR-13, statement: Refuse lock arming or certification when required axes are unsupported, unverified, failing, or root-equivalent access is reachable., rationale: Environment-dependent lock guarantee., verification: demonstration, priority: must, satisfied_by_slices: [slice_1_environment, slice_4_lifecycle, slice_4_plane]}
     - {id: FR-14, statement: Report all Antigravity surfaces as uncertifiable for lock and GUI surfaces as directive-only., rationale: Antigravity answer., verification: inspection, priority: must, satisfied_by_slices: [slice_3_other_harnesses, slice_4_lifecycle, slice_final_integration]}
-    - {id: FR-15, statement: Keep one implementation and an installable polispec-lock branch differing only in EDITION., rationale: Lock branch., verification: demonstration, priority: must, satisfied_by_slices: [slice_final_integration]}
+    - {id: FR-15, statement: Keep one implementation and an installable polispec-lock branch differing only in EDITION., rationale: Lock branch., verification: demonstration, priority: must, satisfied_by_slices: [slice_5_release_lock, slice_final_integration]}
     - {id: FR-16, statement: Provide an operator-only sealed activation command without activating a real project during this change., rationale: Go live., verification: demonstration, priority: must, satisfied_by_slices: [slice_4_plane]}
     - {id: FR-17, statement: Back up changed native files, maintain ownership receipts, and preserve unrelated entries through install and uninstall., rationale: Host files., verification: demonstration, priority: must, satisfied_by_slices: [slice_4_lifecycle]}
     - {id: FR-18, statement: Document the grammar, APIs, limitations, edition defaults, and the deferred baseline manifest., rationale: Agent-facing language and Allowlist answer., verification: inspection, priority: must, satisfied_by_slices: [slice_final_integration]}
@@ -329,7 +329,7 @@ waves:
   - {id: wave_3, execution: Separate worktrees from wave_2, slices: [slice_3_other_harnesses, slice_3_os], barrier: Reintegrate and inspect all backend dispositions.}
   - {id: wave_4, execution: Separate worktrees from wave_3, slices: [slice_4_lifecycle, slice_4_plane], barrier: Reintegrate and run scratch installation and plane journeys.}
   - {id: wave_4b, execution: Isolated worktree after reviewed authority plane, slices: [slice_4b_authorizations], barrier: Review protected consumption and integrate before guard implementation.}
-  - {id: wave_5, execution: Single worker after wave_4, slices: [slice_5_guard], barrier: Guard journeys pass and existing policy flows still run.}
+  - {id: wave_5, execution: Independent guard and maintainer-script workers in separate worktrees, slices: [slice_5_guard, slice_5_release_lock], barrier: Guard journeys pass, existing policy flows still run, and the release script passes isolated Git journeys.}
   - {id: wave_final, execution: Single integration worker followed by primary verification and documentation on the integration branch, slices: [slice_final_integration], barrier: Independent evidence accepted before release or privileged operator handoff.}
 slice_defaults:
   worker: {model: gpt-5.6-sol, effort: medium}
@@ -504,16 +504,31 @@ slices:
       - {run: 'bin/polispec validate policy examples/policy.widget.yml --json', shows: Existing distributed policy still validates.}
     acceptance: Actual hook CLI with synthetic payloads shows standard unknown MCP authorization, lock denial, protected control edits, broken policy mutation denial, positive diagnostic-read allowance, ignored sealed overrides, and stricter controls winning over an existing allow. Repeat original deployment receipt and layered-policy CLI journeys without real data.
     estimated_complexity: XL
+  - id: slice_5_release_lock
+    title: Isolated edition-branch release operation
+    wave: wave_5
+    owns_paths: [scripts/release-lock]
+    reads_paths: [specs/harness-controls.impl.yml, VERSION]
+    prerequisites: [slice_4_plane]
+    produces_interfaces: [Maintainer-only release-lock command]
+    consumes_interfaces: [Local Git object and ref operations, exact remote lease protocol]
+    satisfies_requirements: [FR-15]
+    detail: Implement rollout.release_lock_protocol exactly. This command has no runtime dependency on the guard and can be implemented independently. Exercise it only against isolated synthetic repositories and bare remotes. Do not mutate this repository's main or lock refs or contact its remote. The integration slice installs the accepted EDITION file, verifies doctor, and runs the actual release only after all gates pass.
+    verification:
+      - {run: 'ruby -c scripts/release-lock', shows: Syntax OK.}
+      - {run: 'scripts/release-lock --help', shows: Exact maintainer CLI contract.}
+    acceptance: Demonstrate exact edition-only creation and refresh, absent and mismatched expectations, dirty trees, remote divergence, dry-run without object or ref writes, and backup/CAS behavior using scratch repositories. No other ref may be rewritten.
+    estimated_complexity: M
   - id: slice_final_integration
     title: Independent acceptance, contracts, documentation, and release
     wave: wave_final
-    owns_paths: [AGENTS.md, specs/app.yml, polispec.rplugin.yml, VERSION, EDITION, .codex-plugin/plugin.json, .claude-plugin/plugin.json, config/harness-features.yml, data/harness-capabilities.yml, schemas/policy.v1.yml, schemas/ledger.v1.yml, schemas/module.v1.yml, schemas/global.v1.yml, hooks/polispec.hooks.yml, README.md, CHANGELOG.md, TODO.md, FEATURES.md, docs/harness-controls.md, docs/operator.md, docs/schema.md, skills/polispec/SKILL.md, rules/polispec.md, scripts/release-lock, lib/polispec/commands/doctor.rb]
+    owns_paths: [AGENTS.md, specs/app.yml, polispec.rplugin.yml, VERSION, EDITION, .codex-plugin/plugin.json, .claude-plugin/plugin.json, config/harness-features.yml, data/harness-capabilities.yml, schemas/policy.v1.yml, schemas/ledger.v1.yml, schemas/module.v1.yml, schemas/global.v1.yml, hooks/polispec.hooks.yml, README.md, CHANGELOG.md, TODO.md, FEATURES.md, docs/harness-controls.md, docs/operator.md, docs/schema.md, skills/polispec/SKILL.md, rules/polispec.md, lib/polispec/commands/doctor.rb]
     reads_paths: ['**/*']
-    prerequisites: [slice_0_foundation, slice_1_language, slice_1_environment, slice_2_claude, slice_2_codex, slice_3_other_harnesses, slice_3_os, slice_4_lifecycle, slice_4_plane, slice_4b_authorizations, slice_5_guard]
+    prerequisites: [slice_0_foundation, slice_1_language, slice_1_environment, slice_2_claude, slice_2_codex, slice_3_other_harnesses, slice_3_os, slice_4_lifecycle, slice_4_plane, slice_4b_authorizations, slice_5_guard, slice_5_release_lock]
     produces_interfaces: [published CLI contract, version agreement, tracking lock branch]
     consumes_interfaces: [all prior interfaces]
     satisfies_requirements: [FR-14, FR-15, FR-18]
-    detail: A medium-effort Sol worker implements this slice's script and doctor changes; the primary owns all documentation, contracts, versioning, and independent verification. These actors execute sequentially. Update app spec and enums, the approved AGENTS ownership exception, actual harness compatibility, declared settings, and rplugin surfaces. Set standard EDITION and release defaults only after acceptance. Release-lock preserves a prior branch ref, recreates the edition-only difference on the accepted main release, and updates the existing tracking branch only with an exact force-with-lease against the reviewed prior remote ref; remote divergence returns to the operator. This is the edition-branch refresh approved in the interview, not permission to rewrite any other branch. Doctor checks artifact provenance and edition-only code equality. Add the baseline provisioned manifest TODO exactly as deferred. Update FEATURES with honest built/deployed status and missing native/privileged evidence. Keep production activation outside this slice.
+    detail: A medium-effort Sol worker implements this slice's doctor changes; the primary owns all documentation, contracts, versioning, and independent verification. These actors execute sequentially. Update app spec and enums, the approved AGENTS ownership exception, actual harness compatibility, declared settings, and rplugin surfaces. Set standard EDITION and release defaults only after acceptance. The reviewed release-lock script preserves a prior branch ref, recreates the edition-only difference on the accepted main release, and updates the tracking branch only with an exact force-with-lease against the reviewed prior remote ref; remote divergence returns to the operator. This is the edition-branch refresh approved in the interview, not permission to rewrite any other branch. Doctor checks artifact provenance and edition-only code equality. Add the baseline provisioned manifest TODO exactly as deferred. Update FEATURES with honest built/deployed status and missing native/privileged evidence. Keep production activation outside this slice.
     verification:
       - {run: 'rplugin check polispec', shows: Zero plugin findings.}
       - {run: 'rplugin install polispec', shows: The accepted release installs; no root seal or live-project activation.}
