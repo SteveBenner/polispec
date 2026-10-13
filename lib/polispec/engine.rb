@@ -234,7 +234,14 @@ module Polispec
       def fold(ledger)
         if protected_plane?
           require_relative "harness_controls/authorizations"
-          return HarnessControls::Authorizations.fold
+          return HarnessControls::Authorizations.fold.each_with_object({}) do |(id, entry), result|
+            context = entry["context"].is_a?(Hash) ? entry["context"] : {}
+            result[id] = entry.merge(
+              "id" => id,
+              "project" => context["project"],
+              "consumed_at" => entry["state"] == "consumed" ? entry["consumed_at"] : nil
+            )
+          end
         end
         Logs.read(ledger.allow_once_log).each_with_object({}) do |record, memo|
           id = record["id"]
@@ -822,7 +829,8 @@ module Polispec
     end
 
     module Match
-      KEYS = (%w[env class ref crosses destructive shape] + Predicates::NAMES).freeze
+      EXTENSIONS = %w[server operation domain tool role path].freeze
+      KEYS = (%w[env class ref crosses destructive shape] + EXTENSIONS + Predicates::NAMES).freeze
 
       module_function
 
@@ -830,8 +838,17 @@ module Polispec
         return false unless match.is_a?(Hash)
         return false unless (match.keys - KEYS).empty?
 
-        env_ok?(match, env) && class_ok?(match, action) && ref_ok?(match, action, env, target, ctx) && crosses_ok?(match, action, target, ctx) &&
+        env_ok?(match, env) && class_ok?(match, action) && extensions_ok?(match, action, ctx) && ref_ok?(match, action, env, target, ctx) && crosses_ok?(match, action, target, ctx) &&
           destructive_ok?(match, action, ctx) && shape_ok?(match, action) && predicates_ok?(match, action, ctx)
+      end
+
+      def extensions_ok?(match, action, ctx)
+        hint = action.env_hint || {}
+        EXTENSIONS.all? do |key|
+          next true if match[key].nil?
+          actual = key == "tool" ? ctx[:tool] : key == "role" ? ctx[:role] : hint[key]
+          key == "path" ? File.fnmatch?(match[key].to_s, actual.to_s, File::FNM_PATHNAME | File::FNM_DOTMATCH) : match[key].to_s == actual.to_s
+        end
       end
 
       def shape_ok?(match, action)
