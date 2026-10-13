@@ -23,11 +23,23 @@ module Polispec
       operation_id = Digest::SHA256.hexdigest(HarnessControls::Authority.canonical_json(plan.slice("edition", "generation", "source", "runtime")))
       data = { "dry_run" => options["dry_run"], "plan" => plan }
       if !options["dry_run"]
+        unless HarnessControls::Features.enabled?("sealed_plane")
+          return emit(result(false, operation_id, plan["edition"], data, [finding("feature_disabled", "sealed_plane mutation is disabled during construction", "Enable the accepted sealed_plane feature before operator preparation.")]), options["json"], 3)
+        end
         unless plan["preparation_ready"]
           return emit(result(false, operation_id, plan["edition"], data, plane_findings(plan["findings"])), options["json"], 3)
         end
         HarnessControls::Authority.bootstrap_identity!("seal.prepare")
         Operator::Tty.confirm!("seal generation #{plan['generation']}", prompt: "Sealing prepares protected authority and may switch the active generation.")
+        data["runtime_preparation"] = HarnessControls::Authority.prepare_runtime
+        plan = if options["from"]
+                 repo, revision = split_source(options["from"])
+                 HarnessControls::Authority.seal_plan(kind: "git", source: repo, revision: revision)
+               else
+                 HarnessControls::Authority.seal_plan(kind: "root_authored", source: options["source"])
+               end
+        data["plan"] = plan
+        operation_id = Digest::SHA256.hexdigest(HarnessControls::Authority.canonical_json(plan.slice("edition", "generation", "source", "runtime")))
         prepared = HarnessControls::Plane.build_generation(plan)
         data["prepared_generation"] = prepared
         unless plan["ready"]
@@ -92,7 +104,12 @@ module Polispec
 
     def emit(payload, json, status)
       if json
-        puts JSON.generate(payload)
+        bytes = JSON.generate(payload)
+        if bytes.bytesize > HarnessControls::Authority::MAX_COMMAND_OUTPUT
+          puts JSON.generate(result(false, nil, payload["edition"], {}, [finding("result_too_large", "seal result exceeds the bounded output limit", "Use a smaller authority bundle.")]))
+          return 1
+        end
+        puts bytes
       else
         puts "polispec seal: #{payload['ok'] ? 'ready' : 'blocked'}"
         puts "  generation: #{payload.dig('data', 'plan', 'generation')}" if payload.dig("data", "plan", "generation")

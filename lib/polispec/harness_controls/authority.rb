@@ -8,6 +8,7 @@ require "fileutils"
 require "open3"
 require "timeout"
 require "rbconfig"
+require "shellwords"
 
 module Polispec
   module HarnessControls
@@ -19,6 +20,9 @@ module Polispec
       MAX_FILE = 1_048_576
       MAX_BUNDLE = 16_777_216
       COMMAND_TIMEOUT = 10
+      MAX_COMMAND_OUTPUT = 16_777_216
+      MAX_FILES = 20_000
+      MAX_RUNTIME_BYTES = 67_108_864
       ALLOWED_ROOTS = %w[ledger.yml settings.json controls global code_specs].freeze
       IGNORED_ENV = %w[
         POLISPEC_ROOT POLISPEC_LEDGER POLISPEC_EDITION POLISPEC_RUNTIME POLISPEC_SOURCE
@@ -44,7 +48,7 @@ module Polispec
         findings = source_plan["findings"] + runtime["findings"]
         lock = kind.to_s != "git"
         findings << finding("native_harness_evidence_missing", "Required native harness denial and failure axes are not verified.", lock)
-        findings << finding("os_containment_evidence_missing", "Kernel sandbox containment is not verified; host user namespaces deny the available bwrap path.", lock)
+        findings << finding("os_containment_evidence_missing", "Kernel sandbox containment evidence has not been supplied.", lock)
         generation_material = {
           "edition" => kind.to_s == "git" ? "standard" : "lock",
           "runtime_digest" => runtime["digest"],
@@ -115,39 +119,44 @@ module Polispec
         raise Failure.new("invalid_source", "cannot inspect lock source: #{error.message}")
       end
 
-      def runtime_plan
+      def runtime_plan(root: RUNTIME_PATH, require_protected: true)
         commit = git(ROOT, "rev-parse", "--verify", "HEAD^{commit}").strip
         files = git_entries(ROOT, commit, bundle_only: false)
-        manifest = files.map { |entry| entry.slice("path", "mode", "digest", "size") }
+        manifest = files.map { |entry| entry.slice("path", "mode", "type", "digest", "size") }
         source_digest = digest_manifest(manifest)
-        descriptor_path = File.join(RUNTIME_PATH, "runtime.json")
+        descriptor_path = File.join(root, "runtime.json")
         descriptor = runtime_descriptor(descriptor_path)
-        release = descriptor["release"] || File.join(RUNTIME_PATH, "releases", commit)
-        launcher = descriptor["launcher"] || File.join(RUNTIME_PATH, "bin", "polispec")
+        release = descriptor["release"] || File.join(root, "releases", commit)
+        launcher = descriptor["launcher"] || File.join(root, "bin", "polispec")
         sdk = descriptor["sdk"] || "/usr/local/lib/rplugin"
         interpreter = descriptor["interpreter"] || launcher_interpreter(launcher)
         findings = []
         findings << finding("runtime_metadata_missing", "Protected runtime metadata is missing at #{descriptor_path}.", true) if descriptor.empty?
-        findings.concat(protection_findings(descriptor_path, "runtime_metadata")) if File.exist?(descriptor_path)
+        findings.concat(protection_findings(descriptor_path, "runtime_metadata")) if require_protected && File.exist?(descriptor_path)
+        findings << finding("runtime_launcher_path", "Runtime metadata must use the fixed launcher #{File.join(root, 'bin', 'polispec')}.", true) unless launcher == File.join(root, "bin", "polispec")
         if descriptor["source_commit"] && descriptor["source_commit"] != commit
           findings << finding("runtime_commit_mismatch", "Protected runtime metadata does not name the exact committed polispec release.", true)
         end
         findings << finding("runtime_release_missing", "Pinned runtime release is missing at #{release}.", true) unless File.directory?(release)
         if File.exist?(release)
-          findings.concat(protection_findings(release, "runtime_release"))
+          findings.concat(protection_findings(release, "runtime_release")) if require_protected
           findings.concat(verify_release(files, release))
         end
         findings << finding("sealed_launcher_missing", "Sealed launcher is missing at #{launcher}.", true) unless File.file?(launcher)
-        findings.concat(protection_findings(launcher, "sealed_launcher")) if File.exist?(launcher)
+        findings.concat(protection_findings(launcher, "sealed_launcher")) if require_protected && File.exist?(launcher)
         if interpreter
-          findings.concat(protection_findings(interpreter, "interpreter"))
+          findings.concat(protection_findings(interpreter, "interpreter")) if require_protected
         else
           findings << finding("protected_interpreter_unresolved", "The sealed launcher does not select a validated absolute interpreter.", true)
         end
+        if File.file?(launcher) && interpreter && descriptor["release"] && descriptor["sdk"]
+          expected_launcher = launcher_content(interpreter, File.join(release, "bin", "polispec"), sdk)
+          findings << finding("launcher_contract_mismatch", "Sealed launcher does not implement the deterministic sanitized absolute launch contract.", true) unless File.binread(launcher) == expected_launcher
+        end
         findings << finding("protected_sdk_missing", "Independent protected rplugin SDK is missing at #{sdk}.", true) unless File.exist?(sdk)
-        findings.concat(protection_findings(sdk, "protected_sdk")) if File.exist?(sdk)
+        findings.concat(protection_findings(sdk, "protected_sdk")) if require_protected && File.exist?(sdk)
         sanitized = descriptor["sanitized_before_interpreter"] == true
-        loader = descriptor["inherited_loader_provenance"].to_s
+        loader = "unresolved"
         findings << finding("launcher_sanitization_unverified", "Protected launcher sanitization before interpreter startup is unverified.", true) unless sanitized
         findings << finding("launch_proof_unresolved", "Inherited dynamic-loader behavior before sanitization has not been proven safe.", true) unless loader == "verified"
         record = {
@@ -155,6 +164,7 @@ module Polispec
           "source_digest" => source_digest,
           "release" => metadata(release),
           "launcher" => metadata(launcher),
+          "entrypoint" => metadata(File.join(release, "bin", "polispec")),
           "interpreter" => metadata(interpreter),
           "sdk" => metadata(sdk),
           "runtime_metadata" => metadata(descriptor_path),
@@ -182,6 +192,59 @@ module Polispec
         }
       end
 
+      def prepare_runtime(destination: RUNTIME_PATH, interpreter: "/usr/bin/ruby", sdk: "/usr/local/lib/rplugin", development: false)
+        root = File.expand_path(destination.to_s)
+        unless development
+          bootstrap_identity!("seal.runtime.prepare")
+          raise Failure.new("invalid_destination", "protected runtime destination is fixed at #{RUNTIME_PATH}") unless root == RUNTIME_PATH
+          findings = protection_findings(interpreter, "bootstrap_interpreter")
+          raise Failure.new("protected_interpreter_required", "runtime preparation requires a protected absolute interpreter", findings) unless findings.empty?
+        end
+        raise Failure.new("invalid_interpreter", "runtime interpreter must be an absolute regular file") unless interpreter.to_s.start_with?("/") && File.file?(interpreter)
+        commit = git(ROOT, "rev-parse", "--verify", "HEAD^{commit}").strip
+        entries = git_entries(ROOT, commit, bundle_only: false)
+        release = File.join(root, "releases", commit)
+        entries.each do |entry|
+          target = File.join(release, entry["path"])
+          bytes = git_blob(ROOT, commit, entry["path"])
+          if entry["type"] == "symlink"
+            link_target = bytes.to_s
+            invalid = link_target.start_with?("/") || link_target.split("/").include?("..") || link_target.include?("\0")
+            raise Failure.new("runtime_symlink_unsafe", "runtime symlink #{entry['path']} has an unsafe target") if invalid
+            FileUtils.mkdir_p(File.dirname(target), mode: 0o755)
+            if File.symlink?(target)
+              raise Failure.new("runtime_conflict", "runtime symlink #{target} has a conflicting target") unless File.readlink(target) == link_target
+            elsif File.exist?(target)
+              raise Failure.new("runtime_conflict", "runtime symlink target #{target} already exists")
+            else
+              File.symlink(link_target, target)
+            end
+          else
+            write_exact(target, bytes, entry["mode"] & 0o777)
+          end
+        end
+        launcher = File.join(root, "bin", "polispec")
+        launcher_bytes = launcher_content(File.realpath(interpreter), File.join(release, "bin", "polispec"), sdk)
+        write_exact(launcher, launcher_bytes, 0o755)
+        descriptor = {
+          "schema" => "polispec.runtime.bootstrap/v1",
+          "source_commit" => commit,
+          "release" => release,
+          "launcher" => launcher,
+          "interpreter" => File.realpath(interpreter),
+          "sdk" => File.expand_path(sdk),
+          "sanitized_before_interpreter" => true,
+          "inherited_loader_provenance" => "unresolved"
+        }
+        write_exact(File.join(root, "runtime.json"), JSON.pretty_generate(canonical_value(descriptor)) + "\n", 0o600)
+        planned = runtime_plan(root: root, require_protected: !development)
+        { "development" => development == true, "root" => root, "commit" => commit, "launcher" => launcher, "runtime" => planned }
+      end
+
+      def development_prepare_runtime(destination:, interpreter: RbConfig.ruby, sdk: "/tmp/polispec-development-rplugin")
+        prepare_runtime(destination: destination, interpreter: interpreter, sdk: sdk, development: true)
+      end
+
       def operator!(operation, plane: nil)
         raise Failure.new("operator_required", "#{operation} requires effective uid 0") unless Process.euid.zero?
         plane ||= defined?(Plane) ? Plane.resolve : nil
@@ -191,7 +254,7 @@ module Polispec
         current_launcher = realpath_or_nil($PROGRAM_NAME)
         current_interpreter = realpath_or_nil(RbConfig.ruby)
         provenance = plane.dig("provenance", "runtime") || {}
-        expected_launcher = provenance.dig("launcher", "realpath")
+        expected_launcher = provenance.dig("entrypoint", "realpath")
         expected_interpreter = provenance.dig("interpreter", "realpath")
         unless current_launcher && current_launcher == expected_launcher && current_interpreter && current_interpreter == expected_interpreter
           raise Failure.new("operator_required", "#{operation} requires verified sealed launcher and interpreter provenance")
@@ -200,16 +263,24 @@ module Polispec
         findings << finding("launch_proof_unresolved", "Inherited dynamic-loader provenance is unresolved.", true) unless provenance["inherited_loader_provenance"] == "verified"
         raise Failure.new("operator_required", "#{operation} lacks complete protected executable provenance", findings) if findings.any? { |item| item["blocking"] }
 
-        material = {
+        provenance_material = {
+          "euid" => Process.euid,
+          "executable" => current_launcher,
+          "interpreter" => current_interpreter,
+          "generation" => plane["generation"],
+          "entrypoint_metadata" => metadata(current_launcher),
+          "interpreter_metadata" => metadata(current_interpreter)
+        }
+        {
           "euid" => Process.euid,
           "executable" => current_launcher,
           "interpreter" => current_interpreter,
           "operation" => operation.to_s,
           "generation" => plane["generation"],
           "authentication" => "effective_uid_and_protected_provenance",
-          "fresh_password_proven" => false
+          "fresh_password_proven" => false,
+          "provenance_digest" => Digest::SHA256.hexdigest(canonical_json(provenance_material))
         }
-        material.merge("provenance_digest" => Digest::SHA256.hexdigest(canonical_json(material)))
       end
 
       def bootstrap_identity!(operation)
@@ -238,6 +309,32 @@ module Polispec
 
       def protected?(path)
         protection_findings(path, "path").empty?
+      end
+
+      def verify_materialized_source(root, manifest)
+        findings = []
+        expected = Array(manifest["files"])
+        expected_paths = expected.map { |entry| entry["path"] }.sort
+        actual_paths = Dir.glob(File.join(root, "**", "*"), File::FNM_DOTMATCH).sort.each_with_object([]) do |path, rows|
+          next if [".", ".."].include?(File.basename(path)) || File.directory?(path)
+          rows << path.delete_prefix("#{root}/")
+        end.sort
+        findings << finding("source_file_set_mismatch", "Materialized source file set differs from its canonical manifest.", true) unless actual_paths == expected_paths
+        expected.each do |entry|
+          path = File.join(root, entry["path"])
+          unless File.file?(path) && !File.symlink?(path)
+            findings << finding("source_file_missing", "Materialized source #{entry['path']} is missing or unsafe.", true)
+            next
+          end
+          findings << finding("source_file_digest", "Materialized source #{entry['path']} differs from planned bytes.", true) unless Digest::SHA256.file(path).hexdigest == entry["digest"]
+          mode = File.stat(path).mode & 0o777
+          findings << finding("source_file_mode", "Materialized source #{entry['path']} differs from planned mode.", true) unless mode == (entry["mode"] & 0o777)
+        end
+        findings
+      end
+
+      def current_metadata(path)
+        metadata(path)
       end
 
       def write_atomic(path, bytes, mode: 0o600)
@@ -350,11 +447,16 @@ module Polispec
 
       def git_entries(repo, commit, bundle_only:)
         output = git(repo, "ls-tree", "-r", "-z", "--full-tree", commit)
-        entries = output.split("\0").reject(&:empty?).map do |row|
+        rows = output.split("\0").reject(&:empty?)
+        raise Failure.new("manifest_too_large", "Git manifest exceeds #{MAX_FILES} files") if rows.length > MAX_FILES
+        total = 0
+        entries = rows.map do |row|
           head, path = row.split("\t", 2)
           mode, type, = head.split(" ", 3)
           next if bundle_only && !bundle_path?(path)
           bytes = git_blob(repo, commit, path)
+          total += bytes.bytesize
+          raise Failure.new("manifest_too_large", "Git manifest exceeds #{MAX_RUNTIME_BYTES} bytes") if total > MAX_RUNTIME_BYTES
           { "path" => path, "mode" => mode.to_i(8), "type" => mode == "120000" ? "symlink" : type, "digest" => Digest::SHA256.hexdigest(bytes), "size" => bytes.bytesize }
         end.compact
         entries.sort_by { |entry| entry["path"] }
@@ -422,7 +524,32 @@ module Polispec
       private_class_method :git_blob
 
       def capture(argv)
-        Timeout.timeout(COMMAND_TIMEOUT) { Open3.capture3(*argv) }
+        stdout = +""
+        stderr = +""
+        status = nil
+        Open3.popen3(*argv) do |stdin, out, err, waiter|
+          stdin.close
+          readers = [[out, stdout], [err, stderr]].map do |io, target|
+            Thread.new do
+              loop do
+                chunk = io.readpartial(16_384)
+                target << chunk
+                raise Failure.new("subprocess_output_limit", "#{argv.first} output exceeds #{MAX_COMMAND_OUTPUT} bytes") if target.bytesize > MAX_COMMAND_OUTPUT
+              end
+            rescue EOFError
+              nil
+            end
+          end
+          unless waiter.join(COMMAND_TIMEOUT)
+            Process.kill("TERM", waiter.pid) rescue nil
+            waiter.join(1)
+            Process.kill("KILL", waiter.pid) rescue nil if waiter.alive?
+            raise Failure.new("subprocess_timeout", "#{argv.first} exceeded #{COMMAND_TIMEOUT} seconds")
+          end
+          readers.each(&:value)
+          status = waiter.value
+        end
+        [stdout, stderr, status]
       rescue Timeout::Error
         raise Failure.new("subprocess_timeout", "#{argv.first} exceeded #{COMMAND_TIMEOUT} seconds")
       end
@@ -448,6 +575,31 @@ module Polispec
       end
       private_class_method :launcher_interpreter
 
+      def launcher_content(interpreter, entrypoint, sdk)
+        unset = %w[RUBYLIB RUBYOPT GEM_HOME GEM_PATH BUNDLE_GEMFILE BUNDLE_PATH BUNDLE_BIN_PATH LD_PRELOAD LD_LIBRARY_PATH DYLD_INSERT_LIBRARIES DYLD_LIBRARY_PATH RPLUGIN_HOME]
+        [
+          "#!/bin/sh",
+          "unset #{unset.join(' ')}",
+          "export RPLUGIN_HOME=#{Shellwords.escape(File.expand_path(sdk))}",
+          "exec #{Shellwords.escape(File.realpath(interpreter))} #{Shellwords.escape(File.expand_path(entrypoint))} \"$@\""
+        ].join("\n") + "\n"
+      end
+      private_class_method :launcher_content
+
+      def write_exact(path, bytes, mode)
+        if File.exist?(path) || File.symlink?(path)
+          raise Failure.new("runtime_conflict", "runtime target #{path} is not a regular owned file") unless File.file?(path) && !File.symlink?(path)
+          existing = File.binread(path)
+          raise Failure.new("runtime_conflict", "runtime target #{path} has conflicting bytes") unless existing == bytes
+          return path
+        end
+        FileUtils.mkdir_p(File.dirname(path), mode: 0o755)
+        write_atomic(path, bytes, mode: mode)
+        File.chmod(mode, path)
+        path
+      end
+      private_class_method :write_exact
+
       def runtime_descriptor(path)
         return {} unless File.file?(path) && !File.symlink?(path)
         data = JSON.parse(bounded_read(path))
@@ -464,8 +616,25 @@ module Polispec
 
       def verify_release(files, release)
         findings = []
+        expected_paths = files.map { |entry| entry["path"] }.sort
+        actual_paths = Dir.glob(File.join(release, "**", "*"), File::FNM_DOTMATCH).sort.each_with_object([]) do |path, rows|
+          next if [".", ".."].include?(File.basename(path)) || File.directory?(path) && !File.symlink?(path)
+          rows << path.delete_prefix("#{release}/")
+        end.sort
+        findings << finding("runtime_release_file_set", "Pinned runtime contains missing or extra entries.", true) unless actual_paths == expected_paths
         files.each do |entry|
           path = File.join(release, entry["path"])
+          current = release
+          entry["path"].split("/")[0...-1].each do |part|
+            current = File.join(current, part)
+            findings << finding("runtime_release_symlink_ancestry", "Pinned runtime path #{entry['path']} has symlinked intermediate ancestry.", true) if File.symlink?(current)
+          end
+          if entry["type"] == "symlink"
+            unless File.symlink?(path) && Digest::SHA256.hexdigest(File.readlink(path)) == entry["digest"]
+              findings << finding("runtime_release_symlink", "Pinned runtime symlink #{entry['path']} differs from committed provenance.", true)
+            end
+            next
+          end
           unless File.file?(path) && !File.symlink?(path)
             findings << finding("runtime_release_incomplete", "Pinned runtime is missing #{entry['path']}.", true)
             next
@@ -497,6 +666,7 @@ module Polispec
           relative = path.delete_prefix("#{root}/")
           row = { "path" => relative, "mode" => stat.mode & 0o7777, "type" => stat.ftype }
           row["digest"] = Digest::SHA256.file(path).hexdigest if stat.file? && !stat.symlink?
+          row["digest"] = Digest::SHA256.hexdigest(File.readlink(path)) if stat.symlink?
           result << row
         end
         Digest::SHA256.hexdigest(canonical_json(rows))

@@ -3,6 +3,7 @@
 
 require_relative "authority"
 require_relative "../operator/tty"
+require_relative "../operator/gates"
 
 module Polispec
   module HarnessControls
@@ -32,7 +33,7 @@ module Polispec
         findings = []
         active = read_regular_json(active_path, "active sentinel", findings)
         return base_result("broken", findings, ignored, development) unless active
-        unless active["schema"] == SCHEMA && valid_generation?(active["generation"])
+        unless active["schema"] == SCHEMA && valid_generation?(active["generation"]) && active["plane_digest"].to_s.match?(/\A[a-f0-9]{64}\z/)
           findings << finding("active_record_invalid", "Active sentinel has an invalid schema or generation.")
           return base_result("broken", findings, ignored, development)
         end
@@ -47,6 +48,7 @@ module Polispec
         plane_path = File.join(generation_root, "plane.json")
         record = read_regular_json(plane_path, "generation record", findings)
         return base_result("broken", findings, ignored, development) unless record
+        findings << finding("generation_record_digest", "Generation record does not match the active sentinel digest.") unless Digest::SHA256.file(plane_path).hexdigest == active["plane_digest"]
         unless record["schema"] == PLANE_SCHEMA && record["generation"] == generation && EDITIONS.include?(record["edition"])
           findings << finding("generation_record_invalid", "Generation record does not match the active generation.")
           return base_result("broken", findings, ignored, development)
@@ -128,11 +130,13 @@ module Polispec
         raise Authority::Failure.new("broken_plane", "sealed plane is broken", plane["findings"]) if plane["status"] == "broken"
         return {} unless plane["status"] == "active"
         require_relative "operator_records"
-        OperatorRecords.read("activations").each_with_object({}) do |record, result|
-          next unless record["generation"] == plane["generation"]
-          project = record["project_id"].to_s
-          status = record["status"].to_s
-          result[project] = status if !project.empty? && %w[live paused].include?(status)
+        OperatorRecords.read("activation_transactions").each_with_object({}) do |record, result|
+          next unless record["generation"] == plane["generation"] && record["state"] == "committed"
+          Array(record["changes"]).each do |change|
+            project = change["project_id"].to_s
+            status = change["status"].to_s
+            result[project] = status if !project.empty? && %w[live paused onboarding retired].include?(status)
+          end
         end
       end
 
@@ -152,6 +156,9 @@ module Polispec
       end
 
       def activate(project_ids, dry_run: false)
+        if !dry_run && !Features.enabled?("sealed_plane")
+          raise Authority::Failure.new("prerequisite_missing", "sealed_plane mutation is disabled")
+        end
         plane = verify
         raise Authority::Failure.new("broken_plane", "sealed plane is broken", plane["findings"]) if plane["status"] == "broken"
         raise Authority::Failure.new("prerequisite_missing", "project activation requires an active plane") unless plane["status"] == "active"
@@ -164,25 +171,44 @@ module Polispec
           project = ledger.project(id)
           raise Authority::Failure.new("invalid_project", "unknown project #{id}") unless project
           raise Authority::Failure.new("invalid_project", "project #{id} is retired") if project.status == "retired"
-          raise Authority::Failure.new("project_validation_failed", "project #{id} repository is unavailable") unless File.directory?(File.expand_path(project.repo))
+          validate_project!(project, ledger)
           project
         end
-        records = projects.map do |project|
+        changes = projects.map do |project|
           {
-            "schema" => "polispec.plane.activation/v1",
-            "generation" => plane["generation"],
             "project_id" => project.id,
             "prior_status" => activation_overrides.fetch(project.id, project.status),
-            "status" => "live",
-            "recorded_at" => Time.now.utc.iso8601
+            "status" => "live"
           }
         end
+        operation_id = Digest::SHA256.hexdigest(Authority.canonical_json({ "generation" => plane["generation"], "changes" => changes, "recorded_at" => Time.now.utc.iso8601 }))
+        records = [
+          { "schema" => "polispec.plane.activation/v1", "operation_id" => operation_id, "generation" => plane["generation"], "state" => "prepared", "changes" => changes, "recorded_at" => Time.now.utc.iso8601 },
+          { "schema" => "polispec.plane.activation/v1", "operation_id" => operation_id, "generation" => plane["generation"], "state" => "committed", "changes" => changes, "recorded_at" => Time.now.utc.iso8601 }
+        ]
         unless dry_run
           Operator::Tty.confirm!("activate #{ids.sort.join(',')} on #{plane['generation']}", prompt: "Project activation changes protected effective status.")
           require_relative "operator_records"
-          records.each { |record| OperatorRecords.append("activations", record, identity: identity) }
+          records.each { |record| OperatorRecords.append("activation_transactions", record, identity: identity) }
         end
-        { "dry_run" => dry_run == true, "generation" => plane["generation"], "projects" => records, "identity" => identity }
+        { "dry_run" => dry_run == true, "generation" => plane["generation"], "operation_id" => operation_id, "changes" => changes, "identity" => identity }
+      end
+
+      def rollback_activation(operation_id, dry_run: false)
+        if !dry_run && !Features.enabled?("sealed_plane")
+          raise Authority::Failure.new("prerequisite_missing", "sealed_plane mutation is disabled")
+        end
+        plane = verify
+        raise Authority::Failure.new("prerequisite_missing", "rollback requires an active plane") unless plane["status"] == "active"
+        identity = operator!("plane.rollback")
+        require_relative "operator_records"
+        committed = OperatorRecords.read("activation_transactions").reverse.find { |record| record["operation_id"] == operation_id.to_s && record["state"] == "committed" && record["generation"] == plane["generation"] }
+        raise Authority::Failure.new("invalid_activation", "no committed activation #{operation_id}") unless committed
+        changes = Array(committed["changes"]).map { |change| { "project_id" => change["project_id"], "prior_status" => change["status"], "status" => change["prior_status"] } }
+        record = { "schema" => "polispec.plane.activation/v1", "operation_id" => Digest::SHA256.hexdigest(Authority.canonical_json(changes)), "rollback_of" => operation_id.to_s, "generation" => plane["generation"], "state" => "committed", "changes" => changes, "recorded_at" => Time.now.utc.iso8601 }
+        Operator::Tty.confirm!("rollback activation #{operation_id}", prompt: "Rollback restores exact prior protected project statuses.") unless dry_run
+        OperatorRecords.append("activation_transactions", record, identity: identity) unless dry_run
+        { "dry_run" => dry_run == true, "record" => record }
       end
 
       def build_generation(plan)
@@ -190,13 +216,19 @@ module Polispec
         Authority.bootstrap_identity!("seal.prepare")
         generation = plan["generation"]
         destination = File.join(GENERATIONS_PATH, generation)
-        return destination if File.directory?(destination) && resolve_generation(destination, generation)
+        if File.exist?(destination)
+          findings = candidate_findings(destination, plan, require_protected: true)
+          raise Authority::Failure.new("generation_conflict", "existing prepared generation does not exactly match the requested plan", findings) unless findings.empty?
+          return destination
+        end
 
         temp = File.join(GENERATIONS_PATH, ".#{generation}.tmp-#{Process.pid}")
         raise Authority::Failure.new("generation_conflict", "temporary generation path already exists") if File.exist?(temp)
         FileUtils.mkdir_p(File.join(temp, "source"), mode: 0o700)
         materialize_source(plan["source"], File.join(temp, "source"))
         source_manifest = Authority.canonical_value(plan.dig("source", "manifest"))
+        source_findings = Authority.verify_materialized_source(File.join(temp, "source"), source_manifest)
+        raise Authority::Failure.new("source_changed", "materialized source differs from the planned authority manifest", source_findings) unless source_findings.empty?
         runtime_manifest = Authority.canonical_value(plan["runtime"])
         write_json(File.join(temp, "source-manifest.json"), source_manifest)
         write_json(File.join(temp, "runtime-manifest.json"), runtime_manifest)
@@ -204,6 +236,9 @@ module Polispec
         write_json(File.join(temp, "plane.json"), record)
         FileUtils.mkdir_p(GENERATIONS_PATH, mode: 0o700)
         File.rename(temp, destination)
+        File.open(GENERATIONS_PATH, File::RDONLY) { |file| file.fsync }
+        findings = candidate_findings(destination, plan, require_protected: true)
+        raise Authority::Failure.new("generation_verification_failed", "prepared generation failed verification", findings) unless findings.empty?
         destination
       end
 
@@ -213,6 +248,8 @@ module Polispec
         raise Authority::Failure.new("broken_plane", "existing fixed-root plane is broken and requires operator recovery", current["findings"]) if current["status"] == "broken"
         destination = File.join(GENERATIONS_PATH, plan["generation"])
         raise Authority::Failure.new("prerequisite_missing", "prepared generation is missing") unless File.directory?(destination)
+        candidate_errors = candidate_findings(destination, plan, require_protected: true)
+        raise Authority::Failure.new("generation_verification_failed", "prepared generation is not safe to activate", candidate_errors) unless candidate_errors.empty?
         prepared_record = JSON.parse(File.read(File.join(destination, "plane.json")))
         candidate = {
           "status" => "active",
@@ -220,13 +257,18 @@ module Polispec
           "provenance" => { "runtime" => prepared_record.dig("runtime", "provenance") }
         }
         identity = Authority.operator!("seal.activate", plane: candidate)
-        active = { "schema" => SCHEMA, "generation" => plan["generation"] }
+        active = { "schema" => SCHEMA, "generation" => plan["generation"], "plane_digest" => Digest::SHA256.file(File.join(destination, "plane.json")).hexdigest }
         prior = File.binread(ACTIVE_PATH) if File.file?(ACTIVE_PATH) && !File.symlink?(ACTIVE_PATH)
+        backup_path = "#{ACTIVE_PATH}.backup-#{plan['generation']}"
+        backup_record = { "schema" => "polispec.plane.active-backup/v1", "generation" => plan["generation"], "prior_present" => !prior.nil?, "prior_digest" => prior && Digest::SHA256.hexdigest(prior), "recorded_at" => Time.now.utc.iso8601 }
+        Authority.write_atomic(backup_path, prior || JSON.pretty_generate(Authority.canonical_value(backup_record)) + "\n", mode: 0o600)
         Authority.write_atomic(ACTIVE_PATH, JSON.pretty_generate(Authority.canonical_value(active)) + "\n", mode: 0o600)
         resolved = resolve
         unless resolved["status"] == "active"
           if prior
             Authority.write_atomic(ACTIVE_PATH, prior, mode: 0o600)
+            restored = resolve
+            raise Authority::Failure.new("recovery_failed", "previous active sentinel could not be restored", restored["findings"]) if restored["status"] == "broken"
           else
             backup = "#{ACTIVE_PATH}.failed-#{Time.now.utc.strftime('%Y%m%d%H%M%S')}"
             File.rename(ACTIVE_PATH, backup) if File.exist?(ACTIVE_PATH)
@@ -293,6 +335,7 @@ module Polispec
         source_manifest = JSON.parse(File.read(safe_generation_path(root, "source-manifest.json")))
         source_digest = Digest::SHA256.hexdigest(Authority.canonical_json(source_manifest))
         findings << finding("source_manifest_digest", "Source manifest does not match recorded source provenance.") unless source_digest == record.dig("source", "digest")
+        findings.concat(Authority.verify_materialized_source(File.join(root, "source"), source_manifest).map { |item| finding(item["code"], item["detail"]) })
         runtime_manifest = JSON.parse(File.read(safe_generation_path(root, "runtime-manifest.json")))
         findings << finding("runtime_manifest_digest", "Runtime manifest does not match recorded runtime provenance.") unless runtime_manifest["digest"] == record.dig("runtime", "digest")
       rescue JSON::ParserError => error
@@ -307,10 +350,24 @@ module Polispec
         argv = Array(runtime["argv"])
         findings << finding("runtime_argv_invalid", "Generation runtime argv is invalid.") unless !argv.empty? && argv.all? { |item| item.is_a?(String) && !item.empty? && !item.include?("\0") } && argv.first.start_with?("/")
         provenance = stringify_hash(runtime["provenance"])
-        %w[launcher interpreter sdk].each do |key|
+        %w[launcher entrypoint interpreter sdk].each do |key|
           path = provenance.dig(key, "realpath")
           findings << finding("runtime_#{key}_missing", "Runtime #{key} provenance is missing.") unless path
           findings.concat(Authority.protection_findings(path, "runtime_#{key}").map { |item| finding(item["code"], item["detail"]) }) if require_protected && path
+          if path
+            recorded = stringify_hash(provenance[key])
+            current = Authority.current_metadata(path)
+            %w[realpath uid mode digest].each do |field|
+              findings << finding("runtime_#{key}_changed", "Runtime #{key} #{field} differs from recorded provenance.") unless current[field] == recorded[field]
+            end
+          end
+        end
+        release = stringify_hash(provenance["release"])
+        if release["realpath"]
+          current = Authority.current_metadata(release["realpath"])
+          %w[realpath uid mode digest].each do |field|
+            findings << finding("runtime_release_changed", "Runtime release #{field} differs from recorded provenance.") unless current[field] == release[field]
+          end
         end
       end
       private_class_method :verify_runtime_record
@@ -390,6 +447,7 @@ module Polispec
         Dir.glob(File.join(root, "**", "*"), File::FNM_DOTMATCH).sort.each do |path|
           next unless File.file?(path) && !File.symlink?(path)
           relative = path.delete_prefix("#{root}/")
+          next if relative == "plane.json"
           files[relative] = Digest::SHA256.file(path).hexdigest
         end
         {
@@ -408,18 +466,42 @@ module Polispec
       end
       private_class_method :generation_record
 
+      def validate_project!(project, ledger)
+        repo = File.expand_path(project.repo)
+        raise Authority::Failure.new("project_validation_failed", "project #{project.id} repository is not a Git checkout") unless File.exist?(File.join(repo, ".git"))
+        loaded = PolicySource.resolve(project, ledger: ledger)
+        raise Authority::Failure.new("project_validation_failed", "project #{project.id} has no committed policy authority") if loaded.source == "defaults" || loaded.finding
+        policy = loaded.policy
+        problems = Operator::Gates.health_required_errors(policy)
+        problems.concat(Layers.policy_errors(policy, project: project, ledger: ledger))
+        problems.concat(ValidateProfiles.errors(policy, project, ledger: ledger))
+        raise Authority::Failure.new("project_validation_failed", "project #{project.id}: #{problems.join('; ')}") unless problems.empty?
+        raise Authority::Failure.new("project_validation_failed", "project #{project.id} roster is unavailable") unless PolicySource.roster_digest(project)
+        true
+      end
+      private_class_method :validate_project!
+
       def write_json(path, value)
         Authority.write_atomic(path, JSON.pretty_generate(Authority.canonical_value(value)) + "\n", mode: 0o600)
       end
       private_class_method :write_json
 
-      def resolve_generation(destination, generation)
+      def candidate_findings(destination, plan, require_protected:)
+        findings = []
+        findings.concat(Authority.protection_findings(destination, "generation").map { |item| finding(item["code"], item["detail"]) }) if require_protected
         record = JSON.parse(File.read(File.join(destination, "plane.json")))
-        record["generation"] == generation
-      rescue StandardError
-        false
+        expected_record = generation_record(plan, destination)
+        findings << finding("generation_record_conflict", "Prepared generation record differs from the deterministic requested plan.") unless Authority.canonical_json(record) == Authority.canonical_json(expected_record)
+        findings << finding("generation_mismatch", "Prepared generation identifier differs from the plan.") unless record["generation"] == plan["generation"]
+        findings << finding("source_provenance_mismatch", "Prepared source provenance differs from the plan.") unless record.dig("source", "digest") == plan.dig("source", "digest") && record.dig("source", "ref") == plan.dig("source", "ref")
+        findings << finding("runtime_provenance_mismatch", "Prepared runtime provenance differs from the plan.") unless record.dig("runtime", "digest") == plan.dig("runtime", "digest")
+        verify_generation_files(destination, record, findings, require_protected)
+        verify_runtime_record(record, findings, require_protected)
+        findings
+      rescue StandardError => error
+        [finding("generation_invalid", error.message)]
       end
-      private_class_method :resolve_generation
+      private_class_method :candidate_findings
     end
   end
 end
