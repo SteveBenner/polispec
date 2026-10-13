@@ -43,7 +43,7 @@ module Polispec
             raise Polispec::Error, "generated Codex TOML exceeds #{CONFIG_LIMIT} bytes" if config_content.bytesize > CONFIG_LIMIT
             artifacts << artifact(paths["config"], config_content, "toml", "toml_block", ["codex/v1"], control_ids)
             if scope != "managed"
-              artifacts << artifact(paths["rules"], exec_rules, "starlark", "exclusive", ["polispec"], control_ids)
+              artifacts << artifact(paths["rules"], exec_rules, "starlark", "exclusive", [""], control_ids)
               findings << finding("hook_trust_required", "Codex requires explicit trust for the generated #{scope} PreToolUse hook.", nil, "codex.callback_denial", "Review and trust the generated hook in Codex before relying on it.")
             end
           end
