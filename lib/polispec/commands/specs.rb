@@ -41,7 +41,7 @@ module Polispec
         case verb
         when "link"
           note = result["changed"] ? "" : " (already linked)"
-          note = " (dry run: would #{result['replaces'] ? "replace #{result['replaces']}, needs a terminal and the typed phrase" : 'create the link'})" if result["dry_run"]
+          note = " (dry run: would #{result['replaces'] ? "replace #{result['replaces']}, needs a terminal and the typed phrase relink #{result['target']}" : 'create the link'})" if result["dry_run"]
           puts "#{result['link']} -> #{result['target']}#{note}"
         when "status"
           puts "repo #{result['repo']}"

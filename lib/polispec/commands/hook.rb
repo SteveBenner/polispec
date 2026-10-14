@@ -302,7 +302,6 @@ module Polispec
         owner = Engine::Envs.owner(action, ledger, cwd)
         if owner && owner.status == "live"
           loaded = PolicySource.resolve(owner, ledger: ledger)
-          raise Polispec::Error, "committed policy is unavailable for #{owner.id}" if loaded.source == "defaults"
           env = Engine::Envs.cwd_env(loaded.policy, ledger, owner.id, cwd)
           target = Target.new(project: owner.id, env: env, policy: loaded.policy, roster: nil, policy_source: loaded.source, digest: loaded.digest)
           target.env = Engine::Envs.for_action(action, target, { cwd: cwd, ledger: ledger })
