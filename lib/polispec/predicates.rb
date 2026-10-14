@@ -380,8 +380,9 @@ module Polispec
       return no if repo.to_s.empty?
 
       reasons = []
-      reasons << existing_tag_note(repo, name, data["ref"]) if action.action_class == "git.tag"
-      reasons << remote_version_note(repo, name, data["ref"])
+      target = action.action_class == "git.tag" ? data["at"] || data["ref"] : data["ref"]
+      reasons << existing_tag_note(repo, name, target) if action.action_class == "git.tag"
+      reasons << remote_version_note(repo, name, target)
       reasons = reasons.compact
       reasons.empty? ? no : yes([reasons.join("; "), fetch_note(repo)].compact.join("; "))
     end
