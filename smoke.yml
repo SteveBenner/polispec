@@ -8164,3 +8164,78 @@ entries:
     policy_digest:
   prev: 0b9e3a10b9dbee85aa06992a4bb879203feb4bdf78906cfe2fbe15ca423e3ae3
   digest: 265326e26878ca2ed1a1f7612a95b94fab262d156e2a47d053fae2f2ace98a09
+- id: smk_8311b756839e
+  recorded_at: '2026-10-14T17:34:39Z'
+  proves:
+    spec: specs/app.yml
+    at: composition
+    spec_digest: 679d6646d06a5c751523a04e6d5947c7edf47d4b1a2af5731c2ec01df5dbdd8c
+    at_digest: 716a0ac203e4745f189cf1acef21ed5844b6998bd1e669a213fca906b1f5a0ec
+  verdict: pass
+  summary: 'recursive composition: three-level parameterised clinic modules compose,
+    param errors are reported, and live verdicts on reach and teach are byte-identical
+    to 0.19.1'
+  steps:
+  - run: polispec validate policy examples/clinic/policy.yml; polispec validate module
+      examples/clinic/modules/*.yml
+    exit: 0
+    expect: all ok with the host global layer active
+    observed: policy ok (polispec.policy/v1 + environments.yml); 4 modules ok
+  - run: Layers.compose of examples/clinic/policy.yml with its project modules
+    exit: 0
+    expect: three-level expansion with typed params and no errors
+    observed: to_test G-CHECKS,G-CLEAN,G-VHOMES; to_stable G-TESTED,G-SOAK(hours 24
+      integer),G-FREEZE; freeze F-OPEN command list lead_minutes 60; errors []
+  - run: 'validate policy on a copy with soak_hours: "a day"'
+    exit: 1
+    expect: typed parameter error
+    observed: 'module release-train: parameter soak_hours must be integer'
+  - run: '0.19.1 vs 0.20.0: resolve --layers (10 paths), hook pretool (23 calls),
+      status reach, doctor, on a scratch ledger copy with reach and teach live'
+    exit: 0
+    expect: byte-identical output
+    observed: cmp identical; 16 deny, 3 ask
+  evidence:
+  - path: parity-0.20.0.txt
+    sha256: 64d1afb1e1984e1067556f371fb4ebefccb70747012caad4ea2de3761a847c9f
+    bytes: 18646
+    kind: log
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.299
+    model: claude-opus-5-5
+    effort: high
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-38-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.20.0
+      edition: standard
+      commit: 07bb327ca19658ccb9ba71126c32aab2e0d916c2
+      dirty: false
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 07bb327ca19658ccb9ba71126c32aab2e0d916c2
+    branch: main
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: 265326e26878ca2ed1a1f7612a95b94fab262d156e2a47d053fae2f2ace98a09
+  digest: c55bba624a2b6345c7b300f975930e5469d4f58865cdaee94785beed7d328727
