@@ -406,6 +406,8 @@ module Polispec
       return nil if wanted > current
       return nil if wanted == current && carries_version?(repo, ref, wanted)
 
+      return "#{name} is not on origin/main's release commit for version #{current}" if wanted == current
+
       "#{name} is not greater than origin/main's version #{current}"
     rescue ArgumentError
       nil

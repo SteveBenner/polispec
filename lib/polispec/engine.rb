@@ -908,6 +908,11 @@ module Polispec
       warn: "Get explicit confirmation from the user first (use the question tool).",
       generic: "Ask %<operator>s how to proceed."
     }.freeze
+    UNOWNED_STEPS = {
+      prod_git: "Only %<operator>s moves production: ask %<operator>s; no polispec project owns this path, so there is no `polispec promote` for it.",
+      prod_ops: "Ask %<operator>s; no polispec project owns this path, so `polispec deploy` and `polispec promote` do not apply to it.",
+      test_git: "Ask %<operator>s; no polispec project owns this path, so `polispec promote --to test` does not apply to it."
+    }.freeze
     GIT_CLASSES = %w[git.commit git.push git.tag git.merge git.rewrite git.branch release.publish].freeze
 
     class << self
@@ -928,7 +933,8 @@ module Polispec
 
       def next_step(action_class, env, project, level)
         key = step_key(action_class, env, level)
-        format(NEXT_STEPS[key], project: project, operator: Settings.operator)
+        steps = project.nil? ? UNOWNED_STEPS.fetch(key, NEXT_STEPS[key]) : NEXT_STEPS[key]
+        format(steps, project: project, operator: Settings.operator)
       end
 
       private
@@ -999,8 +1005,12 @@ module Polispec
         base = "#{base}; ledger defaults apply because the stable policy is missing or invalid" if target.policy["defaults"]
         Verdict.new(
           level: level, rule_id: rule_id, reason: "#{base} (env #{env}, #{action.action_class}: #{clip(action.raw)})",
-          next_step: level == "allow" ? nil : next_step(action.action_class, env, target.project, level)
+          next_step: level == "allow" ? nil : next_step(action.action_class, env, unowned?(target) ? nil : target.project, level)
         )
+      end
+
+      def unowned?(target)
+        target.project == "global" && target.policy_source == "global"
       end
 
       def cleared(verdict, action, env, target, ctx)
@@ -1014,7 +1024,7 @@ module Polispec
         return verdict if roles.include?("*") || (!roles.empty? && ctx[:role].nil?) || (ctx[:role] && roles.include?(ctx[:role]))
 
         Verdict.new(level: "deny", rule_id: "R-ROSTER-ENV", reason: "the roster clears no matching role for #{env} secrets (env #{env}, secrets.read: #{clip(action.raw)})",
-                    next_step: next_step("secrets.read", env, target.project, "deny"))
+                    next_step: next_step("secrets.read", env, unowned?(target) ? nil : target.project, "deny"))
       end
 
       def roster_for(target, ctx)
