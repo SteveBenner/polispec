@@ -1,0 +1,52 @@
+schema: polispec.environments/v1
+project: "clinic"
+recorded: "2026-10-14"
+summary: "clinic is the booking app patients use. main is dev, test is the rehearsal copy on port 9091 with made-up patients, stable is the live app on port 9090 and moves only by the operator."
+environments:
+  dev:
+    branch: main
+    checkout: repo
+    tier: dev
+    worktrees: [".clinic-wt/*"]
+    audience: [operator]
+    exposure: loopback
+    data:
+      databases: [clinic_dev]
+    data_classes: [synthetic, operational]
+  test:
+    branch: test
+    checkout: "~/.polispec/envs/clinic/test"
+    tier: test
+    audience: [operator, front-desk staff]
+    exposure: tailnet
+    services: [clinic-web-test]
+    url: "http://localhost:9091"
+    ports: [9091]
+    data:
+      dirs: ["~/.clinic-test"]
+      databases: [clinic_test]
+    data_classes: [deidentified, synthetic, operational]
+    deploy:
+      steps: ["bin/migrate", "systemctl --user restart clinic-web-test"]
+      health: { url: "http://localhost:9091/health", expect_version: true, timeout_s: 60 }
+    operators: [agent, operator]
+  prod:
+    branch: stable
+    checkout: "~/.polispec/envs/clinic/stable"
+    tier: prod
+    runs: tag
+    audience: [patients, front-desk staff]
+    exposure: public
+    services: [clinic-web]
+    url: "http://localhost:9090"
+    ports: [9090]
+    data:
+      dirs: ["~/.clinic"]
+      databases: [clinic]
+    secrets: ["~/.clinic/keys/**"]
+    data_classes: [patient_records, keys, operational]
+    deploy:
+      steps: ["bin/migrate", "systemctl --user restart clinic-web"]
+      health: { url: "http://localhost:9090/health", expect_version: true, timeout_s: 60 }
+    operators: [operator]
+    rollback: "polispec deploy clinic stable --tag vPREV"

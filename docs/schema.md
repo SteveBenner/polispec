@@ -34,7 +34,7 @@ The guard reads it from the project's trust ref (the committed blob on `stable`)
 | `data_classes.<name>` | object | Where a kind of data may live. |
 | `observability` | object | Where events go and the digest cadence. |
 | `agents` | object | Instructions injected at session start and the roster path. |
-| `includes[]` | list of module names | Safe-operation modules the policy pulls in. The name is validated now; resolution arrives with layers. |
+| `includes[]` | list | Modules the policy pulls in: a module name, or `{ module: <name>, with: { <param>: <value> } }`. Names resolve to the project shelf (`modules/` beside the policy) or the global shelf. See [Layers](#layers-polispecglobalv1-polispecmodulev1-polispecprofilesv1). |
 | `hermetic.<env>` | object | Isolation of the commands that run for a stage. See below. |
 
 ### `environments.<env>`
@@ -108,7 +108,7 @@ environments:
 
 `promotion` also accepts `to_<env>` for any other declared environment (for example `to_canary`), each with `from`, `actor`, `gates[]` and optionally `phrase`, `preflight[]`, `fast_forward_only`, `release.flip_latest` and `after[]`. `to_test` and `to_stable` stay required. See `docs/operator.md`.
 
-A gate is `{ id: G-…, run: <command>, pass: exit_zero }` or `{ id: G-…, builtin: clean_tree | version_homes_agree | sha_ran_on_test | sha_ran_on | not_frozen | soaked | health_required | logs_quiet | requires_live }`. `soaked` takes `hours` (integer, at least 1) and `env` (default `test`); `sha_ran_on` takes `env` (default `test`; `sha_ran_on_test` is its alias). `logs_quiet` takes `services[]`, `window_minutes` (default 120) and `max_over_baseline` (default 0). `requires_live` takes `project` and `min_version`, or `min_version_from` with `min_version_key`. A command gate also takes `run_in` (`repo` default, or `active`) and `env_from` (an environment name whose `env_files` are loaded); a gate that touches a live database must use `run_in: active`. A command gate may set `hermetic: false` to run outside `hermetic.<env>` (see `docs/operator.md`). Commands and phrases may use `{project}`, `{sha}`, `{VERSION}`, `{tag}` and `{stable_tag}` (the highest `v*` tag on the stable branch tip, empty when none). Commands run without a shell; `$HOME`, `${HOME}` and a leading `~` are the only expansions.
+A gate is `{ id: G-…, run: <command>, pass: exit_zero }` or `{ id: G-…, builtin: clean_tree | version_homes_agree | sha_ran_on_test | sha_ran_on | not_frozen | soaked | health_required | logs_quiet | requires_live }`. `soaked` takes `hours` (integer, at least 1) and `env` (default `test`); `sha_ran_on` takes `env` (default `test`; `sha_ran_on_test` is its alias). `logs_quiet` takes `services[]`, `window_minutes` (default 120) and `max_over_baseline` (default 0). `requires_live` takes `project` and `min_version`, or `min_version_from` with `min_version_key`. A command gate also takes `run_in` (`repo` default, or `active`) and `env_from` (an environment name whose `env_files` are loaded); a gate that touches a live database must use `run_in: active`. Any gate may set `dir`, a subdirectory of the run location (no `..`, no leading `/`) in which its command runs; a missing directory fails the gate. polispec sets `dir` on gates a nested child project contributes. A command gate may set `hermetic: false` to run outside `hermetic.<env>` (see `docs/operator.md`). Commands and phrases may use `{project}`, `{sha}`, `{VERSION}`, `{tag}` and `{stable_tag}` (the highest `v*` tag on the stable branch tip, empty when none). Commands run without a shell; `$HOME`, `${HOME}` and a leading `~` are the only expansions.
 
 ```yaml
 promotion:
@@ -200,14 +200,50 @@ entries:
 
 ## Layers: `polispec.global/v1`, `polispec.module/v1`, `polispec.profiles/v1`
 
-A policy is composed from layers: the global layer, the repo policy, then any ledgered child project nested under the repo that contains the path, nearest last. The global layer is `global.yml`, `profiles.yml` and `modules/<name>.yml` read from the `polispec.global.*` settings (see `docs/operator.md`). With no global source configured, verdicts are exactly those of the repo policy alone.
+A policy is composed from layers: the global layer, the repo policy, then every ledgered child project nested under the repo that contains the path, nearest last, to any depth. The outermost ledgered repo or worktree root containing a path owns it, whatever the ledger order. The global layer is `global.yml`, `profiles.yml` and `modules/<name>.yml` read from the `polispec.global.*` settings (see `docs/operator.md`). With no global source configured and no includes, verdicts are exactly those of the repo policy alone.
 
-- `global.yml` (`polispec.global/v1`): `includes` (module names), `rules`, `fallback_rules`, `gates` (`to_test`, `to_stable`), `preflight`, `freezes`, `hermetic`, `protected_roots` (`path`, `writers`).
-- `modules/<name>.yml` (`polispec.module/v1`): `name` (equal to the file name), `includes`, `rules`, `gates`, `preflight`, `freezes`, `hermetic`.
+- `global.yml` (`polispec.global/v1`): `includes`, `rules`, `fallback_rules`, `gates` (`to_test`, `to_stable`), `preflight`, `freezes`, `hermetic`, `protected_roots` (`path`, `writers`).
+- `modules/<name>.yml` (`polispec.module/v1`): `name` (equal to the file name), `params`, `includes`, `rules`, `gates`, `preflight`, `freezes`, `hermetic`.
+
+### Module shelves
+
+A module name resolves on one of two shelves:
+
+- **Global shelf:** `modules/<name>.yml` under the `polispec.global.*` source, shared by every project on the host.
+- **Project shelf:** `modules/<name>.yml` in the directory of the project's policy (normally `specs/polispec/modules/`), read from the same source as the policy: the trust ref, the bootstrap ref during promotion bootstrap, or the sibling directory of a policy file passed to `validate policy` or `POLISPEC_POLICY`.
+
+A project module may include project and global modules; a global module sees only the global shelf. A name present on both shelves is an error (`module <name> is ambiguous`) and that include is not applied. Edits under `specs/polispec/` classify as `policy.edit`.
+
+### Module parameters
+
+```yaml
+schema: polispec.module/v1
+name: soak
+params:
+  hours: { type: integer, default: 24, summary: "minimum hours on test" }
+gates:
+  to_stable:
+    - { id: G-SOAK, builtin: soaked, hours: "{{hours}}" }
+```
+
+- `params.<name>` (lowercase, digits, `_`): `type` (`string`, `integer`, `number`, `boolean`, `list`; required), `default`, `summary`.
+- An include is a module name or `{ module: <name>, with: { <param>: <value> } }`. A parameter without a default must be given.
+- A string that is exactly `"{{name}}"` becomes the typed value. `{{name}}` inside longer text is replaced by the value as text; a `list` cannot be used inside text. Keys are never substituted.
+- A module's own `includes` are substituted too, so `with: { hours: "{{soak_hours}}" }` passes a parameter down.
+- Each instance is validated against `polispec.module/v1` after substitution. An unknown, missing or mistyped parameter, an unresolved placeholder, or an invalid instance is an error and the instance is not applied.
+- One module with different parameters gives separate instances, each expanded once per layer. Two instances in one layer that produce the same rule, gate or freeze id is an error.
+- A layer digest covers each instance's text and resolved parameters.
+
+### Nested projects
+
+A child layer is built like the repo layer: the child's includes (from its own project shelf and the global shelf) come before its own rules. When the owning project is promoted, every nested project contributes its `promotion.to_test.gates`, `promotion.to_stable.gates` and `preflight`, its `freezes` and `hermetic`, and those of its modules. A gate a child contributes carries `dir` set to the child's path relative to the owner, so it runs in the child's directory. A contributed gate or freeze whose id is already defined by the owner or the global layer is an `id_collision` error and the child copy is not applied.
+
+### Merging
 - `profiles.yml` (`polispec.profiles/v1`): `profiles.personal`, `profiles.service`, `profiles.live`, each a list of module names. A ledger project gets its `profile` (default `personal`); a path outside the ledger gets only the global layer without profile modules. A policy may set `profile` only to a stricter one than its ledger entry.
 - Within a layer rules stay first-match. A layer's included modules (depth-first, each once; a cycle or a missing module is an error) come before the layer's own rules. Across layers the strictest verdict wins (`deny`, then `warn`, then `allow`); on equal severity the lowest layer's rule is reported.
 - A lower layer loosens an upper rule only when that rule has `overridable: true` and the lower layer's rule names it in `overrides`. Overriding a rule that is not overridable, or that no upper layer defines, is a validation error naming both rules, and the override is not applied.
-- Layers merge `rules`, `gates`, `freezes` and `hermetic`, never `environments`. Child layers contribute rules only.
+- Layers merge `rules`, `gates`, `freezes` and `hermetic`, never `environments`. Inside the owner, the repo policy's own gate or freeze replaces a module's one with the same id.
+- Every composition error (cycle, missing or ambiguous module, parameter error, duplicate instance id, id collision, invalid override) is reported by `validate`, `doctor` (`layers_invalid`) and `resolve --layers`, and makes `promote` refuse with `policy_invalid`.
 - `fallback_rules` in `global.yml` replace the ledger `defaults.rules` as the repo layer of a project whose policy is missing at its trust ref. They never join the composed global layer. The pretool hook evaluates a live project in that state under them (or under `defaults.rules` when no global layer is configured), never with an internal denial. When `polispec.global.repo` is set and `global.yml` is absent or invalid, doctor and validate report it and the global layer contributes no rules; the repo layer still applies.
 
 `polispec resolve <path> --layers --json` prints each layer with its source, digest, rule count and modules, then the effective digest (sha256 over the ordered layer digests). `polispec validate policy`, `validate global`, `validate module` and `polispec doctor` report override, include and profile errors, and an environment that deploys without a health check.

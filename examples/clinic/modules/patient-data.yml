@@ -1,0 +1,6 @@
+schema: polispec.module/v1
+name: patient-data
+summary: "Patient records stay in production: agents never read production secrets or copy data across data classes."
+rules:
+  - { id: R-PHI-SECRET, match: { env: prod, class: [secrets.read] }, verdict: deny, reason: "production keys protect patient records and are not readable by agents" }
+  - { id: R-PHI-COPY, match: { class: [data.copy], crosses: data_classes }, verdict: deny, reason: "patient records may not leave production; test holds de-identified data only" }

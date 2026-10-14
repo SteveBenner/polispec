@@ -1,0 +1,9 @@
+schema: polispec.module/v1
+name: soak
+summary: "A release reaches stable only after it ran on test for a while."
+params:
+  hours: { type: integer, default: 24, summary: "minimum hours on test" }
+gates:
+  to_stable:
+    - { id: G-TESTED, builtin: sha_ran_on_test }
+    - { id: G-SOAK, builtin: soaked, hours: "{{hours}}" }

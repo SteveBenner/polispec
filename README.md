@@ -1,12 +1,343 @@
 # polispec
 
+<p align="center">
+  <img src="assets/logo/polispec-threshold-frost-bottom-center.png" alt="polispec: a white robotic hand points at a frosted glass pane where a Claude Code push to stable is denied by the polispec rule R-PROD-GIT shown in the policy spec below it, above the polispec wordmark" width="100%">
+</p>
+
 > **AI agents:** read [`AGENTS.md`](AGENTS.md) first.
 
-Spec-based policy guardrails for agents working on software that serves real users. Each governed project declares its dev, test and prod environments, what an agent may do in each (allow, warn, deny), how code is promoted from one to the next, which data and secrets each environment may hold, when promotion is frozen, and which harness, model and effort each agent role gets. polispec judges every agent tool call against that policy and prints a verdict with a reason and a way forward.
+**A written rulebook for AI coding agents that work on software real people use.** You write down, once, what an agent may do in each copy of your project. polispec checks every agent action against that rulebook before it happens. It answers *go ahead*, *are you sure?*, or *no*, and always says why and what to do instead.
 
-The environment policy is read from the project's committed trust ref, normally `stable`. Unsealed development retains user-controlled settings and overrides. A sealed installation adds root-owned authority, a pinned runtime, and authenticated operator actions; see [harness controls](docs/harness-controls.md) and [operator setup](docs/operator.md). An enforcing guard refuses non-read actions when a live project's trusted policy cannot be loaded. Promotion bootstrap still reads the committed candidate branch policy and reports its exact source; it does not relax the guard.
+## Contents
 
-Behavioral policy adds a separate contract for application directives, parameters and enforcement bindings. Applications consume compiled data through their own adapters; they do not need a running polispec service. See [the behavioral contract](docs/behavior.md).
+- [In plain words](#in-plain-words)
+  - [The problem](#the-problem)
+  - [What polispec does](#what-polispec-does)
+  - [Who it is for](#who-it-is-for)
+- [A worked example: a clinic's booking app](#a-worked-example-a-clinics-booking-app)
+  - [The story](#the-story)
+  - [A day with the rulebook](#a-day-with-the-rulebook)
+  - [The rulebook itself](#the-rulebook-itself)
+  - [Try it](#try-it)
+- [How a verdict is made](#how-a-verdict-is-made)
+- [Composition: specs inside specs](#composition-specs-inside-specs)
+- [Core ideas](#core-ideas)
+- [Feature tour](#feature-tour)
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Commands](#commands)
+- [Settings](#settings)
+- [Compared to alternatives](#compared-to-alternatives)
+- [Honest limits](#honest-limits)
+- [FAQ](#faq)
+- [Where polispec is going](#where-polispec-is-going)
+- [Documentation](#documentation)
+- [License](#license)
+
+## In plain words
+
+### The problem
+
+AI coding agents can now do almost anything a developer can do at a keyboard: edit files, run commands, commit, push, restart services, and read secrets. That speed is the point. The same agent that fixes a typo in a minute can also overwrite the live copy of an app, push half-finished work to the version customers download, or copy real customer records into a test database. Usually that happens because nobody told it where the edges are, not because it meant harm.
+
+Most teams handle this with habit and trust: "don't touch production," written in a chat message or a prompt. Habits are not checked, prompts get forgotten, and a new agent session starts with no memory of either.
+
+### What polispec does
+
+polispec turns those habits into a short, versioned rulebook that lives in the project's own repository. It enforces that rulebook on every agent action.
+
+Think of the access-card system in an office building. Most doors open for anyone. Some ring a bell at the front desk and wait for a yes. A few stay locked, and only the building manager has that key. polispec gives your software project the same three answers:
+
+| Verdict | What happens | Typical use |
+|---|---|---|
+| **allow** | The action runs. | Everyday work on the development copy. |
+| **warn** | The agent must stop and get an explicit yes from a person. | Rewriting shared history, writing real data, editing the rulebook itself. |
+| **deny** | The action does not run. The agent is told why and what to do instead. | Editing the live copy, pushing to the release branch, reading production secrets. |
+
+Around those verdicts, polispec covers the rest of the journey from "an agent wrote code" to "real people use it":
+
+- **Separate copies of the project.** Each copy is an environment with its own branch and its own rules: development (`main`), a rehearsal copy (`test`), and the live copy (`stable`).
+- **A promotion pipeline.** Code moves forward one step at a time. Each step has *gates*, which are checks that must pass. The last step needs a person, a typed confirmation phrase, and sometimes a waiting period.
+- **Freeze windows.** Releases can be blocked automatically during busy hours, before a deadline, or while people are actively using the app. The windows can come from another system's calendar.
+- **Data boundaries.** You declare which kinds of data may live in which copy, and copying across them is refused.
+- **Who does the work.** A roster says which AI tool, model, and effort level each agent role uses.
+- **Rules for the code itself.** Code specs apply per programming language whenever an agent writes a file. A hard violation blocks the write; a soft one is reported.
+- **Specs made of specs.** Rules come in reusable modules that include other modules, take parameters, and stack across nested projects to any depth. See [composition](#composition-specs-inside-specs).
+- **A record of what happened.** Every verdict, promotion, deploy, and smoke test is recorded, so you can show what ran, when, and on which commit.
+
+Agents never write their own rules. polispec reads the rulebook from the project's *trusted* branch (normally `stable`), which only the operator can move. An agent that edits the rulebook on `main` changes nothing until a person promotes that edit.
+
+### Who it is for
+
+- **A solo developer or small team** whose agents write most of the code for an app that strangers use. polispec lets the agents keep their speed on `main` while the live app stays out of reach.
+- **Anyone who ships software people install themselves:** a desktop app, a plugin, a CLI. "Stable" there is a download channel, and a bad push reaches every user at once.
+- **A service with busy hours.** Examples are a booking system, a shop, a classroom tool, or an internal app during payroll week. Releases should wait for a quiet window, and the calendar that defines "quiet" already exists somewhere else.
+- **A team running many agents at once.** Each role needs the right model and effort, and one policy has to govern every harness (Claude Code, Codex, Hermes, Antigravity CLI) the same way.
+- **An operator who wants an audit trail.** Every promotion and deploy carries the commit, the gates that passed, and the health check that proved it.
+
+## A worked example: a clinic's booking app
+
+This example generalizes the pipeline polispec was first built for: a classroom app that students install, released through `main` → `test` → `stable`, with releases frozen during class and before assignment deadlines. Here the same pattern runs a medical clinic's booking app. The files are real: they live in [`examples/clinic/`](examples/clinic/), and `polispec validate` checks them.
+
+### The story
+
+Northside Clinic has a small web app where patients book, move, and cancel appointments. The front desk uses it all day. One developer maintains it with the help of AI coding agents. The app exists in three copies:
+
+| Copy | Branch | Who uses it | Data in it |
+|---|---|---|---|
+| **Workshop** (dev) | `main` | The developer and the agents | Made-up patients |
+| **Rehearsal** (test) | `test` | The developer and two front-desk staff who try new versions | De-identified copies, never real records |
+| **Live** (prod) | `stable` | Patients and the front desk | Real patient records |
+
+The developer wants three things. Agents should move fast in the workshop. Nothing should reach the rehearsal copy without passing the checks. Nothing should reach the live app unless a person decides it should, the version has run on rehearsal for a day, and the clinic is closed.
+
+### A day with the rulebook
+
+**9:10.** An agent fixes a bug in the reminder emails on `main`. It edits files, runs the app locally, and commits. polispec's answer each time is **allow**, and nothing slows down.
+
+**9:40.** The same agent tries to patch the live checkout directly to "hotfix" the bug for patients:
+
+```
+[POLISPEC R-PROD-FS] DENIED: the live checkout is not edited by agents; layer repo sha256:3f1c09d2a7b4 (env prod, fs.write: ~/.polispec/envs/clinic/stable/app/mailers/reminder.rb) Make the change in the dev checkout and promote it through test; the production checkout is not edited by agents.
+```
+
+The agent does what the message says.
+
+**10:05.** It runs `polispec promote clinic --to test`. polispec runs the to-test gates: the working tree is clean, the version was bumped in every place it appears, and `bin/check --all` passes. The `test` branch then fast-forwards, the release is tagged, and the rehearsal copy is deployed and health-checked. If any gate failed, `test` would not move, and the agent would see which gate failed and its output.
+
+**10:30.** The agent wants to load last month's real bookings into the rehearsal copy to reproduce a report bug. The copy crosses from `patient_records`, which is allowed only in prod, into an environment that holds de-identified data only:
+
+```
+[POLISPEC R-PHI-COPY] DENIED: patient records may not leave production; test holds de-identified data only; layer repo sha256:3f1c09d2a7b4 (env test, data.copy: clinic -> clinic_test) Copy only data classes the destination environment allows (deidentified or synthetic data into test and dev).
+```
+
+**10:45.** The agent edits the rulebook on `main` to relax a rule. polispec answers **warn**: the agent must ask the developer, and the edit has no effect anyway until the developer promotes it to `stable`.
+
+**Next morning, 7:35.** The developer runs `polispec promote clinic --to stable` before work. The release has soaked on test for 21 hours of the required 24, and the clinic opens at 8:00 with a 60-minute lead. Two gates refuse: `G-SOAK` (not soaked yet) and `G-FREEZE` (inside the `F-OPEN` window, which comes from the clinic's own opening-hours calendar).
+
+**That evening, 19:10.** The clinic is closed and the soak is complete. The developer runs the promotion again from a terminal and types the confirmation phrase `promote clinic to stable`. `stable` moves, the live app is deployed, and a health check proves the new version is serving. The deploy receipt records the commit, the tag, and the health result.
+
+### The rulebook itself
+
+The project carries its rulebook in `specs/polispec/` (here, `examples/clinic/`):
+
+```
+specs/polispec/
+├── environments.yml        # the three copies: branch, checkout, data, deploy and health check
+├── policy.yml              # the rules, the promotion pipeline, data classes
+└── modules/                # reusable pieces the policy includes
+    ├── patient-data.yml    # no secrets, no copying patient records out of prod
+    ├── release-train.yml   # the road to the live app, which itself includes:
+    ├── soak.yml            #   … "ran on test for N hours"
+    └── quiet-hours.yml     #   … "not while the business is open"
+```
+
+The policy's rules read top to bottom; within one file the first match wins:
+
+```yaml
+rules:
+  - { id: R-PROD-FS, match: { env: prod, class: [fs.write] }, verdict: deny,
+      reason: "the live checkout is not edited by agents" }
+  - { id: R-TEST-PROMOTE, match: { env: test, class: [promote] }, verdict: allow, requires: gates.to_test }
+  - { id: R-POLICY, match: { class: [policy.edit] }, verdict: warn,
+      reason: "policy files take effect only after the operator promotes them to stable" }
+  - { id: R-DEV, match: { env: dev }, verdict: allow }
+```
+
+The release pipeline is not written out inline. The policy *includes* it, with this clinic's settings:
+
+```yaml
+includes:
+  - patient-data
+  - { module: release-train,
+      with: { soak_hours: 24, calendar: [bin/clinic-calendar, open-hours, --json], lead_minutes: 60 } }
+```
+
+`release-train` is itself built from two smaller modules. It passes its own parameters down to them:
+
+```yaml
+# modules/release-train.yml
+params:
+  soak_hours:   { type: integer, default: 24 }
+  calendar:     { type: list }
+  lead_minutes: { type: integer, default: 30 }
+includes:
+  - { module: soak,        with: { hours: "{{soak_hours}}" } }
+  - { module: quiet-hours, with: { command: "{{calendar}}", lead_minutes: "{{lead_minutes}}" } }
+gates:
+  to_test:
+    - { id: G-CHECKS, run: "bin/check --all", pass: exit_zero }
+
+# modules/quiet-hours.yml
+params:
+  command:      { type: list }
+  lead_minutes: { type: integer, default: 30 }
+freezes:
+  - { id: F-OPEN, applies_to: [promote.to_stable], source: command,
+      command: "{{command}}", kind: open_hours, lead_minutes: "{{lead_minutes}}" }
+```
+
+A shop could include the same `release-train` with its own sale-hours calendar, and a school with its class timetable. The module stays the same; only the parameters change.
+
+### Try it
+
+From a clone:
+
+```sh
+bin/polispec validate policy examples/clinic/policy.yml
+bin/polispec validate module examples/clinic/modules/release-train.yml
+```
+
+On a real project, `polispec onboard <repo> --serves real_users` scaffolds the same three files ([quick start](#quick-start)). `polispec resolve <path> --layers` then shows exactly which layers and modules govern a path.
+
+## How a verdict is made
+
+Every tool call an agent makes passes through the same steps. Nothing in this path asks a model; it is deterministic.
+
+```
+ agent tool call (shell command, file write, MCP call, web fetch, subagent spawn)
+        │
+        ▼
+ 1. classify     what kind of action is this?   git.push · fs.write · secrets.read · data.copy · deploy …
+        │
+        ▼
+ 2. locate       which project and which copy?  path, branch, remote, unit file, database → project + env
+        │
+        ▼
+ 3. load         read the rulebook from the trusted branch (stable), never from the working tree
+        │
+        ▼
+ 4. compose      global layer → profile modules → repo policy + its modules → nested child projects
+        │
+        ▼
+ 5. match        first matching rule in each layer; the strictest verdict across layers wins
+        │
+        ▼
+ 6. cap          deterministic harness controls may only tighten that verdict, never loosen it
+        │
+        ▼
+ 7. answer       allow · warn · deny, with the rule id, the reason, and the next step
+```
+
+1. **Classify.** A command like `git push origin stable` or `rm -rf data/` becomes one or more *action classes* such as `git.push` or `fs.delete`, with facts about it (the branch, the path, whether it is destructive). Shell commands are parsed; they are not pattern-matched as raw text.
+2. **Locate.** polispec finds the project and the environment the action touches. A path inside the live checkout is `prod`. A push to `test` is `test`. A database name, service unit, or secret file can identify an environment too. When ledgered projects nest, the outermost one owns the path.
+3. **Load.** The policy and environments come from the project's trust ref. If they cannot be loaded for a live project, an enforcing guard refuses every non-read action rather than guessing.
+4. **Compose.** The effective rulebook is assembled from layers and modules. See [composition](#composition-specs-inside-specs).
+5. **Match.** Within a layer the first matching rule wins. Across layers the strictest verdict wins (`deny` beats `warn` beats `allow`). A lower layer can loosen an upper rule only if that rule is marked `overridable` and the lower rule names it.
+6. **Cap.** Optional harness controls (`polispec.control/v1`) act as an independent severity ceiling. They can turn an allow into a deny; they can never do the reverse.
+7. **Answer.** The verdict goes back to the harness with the rule id, the reason, and a way forward. In `advise` mode every verdict is logged and nothing blocks; in `enforce` mode the verdict is applied.
+
+Promotions and deploys run through the same rulebook: `polispec promote` checks the actor, the gates, the freezes, and the soak, then moves the branch and records the result.
+
+## Composition: specs inside specs
+
+A polispec rulebook is built from parts. Each part can contain other parts, to any depth, and the result stays predictable because the composition rules are few and strict.
+
+**Modules include modules.** A module is a named file of rules, gates, freezes, and hermetic settings. A policy, the global layer, and any module may `include` modules. Includes expand depth-first, each instance is used once, and a cycle is an error.
+
+```
+policy.yml
+├── patient-data
+└── release-train  (soak_hours: 24, lead_minutes: 60)
+    ├── soak         (hours: 24)
+    └── quiet-hours  (lead_minutes: 60)
+```
+
+**Modules come from two shelves.** The *global shelf* is shared by every project on the host (`polispec.global.repo`, `modules/<name>.yml`). The *project shelf* is a project's own `specs/polispec/modules/`, read from the same trusted branch as its policy. A project module may include project and global modules. A global module sees only the global shelf. A name that exists on both shelves is an error, so an include always means exactly one file.
+
+**Modules take typed parameters.** A module declares `params` with a type (`string`, `integer`, `number`, `boolean`, `list`) and an optional default. An include passes values with `{ module: name, with: { … } }`. A value written as exactly `"{{name}}"` keeps its type; a placeholder inside longer text is interpolated. A missing, unknown, or mistyped parameter is an error. The same module included twice with different parameters gives two instances, and if two instances produce the same rule or gate id, that is an error too.
+
+**Layers stack, and the strictest wins.** The effective policy for a path is a stack:
+
+| Layer | Comes from | Contributes |
+|---|---|---|
+| global | the host's global shelf: `global.yml` and its modules | rules, gates, freezes, hermetic, protected roots |
+| profile | modules the ledger profile requires (`personal`, `service`, `live`) | the same, as part of the global layer |
+| repo | the project's policy and the modules it includes | rules, gates, freezes, hermetic |
+| child, child, … | every ledgered project nested inside the repo down to the path, nearest last | rules, gates, freezes, hermetic, and their own modules |
+
+Rules merge by severity: a lower layer cannot loosen an upper rule unless the upper rule says `overridable: true` and the lower rule names it in `overrides`. Gates, freezes, and hermetic settings accumulate. A gate contributed by a nested project runs in that project's directory. If a nested project's gate or freeze reuses an id that is already taken, that is an error, not a silent replacement.
+
+**Nothing is dropped silently.** Every composition problem is reported. That covers a missing or ambiguous module, a parameter error, a cycle, an id collision, and an invalid override. `polispec validate`, `polispec doctor`, and `polispec resolve --layers` all show it, and `polispec promote` refuses to run with fewer gates than the rulebook declares.
+
+```sh
+polispec resolve services/api/handler.rb --layers
+```
+
+That command prints every layer that governs the path, with its source, digest, rule count, and module instances, plus one effective digest for the whole stack.
+
+The same idea runs through [code specs](docs/code-specs.md). A spec is a tree of policies mounted at paths such as `code`, `code/ruby`, and `code/ruby/code_quality`. A policy with subpolicies is composite, and the chain for a language collects every spec that applies.
+
+## Core ideas
+
+| Term | Meaning |
+|---|---|
+| **Project** | A repository polispec governs, listed in the host's *ledger*. `onboarding` projects are checked but not enforced; `live` projects are enforced. |
+| **Environment** | One copy of the project, such as dev, test, or prod. Each has a branch, a checkout, data, services, and a deploy with a health check (`environments.yml`). |
+| **Trust ref** | The branch the rulebook is read from, normally `stable`. Agents cannot move it. |
+| **Rule** | A match (environment, action class, path, ref, tool …) plus a verdict and a reason. |
+| **Action class** | What an action *is*: `git.push`, `fs.write`, `secrets.read`, `data.copy`, `deploy`, `mcp.call`, `agent.spawn`, and so on. |
+| **Gate** | A check a promotion must pass: a command (`run`) or a built-in (`clean_tree`, `soaked`, `sha_ran_on_test`, `not_frozen`, `logs_quiet` …). |
+| **Freeze** | A window in which a promotion is refused: manual, recurring, or read from a command such as a calendar. |
+| **Module** | A reusable, parameterised piece of policy, on the global or the project shelf. |
+| **Layer** | One level of the composed policy: global, repo, or a nested child. |
+| **Operator** | The person who moves `stable`, waives a soak, redeems an allow-once, or pauses a project, always from a terminal with a typed phrase. |
+| **Roster** | Which harness, model, and effort each agent role gets. |
+| **Seal** | An optional root-owned authority plane that pins the runtime and the global layer, so an agent cannot redirect them. |
+
+## Feature tour
+
+**Environment guard.** One guard hook per harness judges every tool call ([operator guide](docs/operator.md)). `polispec.enforce` is `advise` by default (log only) and `enforce` to apply verdicts. Undeclared MCP calls and unknown non-read actions in governed scope ask (standard edition) or deny (lock edition).
+
+**Promotion and deploy.** `polispec promote <project> --to <env>` fast-forwards one hop (main → test → stable, or any named hops such as a canary ring). It runs that hop's gates and preflight, checks freezes and the soak, tags the release, and runs the deploy. `polispec deploy` runs the environment's steps, a health check, and an automatic rollback for `release_dirs` deploys. A policy that deploys without a health check is refused. The operator may waive a soak (`--waive-soak`) with a typed phrase, and the waiver is recorded.
+
+**Freezes.** Manual windows, recurring rules, or a command that prints JSON windows. The command can be another project's calendar, as in the classroom pattern where releases stop before class and before deadlines.
+
+**Hermetic runs.** `hermetic.<env>` isolates environment variables into scratch space and fails a gate or step that writes under a protected root.
+
+**Data classes.** Declare where each kind of data may live; `data.copy` across classes is refused.
+
+**Git hooks.** `polispec hook git install <project> <env>` adds the same judgement to plain `git` outside any harness. It is a seatbelt, not a security boundary.
+
+**`[ENVS]` directive.** `polispec agents render` writes a one-line summary of the environments into the project's `AGENTS.md` and `.agents/directives/envs.md`. `doctor` reports when the summary drifts from the trusted rulebook.
+
+**Roster.** `specs/polispec/roster.yml` assigns harness, model, and effort per role. Session and subagent start inject the values ([roster](docs/roster.md)).
+
+**Behavioral policy.** A separate contract for an application's own directives, parameters, and enforcement bindings. It is compiled to data that the application's adapter consumes, with no running polispec service ([behavior](docs/behavior.md)).
+
+**Code specs.** When an agent writes a file, polispec detects the language and applies the code specs from the code specs repository (`~/.polispec/specs`, read from its `stable` branch). The spec chain is injected before the first write. MUST violations on changed lines are refused; SHOULD violations are reported. Agent-judged policies are reviewed at task end, and a ratchet baseline keeps legacy code from blocking new work ([code specs](docs/code-specs.md)).
+
+```sh
+polispec code chain app.rb
+polispec code check app.rb --json
+polispec code controls
+polispec specs promote
+```
+
+**Harness controls and sealed authority.** Version 0.18.0 published harness controls and the sealed plane with both feature flags off (`harness_controls`, `sealed_plane`). Grammar, validation, planning, and read-only inspection work. New installations, removals, and sealing stay gated until the operator enables them. Backends cover Claude Code, Codex, Hermes, Antigravity CLI, and OS sandbox planning. Capability reports keep generated artifacts, parser acceptance, native enforcement, and lock certification separate. The `polispec-lock` branch is the same code with `EDITION` set to `lock`; one edition is selected per installation ([harness controls](docs/harness-controls.md)).
+
+```sh
+polispec harness grammar --json
+polispec validate control examples/controls.minimal.yml --json
+polispec harness plan examples/controls.minimal.yml --harness codex --scope project --project /absolute/project --json
+polispec plane status --json
+```
+
+**Smoke ledger.** polispec records smoke tests; it does not ship them. Each entry names the spec node it proves, the verdict, the steps, the evidence digests, and the runtime, with no host or user identity. Entries are chained, `verify` detects edits, and `coverage` shows which units have a current pass ([smoke](docs/smoke.md)).
+
+```sh
+polispec smoke record --spec specs/app.yml --at commands/resolve --verdict pass --summary "resolve named the stable checkout prod"
+polispec smoke verify
+polispec smoke coverage
+```
+
+**Deployment receipts.** `polispec status <project> --json` includes `projects[].deployments` (contract `polispec.status.deployments/v1`). Each environment carries `receipt`, `latest_attempt`, and `verified`:
+
+- **Receipt.** It identifies the last successful deployment by record id, SHA, tag, health, pin status, and time.
+- **Verified.** This requires the receipt to match the latest attempted deployment, with health `ok` and no pin.
+- **Fails closed.** An in-progress or newer failed attempt, an unchecked health result, or a legacy receipt without record identity all count as unverified.
+
+Consumers must also match the current remote environment ref and tag, because branch promotion alone does not prove deployment. The field exposes no state paths, health output, or secrets. It is evidence from deployment time, not continuous health.
 
 ## Install
 
@@ -16,106 +347,119 @@ Without it, run `bin/polispec` from a clone. It needs Ruby and no gems beyond th
 
 ## Quick start
 
-```
-polispec onboard <repo> --serves real_users --dry-run
-polispec onboard <repo> --serves real_users
-polispec doctor
-polispec resolve .
-```
-
-`onboard` scaffolds `specs/polispec/environments.yml`, `policy.yml` and `roster.yml` from a template (`--archetype service` or `distributed`), points the component manifest at them, adds a ledger entry with status `onboarding`, and renders the `[ENVS]` row. Add `--commit` to commit exactly those files on main (and with `--push`, publish main, test and stable). `doctor` reports what is missing or invalid. `resolve` names the environment a directory is in and the policy that governs it.
-
-Other commands:
-
-```
-polispec validate auto examples/policy.shop.yml
-polispec validate roster examples/roster.shop.yml --json
-polispec validate behavior path/to/behavior.yml --json
-polispec behavior compile path/to/behavior.yml
-polispec agents render <project-id|repo>
-polispec promote <project> --to test
-polispec hook git install <project-id> <dev|test|prod|all>
-```
-
-Environment facts live in `specs/polispec/environments.yml`, read from the trust ref like the policy. `docs/environments.md` covers the file, onboarding, the `[ENVS]` directive and the git hooks.
-
-## Code specs
-
-When an agent writes a file, polispec detects its language and applies the code specs from the code specs repository (`~/.polispec/specs`, read from its `stable` branch). The spec chain is injected before the first write, MUST violations on changed lines are refused, SHOULD violations are reported, and agent-judged policies are reviewed at task end. `docs/code-specs.md` covers the commands and `schemas/spec.v1.yml` the policy schema.
-
-```
-polispec code chain app.rb
-polispec code check app.rb --json
-polispec code controls
-polispec specs promote
-```
-
-## Harness controls
-
-Version 0.18.0 publishes the implementation with `harness_controls` and `sealed_plane` disabled. Grammar, validation, planning, and read-only inspection are available. New installations, removals, and sealing remain gated; upgrading does not activate the new host defaults. Enabling them is a separate operator decision. Existing explicitly installed controls and active or broken seals retain their protections.
-
-Translate a request into the published grammar or a `polispec.control/v1` document, preview the native artifacts, and install only a verified tightening change.
-
 ```sh
-polispec harness grammar --json
-polispec validate control examples/controls.minimal.yml --json
-polispec harness plan examples/controls.minimal.yml --harness codex --scope project --project /absolute/project --json
-polispec plane status --json
+polispec onboard <repo> --serves real_users --dry-run    # preview
+polispec onboard <repo> --serves real_users              # scaffold
+polispec doctor                                          # what is missing or invalid
+polispec resolve .                                       # which project and environment is this?
 ```
 
-Backends cover Claude Code, Codex, Hermes, Antigravity CLI, and OS sandbox planning. Capability reports distinguish generated artifacts, parser acceptance, native enforcement, and lock certification. Missing evidence keeps lock inactive. The `polispec-lock` branch shares the code on `main` and differs only in `EDITION`. [The harness guide](docs/harness-controls.md) records the current native and privileged verification limits.
+`onboard` does the setup in one pass:
 
-rplugin's Antigravity integration installs skills only. polispec's separate `harness install --harness antigravity` path generates agy CLI artifacts; native operation remains unverified, and the GUI receives directives only.
+- It scaffolds `specs/polispec/environments.yml`, `policy.yml`, and `roster.yml` from a template (`--archetype service` for a hosted service, `distributed` for software users install).
+- It points the component manifest at them.
+- It adds a ledger entry with status `onboarding` and renders the `[ENVS]` row.
 
-Standard polispec runs independently without a lock checkout or protected service. The lock branch is a separately selected edition of the same code, with stricter prerequisites; it does not require a standard installation or a local `main` branch. Its immutable parent records release lineage. One edition is selected per installation; simultaneous independent authority planes in one host namespace are not provided.
+Add `--commit` to commit exactly those files on main, and add `--push` to publish main, test, and stable as well. Replace the placeholder health check before the first deploy. The operator flips the ledger status to `live` when the rulebook is ready to enforce.
 
-## Smoke tests
+## Commands
 
-polispec records smoke tests; it does not ship them. Run your own against a real installation and record each result in `smoke.yml` at the root of the repository whose spec it proves. Each entry names the spec node it proves, carries the verdict, steps and evidence digests, and captures the runtime (OS, kernel, Ruby, polispec version and commit, harness and model) without host or user identity. Entries are chained, `verify` detects edits, and `coverage` shows which units have a current pass. `docs/smoke.md` covers the format and how to write good smoke tests.
+| Command | Purpose |
+|---|---|
+| `polispec onboard <repo> --serves real_users\|internal\|none` | Scaffold the rulebook and ledger entry for a project |
+| `polispec validate <kind\|auto> <file> [--json]` | Check a policy, environments, roster, ledger, global, module, profiles, behavior, control, or smoke file |
+| `polispec resolve <path> [--layers] [--json]` | Name the project, environment, and layers that govern a path |
+| `polispec doctor` / `status <project>` / `digest` | Report findings, project state, deployment receipts, and a daily digest |
+| `polispec promote <project> --to <env> [--dry-run]` | Move code one hop through the gates |
+| `polispec deploy <project> <env> [--tag vX.Y.Z]` | Deploy an environment with a health check and rollback |
+| `polispec pause` / `allow-once` | Operator-only: pause a project, or redeem a single warned action |
+| `polispec agents render <project\|repo>` | Write the `[ENVS]` directive from the trusted rulebook |
+| `polispec hook git install <project> <env>` | Install git hooks that apply the same rules outside a harness |
+| `polispec roster resolve\|check` | Resolve and check role assignments |
+| `polispec behavior compile\|decide` | Compile and evaluate a behavioral policy |
+| `polispec code …` / `polispec specs …` | Code specs: detect, chain, check, baseline, controls; link and promote the specs repository |
+| `polispec harness …` / `seal` / `plane` / `authorizations` | Harness controls and the sealed authority plane |
+| `polispec smoke record\|list\|show\|verify\|coverage` | The smoke ledger |
 
-```sh
-polispec smoke record --spec specs/app.yml --at commands/resolve --verdict pass --summary "resolve named the stable checkout prod"
-polispec smoke verify
-polispec smoke coverage
-```
+`specs/app.yml` is the full contract for every command.
 
 ## Settings
 
-For unsealed development, change settings with `rplugin settings`, or use the matching environment variable below. A sealed installation resolves protected settings first and ignores authority redirects from the calling process.
+For unsealed development, change settings with `rplugin settings`, or with the matching environment variable below. A sealed installation resolves protected settings first and ignores authority redirects from the calling process.
 
-- `polispec.enforce`: `advise` (log verdicts, never block) or `enforce`; default `advise`. It governs environment and enabled harness-control verdicts. `polispec.code.enforce` (`advise` or `tiered`), `polispec.code.check_at` (`pre_write` or `post_write`) and `polispec.code.inject` (`once` or `every_write`) govern code specs.
+- `polispec.enforce`: `advise` (log verdicts, never block) or `enforce`; default `advise`. It governs environment and enabled harness-control verdicts. Code specs have their own settings: `polispec.code.enforce` (`advise` or `tiered`), `polispec.code.check_at` (`pre_write` or `post_write`), and `polispec.code.inject` (`once` or `every_write`).
 - `polispec.ledger`: path of the ledger of governed projects; default `~/.config/polispec/ledger.yml`. `POLISPEC_LEDGER` overrides it.
-- `polispec.edition`: `standard` or `lock`, default `standard`; the lock branch requests lock regardless of a mutable downgrade. A request alone does not certify enforcement.
-- `polispec.root_guard`: initially `false`; recorded exposure can arm it, and lock fallback forces it on.
+- `polispec.edition`: `standard` or `lock`, default `standard`. The lock branch requests lock regardless of a mutable downgrade. A request alone does not certify enforcement.
+- `polispec.root_guard`: initially `false`. Recorded exposure can arm it, and lock fallback forces it on.
 - `polispec.operator`: how messages name the person who promotes to stable; default `the operator`.
 - `polispec.code.specs_repo`: path of the code specs repository; default `~/polispec-specs`. `POLISPEC_SPECS_REPO` overrides it.
-- `polispec.smoke.path`: path of the smoke ledger; empty means `smoke.yml` at the git toplevel of the working directory. `POLISPEC_SMOKE` overrides it.
-- `polispec.global.repo`, `polispec.global.ref` (default `main`) and `polispec.global.path` (default `polispec`): where the optional global layer of shared rules, modules and profiles is read from. Unset means no global layer. `POLISPEC_GLOBAL` points at a plain directory for scratch runs. See `docs/schema.md`.
+- `polispec.smoke.path`: path of the smoke ledger. Empty means `smoke.yml` at the git toplevel of the working directory. `POLISPEC_SMOKE` overrides it.
+- `polispec.global.repo`, `polispec.global.ref` (default `main`), and `polispec.global.path` (default `polispec`): where the optional global shelf of shared rules, modules, and profiles is read from. Unset means no global layer. `POLISPEC_GLOBAL` points at a plain directory for scratch runs. See [schema](docs/schema.md).
 
-## Optional integrations
+Optional integrations: none is required. Policy `observability.events` may name an `rlogs` sink, and `polispec onboard` recognises a `*.rstack_component.yml` manifest as well as `*.rplugin.yml`.
 
-None is required. Policy `observability.events` may name an `rlogs` sink, and `polispec onboard` recognises a `*.rstack_component.yml` manifest as well as `*.rplugin.yml`.
+## Compared to alternatives
+
+| Tool | What it does well | What polispec adds |
+|---|---|---|
+| **Branch protection** (GitHub, GitLab) | Stops pushes to a branch on the server. | Judges the action *before* it leaves the machine, covers more than git (files, services, secrets, data copies, MCP calls), and explains the way forward. Branch protection is still worth keeping. |
+| **CI/CD pipelines** | Run checks after code is pushed. | Gates run as part of the promotion itself. Freezes, soak periods, and operator phrases are part of the rulebook, and the same rulebook governs the agent's every action in between. |
+| **OPA / Rego and other policy engines** | General-purpose policy over any JSON input. | A ready model of the agent-development domain: environments, promotion hops, action classes, freezes, rosters, and a classifier that turns real tool calls into those terms. You write YAML in that vocabulary instead of building the model yourself. |
+| **Harness permission settings** (allow/deny lists in an agent tool) | Quick per-tool rules for one harness. | One rulebook for every harness, read from a trusted branch rather than from user-editable settings, aware of which copy of the project a path belongs to, and composable across projects. polispec can generate native harness controls from the same grammar. |
+| **Code review** | A person reads the change. | Review still matters. polispec makes sure the change reaches users only through the path where review and checks happen. |
+
+## Honest limits
+
+- **Unsealed polispec is a guardrail, not a security boundary.** Without the sealed authority plane, a process with your user's rights can change settings, edit the ledger, or bypass the hook. It stops agents from doing the wrong thing by accident or by drift. It does not stop a determined adversary on the same account.
+- **Advise mode blocks nothing.** The default is `advise`. Enforcement starts when you set `polispec.enforce` to `enforce` and the operator flips a project to `live`.
+- **Native enforcement is verified per harness, and not everywhere.** Capability reports state what was observed. Hermes and Antigravity runtime enforcement is unverified on the release host, and Pi and the DeepSeek TUI receive skills only. Lock certification needs observed evidence, and none is claimed.
+- **Harness controls ship disabled.** The 0.18.0 feature flags are off until the operator turns them on.
+- **Classification is deterministic, so it can miss.** An action that hides its effect from the classifier (an opaque script, a renamed binary) is judged by what it appears to be. Unknown non-read actions in governed scope ask or deny rather than allow, which narrows that gap.
+- **Git hooks are a seatbelt.** They help with plain `git` outside a harness, and `--no-verify` skips them.
+- **polispec ships no smoke suite.** You run your own smoke tests and record them.
+- **Deployment receipts are evidence from deployment time.** They are not continuous health monitoring.
+
+## FAQ
+
+**Does polispec call an AI model to decide?**
+No. Environment verdicts, gates, freezes, and composition are deterministic. Only some code-spec policies (`agent`, `hybrid`, `contextual`) use a model, and they are labelled as such.
+
+**Can an agent change its own rules?**
+It can edit the files on `main`. That edit is a `policy.edit` (warn), and it has no effect until the operator promotes it to the trust ref. The guard never reads the working tree.
+
+**What happens if the rulebook is broken?**
+For a live project whose policy cannot be loaded, the guard falls back to the global layer's `fallback_rules` (or the ledger defaults). With no usable rules at all, it refuses non-read actions. A composition error makes `promote` refuse rather than run with fewer gates.
+
+**Do I need the rStack platform or a running service?**
+No. polispec is a plugin built on the rplugin SDK. It also runs from a plain clone with Ruby's standard library. Integrations such as an `rlogs` event sink are optional.
+
+**Can one rulebook cover several projects?**
+Yes. Shared rules go on the global shelf as modules, profiles bundle them by how much a project serves, and nested projects stack beneath their parent. See [composition](#composition-specs-inside-specs).
+
+**What if my release path has more than three steps?**
+Environment names and hops are free: `main → test → canary → stable` works, each hop with its own gates, actor, and phrase.
+
+**How do I see why a verdict happened?**
+The verdict names the rule id and the layer. `polispec resolve <path> --layers` shows the whole stack, and every verdict is logged as an event.
+
+## Where polispec is going
+
+Today polispec governs where an agent may act and how code travels to users. With recursive composition in place, it can grow into a shared, versioned library of operating practice. Imagine an organisation's release, data, and quality rules as importable, parameterised specs that every project and every agent inherits and can prove it follows. [`docs/VISION.md`](docs/VISION.md) lays out that direction, with each item marked **Built**, **Partial**, **Planned**, or **Idea**.
 
 ## Documentation
 
-- `docs/schema.md`: every key of the policy, roster and ledger, with examples.
-- `docs/operator.md`: sealed authority, protected allow-once, promote, deploy, pause, and host wiring.
-- `docs/harness-controls.md`: grammar, native installation, authority ceilings, editions, and verification limits.
-- `docs/environments.md`: the environment manifest, onboarding, `[ENVS]` and git hooks.
-- `docs/roster.md`: the roster resolver.
-- `docs/behavior.md`: behavioral policy.
-- `docs/code-specs.md`: code specs.
-- `docs/smoke.md`: the smoke ledger.
-- `examples/`: the `shop` (web service) and `widget` (distributed plugin) projects and an example ledger.
+- [`docs/schema.md`](docs/schema.md): every key of the policy, roster, ledger, global layer, modules, and profiles, with examples.
+- [`docs/environments.md`](docs/environments.md): the environment manifest, onboarding, `[ENVS]`, and git hooks.
+- [`docs/operator.md`](docs/operator.md): sealed authority, protected allow-once, promote, deploy, pause, and host wiring.
+- [`docs/harness-controls.md`](docs/harness-controls.md): grammar, native installation, authority ceilings, editions, and verification limits.
+- [`docs/roster.md`](docs/roster.md): the roster resolver.
+- [`docs/behavior.md`](docs/behavior.md): behavioral policy.
+- [`docs/code-specs.md`](docs/code-specs.md): code specs.
+- [`docs/smoke.md`](docs/smoke.md): the smoke ledger.
+- [`docs/VISION.md`](docs/VISION.md): where polispec is going.
+- [`examples/`](examples/): the `clinic` (booking app with nested modules), `shop` (web service), and `widget` (distributed plugin) projects, harness controls, and an example ledger.
+- [`specs/app.yml`](specs/app.yml): the contract.
 
 ## License
 
 MIT. See `LICENSE`.
-
-`polispec status <project> --json` includes `projects[].deployments` (contract
-`polispec.status.deployments/v1`). Each environment carries `receipt`, `latest_attempt`, and `verified`.
-The receipt identifies the last successful deployment by record id, SHA, tag, health, pin status, and time.
-Verification requires the receipt to match the latest attempted deployment, with health `ok` and no pin.
-An in-progress or newer failed attempt, unchecked health, or a legacy receipt without record identity fails closed.
-Consumers must also match the current remote environment ref and tag; branch promotion alone does not prove deployment.
-No state paths, health output, or secrets are exposed by this field. It is deployment-time evidence, not continuous health.
