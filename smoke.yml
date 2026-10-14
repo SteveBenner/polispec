@@ -7503,3 +7503,588 @@ entries:
     policy_digest:
   prev: 29426eb11f2772e9b106e68512a25d8bb5f3e37068980e234658563723bc750e
   digest: e95fb97df2fcc0e1e568f974d0c2fcccefdde251024c0a87cc190061ddb79f59
+- id: smk_6415742fc96f
+  recorded_at: '2026-10-14T04:01:25Z'
+  started_at: '2026-10-13T00:00:00Z'
+  finished_at: '2026-10-13T00:00:00Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/onboard
+    spec_digest: f603871f84bbae8f7fdfedf496075ba33488dd6eb94b6ad5c9d0e776a8c02bd7
+    at_digest: 7b9113325a4e014556d239499c4118a9f6913d2a7d7f0ece79e022f9a477706a
+  verdict: pass
+  summary: 'f19b: --commit stages and commits only the files onboard wrote on main,
+    then --push publishes main, test and stable carrying specs/polispec/{policy,environments,roster}.yml;
+    a pre-staged unrelated file stayed staged; --dry-run --commit writes nothing;
+    without --commit output is byte-identical to main.'
+  steps:
+  - run: 'main: polispec onboard --serves real_users --commit --push'
+    exit: 2
+    expect: usage error
+    observed: usage printed, --commit unknown
+  - run: 'haiku: onboard --commit --push --dry-run'
+    exit: 0
+    expect: 4b_commit would list paths, nothing written
+    observed: git status only A extra.txt
+  - run: 'haiku: onboard --commit --push'
+    exit: 0
+    expect: commit + branches pushed
+    observed: 4b_commit done; origin main/test/stable ls-tree contain the three spec
+      files; extra.txt still staged
+  - run: 'nc diff main vs worktree: onboard --push without --commit'
+    exit: 0
+    expect: identical
+    observed: diff empty
+  - run: 'haiku: promote shop --to test; deploy shop test [--json]'
+    exit: 1
+    expect: health_failed naming placeholder
+    observed: 'health_failed: run exited 127: polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml:
+      No such file or directory'
+  evidence:
+  - path: run.jsonl
+    sha256: 0ea551a0dcedd3959dd0bb49e9ad2d1b61fd847e35d9284a2c5245bfce960d72
+    bytes: 34796
+    kind: transcript
+  - path: run.jsonl
+    sha256: 342243fb8af76e2d1f34a17dcc3d013f33f36b6e8c7c29695a80d1e7bab2386f
+    bytes: 37240
+    kind: transcript
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: claude-haiku-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.19.0
+      edition: standard
+      commit: 866fa2ffbe9bb67be6050b07c1d7285c73afaf16
+      dirty: false
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 866fa2ffbe9bb67be6050b07c1d7285c73afaf16
+    branch: f19/b
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: e95fb97df2fcc0e1e568f974d0c2fcccefdde251024c0a87cc190061ddb79f59
+  digest: 8677b185d31274a8601fd27d01df2d30cc2a748cc52e5a5f813cc1c7fc513106
+- id: smk_12c06547d13e
+  recorded_at: '2026-10-14T04:01:25Z'
+  started_at: '2026-10-13T00:00:00Z'
+  finished_at: '2026-10-13T00:00:00Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/onboard
+    spec_digest: f603871f84bbae8f7fdfedf496075ba33488dd6eb94b6ad5c9d0e776a8c02bd7
+    at_digest: 7b9113325a4e014556d239499c4118a9f6913d2a7d7f0ece79e022f9a477706a
+  verdict: pass
+  summary: 'f19b: placeholder deploy.health.run is a single nonexistent command name;
+    promote --to test passes gates and deploy test fails health_failed naming the
+    command (run exited 127), no shell, argv one element.'
+  steps:
+  - run: 'main: polispec onboard --serves real_users --commit --push'
+    exit: 2
+    expect: usage error
+    observed: usage printed, --commit unknown
+  - run: 'haiku: onboard --commit --push --dry-run'
+    exit: 0
+    expect: 4b_commit would list paths, nothing written
+    observed: git status only A extra.txt
+  - run: 'haiku: onboard --commit --push'
+    exit: 0
+    expect: commit + branches pushed
+    observed: 4b_commit done; origin main/test/stable ls-tree contain the three spec
+      files; extra.txt still staged
+  - run: 'nc diff main vs worktree: onboard --push without --commit'
+    exit: 0
+    expect: identical
+    observed: diff empty
+  - run: 'haiku: promote shop --to test; deploy shop test [--json]'
+    exit: 1
+    expect: health_failed naming placeholder
+    observed: 'health_failed: run exited 127: polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml:
+      No such file or directory'
+  evidence:
+  - path: run.jsonl
+    sha256: 0ea551a0dcedd3959dd0bb49e9ad2d1b61fd847e35d9284a2c5245bfce960d72
+    bytes: 34796
+    kind: transcript
+  - path: run.jsonl
+    sha256: 342243fb8af76e2d1f34a17dcc3d013f33f36b6e8c7c29695a80d1e7bab2386f
+    bytes: 37240
+    kind: transcript
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: claude-haiku-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.19.0
+      edition: standard
+      commit: 866fa2ffbe9bb67be6050b07c1d7285c73afaf16
+      dirty: true
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 866fa2ffbe9bb67be6050b07c1d7285c73afaf16
+    branch: f19/b
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: 8677b185d31274a8601fd27d01df2d30cc2a748cc52e5a5f813cc1c7fc513106
+  digest: a022b67681c3d9f2dd8af6c4bff742206fe3eb7a2298d262eda5569478d17077
+- id: smk_9d123cf7731d
+  recorded_at: '2026-10-14T04:01:31Z'
+  started_at: '2026-10-13T00:00:00Z'
+  finished_at: '2026-10-14T03:58:41Z'
+  proves:
+    spec: specs/app.yml
+    at: code_specs/commands/specs link|status|promote
+    spec_digest: f603871f84bbae8f7fdfedf496075ba33488dd6eb94b6ad5c9d0e776a8c02bd7
+    at_digest: c512be95d6bfb7080f4e63ac6a3fa3e94b1763db537a678b2c1b98ee6971b80a
+  verdict: pass
+  summary: 'f19a: specs link replacement refuses non-interactive (exit 1), refuses
+    typed relink specs, and repoints on typed relink <full target path> under a pty
+    in a scratch HOME.'
+  steps:
+  - run: A1 resolver script, main
+    exit:
+    expect: raise
+    observed: 'RAISED Polispec::Error: committed policy is unavailable for scratchp'
+  - run: A1 resolver script, worktree
+    exit:
+    expect: Target with fallback rules
+    observed: RETURNED project=scratchp env=dev source=defaults rules=5 first FB-3
+  - run: harness uninstall install_cccc... --dry-run --owner sven --scope user --json,
+      main
+    exit: 3
+    expect: operator_required
+    observed: operator_required
+  - run: same, worktree, seeded scratch record
+    exit: 0
+    expect: preview with owner_check_unverified, no writes
+    observed: ok true, finding owner_check_unverified capability cli, file listing
+      identical before/after
+  - run: same, worktree, unknown id
+    exit: 1
+    expect: installation_not_found
+    observed: installation_not_found plus owner_check_unverified
+  - run: harness scan --json with overridden HOME, main
+    exit: 3
+    expect: '3'
+    observed: ok false environment_scan_failed
+  - run: same, worktree
+    exit: 1
+    expect: '1'
+    observed: ok false environment_scan_failed, cause the rplugin state port is unavailable
+  - run: specs link --repo R/repo, no tty
+    exit: 1
+    expect: refused
+    observed: needs an interactive terminal
+  - run: specs link under script, typed relink specs
+    exit: 1
+    expect: mismatch
+    observed: the typed phrase did not match; link unchanged
+  - run: specs link under script, typed relink <target>
+    exit: 0
+    expect: repoint
+    observed: link now points at R/repo/specs
+  evidence:
+  - path: a1.bak
+    sha256: 437fa62f5be2d934a73617f7a9c5b6cd0bdae6698cc295bccf1527594a0e482a
+    bytes: 608
+    kind: file
+  - path: seed.rb
+    sha256: cb28055691ef2a729e576c8fdb00688b72985dbc2630714d49d108d7ca583be3
+    bytes: 1013
+    kind: file
+  - path: b2.lst
+    sha256: 9f955fa664363ee58ec90d63cc13a5439cce2628e2b6c2db24f13e9bb5252bfb
+    bytes: 814
+    kind: file
+  - path: a2.lst
+    sha256: 9f955fa664363ee58ec90d63cc13a5439cce2628e2b6c2db24f13e9bb5252bfb
+    bytes: 814
+    kind: file
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: claude-sonnet-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.19.0
+      edition: standard
+      commit: 866fa2ffbe9bb67be6050b07c1d7285c73afaf16
+      dirty: true
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 866fa2ffbe9bb67be6050b07c1d7285c73afaf16
+    branch: f19/b
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: a022b67681c3d9f2dd8af6c4bff742206fe3eb7a2298d262eda5569478d17077
+  digest: a14ab3f6b9621fe71a1345f4068204c814baa9a4358bd5e04554a389f91edc21
+- id: smk_a691c5c90f7b
+  recorded_at: '2026-10-14T04:01:32Z'
+  started_at: '2026-10-13T00:00:00Z'
+  finished_at: '2026-10-14T03:58:41Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/harness
+    spec_digest: f603871f84bbae8f7fdfedf496075ba33488dd6eb94b6ad5c9d0e776a8c02bd7
+    at_digest: cf0b23b64389c6c5150017771501b20aa5f57542d4d6ca6db4143c26d0d062dc
+  verdict: pass
+  summary: 'f19a: non-root uninstall --dry-run --owner previews with owner_check_unverified
+    or installation_not_found and writes nothing; harness scan exits 1 on environment_scan_failed;
+    no root or non-dry-run path changed.'
+  steps:
+  - run: A1 resolver script, main
+    exit:
+    expect: raise
+    observed: 'RAISED Polispec::Error: committed policy is unavailable for scratchp'
+  - run: A1 resolver script, worktree
+    exit:
+    expect: Target with fallback rules
+    observed: RETURNED project=scratchp env=dev source=defaults rules=5 first FB-3
+  - run: harness uninstall install_cccc... --dry-run --owner sven --scope user --json,
+      main
+    exit: 3
+    expect: operator_required
+    observed: operator_required
+  - run: same, worktree, seeded scratch record
+    exit: 0
+    expect: preview with owner_check_unverified, no writes
+    observed: ok true, finding owner_check_unverified capability cli, file listing
+      identical before/after
+  - run: same, worktree, unknown id
+    exit: 1
+    expect: installation_not_found
+    observed: installation_not_found plus owner_check_unverified
+  - run: harness scan --json with overridden HOME, main
+    exit: 3
+    expect: '3'
+    observed: ok false environment_scan_failed
+  - run: same, worktree
+    exit: 1
+    expect: '1'
+    observed: ok false environment_scan_failed, cause the rplugin state port is unavailable
+  - run: specs link --repo R/repo, no tty
+    exit: 1
+    expect: refused
+    observed: needs an interactive terminal
+  - run: specs link under script, typed relink specs
+    exit: 1
+    expect: mismatch
+    observed: the typed phrase did not match; link unchanged
+  - run: specs link under script, typed relink <target>
+    exit: 0
+    expect: repoint
+    observed: link now points at R/repo/specs
+  evidence:
+  - path: a1.bak
+    sha256: 437fa62f5be2d934a73617f7a9c5b6cd0bdae6698cc295bccf1527594a0e482a
+    bytes: 608
+    kind: file
+  - path: seed.rb
+    sha256: cb28055691ef2a729e576c8fdb00688b72985dbc2630714d49d108d7ca583be3
+    bytes: 1013
+    kind: file
+  - path: b2.lst
+    sha256: 9f955fa664363ee58ec90d63cc13a5439cce2628e2b6c2db24f13e9bb5252bfb
+    bytes: 814
+    kind: file
+  - path: a2.lst
+    sha256: 9f955fa664363ee58ec90d63cc13a5439cce2628e2b6c2db24f13e9bb5252bfb
+    bytes: 814
+    kind: file
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: claude-sonnet-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.19.0
+      edition: standard
+      commit: 866fa2ffbe9bb67be6050b07c1d7285c73afaf16
+      dirty: true
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 866fa2ffbe9bb67be6050b07c1d7285c73afaf16
+    branch: f19/b
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: a14ab3f6b9621fe71a1345f4068204c814baa9a4358bd5e04554a389f91edc21
+  digest: ee27c63de8a11e592e0fd83cd9ea6d448c052d82c053be877cdeea14cdf69eb4
+- id: smk_64b9c28a9495
+  recorded_at: '2026-10-14T04:01:32Z'
+  started_at: '2026-10-13T00:00:00Z'
+  finished_at: '2026-10-14T03:58:41Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/hook pretool|session
+    spec_digest: f603871f84bbae8f7fdfedf496075ba33488dd6eb94b6ad5c9d0e776a8c02bd7
+    at_digest: c44e47df2d2028822c825b179a7863a3d32dac918d48ce4f3fc5f7a5da7c0e77
+  verdict: pass
+  summary: 'f19a: control_target_resolver on a live project whose trust ref has no
+    policy: main raised committed policy is unavailable; worktree returns a Target
+    with source defaults carrying 5 rules led by global fallback FB-3.'
+  steps:
+  - run: A1 resolver script, main
+    exit:
+    expect: raise
+    observed: 'RAISED Polispec::Error: committed policy is unavailable for scratchp'
+  - run: A1 resolver script, worktree
+    exit:
+    expect: Target with fallback rules
+    observed: RETURNED project=scratchp env=dev source=defaults rules=5 first FB-3
+  - run: harness uninstall install_cccc... --dry-run --owner sven --scope user --json,
+      main
+    exit: 3
+    expect: operator_required
+    observed: operator_required
+  - run: same, worktree, seeded scratch record
+    exit: 0
+    expect: preview with owner_check_unverified, no writes
+    observed: ok true, finding owner_check_unverified capability cli, file listing
+      identical before/after
+  - run: same, worktree, unknown id
+    exit: 1
+    expect: installation_not_found
+    observed: installation_not_found plus owner_check_unverified
+  - run: harness scan --json with overridden HOME, main
+    exit: 3
+    expect: '3'
+    observed: ok false environment_scan_failed
+  - run: same, worktree
+    exit: 1
+    expect: '1'
+    observed: ok false environment_scan_failed, cause the rplugin state port is unavailable
+  - run: specs link --repo R/repo, no tty
+    exit: 1
+    expect: refused
+    observed: needs an interactive terminal
+  - run: specs link under script, typed relink specs
+    exit: 1
+    expect: mismatch
+    observed: the typed phrase did not match; link unchanged
+  - run: specs link under script, typed relink <target>
+    exit: 0
+    expect: repoint
+    observed: link now points at R/repo/specs
+  evidence:
+  - path: a1.bak
+    sha256: 437fa62f5be2d934a73617f7a9c5b6cd0bdae6698cc295bccf1527594a0e482a
+    bytes: 608
+    kind: file
+  - path: seed.rb
+    sha256: cb28055691ef2a729e576c8fdb00688b72985dbc2630714d49d108d7ca583be3
+    bytes: 1013
+    kind: file
+  - path: b2.lst
+    sha256: 9f955fa664363ee58ec90d63cc13a5439cce2628e2b6c2db24f13e9bb5252bfb
+    bytes: 814
+    kind: file
+  - path: a2.lst
+    sha256: 9f955fa664363ee58ec90d63cc13a5439cce2628e2b6c2db24f13e9bb5252bfb
+    bytes: 814
+    kind: file
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: claude-sonnet-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.19.0
+      edition: standard
+      commit: 866fa2ffbe9bb67be6050b07c1d7285c73afaf16
+      dirty: true
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 866fa2ffbe9bb67be6050b07c1d7285c73afaf16
+    branch: f19/b
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: ee27c63de8a11e592e0fd83cd9ea6d448c052d82c053be877cdeea14cdf69eb4
+  digest: 107b227defbb8270f08e3c01b1873dea4b7928a5e68e6fe2118b59b34a47f196
+- id: smk_4e5167fea640
+  recorded_at: '2026-10-14T04:01:46Z'
+  proves:
+    spec: specs/app.yml
+    at: code_specs
+    spec_digest: f603871f84bbae8f7fdfedf496075ba33488dd6eb94b6ad5c9d0e776a8c02bd7
+    at_digest: 627bb559426669e8596c095d6d117b40bb7457841a6b8c35529cdf4412682a83
+  verdict: pass
+  summary: 'code_specs at 0.19.0 across three runs: pack loading, chain, pre_write
+    enforcement and ratchet (0.18.2 Haiku sign-off), post_write, stop and session
+    for --harness claude (0.18.3 Haiku fix1), and the specs link phrase relink <full
+    target path> (0.19.0, pseudo-terminal in a scratch HOME); the only code_specs
+    change since smk_d0514bc2c254 is the specs link phrase'
+  steps:
+  - run: '0.18.2 sign-off, controls-code-specs: headless Haiku session in a scratch
+      project with code_specs.enabled, pack linked from stable'
+    exit:
+    expect: pack loads from stable, chain resolves, a MUST_NOT write is denied at
+      pre_write, ratchet works
+    observed: all four held; post_write, stop and session failed open for --harness
+      claude (fixed in 0.18.3)
+  - run: '0.18.3 fix1: headless Haiku session under check_at=post_write writing a
+      private key'
+    exit:
+    expect: post blocks the landed violation, stop blocks with the MUST finding, session
+      normalizes
+    observed: PostToolUse decision block naming secrets.rb:3; stop decision block;
+      session ran without error
+  - run: '0.19.0 f19a: specs link under a pseudo-terminal in a scratch HOME'
+    exit:
+    expect: agent shell refused; relink specs refused; relink <full target path> repoints
+    observed: not_tty exit 1; confirmation_failed exit 1; link repointed
+  evidence:
+  - path: projB.hook.jsonl
+    sha256: e830ad098ce28441d48db0268a33221e160287f3c9b8467d01335a438af2f167
+    bytes: 27402
+    kind: events
+  - path: projA.hook.jsonl
+    sha256: 3b0cbe3f523d13bbdc45374425b354622d370ea4f9d8265f73162db4c3dac167
+    bytes: 16849
+    kind: events
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: claude-haiku-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.19.0
+      edition: standard
+      commit: 866fa2ffbe9bb67be6050b07c1d7285c73afaf16
+      dirty: true
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 866fa2ffbe9bb67be6050b07c1d7285c73afaf16
+    branch: f19/b
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: 107b227defbb8270f08e3c01b1873dea4b7928a5e68e6fe2118b59b34a47f196
+  digest: 0b9e3a10b9dbee85aa06992a4bb879203feb4bdf78906cfe2fbe15ca423e3ae3
