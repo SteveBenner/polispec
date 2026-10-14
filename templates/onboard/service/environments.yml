@@ -20,6 +20,8 @@ environments:
     data_classes: [deidentified, synthetic, operational]
     deploy:
       steps: ["true"]
+      health:
+        run: "sh -c 'echo the placeholder health check must be replaced in specs/polispec/environments.yml; exit 1'"
     operators: [agent, operator]
   prod:
     branch: stable
@@ -31,5 +33,7 @@ environments:
     data_classes: [user_pii, keys, operational]
     deploy:
       steps: ["true"]
+      health:
+        run: "sh -c 'echo the placeholder health check must be replaced in specs/polispec/environments.yml; exit 1'"
     operators: [operator]
     rollback: "polispec deploy {{project}} stable --tag vPREV"
