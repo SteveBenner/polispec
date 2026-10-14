@@ -5,7 +5,7 @@ require_relative "../operator/git"
 
 module Polispec
   class OnboardCommand
-    USAGE = "usage: polispec onboard <repo-path> --serves <real_users|internal|none> [--archetype service|distributed] [--id <id>] [--trust-ref stable] [--push] [--checkouts] [--dry-run] [--json]"
+    USAGE = "usage: polispec onboard <repo-path> --serves <real_users|internal|none> [--archetype service|distributed] [--id <id>] [--trust-ref stable] [--commit] [--push] [--checkouts] [--dry-run] [--json]"
     SERVES = %w[real_users internal none].freeze
     ARCHETYPES = %w[service distributed].freeze
     ID_PATTERN = /\A[a-z0-9][a-z0-9-]{0,40}\z/.freeze
@@ -15,7 +15,8 @@ module Polispec
     ENVIRONMENTS_FILE = "#{SPEC_DIR}/environments.yml".freeze
     ROSTER_FILE = "#{SPEC_DIR}/roster.yml".freeze
     DEFAULT_ENVS_ROOT = "~/.polispec/envs"
-    Options = Struct.new(:repo, :serves, :archetype, :id, :trust_ref, :push, :checkouts, :dry, :json)
+    COMMIT_MESSAGE = "Add the polispec scaffold"
+    Options = Struct.new(:repo, :serves, :archetype, :id, :trust_ref, :commit, :push, :checkouts, :dry, :json)
     Step = Struct.new(:step, :status, :detail)
 
     def self.run(args)
@@ -28,6 +29,7 @@ module Polispec
 
       @options = options
       @steps = []
+      @touched = []
       begin
         perform
         finish(0)
@@ -46,7 +48,7 @@ module Polispec
 
     def parse(args)
       rest = args.dup
-      options = Options.new(nil, nil, "service", nil, "stable", false, false, false, false)
+      options = Options.new(nil, nil, "service", nil, "stable", false, false, false, false, false)
       until rest.empty?
         arg = rest.shift
         case arg
@@ -54,6 +56,7 @@ module Polispec
         when "--archetype" then options.archetype = rest.shift
         when "--id" then options.id = rest.shift
         when "--trust-ref" then options.trust_ref = rest.shift
+        when "--commit" then options.commit = true
         when "--push" then options.push = true
         when "--checkouts" then options.checkouts = true
         when "--dry-run" then options.dry = true
@@ -113,6 +116,7 @@ module Polispec
       manifest_step
       ledger_step
       render_step
+      commit_step
       branches_step
       checkouts_step
     end
@@ -214,6 +218,7 @@ module Polispec
           next
         end
         written << relative
+        @touched << relative
         next if @options.dry
 
         FileUtils.mkdir_p(File.dirname(path))
@@ -271,6 +276,7 @@ module Polispec
       return note("2_manifest", "skipped", "#{File.basename(@manifest)} would not parse after the pointer is added; not written") unless parsed.is_a?(Hash)
 
       atomic_write(@manifest, updated, File.stat(@manifest).mode & 0o777) unless @options.dry
+      @touched << @manifest.sub("#{@root}/", "")
       note("2_manifest", would("done"), @options.dry ? "append pointer to #{File.basename(@manifest)}" : "pointer appended to #{File.basename(@manifest)}")
     rescue Schema::Document::ParseError
       note("2_manifest", "skipped", "#{File.basename(@manifest)} would not parse after the pointer is added; not written")
@@ -352,9 +358,29 @@ module Polispec
       files = AgentsRender.plan(@root, rendered)
       files.each { |file| AgentsRender.apply(file) } unless @options.dry
       changed = files.select { |file| file[:changed] }.map { |file| file[:path].sub("#{@root}/", "") }
+      @touched.concat(changed)
       note("4_render", changed.empty? ? "kept" : would("done"), changed.empty? ? "[ENVS] row and envs.md already current" : "#{tense('rendered', 'render')} #{changed.join(', ')}")
     rescue Polispec::Error => e
       raise Operator::Failure.new("render_failed", e.message)
+    end
+
+    def commit_step
+      return unless @options.commit
+
+      paths = @touched.uniq
+      return note("4b_commit", "kept", "onboard wrote no files, so there is nothing to commit") if paths.empty?
+
+      return note("4b_commit", "would", "commit #{paths.join(', ')} on main as '#{COMMIT_MESSAGE}'") if @options.dry
+
+      branch = @git.run("symbolic-ref", "--quiet", "--short", "HEAD").out.strip
+      unless branch == "main"
+        note("4b_commit", "skipped", "HEAD is #{branch.empty? ? 'detached' : branch}, not main, so nothing was committed; run: #{commit_command}")
+        return
+      end
+
+      @git.run!("add", "--", *paths, code: "commit_failed")
+      @git.run!("commit", "--quiet", "-m", COMMIT_MESSAGE, "--", *paths, code: "commit_failed")
+      note("4b_commit", "done", "committed #{paths.join(', ')} on main")
     end
 
     def branches_step
@@ -386,13 +412,14 @@ module Polispec
     end
 
     def push_outcome(test_branch, trust)
-      command = "git -C #{Shellwords.escape(@root)} push origin #{test_branch} #{trust}"
+      refs = @options.commit ? ["main", test_branch, trust] : [test_branch, trust]
+      command = "git -C #{Shellwords.escape(@root)} push origin #{refs.join(' ')}"
       return ["next", "next: #{command}"] unless @options.push
       return ["skipped", "no origin remote; push by hand: #{command}"] if remote_url.nil?
       return ["done", command] if @options.dry
 
-      result = @git.run!("push", "origin", test_branch, trust, code: "push_failed")
-      ["done", "pushed #{test_branch} and #{trust}: #{result.tail}".strip]
+      result = @git.run!("push", "origin", *refs, code: "push_failed")
+      ["done", "pushed #{refs.join(', ')}: #{result.tail}".strip]
     end
 
     def checkouts_step

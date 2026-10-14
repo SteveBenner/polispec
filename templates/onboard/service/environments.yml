@@ -21,7 +21,7 @@ environments:
     deploy:
       steps: ["true"]
       health:
-        run: "sh -c 'echo the placeholder health check must be replaced in specs/polispec/environments.yml; exit 1'"
+        run: polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml
     operators: [agent, operator]
   prod:
     branch: stable
@@ -34,6 +34,6 @@ environments:
     deploy:
       steps: ["true"]
       health:
-        run: "sh -c 'echo the placeholder health check must be replaced in specs/polispec/environments.yml; exit 1'"
+        run: polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml
     operators: [operator]
     rollback: "polispec deploy {{project}} stable --tag vPREV"
