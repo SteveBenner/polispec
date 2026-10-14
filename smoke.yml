@@ -6454,3 +6454,513 @@ entries:
     policy_digest:
   prev: 75e66850843fe6cd5ef7c406f23d356447f1fe0a6d0fbb274fdb5676931c3e73
   digest: ac437fc181580a439d5c29bf15db6235d7e7f6ac1d9fbd8a30e4669767b14f5a
+- id: smk_cd96f4af6d7d
+  recorded_at: '2026-10-14T03:37:17Z'
+  started_at: '2026-10-14T03:10:00Z'
+  finished_at: '2026-10-14T03:25:00Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/onboard
+    spec_digest: fbcb52fddee0c7844b8f0385ee3391601ad6e4ccfd95fc156ef7fa2beebe958e
+    at_digest: 740a7e9101a1bc4b2b8dbdb83a0e593bdeadcb1b27a97c36517b9f22a0795710
+  verdict: pass
+  summary: 'fix3-onboard: Haiku onboarded a fresh repo with the worktree build: dry
+    run and real wording correct, scaffold validates, branches skipped with commands
+    until the scaffold is committed, ledger validated before scaffold.'
+  steps:
+  - run: "[before, main] onboard --push then validate auto policy.yml"
+    exit: 1
+    expect: ok
+    observed: 'invalid: env test and env prod deploy without a health check; origin
+      stable==main with no specs/polispec'
+  - run: "[before, main] onboard with bogus_toplevel in ledger"
+    exit: 1
+    expect: nothing written
+    observed: 1_scaffold done, then ledger_invalid; git status shows ?? specs/
+  - run: "[after] same ledger_invalid scenario"
+    exit: 1
+    expect: nothing written
+    observed: ledger_invalid with no scaffold output, git status empty
+  - run: "[after, agent] onboard --dry-run then onboard"
+    exit: 0
+    expect: would write/add/render; 5_branches skipped with commands
+    observed: would write, would add fresh, would render; 5_branches skipped naming
+      add, commit, branch, branch, push
+  - run: "[after, agent] git add, commit, branch test, branch stable, push origin
+      main test stable; validate auto policy.yml"
+    exit: 0
+    expect: ok
+    observed: origin test, stable, main all 8694f3c carrying the scaffold; policy
+      ok
+  - run: "[after, agent] promote fresh --to test --dry-run"
+    exit: 0
+    expect: gates pass
+    observed: G-CLEAN pass, G-VHOMES pass
+  - run: "[after, agent] promote fresh --to test"
+    exit: 1
+    expect: promoted, after-deploy health fails
+    observed: 'promoted: true, tag v0.2.0, health_failed run exited 1: the placeholder
+      health check must be replaced'
+  - run: "[after, agent] deploy fresh test"
+    exit: 1
+    expect: fails only on placeholder health
+    observed: health_failed same message
+  - run: "[after, agent] promote fresh --to stable --dry-run"
+    exit: 1
+    expect: refused
+    observed: untested_sha G-TESTED
+  - run: "[before vs after] status fresh --json with a stable policy lacking health"
+    exit: 0
+    expect: finding matches promote
+    observed: 'main: finding null; worktree: finding policy_invalid with the promote
+      text'
+  evidence:
+  - path: s1.jsonl
+    sha256: 76be047d9395abc8f9fe8a1b213bc527aa5af6ff4d0eb2fd93dbc9c3f13f43bc
+    bytes: 49661
+    kind: transcript
+  - path: s2.jsonl
+    sha256: 8a0d7f427bceb489c5b705d46f6a189e3dfd7620248b3580cea4de354ace9f73
+    bytes: 40492
+    kind: transcript
+  - path: s3.jsonl
+    sha256: 0d5ec8471ce6f4d3a0a7beaa1757baf3c6082cae84d1226d4c99cebf73613702
+    bytes: 28902
+    kind: transcript
+  - path: before.out
+    sha256: d0bea0013dbbc1fc8c5894e626efbb7d0ed9fc85ba2908cd67e6206fd1fc61cc
+    bytes: 2416
+    kind: file
+  - path: after.out
+    sha256: a1f3d60225b7ad515d72e024fa790d9f0fb6e1395dcb17392653bbbace7eba4a
+    bytes: 3359
+    kind: file
+  - path: badbefore.out
+    sha256: c9add07f34319bd9f4cf235d8f772f0d4e2aef4ee75db4875bc013847af6a919
+    bytes: 305
+    kind: file
+  - path: badafter.out
+    sha256: 6feda9108a81c7b5bf16d698c06a0e8551aef0f7554abf036638e3bbd63e4597
+    bytes: 123
+    kind: file
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: haiku
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.6
+      edition: standard
+      commit: 97b8aaec5b576bcdcc4db9f1708fc7c91e216594
+      dirty: false
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 97b8aaec5b576bcdcc4db9f1708fc7c91e216594
+    branch: fix/b3
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: ac437fc181580a439d5c29bf15db6235d7e7f6ac1d9fbd8a30e4669767b14f5a
+  digest: a0f3fecfbb4d1cf5cd68e21aaa6af8489f40b5e8295b1a0c7c8a627461457e82
+- id: smk_4fa9d162deaf
+  recorded_at: '2026-10-14T03:37:17Z'
+  started_at: '2026-10-14T03:10:00Z'
+  finished_at: '2026-10-14T03:25:00Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/promote, deploy
+    spec_digest: fbcb52fddee0c7844b8f0385ee3391601ad6e4ccfd95fc156ef7fa2beebe958e
+    at_digest: 54bc0188c93b9b72a8d1ff357039f65829c7aff9affbb501c0af69a7b3754784
+  verdict: pass
+  summary: 'fix3-onboard: promote --to test passed G-CLEAN and G-VHOMES on the scaffolded
+    policy and moved test and tag v0.2.0; deploy failed health_failed only on the
+    placeholder; promote --to stable refused untested_sha.'
+  steps:
+  - run: "[before, main] onboard --push then validate auto policy.yml"
+    exit: 1
+    expect: ok
+    observed: 'invalid: env test and env prod deploy without a health check; origin
+      stable==main with no specs/polispec'
+  - run: "[before, main] onboard with bogus_toplevel in ledger"
+    exit: 1
+    expect: nothing written
+    observed: 1_scaffold done, then ledger_invalid; git status shows ?? specs/
+  - run: "[after] same ledger_invalid scenario"
+    exit: 1
+    expect: nothing written
+    observed: ledger_invalid with no scaffold output, git status empty
+  - run: "[after, agent] onboard --dry-run then onboard"
+    exit: 0
+    expect: would write/add/render; 5_branches skipped with commands
+    observed: would write, would add fresh, would render; 5_branches skipped naming
+      add, commit, branch, branch, push
+  - run: "[after, agent] git add, commit, branch test, branch stable, push origin
+      main test stable; validate auto policy.yml"
+    exit: 0
+    expect: ok
+    observed: origin test, stable, main all 8694f3c carrying the scaffold; policy
+      ok
+  - run: "[after, agent] promote fresh --to test --dry-run"
+    exit: 0
+    expect: gates pass
+    observed: G-CLEAN pass, G-VHOMES pass
+  - run: "[after, agent] promote fresh --to test"
+    exit: 1
+    expect: promoted, after-deploy health fails
+    observed: 'promoted: true, tag v0.2.0, health_failed run exited 1: the placeholder
+      health check must be replaced'
+  - run: "[after, agent] deploy fresh test"
+    exit: 1
+    expect: fails only on placeholder health
+    observed: health_failed same message
+  - run: "[after, agent] promote fresh --to stable --dry-run"
+    exit: 1
+    expect: refused
+    observed: untested_sha G-TESTED
+  - run: "[before vs after] status fresh --json with a stable policy lacking health"
+    exit: 0
+    expect: finding matches promote
+    observed: 'main: finding null; worktree: finding policy_invalid with the promote
+      text'
+  evidence:
+  - path: s1.jsonl
+    sha256: 76be047d9395abc8f9fe8a1b213bc527aa5af6ff4d0eb2fd93dbc9c3f13f43bc
+    bytes: 49661
+    kind: transcript
+  - path: s2.jsonl
+    sha256: 8a0d7f427bceb489c5b705d46f6a189e3dfd7620248b3580cea4de354ace9f73
+    bytes: 40492
+    kind: transcript
+  - path: s3.jsonl
+    sha256: 0d5ec8471ce6f4d3a0a7beaa1757baf3c6082cae84d1226d4c99cebf73613702
+    bytes: 28902
+    kind: transcript
+  - path: before.out
+    sha256: d0bea0013dbbc1fc8c5894e626efbb7d0ed9fc85ba2908cd67e6206fd1fc61cc
+    bytes: 2416
+    kind: file
+  - path: after.out
+    sha256: a1f3d60225b7ad515d72e024fa790d9f0fb6e1395dcb17392653bbbace7eba4a
+    bytes: 3359
+    kind: file
+  - path: badbefore.out
+    sha256: c9add07f34319bd9f4cf235d8f772f0d4e2aef4ee75db4875bc013847af6a919
+    bytes: 305
+    kind: file
+  - path: badafter.out
+    sha256: 6feda9108a81c7b5bf16d698c06a0e8551aef0f7554abf036638e3bbd63e4597
+    bytes: 123
+    kind: file
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: haiku
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.6
+      edition: standard
+      commit: 97b8aaec5b576bcdcc4db9f1708fc7c91e216594
+      dirty: true
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 97b8aaec5b576bcdcc4db9f1708fc7c91e216594
+    branch: fix/b3
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: a0f3fecfbb4d1cf5cd68e21aaa6af8489f40b5e8295b1a0c7c8a627461457e82
+  digest: a2f67cf19409c3f23624b258f492b7b861a46a500e1f76f36c6582ad16d71266
+- id: smk_5e2282c96d68
+  recorded_at: '2026-10-14T03:37:17Z'
+  started_at: '2026-10-14T03:10:00Z'
+  finished_at: '2026-10-14T03:25:00Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/status, digest, doctor
+    spec_digest: fbcb52fddee0c7844b8f0385ee3391601ad6e4ccfd95fc156ef7fa2beebe958e
+    at_digest: 073f91c967f2ca3f8c330a734362fd6f2ca1e6124eaf572a061520705d7b5a06
+  verdict: pass
+  summary: 'fix3-onboard: status --json reports finding policy_invalid with the same
+    text promote returns for a policy without deploy.health.'
+  steps:
+  - run: "[before, main] onboard --push then validate auto policy.yml"
+    exit: 1
+    expect: ok
+    observed: 'invalid: env test and env prod deploy without a health check; origin
+      stable==main with no specs/polispec'
+  - run: "[before, main] onboard with bogus_toplevel in ledger"
+    exit: 1
+    expect: nothing written
+    observed: 1_scaffold done, then ledger_invalid; git status shows ?? specs/
+  - run: "[after] same ledger_invalid scenario"
+    exit: 1
+    expect: nothing written
+    observed: ledger_invalid with no scaffold output, git status empty
+  - run: "[after, agent] onboard --dry-run then onboard"
+    exit: 0
+    expect: would write/add/render; 5_branches skipped with commands
+    observed: would write, would add fresh, would render; 5_branches skipped naming
+      add, commit, branch, branch, push
+  - run: "[after, agent] git add, commit, branch test, branch stable, push origin
+      main test stable; validate auto policy.yml"
+    exit: 0
+    expect: ok
+    observed: origin test, stable, main all 8694f3c carrying the scaffold; policy
+      ok
+  - run: "[after, agent] promote fresh --to test --dry-run"
+    exit: 0
+    expect: gates pass
+    observed: G-CLEAN pass, G-VHOMES pass
+  - run: "[after, agent] promote fresh --to test"
+    exit: 1
+    expect: promoted, after-deploy health fails
+    observed: 'promoted: true, tag v0.2.0, health_failed run exited 1: the placeholder
+      health check must be replaced'
+  - run: "[after, agent] deploy fresh test"
+    exit: 1
+    expect: fails only on placeholder health
+    observed: health_failed same message
+  - run: "[after, agent] promote fresh --to stable --dry-run"
+    exit: 1
+    expect: refused
+    observed: untested_sha G-TESTED
+  - run: "[before vs after] status fresh --json with a stable policy lacking health"
+    exit: 0
+    expect: finding matches promote
+    observed: 'main: finding null; worktree: finding policy_invalid with the promote
+      text'
+  evidence:
+  - path: s1.jsonl
+    sha256: 76be047d9395abc8f9fe8a1b213bc527aa5af6ff4d0eb2fd93dbc9c3f13f43bc
+    bytes: 49661
+    kind: transcript
+  - path: s2.jsonl
+    sha256: 8a0d7f427bceb489c5b705d46f6a189e3dfd7620248b3580cea4de354ace9f73
+    bytes: 40492
+    kind: transcript
+  - path: s3.jsonl
+    sha256: 0d5ec8471ce6f4d3a0a7beaa1757baf3c6082cae84d1226d4c99cebf73613702
+    bytes: 28902
+    kind: transcript
+  - path: before.out
+    sha256: d0bea0013dbbc1fc8c5894e626efbb7d0ed9fc85ba2908cd67e6206fd1fc61cc
+    bytes: 2416
+    kind: file
+  - path: after.out
+    sha256: a1f3d60225b7ad515d72e024fa790d9f0fb6e1395dcb17392653bbbace7eba4a
+    bytes: 3359
+    kind: file
+  - path: badbefore.out
+    sha256: c9add07f34319bd9f4cf235d8f772f0d4e2aef4ee75db4875bc013847af6a919
+    bytes: 305
+    kind: file
+  - path: badafter.out
+    sha256: 6feda9108a81c7b5bf16d698c06a0e8551aef0f7554abf036638e3bbd63e4597
+    bytes: 123
+    kind: file
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: haiku
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.6
+      edition: standard
+      commit: 97b8aaec5b576bcdcc4db9f1708fc7c91e216594
+      dirty: true
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 97b8aaec5b576bcdcc4db9f1708fc7c91e216594
+    branch: fix/b3
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: a2f67cf19409c3f23624b258f492b7b861a46a500e1f76f36c6582ad16d71266
+  digest: 497b74760b6b8e7f2bc2ef7337668dff46493cbd27c8040fe26b9fd1952f7bfd
+- id: smk_d987df0b9be5
+  recorded_at: '2026-10-14T03:37:18Z'
+  started_at: '2026-10-14T03:10:00Z'
+  finished_at: '2026-10-14T03:25:00Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/validate
+    spec_digest: fbcb52fddee0c7844b8f0385ee3391601ad6e4ccfd95fc156ef7fa2beebe958e
+    at_digest: a624185ba6d90f46157fd2d52e27070d09fb1caf66798f5fd9a3ad2a47153199
+  verdict: pass
+  summary: 'fix3-onboard: polispec validate auto policy.yml is ok on the scaffold
+    (was invalid on main).'
+  steps:
+  - run: "[before, main] onboard --push then validate auto policy.yml"
+    exit: 1
+    expect: ok
+    observed: 'invalid: env test and env prod deploy without a health check; origin
+      stable==main with no specs/polispec'
+  - run: "[before, main] onboard with bogus_toplevel in ledger"
+    exit: 1
+    expect: nothing written
+    observed: 1_scaffold done, then ledger_invalid; git status shows ?? specs/
+  - run: "[after] same ledger_invalid scenario"
+    exit: 1
+    expect: nothing written
+    observed: ledger_invalid with no scaffold output, git status empty
+  - run: "[after, agent] onboard --dry-run then onboard"
+    exit: 0
+    expect: would write/add/render; 5_branches skipped with commands
+    observed: would write, would add fresh, would render; 5_branches skipped naming
+      add, commit, branch, branch, push
+  - run: "[after, agent] git add, commit, branch test, branch stable, push origin
+      main test stable; validate auto policy.yml"
+    exit: 0
+    expect: ok
+    observed: origin test, stable, main all 8694f3c carrying the scaffold; policy
+      ok
+  - run: "[after, agent] promote fresh --to test --dry-run"
+    exit: 0
+    expect: gates pass
+    observed: G-CLEAN pass, G-VHOMES pass
+  - run: "[after, agent] promote fresh --to test"
+    exit: 1
+    expect: promoted, after-deploy health fails
+    observed: 'promoted: true, tag v0.2.0, health_failed run exited 1: the placeholder
+      health check must be replaced'
+  - run: "[after, agent] deploy fresh test"
+    exit: 1
+    expect: fails only on placeholder health
+    observed: health_failed same message
+  - run: "[after, agent] promote fresh --to stable --dry-run"
+    exit: 1
+    expect: refused
+    observed: untested_sha G-TESTED
+  - run: "[before vs after] status fresh --json with a stable policy lacking health"
+    exit: 0
+    expect: finding matches promote
+    observed: 'main: finding null; worktree: finding policy_invalid with the promote
+      text'
+  evidence:
+  - path: s1.jsonl
+    sha256: 76be047d9395abc8f9fe8a1b213bc527aa5af6ff4d0eb2fd93dbc9c3f13f43bc
+    bytes: 49661
+    kind: transcript
+  - path: s2.jsonl
+    sha256: 8a0d7f427bceb489c5b705d46f6a189e3dfd7620248b3580cea4de354ace9f73
+    bytes: 40492
+    kind: transcript
+  - path: s3.jsonl
+    sha256: 0d5ec8471ce6f4d3a0a7beaa1757baf3c6082cae84d1226d4c99cebf73613702
+    bytes: 28902
+    kind: transcript
+  - path: before.out
+    sha256: d0bea0013dbbc1fc8c5894e626efbb7d0ed9fc85ba2908cd67e6206fd1fc61cc
+    bytes: 2416
+    kind: file
+  - path: after.out
+    sha256: a1f3d60225b7ad515d72e024fa790d9f0fb6e1395dcb17392653bbbace7eba4a
+    bytes: 3359
+    kind: file
+  - path: badbefore.out
+    sha256: c9add07f34319bd9f4cf235d8f772f0d4e2aef4ee75db4875bc013847af6a919
+    bytes: 305
+    kind: file
+  - path: badafter.out
+    sha256: 6feda9108a81c7b5bf16d698c06a0e8551aef0f7554abf036638e3bbd63e4597
+    bytes: 123
+    kind: file
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: haiku
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.6
+      edition: standard
+      commit: 97b8aaec5b576bcdcc4db9f1708fc7c91e216594
+      dirty: true
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 97b8aaec5b576bcdcc4db9f1708fc7c91e216594
+    branch: fix/b3
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: 497b74760b6b8e7f2bc2ef7337668dff46493cbd27c8040fe26b9fd1952f7bfd
+  digest: 050c9a813ecbc6d410f9d5b102f148aa0e0706e3d7c5fe9cdd6985ce0c2fcfaa
