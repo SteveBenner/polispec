@@ -149,7 +149,7 @@ A freeze with `source: command` runs its `command` argv in the prod checkout of 
 
 ## Other error codes
 
-`policy_invalid`, `not_soaked`, `drain_timeout`, `drain_failed`, `drain_check_failed`, `skip_drain_unsupported`, `waive_soak_unsupported`, `nothing_to_waive`, `env_file_unreadable`, `unknown_env`, `rolled_back`, `release_conflict`, `clone_failed`, `not_tty`, `confirmation_failed`, `actor_denied`, `drift`, `not_fast_forward`, `nothing_to_promote`, `version_not_bumped`, `tag_exists`, `tag_mismatch`, `missing_ref`, `push_rejected`, `release_failed`, `after_failed`, `locked` (another promote or deploy of the same project holds its lock), `policy_unavailable`, `unknown_project`, `retired_project`, `repo_missing`, `invalid_target`, `invalid_env`, `logs_not_quiet`, `logs_in_window`, `not_live`, `untested_sha`, `invalid_tag`, `no_deploy`, `no_remote`.
+`policy_invalid`, `not_soaked`, `drain_timeout`, `drain_failed`, `drain_check_failed`, `skip_drain_unsupported`, `waive_soak_unsupported`, `nothing_to_waive`, `env_file_unreadable`, `unknown_env`, `rolled_back`, `release_conflict`, `clone_failed`, `not_tty`, `confirmation_failed`, `actor_denied`, `drift`, `not_fast_forward`, `nothing_to_promote`, `version_not_bumped`, `tag_exists`, `tag_mismatch`, `missing_ref`, `push_rejected`, `release_failed`, `after_failed`, `locked` (another promote or deploy of the same project holds its lock), `policy_unavailable`, `unknown_project`, `retired_project`, `repo_missing`, `invalid_target`, `invalid_env`, `logs_not_quiet`, `logs_in_window`, `not_live`, `untested_sha`, `invalid_tag`, `tag_unsupported` (`deploy <project> test --tag` is refused because test deploys follow the branch tip; `--tag` applies to stable only), `no_deploy`, `no_remote`.
 
 ## Events and records
 
@@ -206,6 +206,10 @@ New projects that serve real users remain `onboarding` until a verified plane an
 ```
 
 Run protected commands through the actual active launcher with the required privilege and terminal confirmation. The example path is a placeholder, not an alternative authority source. Activation and rollback record authenticated transactions. This release does not activate any existing live-user project.
+
+## Allow-once prompt
+
+`polispec allow-once <id>` prints the grant before it asks for the typed phrase: the project, environment, action class and rule, then the call itself. For a file tool the call is the tool name and the absolute target path, for example `edit /srv/shop/specs/polispec/policy.yml`, so the operator sees what the grant unlocks. The same text is stored as `raw` in the allow-once log and appears in the verdict reason. Refusals use the promote vocabulary: `not_tty` without a terminal and `confirmation_failed` on a wrong phrase.
 
 ## Protected allow-once service
 

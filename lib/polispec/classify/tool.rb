@@ -20,25 +20,26 @@ module Polispec
         name = tool_name.to_s.downcase
         cwd = Dir.pwd if cwd.to_s.empty?
         if DELETE_TOOLS.include?(name)
-          write_paths(tool_input).map { |path| Support.act("fs.delete", name, "path" => Support.abs(path, cwd)) }
+          write_paths(tool_input).map { |path| Support.act("fs.delete", "#{name} #{Support.abs(path, cwd)}", "path" => Support.abs(path, cwd)) }
         elsif WRITE_TOOLS.include?(name)
           write_paths(tool_input).map { |path| write(path, name, cwd, tool_input) }.compact
         elsif PATCH_TOOLS.include?(name)
           patch_changes(tool_input).flat_map do |change|
             rows = []
-            rows << Support.act("fs.delete", name, "path" => Support.abs(change["old"], cwd)) if change["delete"]
+            rows << Support.act("fs.delete", "#{name} #{Support.abs(change["old"], cwd)}", "path" => Support.abs(change["old"], cwd)) if change["delete"]
             rows << write(change["new"], name, cwd) if change["new"]
             rows.compact
           end
         elsif READ_TOOLS.include?(name)
-          read_paths(tool_input).map { |path| Support.read_action(Support.abs(path, cwd), name) }.compact
+          read_paths(tool_input).map { |path| Support.read_action(Support.abs(path, cwd), "#{name} #{Support.abs(path, cwd)}") }.compact
         else
           []
         end
       end
 
       def write(path, name, cwd, input = nil)
-        Support.write_action(Support.abs(path, cwd), name, {}, input)
+        target = Support.abs(path, cwd)
+        Support.write_action(target, "#{name} #{target}", {}, input)
       end
 
       def write_paths(input)

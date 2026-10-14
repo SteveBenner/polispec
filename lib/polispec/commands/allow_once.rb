@@ -33,6 +33,12 @@ module Polispec
       Events.emit("polispec.allow_once", project: entry["project"], id: id, action_class: entry["action_class"], rule_id: entry["rule_id"], redeemed_at: Time.now.utc.iso8601, consumed_by_session: nil)
       puts "polispec: #{id} redeemed; the matching call is allowed once within #{Engine::Passes::TTL / 60} minutes"
       0
+    rescue Operator::Tty::NotTty => e
+      warn "polispec: not_tty: #{e.message}"
+      1
+    rescue Operator::Tty::PhraseMismatch => e
+      warn "polispec: confirmation_failed: #{e.message}"
+      1
     end
 
     private

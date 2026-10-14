@@ -26,6 +26,12 @@ module Polispec
       Events.emit("polispec.pause", project: project.id, minutes: capped, reason: reason, expires_at: record["expires_at"], actor: "operator")
       puts "polispec: #{project.id} paused until #{record['expires_at']}#{" (capped from #{minutes})" if capped != minutes}"
       0
+    rescue Operator::Tty::NotTty => e
+      warn "polispec: not_tty: #{e.message}"
+      1
+    rescue Operator::Tty::PhraseMismatch => e
+      warn "polispec: confirmation_failed: #{e.message}"
+      1
     end
 
     private

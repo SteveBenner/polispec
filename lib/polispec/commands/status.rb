@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require_relative "../operator/git"
+
 module Polispec
   class StatusCommand
     USAGE = "usage: polispec status [<project>] [--json]"
@@ -16,11 +18,17 @@ module Polispec
 
       ledger = Ledger.load
       projects = args.empty? ? ledger.projects : [ledger.project(args.first)].compact
-      raise Polispec::Error, "#{args.first} is not in the ledger" if projects.empty? && !args.empty?
+      raise Polispec::Operator::Failure.new("unknown_project", "#{args.first} is not in the ledger") if projects.empty? && !args.empty?
 
       report = { "ledger" => ledger.path, "enforce" => Engine::Settings.enforce_mode, "projects" => projects.map { |project| describe(ledger, project) } }
       json ? puts(JSON.generate(report)) : print_text(report)
       0
+    rescue Polispec::Operator::Failure => e
+      e.report(json: json)
+      1
+    rescue Polispec::Error => e
+      Polispec::Operator::Failure.new("error", e.message).report(json: json)
+      1
     end
 
     private
