@@ -15,7 +15,6 @@ module Polispec
       json = take_flag!(args, "--json")
       operation = args.shift
       raise_usage unless %w[grammar parse plan install verify uninstall scan].include?(operation)
-      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       data = send("run_#{operation}", args)
       operation_id = data.is_a?(Hash) && data["operation_id"] || operation_id(operation, data)
       result = envelope(true, operation, operation_id, data, findings_from(data))
