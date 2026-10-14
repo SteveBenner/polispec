@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.5] - 2026-10-13
+
+### Fixed
+
+- `hook pretool` denied every non-read call in a live ledgered project whose policy was missing or invalid at its trust ref with `[POLISPEC internal] guard unavailable`. The global layer's `fallback_rules` (ledger `defaults.rules` when there is no global layer) now govern, as `docs/schema.md` states (`lib/polispec/commands/hook.rb`).
+- Claude PreToolUse deny and ask reasons now name the rule: `[POLISPEC <rule_id>] DENIED:` or `WARNING:`, matching the git hook and the other harness backends (`lib/polispec/harness_controls/backends/claude.rb`).
+- The next step for a path no polispec project owns said `polispec promote global --to stable`; it now says no project owns the path, so there is no `polispec promote` for it (`lib/polispec/engine.rb`).
+- `tag_claimed` for a tag equal to origin/main's version on a commit that is not origin/main's release commit now says the tag is not on that release commit, instead of "not greater than" (`lib/polispec/predicates.rb`, `docs/schema.md`).
+
 ## [0.18.4] - 2026-10-13
 
 ### Fixed
