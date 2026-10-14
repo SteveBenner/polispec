@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.7] - 2026-10-13
+
+### Fixed
+
+- `specs link` replaced an existing `~/.polispec/specs` link that pointed elsewhere without confirmation, even from an agent shell. Repointing now needs an interactive terminal and the typed phrase `relink specs`; creating a missing link or confirming the same target needs neither, and `--dry-run` previews (`lib/polispec/code/admin.rb`, `lib/polispec/commands/specs.rb`, `docs/code-specs.md`).
+- `harness uninstall --dry-run` returned `operator_required` for a non-root operator; without `--owner` a dry run now previews without root (`lib/polispec/harness_controls/lifecycle.rb`).
+- `harness scan` returned `ok: true` and exit 0 with an opaque `environment_scan_failed`; it now returns `ok: false`, exits 3 and names the cause (`lib/polispec/commands/harness.rb`, `lib/polispec/harness_controls/environment.rb`).
+- `seal` rejected `examples/ledger.example.yml` because YAML read `onboarded` as a date; bundle YAML is normalised as the ledger loader does (`lib/polispec/harness_controls/authority.rb`).
+- `code classify` on a file that defines no policy rules printed nothing and exited 0; it now says why and exits 1 (`lib/polispec/commands/code.rb`).
+- `docs/harness-controls.md` documents the `operation_id` shapes.
+
 ## [0.18.6] - 2026-10-13
 
 ### Fixed
