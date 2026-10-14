@@ -6043,3 +6043,307 @@ entries:
     policy_digest:
   prev: 5de4c958a50b6bb4cdac24b2f26b3378da18253cef43500bbfb51ab4c66d3bd0
   digest: a3bc62a8f43c6d8068a0caed7a90757dcde3b296c257ab0e7ab95d1eb74a2e6d
+- id: smk_fb12d7ca6992
+  recorded_at: '2026-10-14T03:24:45Z'
+  started_at: '2026-10-14T03:15:00Z'
+  finished_at: '2026-10-14T03:22:02Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/behavior
+    spec_digest: '072492eec59d45871a97a4715828bd6da7b54c4e1ccd6eae3771b1169487021e'
+    at_digest: f3ef74ffb589a309bd1396a79a1cea49abfb2a95712350ccb8c116dc05abc821
+  verdict: pass
+  summary: 'fix4-operator-ux: behavior decide renders empty arrays as [] on one line.'
+  steps:
+  - run: Haiku Edit specs/polispec/policy.yml via claude harness (hook.jsonl)
+    exit: 0
+    expect: ask naming the file
+    observed: 'before: reason ends policy.edit: edit; after: policy.edit: edit <abs
+      path>'
+  - run: hook pretool --harness codex < edit payload; pty allow-once <id> typing allow-once
+      <id>
+    exit: 0
+    expect: prompt names the file; first retry allowed, second denied
+    observed: 'before prompt line: edit; after: edit <abs path>; retry1 empty output
+      exit 0; retry2 deny with new id'
+  - run: polispec status nope --json
+    exit: 1
+    expect: JSON error
+    observed: 'before: plain text; after: JSON ok:false error.code unknown_project'
+  - run: polispec behavior decide behavior.yml tool.use facts-allow.json
+    exit: 0
+    expect: 'missing_facts: []'
+    observed: 'before: [ blank ]; after: []'
+  - run: pty pause shop typed wrong
+    exit: 1
+    expect: confirmation_failed prefix
+    observed: 'after: polispec: confirmation_failed: the typed phrase did not match;
+      nothing was done; no tty: polispec: not_tty: ...'
+  evidence:
+  - path: hook.jsonl
+    sha256: c5fbf794468ecffaba1c489d9ddeb4713768cd800417437c9b24a0ebaaafd0ec
+    bytes: 3454
+    kind: events
+  - path: haiku2.jsonl
+    sha256: e8194b3144cb7ff158ebb46648c90786a38d93dc998ec1cedd94fb94a8819e14
+    bytes: 25692
+    kind: transcript
+  - path: codex1.out
+    sha256: 499e1d92ce9187b5d1f8ca4d6e5a41fbe11f6d9d9778e79a8ed797b83cbf38b1
+    bytes: 468
+    kind: file
+  - path: hook.jsonl
+    sha256: 85ff26a92b4eaf8966f6d7572e77d520a1aa4835a17471ecbb9aaa192981a275
+    bytes: 3593
+    kind: events
+  - path: haiku2.jsonl
+    sha256: dfcf4dc76a20a010ec8fef79c6affa81d590a189131ce2eef1656ff69cca04fc
+    bytes: 27080
+    kind: transcript
+  - path: codex1.out
+    sha256: 11481a74f194322e4dc8520ac4ca639ca895fb3b8c1ef8da8f767707e4d795e0
+    bytes: 615
+    kind: file
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: haiku
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.4
+      edition: standard
+      commit: 8bb4092f4ebb9d840fa3475fa53fa24f3b2e730e
+      dirty: false
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 8bb4092f4ebb9d840fa3475fa53fa24f3b2e730e
+    branch: fix/b4
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: a3bc62a8f43c6d8068a0caed7a90757dcde3b296c257ab0e7ab95d1eb74a2e6d
+  digest: 9496ed3ceee018963b2e47899b65df8ed7642e7c315dcb9e50121d22d0b4888f
+- id: smk_c00652249d4e
+  recorded_at: '2026-10-14T03:24:46Z'
+  started_at: '2026-10-14T03:15:00Z'
+  finished_at: '2026-10-14T03:22:02Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/pause, allow-once
+    spec_digest: '072492eec59d45871a97a4715828bd6da7b54c4e1ccd6eae3771b1169487021e'
+    at_digest: b2ac0430b9d6206a3fcc5fcf5e310759b4f9e5f1302981203c15fcc2898e9acb
+  verdict: pass
+  summary: 'fix4-operator-ux: After the fix the allow-once prompt and stored raw name
+    the tool and absolute path (edit <path>); redeemed through a pty with the typed
+    phrase the matching Edit is allowed once then re-denied; pause and allow-once
+    refusals use not_tty and confirmation_failed.'
+  steps:
+  - run: Haiku Edit specs/polispec/policy.yml via claude harness (hook.jsonl)
+    exit: 0
+    expect: ask naming the file
+    observed: 'before: reason ends policy.edit: edit; after: policy.edit: edit <abs
+      path>'
+  - run: hook pretool --harness codex < edit payload; pty allow-once <id> typing allow-once
+      <id>
+    exit: 0
+    expect: prompt names the file; first retry allowed, second denied
+    observed: 'before prompt line: edit; after: edit <abs path>; retry1 empty output
+      exit 0; retry2 deny with new id'
+  - run: polispec status nope --json
+    exit: 1
+    expect: JSON error
+    observed: 'before: plain text; after: JSON ok:false error.code unknown_project'
+  - run: polispec behavior decide behavior.yml tool.use facts-allow.json
+    exit: 0
+    expect: 'missing_facts: []'
+    observed: 'before: [ blank ]; after: []'
+  - run: pty pause shop typed wrong
+    exit: 1
+    expect: confirmation_failed prefix
+    observed: 'after: polispec: confirmation_failed: the typed phrase did not match;
+      nothing was done; no tty: polispec: not_tty: ...'
+  evidence:
+  - path: hook.jsonl
+    sha256: c5fbf794468ecffaba1c489d9ddeb4713768cd800417437c9b24a0ebaaafd0ec
+    bytes: 3454
+    kind: events
+  - path: haiku2.jsonl
+    sha256: e8194b3144cb7ff158ebb46648c90786a38d93dc998ec1cedd94fb94a8819e14
+    bytes: 25692
+    kind: transcript
+  - path: codex1.out
+    sha256: 499e1d92ce9187b5d1f8ca4d6e5a41fbe11f6d9d9778e79a8ed797b83cbf38b1
+    bytes: 468
+    kind: file
+  - path: hook.jsonl
+    sha256: 85ff26a92b4eaf8966f6d7572e77d520a1aa4835a17471ecbb9aaa192981a275
+    bytes: 3593
+    kind: events
+  - path: haiku2.jsonl
+    sha256: dfcf4dc76a20a010ec8fef79c6affa81d590a189131ce2eef1656ff69cca04fc
+    bytes: 27080
+    kind: transcript
+  - path: codex1.out
+    sha256: 11481a74f194322e4dc8520ac4ca639ca895fb3b8c1ef8da8f767707e4d795e0
+    bytes: 615
+    kind: file
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: haiku
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.4
+      edition: standard
+      commit: 8bb4092f4ebb9d840fa3475fa53fa24f3b2e730e
+      dirty: true
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 8bb4092f4ebb9d840fa3475fa53fa24f3b2e730e
+    branch: fix/b4
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: 9496ed3ceee018963b2e47899b65df8ed7642e7c315dcb9e50121d22d0b4888f
+  digest: 0c4e5431ed0b2b92026640821c52d037c96c99a93e2c37a7e00a3113da9f053f
+- id: smk_0f857cad6d68
+  recorded_at: '2026-10-14T03:24:46Z'
+  started_at: '2026-10-14T03:15:00Z'
+  finished_at: '2026-10-14T03:22:02Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/status, digest, doctor
+    spec_digest: '072492eec59d45871a97a4715828bd6da7b54c4e1ccd6eae3771b1169487021e'
+    at_digest: 0c706b6832bb5eeb8dfc9c8d10d822ef04b541b54fbac44ab8756302ab8e0aeb
+  verdict: pass
+  summary: 'fix4-operator-ux: status nope --json now prints {ok:false,error:{code:unknown_project,...}}
+    and exits 1.'
+  steps:
+  - run: Haiku Edit specs/polispec/policy.yml via claude harness (hook.jsonl)
+    exit: 0
+    expect: ask naming the file
+    observed: 'before: reason ends policy.edit: edit; after: policy.edit: edit <abs
+      path>'
+  - run: hook pretool --harness codex < edit payload; pty allow-once <id> typing allow-once
+      <id>
+    exit: 0
+    expect: prompt names the file; first retry allowed, second denied
+    observed: 'before prompt line: edit; after: edit <abs path>; retry1 empty output
+      exit 0; retry2 deny with new id'
+  - run: polispec status nope --json
+    exit: 1
+    expect: JSON error
+    observed: 'before: plain text; after: JSON ok:false error.code unknown_project'
+  - run: polispec behavior decide behavior.yml tool.use facts-allow.json
+    exit: 0
+    expect: 'missing_facts: []'
+    observed: 'before: [ blank ]; after: []'
+  - run: pty pause shop typed wrong
+    exit: 1
+    expect: confirmation_failed prefix
+    observed: 'after: polispec: confirmation_failed: the typed phrase did not match;
+      nothing was done; no tty: polispec: not_tty: ...'
+  evidence:
+  - path: hook.jsonl
+    sha256: c5fbf794468ecffaba1c489d9ddeb4713768cd800417437c9b24a0ebaaafd0ec
+    bytes: 3454
+    kind: events
+  - path: haiku2.jsonl
+    sha256: e8194b3144cb7ff158ebb46648c90786a38d93dc998ec1cedd94fb94a8819e14
+    bytes: 25692
+    kind: transcript
+  - path: codex1.out
+    sha256: 499e1d92ce9187b5d1f8ca4d6e5a41fbe11f6d9d9778e79a8ed797b83cbf38b1
+    bytes: 468
+    kind: file
+  - path: hook.jsonl
+    sha256: 85ff26a92b4eaf8966f6d7572e77d520a1aa4835a17471ecbb9aaa192981a275
+    bytes: 3593
+    kind: events
+  - path: haiku2.jsonl
+    sha256: dfcf4dc76a20a010ec8fef79c6affa81d590a189131ce2eef1656ff69cca04fc
+    bytes: 27080
+    kind: transcript
+  - path: codex1.out
+    sha256: 11481a74f194322e4dc8520ac4ca639ca895fb3b8c1ef8da8f767707e4d795e0
+    bytes: 615
+    kind: file
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: haiku
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.4
+      edition: standard
+      commit: 8bb4092f4ebb9d840fa3475fa53fa24f3b2e730e
+      dirty: true
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 8bb4092f4ebb9d840fa3475fa53fa24f3b2e730e
+    branch: fix/b4
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: 0c4e5431ed0b2b92026640821c52d037c96c99a93e2c37a7e00a3113da9f053f
+  digest: 75e66850843fe6cd5ef7c406f23d356447f1fe0a6d0fbb274fdb5676931c3e73
