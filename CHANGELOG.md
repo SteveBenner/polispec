@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-10-13
+
+### Added
+
+- `polispec onboard --commit`: after rendering (step `4b_commit`) onboard stages by name and commits only the files it wrote on main as `Add the polispec scaffold`, so `5_branches` creates test and stable in the same run; with `--push` it pushes main, test and stable. Skipped with a note when HEAD is not main; `--dry-run` previews the commit and the branches. Without `--commit` the output is unchanged (`lib/polispec/commands/onboard.rb`, `docs/environments.md`, `README.md`, `skills/polispec/SKILL.md`).
+
+### Changed
+
+- The service archetype's placeholder `deploy.health.run` is the shell-free nonexistent command `polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml`; `deploy` records `health_failed` (run exited 127) naming it until the operator writes a real check (`templates/onboard/service/environments.yml`).
+- Repointing the `specs` link needs the typed phrase `relink <full target path>`, the absolute `<repo>/specs` path shown in the prompt, instead of `relink specs`. `specs` refusals report `not_tty` and `confirmation_failed` like the other operator commands (`lib/polispec/code/admin.rb`, `lib/polispec/commands/specs.rb`, `docs/code-specs.md`).
+- `harness scan` exits 1 instead of 3 when the environment scan cannot run (`lib/polispec/commands/harness.rb`, `docs/harness-controls.md`).
+
+### Fixed
+
+- The harness-controls target resolver raised `committed policy is unavailable` for a live project without a committed policy at its trust ref; the fallback policy (global `fallback_rules`, else ledger `defaults.rules`) now governs, as it does for the guard since 0.18.5 (`lib/polispec/commands/hook.rb`).
+- `harness uninstall --dry-run --owner` needed root. A non-root dry run now previews from what the current uid can read, writes nothing, and reports each owner check it could not perform as `owner_check_unverified`; root and real uninstalls are unchanged (`lib/polispec/harness_controls/lifecycle.rb`).
+
 ## [0.18.7] - 2026-10-13
 
 ### Fixed
