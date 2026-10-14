@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.4] - 2026-10-13
+
+### Fixed
+
+- `allow-once` prompts and stored grants named only the tool (`edit`) for a file-tool call, so the operator could not see which file a grant unlocks. The raw action text of a file-tool call is now the tool and its absolute target (`edit /abs/path`), in the prompt, the stored grant and the deny and ask reasons (`lib/polispec/classify/tool.rb`, `lib/polispec/commands/allow_once.rb`).
+- `polispec status <unknown> --json` printed plain text; it now prints a JSON `unknown_project` error and exits 1 (`lib/polispec/commands/status.rb`).
+- `polispec behavior decide` rendered empty arrays as `[`, a blank line and `]`; empty arrays and maps now render as `[]` and `{}` (`lib/polispec/commands/behavior.rb`).
+- `pause` and `allow-once` report `not_tty` and `confirmation_failed` like `promote` (`lib/polispec/commands/pause.rb`, `allow_once.rb`).
+- `docs/operator.md` lists `tag_unsupported` and describes the allow-once prompt.
+
 ## [0.18.3] - 2026-10-13
 
 ### Fixed
