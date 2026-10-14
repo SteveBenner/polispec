@@ -135,6 +135,8 @@ module Polispec
       raise Polispec::Error, "unknown harness backend #{harness}" if harness && !HarnessControls::Backends.names.include?(harness)
       result = HarnessControls::Lifecycle.scan({ "requested_edition" => HarnessControls::Lifecycle.edition })
       result["harness"] = harness if harness
+      failed = Array(result["findings"]).find { |row| row.is_a?(Hash) && row["code"] == "environment_scan_failed" }
+      raise HarnessControls::Lifecycle::Failure.new("environment_scan_failed", failed["detail"], exit_status: 3, data: result, findings: result["findings"]) if failed
       result
     end
 

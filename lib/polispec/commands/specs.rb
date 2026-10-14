@@ -6,7 +6,7 @@ require_relative "../code/core"
 module Polispec
   module Commands
     class SpecsCommand
-      USAGE = "usage: polispec specs link|status|promote [--repo DIR] [--json]".freeze
+      USAGE = "usage: polispec specs link|status|promote [--repo DIR] [--dry-run] [--json]".freeze
 
       def self.run(args)
         new.run(args)
@@ -16,11 +16,13 @@ module Polispec
         args = args.dup
         verb = args.shift
         json = args.delete("--json")
+        dry_run = !args.delete("--dry-run").nil?
         index = args.index("--repo")
         repo = index ? File.expand_path(args[index + 1].to_s) : Code::Paths.specs_repo
         return usage unless %w[link status promote].include?(verb)
+        return usage if dry_run && verb != "link"
 
-        result = Code::Admin.public_send(verb, repo)
+        result = verb == "link" ? Code::Admin.link(repo, dry_run: dry_run) : Code::Admin.public_send(verb, repo)
         json ? puts(JSON.generate(result)) : print_text(verb, result)
         0
       rescue Operator::Tty::NotTty, Operator::Tty::PhraseMismatch, Code::Error => e
@@ -38,7 +40,9 @@ module Polispec
       def print_text(verb, result)
         case verb
         when "link"
-          puts "#{result['link']} -> #{result['target']}#{result['changed'] ? '' : ' (already linked)'}"
+          note = result["changed"] ? "" : " (already linked)"
+          note = " (dry run: would #{result['replaces'] ? "replace #{result['replaces']}, needs a terminal and the typed phrase" : 'create the link'})" if result["dry_run"]
+          puts "#{result['link']} -> #{result['target']}#{note}"
         when "status"
           puts "repo #{result['repo']}"
           puts "link #{result['link']} #{result['linked'] ? 'ok' : 'not linked'}"

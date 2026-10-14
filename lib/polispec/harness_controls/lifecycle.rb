@@ -152,7 +152,7 @@ module Polispec
           end
         end
         raise Failure.new("owner_required", "scope, project, and state_home require an explicit owner", exit_status: 3) if selectors.any?
-        identity = operator_identity!("harness.uninstall")
+        identity = dry_run ? nil : operator_identity!("harness.uninstall")
         state = state_adapter(true, identity, nil, read_only: dry_run)
         uninstall_from_state(installation_id, state, schedule_port_set, identity, dry_run, nil, {})
       end
@@ -877,6 +877,8 @@ module Polispec
       def load_plane_implementation
         path = File.join(LIB, "harness_controls", "plane.rb")
         require path if File.file?(path)
+        records = File.join(LIB, "harness_controls", "operator_records.rb")
+        require records if File.file?(records)
       end
       private_class_method :load_plane_implementation
 

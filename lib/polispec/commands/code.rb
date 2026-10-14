@@ -253,6 +253,7 @@ module Polispec
           else
             raise Code::Error, "#{target} is neither a policy id, a spec path nor a file"
           end
+        raise Code::Error, "#{target} defines no policy rules in this pack; classify takes a policy id, a spec path or a spec.yml file" if rules.empty?
         raise Code::Error, "the decide port is unavailable; classification needs it" unless Code::Decide.available?
 
         rules.each do |rule|

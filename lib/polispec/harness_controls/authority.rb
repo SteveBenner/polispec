@@ -652,7 +652,7 @@ module Polispec
       def parse_yaml(bytes, name)
         value = YAML.safe_load(bytes, permitted_classes: [Date, Time], aliases: false)
         raise Failure.new("invalid_bundle", "#{name} must contain a mapping") unless value.is_a?(Hash)
-        value
+        Schema::Document.normalize(value)
       rescue Psych::Exception => error
         raise Failure.new("invalid_bundle", "#{name} is invalid YAML: #{error.message}")
       end
