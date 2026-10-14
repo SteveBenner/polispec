@@ -86,6 +86,10 @@ module Polispec
       @options.dry ? "would" : done
     end
 
+    def tense(past, plan)
+      @options.dry ? plan : past
+    end
+
     def perform
       @root = repo_root
       @manifest = manifest_path
@@ -104,6 +108,7 @@ module Polispec
       @git = Operator::Git.new(@root)
       @rendered = render_templates
       validate_rendered
+      @ledger_update = ledger_plan
       scaffold
       manifest_step
       ledger_step
@@ -215,8 +220,8 @@ module Polispec
         atomic_write(path, text)
       end
       parts = []
-      parts << "wrote #{written.join(', ')}" unless written.empty?
-      parts << "kept #{kept.join(', ')}" unless kept.empty?
+      parts << "#{tense('wrote', 'write')} #{written.join(', ')}" unless written.empty?
+      parts << (written.empty? ? "#{kept.join(', ')} already present" : "kept #{kept.join(', ')}") unless kept.empty?
       note("1_scaffold", written.empty? ? "kept" : would("done"), parts.join("; "))
     end
 
@@ -266,7 +271,7 @@ module Polispec
       return note("2_manifest", "skipped", "#{File.basename(@manifest)} would not parse after the pointer is added; not written") unless parsed.is_a?(Hash)
 
       atomic_write(@manifest, updated, File.stat(@manifest).mode & 0o777) unless @options.dry
-      note("2_manifest", would("done"), "pointer appended to #{File.basename(@manifest)}")
+      note("2_manifest", would("done"), @options.dry ? "append pointer to #{File.basename(@manifest)}" : "pointer appended to #{File.basename(@manifest)}")
     rescue Schema::Document::ParseError
       note("2_manifest", "skipped", "#{File.basename(@manifest)} would not parse after the pointer is added; not written")
     end
@@ -310,7 +315,7 @@ module Polispec
       (lines[0..last] + entry.map { |line| "#{line}\n" } + lines[(last + 1)..]).join
     end
 
-    def ledger_step
+    def ledger_plan
       path = @ledger.path
       raise Operator::Failure.new("ledger_missing", "no ledger at #{path}; create it before onboarding") unless File.file?(path)
 
@@ -320,14 +325,19 @@ module Polispec
       errors = Schema.validate("ledger", data)
       raise Operator::Failure.new("ledger_invalid", "the ledger with the new entry does not validate", "problems" => errors.map { |error| "#{error.pointer} #{error.message}".strip }) unless errors.empty?
 
+      updated
+    rescue Schema::Document::ParseError => e
+      raise Operator::Failure.new("ledger_invalid", e.message)
+    end
+
+    def ledger_step
+      path = @ledger.path
       unless @options.dry
         backup = File.join(File.dirname(path), "#{File.basename(path)}.bak-#{Time.now.utc.strftime('%Y%m%d%H%M%S')}")
         FileUtils.cp(path, backup, preserve: true)
-        atomic_write(path, updated, File.stat(path).mode & 0o777)
+        atomic_write(path, @ledger_update, File.stat(path).mode & 0o777)
       end
-      note("3_ledger", would("done"), "#{@id} added to #{path} with status onboarding")
-    rescue Schema::Document::ParseError => e
-      raise Operator::Failure.new("ledger_invalid", e.message)
+      note("3_ledger", would("done"), @options.dry ? "add #{@id} to #{path} with status onboarding" : "#{@id} added to #{path} with status onboarding")
     end
 
     def render_step
@@ -342,7 +352,7 @@ module Polispec
       files = AgentsRender.plan(@root, rendered)
       files.each { |file| AgentsRender.apply(file) } unless @options.dry
       changed = files.select { |file| file[:changed] }.map { |file| file[:path].sub("#{@root}/", "") }
-      note("4_render", changed.empty? ? "kept" : would("done"), changed.empty? ? "[ENVS] row and envs.md already current" : "rendered #{changed.join(', ')}")
+      note("4_render", changed.empty? ? "kept" : would("done"), changed.empty? ? "[ENVS] row and envs.md already current" : "#{tense('rendered', 'render')} #{changed.join(', ')}")
     rescue Polispec::Error => e
       raise Operator::Failure.new("render_failed", e.message)
     end
@@ -355,12 +365,24 @@ module Polispec
         return
       end
 
+      unless scaffold_on_main?
+        note("5_branches", "skipped", "the scaffold is not committed on main, so #{test_branch} and #{trust} are not created yet; run: #{commit_command} && git -C #{Shellwords.escape(@root)} branch #{test_branch} main && git -C #{Shellwords.escape(@root)} branch #{trust} main && git -C #{Shellwords.escape(@root)} push origin main #{test_branch} #{trust}")
+        return
+      end
       created = [test_branch, trust].reject { |name| @git.rev("refs/heads/#{name}") }
       created.each { |name| @git.run!("branch", name, "main") } unless @options.dry
-      detail = created.empty? ? "#{test_branch} and #{trust} already exist" : "created #{created.join(' and ')} at main"
+      detail = created.empty? ? "#{test_branch} and #{trust} already exist" : "#{tense('created', 'create')} #{created.join(' and ')} at main"
       status, tail = push_outcome(test_branch, trust)
       done = status == "done" || !created.empty?
       note("5_branches", @options.dry ? "would" : (done ? "done" : "kept"), "#{detail}; #{tail}")
+    end
+
+    def scaffold_on_main?
+      [POLICY_FILE, ENVIRONMENTS_FILE, ROSTER_FILE].all? { |relative| @git.run("cat-file", "-e", "refs/heads/main:#{relative}").ok? }
+    end
+
+    def commit_command
+      "git -C #{Shellwords.escape(@root)} add specs AGENTS.md .agents && git -C #{Shellwords.escape(@root)} commit -m 'Add the polispec scaffold'"
     end
 
     def push_outcome(test_branch, trust)
