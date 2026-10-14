@@ -1,62 +1,164 @@
 schema: polispec.harness-capabilities/v1
 harnesses:
-  - harness: claude-code
-    surface: cli
-    platform: linux
-    minimum_version: unknown
-    events: unknown
-    native_paths: unknown
-    output_protocol: unknown
-    failure_behavior: unknown
-    config_scope: unknown
-    mutability: unknown
-    coverage_axes: [unknown]
-    sources: [https://code.claude.com/docs/en/hooks]
-  - harness: codex
-    surface: cli
-    platform: linux
-    minimum_version: unknown
-    events: unknown
-    native_paths: unknown
-    output_protocol: unknown
-    failure_behavior: unknown
-    config_scope: unknown
-    mutability: unknown
-    coverage_axes: [unknown]
-    sources: [https://learn.chatgpt.com/docs/hooks, https://learn.chatgpt.com/docs/enterprise/managed-configuration, https://learn.chatgpt.com/docs/permissions]
-  - harness: hermes
-    surface: cli
-    platform: linux
-    minimum_version: unknown
-    events: unknown
-    native_paths: unknown
-    output_protocol: unknown
-    failure_behavior: unknown
-    config_scope: unknown
-    mutability: unknown
-    coverage_axes: [unknown]
-    sources: [https://github.com/NousResearch/hermes-agent]
-  - harness: antigravity
-    surface: cli
-    platform: linux
-    minimum_version: unknown
-    events: unknown
-    native_paths: unknown
-    output_protocol: unknown
-    failure_behavior: unknown
-    config_scope: unknown
-    mutability: unknown
-    coverage_axes: [unknown]
-    sources: [https://antigravity.google/docs/hooks]
-  - harness: os
-    surface: sandbox
-    platform: linux
-    minimum_version: unknown
-    events: unknown
-    native_paths: unknown
-    output_protocol: unknown
-    failure_behavior: unknown
-    config_scope: unknown
-    mutability: unknown
-    coverage_axes: [unknown]
-    sources: []
+- harness: claude-code
+  surface: cli
+  platform: linux
+  minimum_version:
+    failure_closed_callback: 2.1.295
+    sandbox_settings: 2.1.285
+  events:
+  - PreToolUse
+  native_paths:
+    project:
+    - PROJECT/.claude/settings.json
+    user:
+    - HOME/.claude/settings.json
+    managed:
+    - /etc/claude-code/managed-settings.d/90-polispec.json
+  output_protocol: 'hookSpecificOutput.permissionDecision: allow, ask, or deny'
+  failure_behavior: onFailure:block emitted for supported versions; native error/timeout
+    enforcement unverified
+  config_scope:
+  - project
+  - user
+  - managed
+  mutability: User/project files are same-user mutable; managed ownership is independently
+    verified
+  coverage_axes:
+  - callback.generated
+  - configuration.parser_accepted
+  - native_denial.unverified
+  - sandbox_bash_only
+  - standard_open_network.unsupported
+  sources:
+  - https://code.claude.com/docs/en/hooks
+  observed_version: 2.1.296
+  lock_certified: false
+- harness: codex
+  surface: cli
+  platform: linux
+  minimum_version: unknown
+  events:
+  - PreToolUse
+  native_paths:
+    project:
+    - PROJECT/.codex/config.toml
+    - PROJECT/.codex/rules/polispec.rules
+    user:
+    - HOME/.codex/config.toml
+    - HOME/.codex/rules/polispec.rules
+    managed:
+    - /etc/codex/requirements.toml
+  output_protocol: 'hookSpecificOutput.permissionDecision: deny; warnings also deny
+    because no native ask is claimed'
+  failure_behavior: Callback errors and timeouts can fail open; hook trust required
+  config_scope:
+  - project
+  - user
+  - managed
+  mutability: Same-user paths and nested invocation flags are not an independent authority
+  coverage_axes:
+  - callback.generated
+  - configuration.parser_accepted
+  - direct_yolo_rule.observed
+  - filesystem.generated
+  - network.generated
+  - hosted_tools.unverified
+  - nested_execution.unverified
+  sources:
+  - https://learn.chatgpt.com/docs/hooks
+  - https://learn.chatgpt.com/docs/enterprise/managed-configuration
+  - https://learn.chatgpt.com/docs/permissions
+  observed_version: 0.162.1
+  lock_certified: false
+- harness: hermes
+  surface: cli
+  platform: linux
+  minimum_version: unknown
+  events:
+  - pre_tool_call
+  native_paths:
+    project:
+    - HOME/.hermes/config.yaml
+    user:
+    - HOME/.hermes/config.yaml
+    managed:
+    - /etc/hermes/config.yaml
+  output_protocol: action:block and message, exit 2; action:approve requests native
+    consent and is not auto-consent
+  failure_behavior: fail_closed configured; runtime and consent behavior unverified
+  config_scope:
+  - user
+  - project_via_profile_global_callback
+  - managed_unverified
+  mutability: Project hooks are profile-global and include an absolute project boundary
+  coverage_axes:
+  - callback.generated
+  - consent.unverified
+  - filesystem_native.unsupported
+  - network_native.unsupported
+  - process_boundary.unverified
+  sources:
+  - https://github.com/NousResearch/hermes-agent
+  observed_version: unavailable
+  lock_certified: false
+- harness: antigravity
+  surface: cli
+  platform: linux
+  minimum_version: unknown
+  events:
+  - PreToolUse
+  native_paths:
+    project:
+    - PROJECT/.agents/hooks.json
+    user:
+    - HOME/.gemini/config/hooks.json
+    - HOME/.gemini/antigravity-cli/settings.json
+    managed_staging:
+    - /etc/polispec/harness/antigravity/hooks.json
+    - /etc/polispec/harness/antigravity/settings.json
+  output_protocol: 'decision: allow, deny, or ask; optional reason for agy CLI'
+  failure_behavior: Native callback failure behavior unverified; GUI directive-only
+  config_scope:
+  - project
+  - user
+  - managed_staging_not_native_scope
+  mutability: Protected staging does not establish native managed configuration
+  coverage_axes:
+  - cli_callback.generated
+  - cli_network.limited
+  - gui.directive_only
+  - managed_scope.unsupported
+  - lock.unsupported
+  sources:
+  - https://antigravity.google/docs/hooks
+  observed_version: unavailable
+  lock_certified: false
+- harness: os
+  surface: sandbox
+  platform: linux
+  minimum_version: unknown
+  events:
+  - process_launch
+  native_paths:
+  - SCOPE/.polispec/harness/os/sandbox.json
+  output_protocol: Bounded argv execution with explicit native probe result
+  failure_behavior: 'Actual namespace startup refused on this host: user_namespaces_unavailable'
+  config_scope:
+  - project
+  - user
+  - managed
+  mutability: A generated launch plan requires an independently protected caller
+  coverage_axes:
+  - executable.observed
+  - filesystem.generated
+  - standard_network.shared
+  - lock_network.empty_allowlist
+  - namespace_startup.unavailable
+  sources: []
+  observed_version: bubblewrap 0.11.1
+  lock_certified: false
+recorded: '2026-10-13'
+evidence_scope: Generated artifacts, installed parser/version observations, scratch
+  CLI operation, and explicit missing native prerequisites. No lock certification
+  or root-owned host installation.

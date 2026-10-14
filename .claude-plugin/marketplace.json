@@ -3,13 +3,13 @@
   "owner": {
     "name": "polispec"
   },
-  "description": "Spec-based policy guardrails for agentic development and operations: a versioned policy per live project, enforced from its stable ref in every harness.",
+  "description": "Spec-based policy guardrails for agentic development and operations: committed environment policies and deterministic harness controls, with explicit backend capabilities and enforcement limits.",
   "plugins": [
     {
       "name": "polispec",
       "source": "./",
-      "description": "Spec-based policy guardrails for agentic development and operations: a versioned policy per live project, enforced from its stable ref in every harness.",
-      "version": "0.17.1"
+      "description": "Spec-based policy guardrails for agentic development and operations: committed environment policies and deterministic harness controls, with explicit backend capabilities and enforcement limits.",
+      "version": "0.18.0"
     }
   ]
 }

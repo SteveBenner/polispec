@@ -182,13 +182,14 @@ module Polispec
 
     def check_lock_provenance(head)
       lock = required_ref("refs/heads/polispec-lock")
-      main = required_ref("refs/heads/main")
       raise GitFailure, "invalid: lock HEAD differs from local polispec-lock" unless lock == head
       fields = git!("rev-list", "--parents", "-n", "1", head).stdout.split
-      raise GitFailure, "invalid: lock commit must have exactly one parent" unless fields == [head, main]
-      committed_edition!(main, "standard")
-      changed = git!("diff-tree", "--no-commit-id", "--name-only", "-r", "-z", main, head).stdout.split("\0").reject(&:empty?)
-      raise GitFailure, "invalid: lock commit tree differs from main by more than EDITION" unless changed == ["EDITION"]
+      valid_parent = fields.length == 2 && fields.all? { |oid| oid.match?(OID) } && fields[0] == head
+      raise GitFailure, "invalid: lock commit must have exactly one parent" unless valid_parent
+      parent = fields[1]
+      committed_edition!(parent, "standard")
+      changed = git!("diff-tree", "--no-commit-id", "--name-only", "-r", "-z", parent, head).stdout.split("\0").reject(&:empty?)
+      raise GitFailure, "invalid: lock commit tree differs from its parent by more than EDITION" unless changed == ["EDITION"]
     end
 
     def committed_edition!(commit, expected)

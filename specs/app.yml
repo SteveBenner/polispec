@@ -1,43 +1,51 @@
 schema_version: 1
 name: polispec
-version: 0.17.1
+version: 0.18.0
 kind: plugin
 purpose: "Spec-based policy guardrails for agentic development and operations. Every live project carries a versioned policy and, beside it, an environment manifest (main, test, stable), both read from the trust ref; the policy declares what agents may do in each environment, how code is promoted, what data and secrets each environment may hold, when it is frozen, and which harness, model and effort each agent role gets."
 ports:
   required: [state, events]
-  optional: [schedule, notify, registry]
+  optional: [schedule, notify, registry, decide]
 setting:
   polispec.enforce: "advise logs every verdict and never blocks; enforce applies allow, warn and deny. Default advise."
-  polispec.ledger: "Path of the host's ledger of governed projects. POLISPEC_LEDGER overrides it. Default ~/.config/polispec/ledger.yml (under XDG_CONFIG_HOME when set)."
+  polispec.ledger: "Path of the host's ledger of governed projects. POLISPEC_LEDGER overrides it only while unsealed; sealed authority selects the protected ledger. Default ~/.config/polispec/ledger.yml (under XDG_CONFIG_HOME when set)."
   polispec.operator: "How deny and next-step messages name the person who promotes to stable and redeems allow-once. Default: the operator."
-  polispec.code.specs_repo: "Path of the code specs repository. POLISPEC_SPECS_REPO overrides it. Default ~/polispec-specs."
+  polispec.code.specs_repo: "Path of the code specs repository. POLISPEC_SPECS_REPO overrides it only while unsealed. Default ~/polispec-specs."
+  polispec.edition: "Requested edition standard or lock; default standard. EDITION lock cannot be downgraded through a mutable setting. Certification requires observed enforcement evidence."
+  polispec.root_guard: "Initially false; a distinct follow-up exposure record can arm it. Lock refusal on root-equivalent or unknown exposure forces the guard."
 harnesses:
   claude-code: "supported: the host wires the guard hook; see docs/operator.md"
   codex: "supported: the host wires the guard hook; see docs/operator.md; warn becomes deny with an allow-once id"
-  hermes: "supported where rplugin renders a pre-tool hook"
-  pi: "supported where rplugin renders a pre-tool hook"
-  deepseek-tui: "supported where rplugin renders a pre-tool hook"
-  antigravity: "supported where rplugin renders a pre-tool hook, otherwise the POLISPEC rules text"
+  hermes: "native pre_tool_call backend; runtime and consent unverified on the release host"
+  pi: "skills-only; no native control backend"
+  deepseek-tui: "skills-only; no native control backend"
+  antigravity: "rplugin integration is skills-only. Separate explicit polispec installation generates agy CLI artifacts and protocol; native runtime unverified, GUI directive-only, lock unsupported."
+  os: "sandbox planning; Bubblewrap namespace launch unavailable on the release host"
 schemas:
+  control: { id: polispec.control/v1, file: schemas/control.v1.yml, runtime: "Deterministic controls composed as an independent severity ceiling; mutable overlays may tighten only." }
   policy: { id: polispec.policy/v1, file: schemas/policy.v1.yml, path_in_project: specs/polispec/policy.yml }
   roster: { id: polispec.roster/v1, file: schemas/roster.v1.yml, path_in_project: specs/polispec/roster.yml }
   behavior: { id: polispec.behavior/v1, file: schemas/behavior.v1.yml, runtime: "Compiled data consumed by an application-owned adapter; authority comes from the release or authenticated package, never this declaration." }
   environments: { id: polispec.environments/v1, file: schemas/environments.v1.yml, path_in_project: specs/polispec/environments.yml, note: "Read from the trust ref beside policy.yml and merged into it; the file wins over an inline policy environments block (finding environments_duplicate). Only the fields policy.v1 knows go to the engine; audience, exposure, host, operators, rollback, pii_spec, freezes and notes feed the [ENVS] render. A project's serves flag lives in its component manifest, not here." }
-  ledger: { id: polispec.ledger/v1, file: schemas/ledger.v1.yml, path: "resolved from POLISPEC_LEDGER, then the polispec.ledger setting, then ~/.config/polispec/ledger.yml" }
+  ledger: { id: polispec.ledger/v1, file: schemas/ledger.v1.yml, path: "Unsealed: POLISPEC_LEDGER, then polispec.ledger, then ~/.config/polispec/ledger.yml. Sealed: verified protected authority selects the ledger." }
 commands:
   - { name: behavior, status: built, usage: "polispec behavior compile FILE | decide FILE EVENT FACTS.json" }
-  - { name: validate, status: built, usage: "polispec validate <policy|environments|roster|ledger|global|module|profiles|behavior|auto> <file> [--json]", note: "validate policy merges a sibling environments.yml when the policy has no environments block" }
+  - { name: validate, status: built, usage: "polispec validate <policy|environments|roster|ledger|global|module|profiles|behavior|control|auto> <file> [--json]", note: "validate policy merges a sibling environments.yml when the policy has no environments block" }
   - { name: onboard, status: built, usage: "polispec onboard <repo> --serves real_users|internal|none [--archetype service|distributed] [--id ID] [--trust-ref REF] [--push] [--checkouts] [--dry-run] [--json]", note: "scaffolds specs/polispec environments, policy and roster from templates/onboard, appends serves: and a polispec: pointer to the component manifest (*.rstack_component.yml, else *.rplugin.yml), inserts a status onboarding ledger entry after a backup, renders [ENVS], creates local test and stable branches; --push and --checkouts are opt-in (impl environments FR-10)" }
   - { name: "agents render", status: built, usage: "polispec agents render <project|repo> [--from worktree|REF] [--check] [--json]", note: "writes .agents/directives/envs.md and upserts the AGENTS.md line keyed by the [ENVS] opcode; doctor reports agents_drift when the trust ref disagrees with a fresh render; edits to the row or envs.md classify as policy.edit (impl environments FR-5 to FR-8)" }
   - { name: "hook git", status: built, usage: "polispec hook git pre-commit|pre-push|reference-transaction | install|uninstall <project> dev|test|prod|all [--dry-run]", note: "judges git operations in a live project with the same rules and environment resolution as the harness guard; shims chain to the previous core.hooksPath; POLISPEC_OPERATOR=1, set by polispec's operator git, skips them; a seatbelt for processes outside a harness, not a security boundary (impl environments FR-9)" }
   - { name: version, status: built, usage: "polispec version" }
-  - { name: "hook pretool|session", status: planned }
+  - { name: "hook pretool|session", status: built, note: "Bounded native envelopes, separate session handling, independent control ceiling, and minimal failure denial; positive diagnostic reads remain available." }
   - { name: resolve, status: built, usage: "polispec resolve <path> [--layers] [--json]", note: "since 0.16.0 --layers prints the global, repo and child layer chain with each layer's digest and the effective digest; since 0.16.1 a path under the environment checkout root that names no environment, such as a release_dirs release or the shared bundle, resolves to prod, matching the engine" }
-  - { name: classify, status: planned }
+  - { name: classify, status: built }
   - { name: "promote, deploy", status: built, usage: "polispec promote <project> --to <env> [--waive-soak] [--dry-run] [--json] | polispec deploy <project> <env> [--tag vX.Y.Z] [--skip-drain]", note: "since 0.17.0 --waive-soak (operator only, typed phrase waive soak for <project>, refused for test and when no soaked gate applies) reports the soaked gate as waived and records waived: [soak] on the promotion and its event; while stable carries no policy, promote and test deploys bootstrap from the candidate branch's committed policy (impl FR-4b); gate, step and after commands run without a shell, with $HOME, ${HOME} and a leading ~ expanded in each word (impl FR-4c); `hermetic.<env>` isolates variables into scratch and fails a run that writes under a protected root (a command gate with `hermetic: false` runs outside it, recorded as `hermetic: false` in the promote result), `deploy.strategy: release_dirs` swaps a release symlink and rolls back on failed health, `deploy.drain` pauses, waits, checks and resumes queues in the active release, and `polispec deploy <project> stable --skip-drain` skips the drain (terminal plus phrase `skip drain for <project>`); a policy that deploys without health is refused" }
-  - { name: "pause, allow-once", status: planned }
-  - { name: "roster resolve|check", status: planned }
-  - { name: "status, digest, doctor", status: planned }
+  - { name: "pause, allow-once", status: built, note: "Unsealed terminal behavior retained; sealed authority authenticates the operator and consumes grants through the protected service." }
+  - { name: "roster resolve|check", status: built }
+  - { name: "status, digest, doctor", status: built }
+  - { name: harness, status: built, usage: "polispec harness grammar|parse|plan|install|verify|scan|uninstall", note: "Strict per-command options, dry-run for mutations, structured JSON results; docs/harness-controls.md." }
+  - { name: seal, status: built, usage: "polispec seal --from REPO@COMMIT | --source /etc/polispec/source [--dry-run] [--json]" }
+  - { name: plane, status: built, usage: "polispec plane status|verify|activate|rollback", note: "Activation and rollback require an authenticated protected operator; development does not activate live projects." }
+  - { name: authorizations, status: built, usage: "polispec authorizations status|unit|serve|recover", note: "Fixed local socket; unit renders without installing; request and consume have no remote redemption operation." }
 extension_points:
   commands: "lib/polispec/commands/*.rb is glob-loaded; a file calls Polispec::CLI.register(name, klass, summary:) and klass responds to run(args) returning an exit status, either as a class method or on a new instance."
   classifier: "lib/polispec/classify/commands/*.rb is glob-loaded; a file calls Polispec::Classify::Registry.register(family, klass) and klass responds to call(tool_name, tool_input, cwd) returning [Polispec::Action]."
@@ -71,3 +79,31 @@ deployment_receipts:
   verified: same nonempty record identity, sha, and tag; both health ok and pinned_behind false
   fail_closed: missing, malformed, legacy receipts without record identity, unchecked health, and newer failed attempts are unverified
   limits: evidence of the completed deployment health check, not continuous availability; consumers must match current stable ref and tag
+
+harness_controls:
+  release_activation: "0.18.0 ships harness_controls=false and sealed_plane=false by operator direction. Grammar, validation, planning, and read-only inspection remain available; new mutations remain gated. No host or project activation occurs."
+  contract: specs/harness-controls.impl.yml
+  schema: polispec.control/v1
+  result: polispec.harness.result/v1
+  capability_inventory: data/harness-capabilities.yml
+  edition: "main contains standard; polispec-lock differs only by EDITION lock. Each checkout operates independently; lock provenance uses its immutable parent without a local main ref. A lock executable refuses an active standard-plane mismatch. One authority plane per host; requested edition is distinct from certification."
+  translation: "The calling agent produces the deterministic grammar or YAML; control judgement uses no model."
+  ownership: "Native harness artifacts and the sealed authority plane are polispec-owned domain files. Back up before mutation; preserve foreign contributions. Service capabilities continue through Rplugin::Ports.for(polispec)."
+  authority: "Fixed /etc/polispec/active.json; valid root-owned provenance and pinned runtime/SDK. Invalid existing authority is broken, never an unsealed fallback. Standard seals an exact Git commit; lock reads root-authored /etc/polispec/source."
+  tightening: "Agents may add provably tightening user/project controls. Removal, managed scope, core changes, loosening, and uncertain comparisons require the authenticated operator."
+  judgement: "Environment policy keeps first-match order; controls independently cap severity. Explicit denials, protected targets, root guard, broken authority, and lock defaults cannot be redeemed."
+  input_bounds: { ir_bytes: 1048576, controls: 256, hook_bytes: 65536, hook_seconds: 10 }
+  unknowns: "Standard asks and lock denies undeclared MCP and unknown non-read calls in enforcing governed scope. Every MCP action needs a matching declaration in trusted policy or protected core; overlays cannot supply an allow declaration."
+  failure: "Non-read calls fail closed; only an entirely positive diagnostic-read envelope qualifies for the failure exception. Mixed, malformed, shell, MCP, web, and delegation calls do not."
+  overlays: "Effective installed receipts require authenticated transaction relationships, canonical targets, current owned contributions, and bounded state. Valid successor history may replace prior artifact bytes; unrelated supersession is refused."
+  exposure: "First root-equivalent exposure advises; a distinct continuing scan arms root_guard. Protected scans validate provenance and exact observations; corruption conservatively arms. Rootless is a separate observation."
+  events: "Lifecycle and authorization events use the plugin events port after state commits. Events carry identities and outcomes, never tool payloads or authority redirect values. Event failure cannot loosen a verdict."
+  native_evidence: "Release-host parser/version and isolated scratch evidence only. No native lock certification, paid model journey, root-owned host seal, host service installation, timer activation, or live-project activation."
+protected_authorizations:
+  socket: /run/polispec/authorizations.sock
+  kill_marker: /etc/polispec/authorizations.disabled
+  identity: "Client authenticates a root peer; server authenticates request UID from kernel peer credentials. Redemption is a local protected operator action."
+  binding: "Exact generation, project, canonical action, complete tagged ask set, trusted policy/control digests, actual harness/session, and requesting UID. One standard grant can resolve combined environment/control asks; independent denials remain binding."
+  consumption: "Durably record consumption before replying. Replay, concurrent consumers, changed authority, unavailable service, and lost replies never produce another grant."
+  bounds: { request_bytes: 16384, response_bytes: 32768, deadline_seconds: 2, ttl_seconds: 600, backlog: 8, inflight: 1, uid_requests_per_minute: 60, global_requests_per_minute: 300 }
+  deployment: "Built, not installed or started on the release host. Unit rendering and stale-socket recovery are explicit operator commands."

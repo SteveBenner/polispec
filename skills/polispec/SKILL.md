@@ -4,7 +4,7 @@ description: >
   Spec-based policy guardrails for live projects. Use when the user asks what an
   agent may do in a live project, which branch is production, how to promote
   main to test or test to stable, whether a policy file is valid, who may use
-  which model and effort, or to validate a policy, roster, ledger, or behavioral policy file, or migrate application directives and runtime guardrails.
+  which model and effort, or to validate a policy, roster, ledger, or behavioral policy file, migrate application directives and runtime guardrails, or plan and install tightening harness controls.
 ---
 
 # polispec
@@ -14,8 +14,9 @@ description: >
 - The user asks what is allowed in a live project, which branch is production, or why a command was denied or warned.
 - The user wants a policy, roster, ledger, or behavioral policy file checked.
 - The user asks how code moves from `main` to `test` to `stable`.
+- The user wants deterministic harness controls, a native installation preview, or an explanation of sealed authority and lock prerequisites.
 
-Moving `stable`, deploying production, pausing the guard and redeeming an allow-once id are operator actions. They need an interactive terminal and a typed phrase, so an agent never runs them: give the user the exact command instead.
+Moving `stable`, deploying production, pausing the guard, redeeming an allow-once ID, sealing, activating projects, and removing or loosening controls are operator actions. Give the operator the exact command. Sealed actions require authenticated privilege through the protected launcher; an interactive terminal and typed phrase alone do not establish that authority.
 
 ## How to use it
 
@@ -36,5 +37,20 @@ Moving `stable`, deploying production, pausing the guard and redeeming an allow-
 ## What it needs
 
 - Ruby; no gems beyond the standard library.
-- The ledger of governed projects, resolved from `POLISPEC_LEDGER`, then the `polispec.ledger` setting, then `~/.config/polispec/ledger.yml`.
+- The ledger of governed projects. Unsealed resolution uses `POLISPEC_LEDGER`, then `polispec.ledger`, then `~/.config/polispec/ledger.yml`; sealed resolution uses the verified fixed authority plane and ignores those redirects.
 - Settings, changed with `rplugin settings`: `polispec.enforce` (`advise` or `enforce`, default `advise`), `polispec.ledger`, `polispec.operator` (how messages name the person who promotes to stable) and `polispec.code.specs_repo`.
+
+## Harness controls
+
+The 0.18.0 release leaves both new feature flags disabled. Do not enable them as part of installation or publication; activation is a separate operator decision. Grammar, validation, planning, and inspection remain available, while mutation commands refuse until enabled. Existing explicit controls and sealed authority remain protected.
+
+1. Read `polispec harness grammar --json`. Translate the user's intent using only its published vocabulary; the guard never invokes a model to decide a control.
+2. Validate the YAML with `polispec validate control FILE --json`, then run `polispec harness plan FILE --harness HARNESS --scope project --project /absolute/project --json`. User scope omits `--project`.
+3. Inspect every disposition and finding. Agents may install provably tightening user/project controls; managed scope, removal, uncertain comparisons, and loosening require the operator. Preview with `harness install ... --dry-run --json` before installation.
+4. Verify the installation ID. Report artifact integrity separately from observed native enforcement. Missing runtime evidence, unsealed authority, or unsupported control axes prevent lock certification.
+
+A control deny, protected-path refusal, root guard, broken authority, or lock default remains binding even when environment policy is paused or a legacy warning has been authorized. Standard asks without native consent block pending an exact protected one-use authorization. Never substitute a synthetic session, redeem your own request, or change its arguments to reuse a grant.
+
+`harness scan` reports container exposure and records distinct scan transitions; a read-only scan does not arm anything. Rootless and root-equivalent access are separate observations. No scan alone certifies containment.
+
+Read `docs/harness-controls.md` for native boundaries and `docs/operator.md` for the explicit sealed setup, service, and recovery procedures. New projects serving real users stay onboarding until an authenticated operator activates them against a verified plane.

@@ -13,7 +13,7 @@ Every object rejects unknown keys, except the free text under `agents.instructio
 ## Vocabulary
 
 - Environments: `dev`, `test`, `prod`. `dev` is the `main` branch, `test` the `test` branch, `prod` the `stable` branch.
-- Action classes (a closed set): `git.commit`, `git.push`, `git.tag`, `git.merge`, `git.rewrite`, `git.branch`, `release.publish`, `service.control`, `service.config`, `fs.write`, `fs.delete`, `data.write`, `data.copy`, `secrets.read`, `policy.edit`, `promote`, `deploy`.
+- Action classes (a closed set): `git.commit`, `git.push`, `git.tag`, `git.merge`, `git.rewrite`, `git.branch`, `release.publish`, `service.control`, `service.config`, `fs.write`, `fs.delete`, `data.write`, `data.copy`, `secrets.read`, `policy.edit`, `promote`, `deploy`, `control.edit`, `mcp.call`, `web.fetch`, `agent.spawn`, `shell.exec`.
 - Verdicts: `allow`, `warn` (a stern warning plus explicit user confirmation), `deny`.
 - Actors: `agent` (any tool call through a harness hook) and `operator` (an interactive terminal with a typed phrase).
 
@@ -77,6 +77,9 @@ environments:
 | `id` | `R-…` | Rule id shown in every message. |
 | `match.env` | environment | Restrict to a stage. |
 | `match.class` | list of action classes | Restrict to these classes. |
+| `match.server`, `match.operation` | string | Exact MCP server and operation. A trusted declaration must match each action; one declaration does not cover another call. |
+| `match.domain`, `match.tool`, `match.role` | string | Exact domain, native tool name, and agent role respectively; supplied values all have to match. |
+| `match.path` | string | Path glob using the same slash-aware and dotfile-aware matching as harness controls. |
 | `match.crosses` | `data_classes` or `location` | `data_classes`, for `data.copy`: matches when the data class is not allowed in the destination. `location`, for `fs.write`, `fs.delete`, `data.write` and `data.copy`: matches when the target is another project or another environment of the same project than the caller's location, and is prod or sits under a protected root (the engine evaluates it). |
 | `match.destructive` | `true` | Matches only a `data.write` the shell classifier marked destructive: SQL with TRUNCATE, DROP, ALTER ... DROP, DELETE without WHERE, or UPDATE without WHERE (the classifier sets the mark). |
 | `match.ref` | string | Restrict to a git ref. |
@@ -196,3 +199,9 @@ A policy is composed from layers: the global layer, the repo policy, then any le
 - SUG-10 `retention`: per-environment data retention and automatic test-data expiry.
 - SUG-11 `notify`: route warn and deny digests to Telegram or desktop notification through the notify port.
 - SUG-12 `compliance_tags`: regulatory tags such as GDPR on environments and data classes, surfaced in the daily digest.
+
+## Harness controls
+
+`polispec.control/v1` is a separate deterministic control document, validated with `polispec validate control FILE`. It composes as a severity ceiling over environment policy in enforce mode. See [the grammar and lifecycle guide](harness-controls.md).
+
+Policy, module, global, and ledger rule match objects accept the six exact-control selector keys above as nonempty strings bounded to 4096 characters. Only `path` is a glob; the others compare exact strings. Unknown selectors are invalid. A mutable overlay cannot remove the undeclared MCP default; a trusted committed policy or protected core must declare the actual matching server and operation. Every declared environment and selector must still match.

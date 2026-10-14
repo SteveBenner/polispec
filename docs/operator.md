@@ -1,4 +1,4 @@
-# Operator commands: promote and deploy
+# Operator guide
 
 `polispec promote` moves code between branches and `polispec deploy` puts a branch or tag into an environment checkout. Both read the project from the ledger and the promotion policy from the trust ref (`PolicySource.load`), never from the working tree. Both accept `--json` and `--dry-run`.
 
@@ -11,11 +11,11 @@ polispec deploy  <project> <env> [--tag vX.Y.Z] [--skip-drain] [--dry-run] [--js
 
 ## Git discipline
 
-Git runs through Open3 with exact argv, never a shell. The helper refuses `--force`, `--force-with-lease`, `+refspec`, `reset`, `--hard`, `--no-ff` and `--mirror`. Test and stable only ever move by a non-forced, atomic push of a fast-forward; no merge commit is created on either. Every comparison uses the remote-tracking refs after a `git fetch origin --prune --tags` in the project's repo, so unpushed local commits are never promoted. After the push the local `test` or `stable` branch is advanced with a compare-and-swap `update-ref` (or `merge --ff-only` when it is checked out), and skipped when another worktree has it checked out.
+Project promotion Git runs through Open3 with exact argv, never a shell. The helper refuses `--force`, `--force-with-lease`, `+refspec`, `reset`, `--hard`, `--no-ff` and `--mirror`. Test and stable only ever move by a non-forced, atomic push of a fast-forward; no merge commit is created on either. Every comparison uses the remote-tracking refs after a `git fetch origin --prune --tags` in the project's repo, so unpushed local commits are never promoted. After the push the local `test` or `stable` branch is advanced with a compare-and-swap `update-ref` (or `merge --ff-only` when it is checked out), and skipped when another worktree has it checked out.
 
 ## promote --to test
 
-Actor: `agent` or `operator` (operator means an interactive terminal), checked against `promotion.to_test.actor`.
+Actor: `agent` or `operator`, checked against `promotion.to_test.actor`. Unsealed development recognizes its existing terminal flow; sealed operator actions require verified privileged launcher authority.
 
 1. Fetch. `main_tip` is `origin/<from>`.
 2. Drift: `origin/<stable>` must be an ancestor of `main_tip`, or the command fails with `drift` and the exact `git merge stable` to run on main (ADR-9).
@@ -175,3 +175,87 @@ polispec reads these machine settings, each from an environment variable, then t
 | `polispec.logs.count_command` | unset | Argv template (no shell) for the `logs_quiet` gate; takes `{service}`, `{since}` and `{until}` and prints one integer. Unset fails the gate closed. `RPLUGIN_POLISPEC_POLISPEC_LOGS_COUNT_COMMAND` overrides it. |
 
 The guard is a hook the host wires into each agent harness: it runs `polispec hook pretool --harness <name>` on every tool call and prints the harness's own allow, ask or deny reply. The plugin ships `hooks/polispec.hooks.yml` for harnesses rplugin can render; any other harness calls the same command from its pre-tool event. Two integrations are optional and never required: events may be emitted to an `rlogs` sink (`observability.events: rlogs`, otherwise `local` or `none`), and `polispec onboard` recognises a `*.rstack_component.yml` manifest as well as `*.rplugin.yml` when it adds a `serves:` pointer.
+
+The 0.18.0 release keeps `harness_controls` and `sealed_plane` disabled. The setup procedures below require a separate operator activation decision; publishing or updating the source performs none of them.
+
+## Sealed authority and harness controls
+
+Unsealed development retains environment and XDG overrides and its existing terminal confirmations. Those conveniences are not operator authentication. A sealed plane resolves the fixed `/etc/polispec/active.json` authority first, verifies its generation and digests, and ignores user-controlled redirects for authority, settings, ledger, layers, runtime, and code specs. Reports name ignored variables without exposing their values. An invalid existing seal remains broken and cannot fall back to unsealed settings.
+
+Protected actions require effective root identity and verified ancestry through the pinned launcher, interpreter, plugin release, and separately protected rplugin SDK. A TTY, an environment variable, or a user-owned executable cannot supply that authority. Sealed policy remains an independent ceiling even when the legacy environment guard is paused.
+
+The source layout contains `ledger.yml`, one or more `controls/HARNESS.json` documents, optional `settings.json` with a `machine` object, and optional global and code-spec trees. Standard seals an exact committed Git source; dirty worktree bytes do not enter the generation. Lock uses the root-authored `/etc/polispec/source` tree and records that provenance honestly.
+
+```sh
+polispec seal --from /absolute/source-repo@FULL_COMMIT --dry-run --json
+polispec seal --source /etc/polispec/source --dry-run --json
+polispec plane status --json
+polispec plane verify --json
+```
+
+Preparation and switching are explicit operator actions. Use the prerequisite findings to establish the protected SDK/runtime and native evidence before requesting a seal. The implementation can prepare a generation while reporting activation blocked; neither a prepared generation nor a dry run means the plane is active. Sealing and lock certification are Linux-first, and unsupported platforms refuse the guarantee.
+
+Pinned releases live under `/usr/local/lib/polispec/releases/COMMIT`, with launchers under `/usr/local/lib/polispec/launchers/COMMIT/polispec`. Generation files remain readable to guards and writable only by the operator. The SDK is an independently protected dependency, not a copy bundled into polispec.
+
+New projects that serve real users remain `onboarding` until a verified plane and its authenticated operator activate them:
+
+```sh
+/absolute/pinned/launcher plane activate PROJECT_ID --dry-run --json
+/absolute/pinned/launcher plane activate PROJECT_ID --json
+/absolute/pinned/launcher plane rollback OPERATION_ID --dry-run --json
+```
+
+Run protected commands through the actual active launcher with the required privilege and terminal confirmation. The example path is a placeholder, not an alternative authority source. Activation and rollback record authenticated transactions. This release does not activate any existing live-user project.
+
+## Protected allow-once service
+
+An unprivileged hook cannot safely mark a root-owned grant spent. Sealed one-use authorizations therefore use a small operator-run Unix socket service. It accepts only bounded request, consume, and status operations; redemption remains a local authenticated operator command.
+
+```sh
+/absolute/pinned/launcher authorizations unit --json
+/absolute/pinned/launcher authorizations serve
+polispec authorizations status --json
+/absolute/pinned/launcher allow-once alo_0123456789ab
+```
+
+`unit` renders a systemd unit using the active pinned launcher; it does not install or start it. The operator reviews and installs that unit or runs `serve` in the foreground. The socket is fixed at `/run/polispec/authorizations.sock`. The client authenticates a root peer; the server gets the caller's UID from the kernel, never the request. There is no TCP listener or remote redemption operation.
+
+Redemption displays the requesting UID, project, rule, environment, session, and action digest, and requires the typed confirmation shown by the command. Grants expire within ten minutes. Consumption binds the exact request and appends durable spent state before replying. Concurrent consumers, replay, and a lost reply cannot create an extra grant. A lost success reply leaves the grant spent; request a new authorization after reviewing the action again.
+
+Missing service, invalid history, rate limits, timeouts, changed authority, and malformed protocol all refuse an override. Native asks remain native. One standard grant binds the complete environment/control ask set, its trusted policy and control digests, and the actual harness/session; it resolves only those bound decisions. Explicit control denials, broken authority, protected paths, root guard, and lock defaults remain in force.
+
+The root-owned regular marker `/etc/polispec/authorizations.disabled` disables request, redemption, and consumption. Unsafe ownership or ancestry fails closed. Removing a deliberate marker and restarting services are operator actions, not hook recovery behavior.
+
+After a crash leaves a socket, recovery first proves that the fixed socket has no listener. It refuses a live, ambiguous, or changed endpoint, and preserves a stale socket by an exclusive in-place backup rename:
+
+```sh
+/absolute/pinned/launcher authorizations recover --dry-run --json
+/absolute/pinned/launcher authorizations recover --json
+```
+
+Recovery authenticates the operator even for a dry run. Actual recovery requires confirmation. The unit's restart policy does not silently remove a stale socket.
+
+## Removing another user's tightening overlay
+
+Without `--owner`, uninstall selects protected operator records only. To remove a mutable overlay, the operator explicitly selects its passwd owner and original scope:
+
+```sh
+/absolute/pinned/launcher harness uninstall INSTALLATION_ID --owner USER --scope user --dry-run --json
+/absolute/pinned/launcher harness uninstall INSTALLATION_ID --owner USER --scope project --project /absolute/project --state-home /absolute/state --dry-run --json
+```
+
+`--state-home` is optional and must be an absolute existing owner-controlled XDG state directory. Project scope requires an absolute project path; user scope rejects one. The privileged parent verifies identity and paths, then permanently drops supplementary groups, GID, and UID before opening the selected user's SDK state, files, or schedule port. The child revalidates bounded journal transitions, document and artifact identities, current owned contributions, and digest-checked historical backups before restoring anything.
+
+Historical runtime bytes need not equal a newer launcher, but target paths and ownership selectors must still match the canonical backend. Unrelated entries are preserved. Missing backups, interrupted transactions, malformed restoration metadata, and protected-path collisions refuse removal. Omit `--dry-run` only after reviewing the result and the requested operator confirmation.
+
+## Maintaining the lock branch
+
+`scripts/release-lock` is a maintainer operation in this repository, separate from project promotion. After the accepted standard release is committed and pushed on `main`, read the exact local and remote `polispec-lock` heads. Run from a clean repository root on `main` with the full accepted main SHA:
+
+```sh
+scripts/release-lock --base FULL_MAIN_SHA --expected-local FULL_LOCK_SHA --expected-remote FULL_LOCK_SHA --dry-run --json
+```
+
+For the initial creation, both explicit expected values are `absent`. Inspect the dry run, then repeat without `--dry-run`. The command requires local main, remote-tracking main, and live remote main to equal the accepted base. Fetch and push must resolve to the same single endpoint. It constructs a sole-parent commit with exactly one `EDITION` change, archives a prior local lock ref before refresh, and pushes only `refs/heads/polispec-lock` under an exact lease. It updates the local lock ref only after confirming the remote result.
+
+A divergent remote refuses. Exit 4 means recovery is required: a push may have reached the remote or local compare-and-swap failed. Preserve the reported target and archive, inspect both refs, and reconcile explicitly before retrying; an uncertain push is never reported as an ordinary no-change refusal. `doctor` checks local edition provenance without network access. Lock validates its immutable parent and edition-only tree difference without requiring a local main ref or standard installation.
