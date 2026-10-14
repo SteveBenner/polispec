@@ -68,10 +68,10 @@ polispec:
 ## Onboarding
 
 ```
-polispec onboard <repo-path> --serves <real_users|internal|none> [--archetype service|distributed] [--id <id>] [--trust-ref stable] [--push] [--checkouts] [--dry-run] [--json]
+polispec onboard <repo-path> --serves <real_users|internal|none> [--archetype service|distributed] [--id <id>] [--trust-ref stable] [--commit] [--push] [--checkouts] [--dry-run] [--json]
 ```
 
-`--archetype service` (the default) scaffolds a tailnet-exposed test and a public prod. `distributed` scaffolds test and prod with `exposure: none`. The deploy steps in the service templates are the placeholder `true`, and each service environment's `deploy.health.run` is a placeholder that prints that it must be replaced and exits 1, so the scaffolded policy validates and `polispec promote <id> --to test` passes its gates, but `polispec deploy` records a failed health check until you replace both with the real commands. A `health.run` command is split into arguments and run without a shell.
+`--archetype service` (the default) scaffolds a tailnet-exposed test and a public prod. `distributed` scaffolds test and prod with `exposure: none`. The deploy steps in the service templates are the placeholder `true`, and each service environment's `deploy.health.run` is the placeholder command `polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml`, which does not exist, so the scaffolded policy validates and `polispec promote <id> --to test` passes its gates, but `polispec deploy` records a failed health check (`run exited 127:` naming the placeholder command) until you replace both with the real commands. A `health.run` command is split into arguments and run without a shell, and a command that cannot be started is a failed health check that names it, never a crash.
 
 Steps, in order, one output line each (`done`, `kept`, `skipped`, `next`, or `would` under `--dry-run`):
 
@@ -79,7 +79,8 @@ Steps, in order, one output line each (`done`, `kept`, `skipped`, `next`, or `wo
 2. `2_manifest`: append the pointer block to the component manifest.
 3. `3_ledger`: insert the project into the ledger with status `onboarding`. The new text is validated, a `ledger.yml.bak-<UTC timestamp>` copy is written beside the ledger, and the replacement is atomic. Existing entries are untouched.
 4. `4_render`: render `AGENTS.md` and `.agents/directives/envs.md` (see below).
-5. `5_branches`: when the three `specs/polispec` files are committed on `main`, create local `test` and the trust ref at `main` when absent; with `--push` it pushes both to `origin` without force, and without it the exact push command is printed. `onboard` never commits, so on a fresh scaffold this step is `skipped` and prints the commit, branch and push commands to run; the branches must be created after the commit so the trust ref carries the policy.
+   With `--commit`, a step `4b_commit` follows: it stages by name exactly the files steps 1, 2 and 4 wrote or changed (the scaffold files, the manifest when the pointer was appended, `AGENTS.md` and `.agents/directives/envs.md` when rendered) and commits only those paths on `main` as `Add the polispec scaffold`, through the operator git, with an explicit pathspec so other staged changes stay staged and uncommitted. When `HEAD` is not `main` the commit is skipped with a note and the commit command is printed. Under `--dry-run` it prints `would` and the paths. `--commit` is opt-in; without it `onboard` never commits.
+5. `5_branches`: when the three `specs/polispec` files are committed on `main`, create local `test` and the trust ref at `main` when absent; with `--push` it pushes both to `origin` without force (and `main` too when `--commit` was given, so the remote branches carry the scaffold), and without it the exact push command is printed. Without `--commit`, `onboard` does not commit, so on a fresh scaffold this step is `skipped` and prints the commit, branch and push commands to run; the branches must be created after the commit so the trust ref carries the policy.
 6. `6_checkouts`: with `--checkouts` and both branches on `origin`, clone the test and stable checkouts under the ledger's `envs_root` and install the git hooks for test and prod. Otherwise the next step is `polispec deploy <id> test`.
 
 A repository already in the ledger, by id or by path, is refused with `already_onboarded`; nothing is overwritten.

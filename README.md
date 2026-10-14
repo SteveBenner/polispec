@@ -23,7 +23,7 @@ polispec doctor
 polispec resolve .
 ```
 
-`onboard` scaffolds `specs/polispec/environments.yml`, `policy.yml` and `roster.yml` from a template (`--archetype service` or `distributed`), points the component manifest at them, adds a ledger entry with status `onboarding`, and renders the `[ENVS]` row. `doctor` reports what is missing or invalid. `resolve` names the environment a directory is in and the policy that governs it.
+`onboard` scaffolds `specs/polispec/environments.yml`, `policy.yml` and `roster.yml` from a template (`--archetype service` or `distributed`), points the component manifest at them, adds a ledger entry with status `onboarding`, and renders the `[ENVS]` row. Add `--commit` to commit exactly those files on main (and with `--push`, publish main, test and stable). `doctor` reports what is missing or invalid. `resolve` names the environment a directory is in and the policy that governs it.
 
 Other commands:
 
