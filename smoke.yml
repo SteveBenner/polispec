@@ -7420,3 +7420,86 @@ entries:
     policy_digest:
   prev: 492632506f63f0e99812e679819cc64c9b8bf3061b57a2c2d28e0eb5cb547e60
   digest: 29426eb11f2772e9b106e68512a25d8bb5f3e37068980e234658563723bc750e
+- id: smk_d0514bc2c254
+  recorded_at: '2026-10-14T03:39:18Z'
+  proves:
+    spec: specs/app.yml
+    at: code_specs
+    spec_digest: d6e75b9eb2da57fea22666f146c6e0f36d4d5b08c9714fa021587d2f4529f039
+    at_digest: 88be05cd87e2305402c036391af4d05f3997f5f4afb1b097cd45f04d17d2f259
+  verdict: pass
+  summary: 'code_specs across two real Haiku runs: pack loading, chain, pre_write
+    enforcement and ratchet (0.18.2 sign-off) and post_write, stop and session for
+    --harness claude (0.18.3 fix1); the 0.18.2 partial was the code-hook fail-open
+    fixed in 0.18.3'
+  steps:
+  - run: '0.18.2 sign-off, controls-code-specs: headless Haiku session in a scratch
+      project with code_specs.enabled, pack linked from stable'
+    exit:
+    expect: pack loads from stable, chain resolves, a MUST_NOT write is denied at
+      pre_write, ratchet works
+    observed: all four held; post_write, stop and session failed open for --harness
+      claude (fixed in 0.18.3)
+  - run: '0.18.3 fix1: headless Haiku session under check_at=post_write writing a
+      private key'
+    exit:
+    expect: post blocks the landed violation, stop blocks with the MUST finding, session
+      normalizes
+    observed: PostToolUse decision block naming secrets.rb:3; stop decision block;
+      session ran without error
+  evidence:
+  - path: projB.hook.jsonl
+    sha256: e830ad098ce28441d48db0268a33221e160287f3c9b8467d01335a438af2f167
+    bytes: 27402
+    kind: events
+  - path: runB.jsonl
+    sha256: 4814c1d9e74a2adc618d8a9d6a2f30f06578a636c1965baf3055608b4a966784
+    bytes: 31261
+    kind: transcript
+  - path: projA.hook.jsonl
+    sha256: 3b0cbe3f523d13bbdc45374425b354622d370ea4f9d8265f73162db4c3dac167
+    bytes: 16849
+    kind: events
+  - path: projB.hook.jsonl
+    sha256: a26a85cd7aaf61ceb75af007c6f145576778479fd59fcd6f1fbdb33512bd2ec5
+    bytes: 16107
+    kind: events
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: claude-haiku-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.7
+      edition: standard
+      commit: 86cd5d0fc1814b38a7a5e112dd6109eeb60f09a7
+      dirty: false
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 86cd5d0fc1814b38a7a5e112dd6109eeb60f09a7
+    branch: main
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: 29426eb11f2772e9b106e68512a25d8bb5f3e37068980e234658563723bc750e
+  digest: e95fb97df2fcc0e1e568f974d0c2fcccefdde251024c0a87cc190061ddb79f59
