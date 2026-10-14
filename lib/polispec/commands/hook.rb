@@ -525,7 +525,6 @@ module Polispec
 
     def evaluate(adapter, input, ledger, cwd, project, actions, mode, started)
       loaded = PolicySource.resolve(project, ledger: ledger)
-      raise Polispec::Error, "committed policy is unavailable for #{project.id}" if loaded.source == "defaults"
       @policy_digests << loaded.digest unless loaded.digest.to_s.empty?
       target = Target.new(
         project: project.id, env: Engine::Envs.cwd_env(loaded.policy, ledger, project.id, cwd), policy: loaded.policy,

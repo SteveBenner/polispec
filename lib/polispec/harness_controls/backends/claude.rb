@@ -152,6 +152,8 @@ module Polispec
           next_step = verdict["next_step"].to_s
           reason = "#{reason} #{next_step}" unless next_step.empty?
           reason = "polispec denied an unrecognized control verdict" if reason.empty? && !%w[allow deny ask warn].include?(decision)
+          rule_id = verdict["rule_id"].to_s
+          reason = "[POLISPEC #{rule_id}] #{decision == 'deny' ? 'DENIED' : 'WARNING'}: #{reason}" unless rule_id.empty? || rule_id == "POLISPEC-INTERNAL" || reason.empty? || decision == "allow"
           output = case decision
                    when "allow"
                      ""
