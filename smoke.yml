@@ -5581,3 +5581,465 @@ entries:
     policy_digest:
   prev: bdebe7bc7e1f21fc68a2611a8f507b2f52c944883f656f5758fe171d5bc91539
   digest: 6297f249990bf976bd55bfb29b58f5932dbea39870f5b4959ec4ac2002ad8f0b
+- id: smk_17a668f22614
+  recorded_at: '2026-10-14T03:22:21Z'
+  started_at: '2026-10-14T03:30:00Z'
+  finished_at: '2026-10-14T03:20:58Z'
+  proves:
+    spec: specs/app.yml
+    at: code_specs/commands/code-hook pre|post|stop|session
+    spec_digest: d5e75b536ade25c7dafdb56c7541652a4958fcb6326cea431052ac55ea5c9405
+    at_digest: 1a9566cc5bea5cb167ac9663a06fe01b494b8a520b00bc85d1d750f705f33b0f
+  verdict: pass
+  summary: 'fix1: Under check_at=post_write a real Haiku session landed a private-key
+    Write, PostToolUse returned decision block, stop returned decision block listing
+    the violation; session handled without error.'
+  steps:
+  - run: 'main: code-hook post|stop|session --harness claude < real payloads'
+    exit: 0
+    expect: post block
+    observed: no output, no diagnostic (before.txt)
+  - run: 'fix1: same payloads'
+    exit: 0
+    expect: post block
+    observed: post emits decision block; stop and session run without error
+  - run: 'fix1: code-hook post with hook_event_name Bogus'
+    exit: 0
+    expect: diagnostic
+    observed: 'stderr: [POLISPEC code] code-hook post failed and did not run: ...'
+  - run: Haiku Write lib/secrets.rb (private key) then lib/config.rb
+    exit: 0
+    expect: post block, stop block
+    observed: 'projB.hook.jsonl: post output decision block naming secrets.rb:3; stop
+      output decision block'
+  - run: 'main vs fix: code-hook pre|post|stop|session --harness codex < replayed
+      payloads (fix1/codex_*.json)'
+    exit: 0
+    expect: post block
+    observed: main post empty, fix post decision block; stop/session no stderr error
+      (fix1/codex_replay.txt)
+  evidence:
+  - path: projB.hook.jsonl
+    sha256: e830ad098ce28441d48db0268a33221e160287f3c9b8467d01335a438af2f167
+    bytes: 27402
+    kind: events
+  - path: runB.jsonl
+    sha256: 4814c1d9e74a2adc618d8a9d6a2f30f06578a636c1965baf3055608b4a966784
+    bytes: 31261
+    kind: transcript
+  - path: before.txt
+    sha256: 4b103e5f948906ea36d98f3a786a9d1d305e23133cd6f0f341fc64075e06169f
+    bytes: 57
+    kind: file
+  - path: codex_replay.txt
+    sha256: ad3cf89b2a0804396e6b0bc30d53b342f5e8327a563290c397e6a783188137cb
+    bytes: 706
+    kind: file
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: claude-haiku-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.3
+      edition: standard
+      commit: 6db735fde211ee6dba66a3d1f9704b45a7f35502
+      dirty: false
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 6db735fde211ee6dba66a3d1f9704b45a7f35502
+    branch: fix/b1
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: 6297f249990bf976bd55bfb29b58f5932dbea39870f5b4959ec4ac2002ad8f0b
+  digest: f5555c8bdb2752e964f9aa4b7b716b1acd4bfbfc0d0ef53a9048bd43ac5cb6d5
+- id: smk_8808f9e8fd66
+  recorded_at: '2026-10-14T03:22:22Z'
+  started_at: '2026-10-14T03:30:00Z'
+  finished_at: '2026-10-14T03:20:58Z'
+  proves:
+    spec: specs/app.yml
+    at: code_specs/commands/code-hook pre|post|stop|session
+    spec_digest: d5e75b536ade25c7dafdb56c7541652a4958fcb6326cea431052ac55ea5c9405
+    at_digest: 1a9566cc5bea5cb167ac9663a06fe01b494b8a520b00bc85d1d750f705f33b0f
+  verdict: pass
+  summary: 'fix1 [code-hook post]: post now emits decision block for the violating
+    landed write (before: empty, hook_error).'
+  steps:
+  - run: 'main: code-hook post|stop|session --harness claude < real payloads'
+    exit: 0
+    expect: post block
+    observed: no output, no diagnostic (before.txt)
+  - run: 'fix1: same payloads'
+    exit: 0
+    expect: post block
+    observed: post emits decision block; stop and session run without error
+  - run: 'fix1: code-hook post with hook_event_name Bogus'
+    exit: 0
+    expect: diagnostic
+    observed: 'stderr: [POLISPEC code] code-hook post failed and did not run: ...'
+  - run: Haiku Write lib/secrets.rb (private key) then lib/config.rb
+    exit: 0
+    expect: post block, stop block
+    observed: 'projB.hook.jsonl: post output decision block naming secrets.rb:3; stop
+      output decision block'
+  - run: 'main vs fix: code-hook pre|post|stop|session --harness codex < replayed
+      payloads (fix1/codex_*.json)'
+    exit: 0
+    expect: post block
+    observed: main post empty, fix post decision block; stop/session no stderr error
+      (fix1/codex_replay.txt)
+  evidence:
+  - path: projB.hook.jsonl
+    sha256: e830ad098ce28441d48db0268a33221e160287f3c9b8467d01335a438af2f167
+    bytes: 27402
+    kind: events
+  - path: runB.jsonl
+    sha256: 4814c1d9e74a2adc618d8a9d6a2f30f06578a636c1965baf3055608b4a966784
+    bytes: 31261
+    kind: transcript
+  - path: before.txt
+    sha256: 4b103e5f948906ea36d98f3a786a9d1d305e23133cd6f0f341fc64075e06169f
+    bytes: 57
+    kind: file
+  - path: codex_replay.txt
+    sha256: ad3cf89b2a0804396e6b0bc30d53b342f5e8327a563290c397e6a783188137cb
+    bytes: 706
+    kind: file
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: claude-haiku-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.3
+      edition: standard
+      commit: 6db735fde211ee6dba66a3d1f9704b45a7f35502
+      dirty: true
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 6db735fde211ee6dba66a3d1f9704b45a7f35502
+    branch: fix/b1
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: f5555c8bdb2752e964f9aa4b7b716b1acd4bfbfc0d0ef53a9048bd43ac5cb6d5
+  digest: 726813000b657d553f8e308adb042e0b09ebdf3e6174b209d6a22ce2bde5eeb8
+- id: smk_2696f9384f86
+  recorded_at: '2026-10-14T03:22:22Z'
+  started_at: '2026-10-14T03:30:00Z'
+  finished_at: '2026-10-14T03:20:58Z'
+  proves:
+    spec: specs/app.yml
+    at: code_specs/commands/code-hook pre|post|stop|session
+    spec_digest: d5e75b536ade25c7dafdb56c7541652a4958fcb6326cea431052ac55ea5c9405
+    at_digest: 1a9566cc5bea5cb167ac9663a06fe01b494b8a520b00bc85d1d750f705f33b0f
+  verdict: pass
+  summary: 'fix1 [code-hook post]: codex harness: replayed PostToolUse payload now
+    yields decision block (main: empty); stop and session replays run without error.
+    Replay only; no live codex run.'
+  steps:
+  - run: 'main: code-hook post|stop|session --harness claude < real payloads'
+    exit: 0
+    expect: post block
+    observed: no output, no diagnostic (before.txt)
+  - run: 'fix1: same payloads'
+    exit: 0
+    expect: post block
+    observed: post emits decision block; stop and session run without error
+  - run: 'fix1: code-hook post with hook_event_name Bogus'
+    exit: 0
+    expect: diagnostic
+    observed: 'stderr: [POLISPEC code] code-hook post failed and did not run: ...'
+  - run: Haiku Write lib/secrets.rb (private key) then lib/config.rb
+    exit: 0
+    expect: post block, stop block
+    observed: 'projB.hook.jsonl: post output decision block naming secrets.rb:3; stop
+      output decision block'
+  - run: 'main vs fix: code-hook pre|post|stop|session --harness codex < replayed
+      payloads (fix1/codex_*.json)'
+    exit: 0
+    expect: post block
+    observed: main post empty, fix post decision block; stop/session no stderr error
+      (fix1/codex_replay.txt)
+  evidence:
+  - path: projB.hook.jsonl
+    sha256: e830ad098ce28441d48db0268a33221e160287f3c9b8467d01335a438af2f167
+    bytes: 27402
+    kind: events
+  - path: runB.jsonl
+    sha256: 4814c1d9e74a2adc618d8a9d6a2f30f06578a636c1965baf3055608b4a966784
+    bytes: 31261
+    kind: transcript
+  - path: before.txt
+    sha256: 4b103e5f948906ea36d98f3a786a9d1d305e23133cd6f0f341fc64075e06169f
+    bytes: 57
+    kind: file
+  - path: codex_replay.txt
+    sha256: ad3cf89b2a0804396e6b0bc30d53b342f5e8327a563290c397e6a783188137cb
+    bytes: 706
+    kind: file
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: claude-haiku-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.3
+      edition: standard
+      commit: 6db735fde211ee6dba66a3d1f9704b45a7f35502
+      dirty: true
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 6db735fde211ee6dba66a3d1f9704b45a7f35502
+    branch: fix/b1
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: 726813000b657d553f8e308adb042e0b09ebdf3e6174b209d6a22ce2bde5eeb8
+  digest: 282b5088685aa09dfdea9baba49df3865b2a2bd1b84559b4c54b0eeef1040b7d
+- id: smk_809c51f5664f
+  recorded_at: '2026-10-14T03:22:22Z'
+  started_at: '2026-10-14T03:30:00Z'
+  finished_at: '2026-10-14T03:20:58Z'
+  proves:
+    spec: specs/app.yml
+    at: code_specs/commands/code-hook pre|post|stop|session
+    spec_digest: d5e75b536ade25c7dafdb56c7541652a4958fcb6326cea431052ac55ea5c9405
+    at_digest: 1a9566cc5bea5cb167ac9663a06fe01b494b8a520b00bc85d1d750f705f33b0f
+  verdict: pass
+  summary: 'fix1 [code-hook session]: session payload is normalized; compact|clear
+    re-arm runs; no startup output by design.'
+  steps:
+  - run: 'main: code-hook post|stop|session --harness claude < real payloads'
+    exit: 0
+    expect: post block
+    observed: no output, no diagnostic (before.txt)
+  - run: 'fix1: same payloads'
+    exit: 0
+    expect: post block
+    observed: post emits decision block; stop and session run without error
+  - run: 'fix1: code-hook post with hook_event_name Bogus'
+    exit: 0
+    expect: diagnostic
+    observed: 'stderr: [POLISPEC code] code-hook post failed and did not run: ...'
+  - run: Haiku Write lib/secrets.rb (private key) then lib/config.rb
+    exit: 0
+    expect: post block, stop block
+    observed: 'projB.hook.jsonl: post output decision block naming secrets.rb:3; stop
+      output decision block'
+  - run: 'main vs fix: code-hook pre|post|stop|session --harness codex < replayed
+      payloads (fix1/codex_*.json)'
+    exit: 0
+    expect: post block
+    observed: main post empty, fix post decision block; stop/session no stderr error
+      (fix1/codex_replay.txt)
+  evidence:
+  - path: projB.hook.jsonl
+    sha256: e830ad098ce28441d48db0268a33221e160287f3c9b8467d01335a438af2f167
+    bytes: 27402
+    kind: events
+  - path: runB.jsonl
+    sha256: 4814c1d9e74a2adc618d8a9d6a2f30f06578a636c1965baf3055608b4a966784
+    bytes: 31261
+    kind: transcript
+  - path: before.txt
+    sha256: 4b103e5f948906ea36d98f3a786a9d1d305e23133cd6f0f341fc64075e06169f
+    bytes: 57
+    kind: file
+  - path: codex_replay.txt
+    sha256: ad3cf89b2a0804396e6b0bc30d53b342f5e8327a563290c397e6a783188137cb
+    bytes: 706
+    kind: file
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: claude-haiku-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.3
+      edition: standard
+      commit: 6db735fde211ee6dba66a3d1f9704b45a7f35502
+      dirty: true
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 6db735fde211ee6dba66a3d1f9704b45a7f35502
+    branch: fix/b1
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: 282b5088685aa09dfdea9baba49df3865b2a2bd1b84559b4c54b0eeef1040b7d
+  digest: 5de4c958a50b6bb4cdac24b2f26b3378da18253cef43500bbfb51ab4c66d3bd0
+- id: smk_571921b694d2
+  recorded_at: '2026-10-14T03:22:22Z'
+  started_at: '2026-10-14T03:30:00Z'
+  finished_at: '2026-10-14T03:20:58Z'
+  proves:
+    spec: specs/app.yml
+    at: code_specs/commands/code-hook pre|post|stop|session
+    spec_digest: d5e75b536ade25c7dafdb56c7541652a4958fcb6326cea431052ac55ea5c9405
+    at_digest: 1a9566cc5bea5cb167ac9663a06fe01b494b8a520b00bc85d1d750f705f33b0f
+  verdict: pass
+  summary: 'fix1 [code-hook stop]: stop blocks once with the MUST finding and the
+    reviewer instruction.'
+  steps:
+  - run: 'main: code-hook post|stop|session --harness claude < real payloads'
+    exit: 0
+    expect: post block
+    observed: no output, no diagnostic (before.txt)
+  - run: 'fix1: same payloads'
+    exit: 0
+    expect: post block
+    observed: post emits decision block; stop and session run without error
+  - run: 'fix1: code-hook post with hook_event_name Bogus'
+    exit: 0
+    expect: diagnostic
+    observed: 'stderr: [POLISPEC code] code-hook post failed and did not run: ...'
+  - run: Haiku Write lib/secrets.rb (private key) then lib/config.rb
+    exit: 0
+    expect: post block, stop block
+    observed: 'projB.hook.jsonl: post output decision block naming secrets.rb:3; stop
+      output decision block'
+  - run: 'main vs fix: code-hook pre|post|stop|session --harness codex < replayed
+      payloads (fix1/codex_*.json)'
+    exit: 0
+    expect: post block
+    observed: main post empty, fix post decision block; stop/session no stderr error
+      (fix1/codex_replay.txt)
+  evidence:
+  - path: projB.hook.jsonl
+    sha256: e830ad098ce28441d48db0268a33221e160287f3c9b8467d01335a438af2f167
+    bytes: 27402
+    kind: events
+  - path: runB.jsonl
+    sha256: 4814c1d9e74a2adc618d8a9d6a2f30f06578a636c1965baf3055608b4a966784
+    bytes: 31261
+    kind: transcript
+  - path: before.txt
+    sha256: 4b103e5f948906ea36d98f3a786a9d1d305e23133cd6f0f341fc64075e06169f
+    bytes: 57
+    kind: file
+  - path: codex_replay.txt
+    sha256: ad3cf89b2a0804396e6b0bc30d53b342f5e8327a563290c397e6a783188137cb
+    bytes: 706
+    kind: file
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: claude-haiku-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.3
+      edition: standard
+      commit: 6db735fde211ee6dba66a3d1f9704b45a7f35502
+      dirty: true
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 6db735fde211ee6dba66a3d1f9704b45a7f35502
+    branch: fix/b1
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: 5de4c958a50b6bb4cdac24b2f26b3378da18253cef43500bbfb51ab4c66d3bd0
+  digest: a3bc62a8f43c6d8068a0caed7a90757dcde3b296c257ab0e7ab95d1eb74a2e6d
