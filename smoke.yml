@@ -6347,3 +6347,110 @@ entries:
     policy_digest:
   prev: 0c4e5431ed0b2b92026640821c52d037c96c99a93e2c37a7e00a3113da9f053f
   digest: 75e66850843fe6cd5ef7c406f23d356447f1fe0a6d0fbb274fdb5676931c3e73
+- id: smk_aee092c69685
+  recorded_at: '2026-10-14T03:26:37Z'
+  started_at: '2026-10-14T01:00:00Z'
+  finished_at: '2026-10-14T01:10:00Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/hook pretool|session
+    spec_digest: 7223e6258ecf1aad96da2c7ec73c2dd07ce6433fd0abdbadc5978692865f36cd
+    at_digest: 2d45b5ea1ac4c9debf3d5737444358de78c011d1f58e55aa4354348bf168b20b
+  verdict: pass
+  summary: 'fix2-guard-fallback: A live ledgered project with no policy at stable
+    is judged by global fallback_rules (FB-1..FB-5) instead of the internal fail-closed
+    denial; Claude denials name the rule id; unowned-path next steps and equal-version
+    tag reasons are corrected.'
+  steps:
+  - run: 'Bash: git status'
+    exit: 0
+    expect: allow
+    observed: hook allow
+  - run: 'Bash: git push origin main:stable'
+    exit: 0
+    expect: deny FB-1
+    observed: deny [POLISPEC FB-1] DENIED; origin stable unchanged f87d13a
+  - run: 'Bash: git push origin main:test'
+    exit: 0
+    expect: deny FB-1
+    observed: deny [POLISPEC FB-1] DENIED; origin test unchanged
+  - run: 'Bash: systemctl --user restart polispec-smoke-nonexistent-7731.service'
+    exit: 0
+    expect: deny FB-2
+    observed: deny [POLISPEC FB-2] DENIED
+  - run: 'Bash: polispec promote fbrepo --to test'
+    exit: 0
+    expect: deny
+    observed: deny [POLISPEC FB-1] DENIED (ref test matches FB-1 before FB-2)
+  - run: 'Bash: polispec deploy fbrepo test'
+    exit: 0
+    expect: deny
+    observed: deny [POLISPEC FB-1] DENIED
+  - run: 'Bash: psql -c DELETE ...'
+    exit: 0
+    expect: warn FB-4
+    observed: ask [POLISPEC FB-4] WARNING
+  - run: 'Write: fbrepo/specs/polispec/policy.yml'
+    exit: 0
+    expect: warn FB-4
+    observed: ask [POLISPEC FB-4] WARNING (policy.edit)
+  - run: 'Bash: echo ok > fbrepo/c.txt'
+    exit: 0
+    expect: allow FB-5
+    observed: hook allow, file written
+  - run: 'Bash: git commit -m fbcheck -- c.txt'
+    exit: 0
+    expect: allow FB-5
+    observed: hook allow, commit dc998cf created
+  evidence:
+  - path: hook.jsonl
+    sha256: 7cb1d2d099858a182fe3a5f48093d835afa249c739fdfc558661eabed92c1de2
+    bytes: 13492
+    kind: events
+  - path: t2.jsonl
+    sha256: ce510ee0e3deca856a98d7ce2826c1eeec1b2997b36552d514d5b44d1936b771
+    bytes: 50120
+    kind: transcript
+  - path: t2.err
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    bytes: 0
+    kind: file
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: claude-haiku-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.5
+      edition: standard
+      commit: 1ca7f846823c2daf8f4719e62780fda3984a9a4d
+      dirty: false
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: 1ca7f846823c2daf8f4719e62780fda3984a9a4d
+    branch: fix/b2
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: 75e66850843fe6cd5ef7c406f23d356447f1fe0a6d0fbb274fdb5676931c3e73
+  digest: ac437fc181580a439d5c29bf15db6235d7e7f6ac1d9fbd8a30e4669767b14f5a
