@@ -26,8 +26,9 @@ module Polispec
         outcome = lookup(project, project.policy, "policy")
         if outcome.is_a?(Blob) && outcome.errors.nil?
           remember_environments(project, outcome)
-          policy, digest = Layers.compose(project, outcome.data, outcome.digest, ledger: ledger)
-          return Loaded.new(policy: policy, source: "#{project.trust_ref}:#{outcome.sha}", digest: digest, finding: outcome.finding)
+          source = "#{project.trust_ref}:#{outcome.sha}"
+          policy, digest = Layers.compose(project, outcome.data, outcome.digest, ledger: ledger, local: Layers.local_source(project, source))
+          return Loaded.new(policy: policy, source: source, digest: digest, finding: outcome.finding)
         end
 
         fallback(project, ledger, outcome)
@@ -41,8 +42,22 @@ module Polispec
         outcome = lookup(project, project.policy, "policy", ref)
         return nil unless outcome.is_a?(Blob) && outcome.errors.nil?
 
-        Events.emit("polispec.finding", project: project.id, kind: "policy_bootstrap", detail: "#{project.trust_ref} carries no policy; using #{ref}:#{project.policy}", policy_source: "bootstrap:#{ref}:#{outcome.sha}")
-        Loaded.new(policy: outcome.data, source: "bootstrap:#{ref}:#{outcome.sha}", digest: outcome.digest, finding: outcome.finding)
+        source = "bootstrap:#{ref}:#{outcome.sha}"
+        Events.emit("polispec.finding", project: project.id, kind: "policy_bootstrap", detail: "#{project.trust_ref} carries no policy; using #{ref}:#{project.policy}", policy_source: source)
+        ledger = begin
+          Ledger.load
+        rescue Polispec::Error
+          nil
+        end
+        policy, digest = Layers.compose(project, outcome.data, outcome.digest, ledger: ledger, local: Layers.local_source(project, source))
+        Loaded.new(policy: policy, source: source, digest: digest, finding: outcome.finding)
+      end
+
+      def raw(project, ledger: nil)
+        outcome = lookup(project, project.policy, "policy")
+        return nil unless outcome.is_a?(Blob) && outcome.errors.nil?
+
+        Loaded.new(policy: outcome.data, source: "#{project.trust_ref}:#{outcome.sha}", digest: outcome.digest, finding: outcome.finding)
       end
 
       def load_roster(project)

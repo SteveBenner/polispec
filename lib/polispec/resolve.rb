@@ -313,7 +313,7 @@ module Polispec
         data, sha, digest, errors = Environments.load_policy_text(repo, project.trust_ref, project.policy)
         return nil unless data.is_a?(Hash) && errors.nil?
 
-        data, digest = Layers.compose(project, data, digest, ledger: ledger)
+        data, digest = Layers.compose(project, data, digest, ledger: ledger, local: Layers.local_source(project, "#{project.trust_ref}:#{sha}"))
         Entry.new(data, "#{project.trust_ref}:#{sha}", digest)
       rescue SystemCallError, Schema::Document::ParseError
         nil

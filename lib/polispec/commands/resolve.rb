@@ -32,7 +32,8 @@ module Polispec
         project = result["project"] && ledger.project(result["project"])
         info = project && resolver.entry(project)
         policy = info && info.policy.is_a?(Hash) ? info.policy : nil
-        Layers.load(project, path, policy: policy, digest: info&.digest, ledger: ledger, policy_source: info&.source).to_h
+        shown = Layers.load(project, path, policy: policy, digest: info&.digest, ledger: ledger, policy_source: info&.source).to_h
+        shown.merge("errors" => (shown["errors"] + Array(Layers.errors_for(policy))).uniq)
       end
 
       def usage

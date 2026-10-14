@@ -21,13 +21,25 @@ module Polispec
         kind, file = args
         return usage unless file && args.length == 2 && (Schema::KINDS + ["auto"]).include?(kind)
 
-        result = merged_result(kind, file) || Schema.validate_file(kind, file)
+        result = merged_result(kind, file) || validated(kind, file)
         result = with_semantics(result, kind, file)
         json ? puts(JSON.generate(result.to_h)) : print_text(result, file)
         result.ok ? 0 : 1
       end
 
       private
+
+      def validated(kind, file)
+        result = Schema.validate_file(kind, file)
+        return result if result.ok
+
+        data = Schema::Document.load(file)
+        kind = Schema.kind_for(data).to_s if kind == "auto"
+        parameterised = kind == "module" && data.is_a?(Hash) && data.key?("params")
+        parameterised ? Schema::Result.new(true, result.schema, []) : result
+      rescue Schema::Document::ParseError
+        result
+      end
 
       def merged_result(kind, file)
         return nil unless %w[policy auto].include?(kind)
@@ -64,7 +76,7 @@ module Polispec
         case kind
         when "policy"
           health = Operator::Gates.health_required_errors(data).map { |message| Schema::Error.new("/environments", message) }
-          health + Layers.policy_errors(data).map { |message| Schema::Error.new("/layers", message) }
+          health + Layers.policy_errors(data, file: file).map { |message| Schema::Error.new("/layers", message) }
         when "global", "module"
           Layers.document_errors(kind, data, file).map { |message| Schema::Error.new("/layers", message) }
         else
