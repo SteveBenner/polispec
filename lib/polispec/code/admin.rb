@@ -5,7 +5,6 @@ module Polispec
   module Code
     module Admin
       PHRASE = "promote specs".freeze
-      LINK_PHRASE = "relink specs".freeze
 
       module_function
 
@@ -24,7 +23,7 @@ module Polispec
         if replaces
           raise Operator::Tty::NotTty, "replacing #{link} (#{replaces}) with #{target} needs an interactive terminal; an agent shell cannot run it" unless Operator::Tty.terminal?
 
-          Operator::Tty.confirm!(LINK_PHRASE, prompt: "Repoint #{link} from #{replaces} to #{target}.")
+          Operator::Tty.confirm!("relink #{target}", prompt: "Repoint #{link} from #{replaces} to #{target}.")
         end
         FileUtils.mkdir_p(File.dirname(link))
         File.delete(link) if replaces

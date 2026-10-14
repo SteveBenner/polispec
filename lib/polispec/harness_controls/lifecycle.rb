@@ -142,6 +142,7 @@ module Polispec
         selectors = [scope, project, state_home]
         if owner
           raise Failure.new("owner_port_conflict", "owner selection cannot use injected development ports", exit_status: 3) if port_set || schedule_port_set
+          return preview_owner_uninstall(installation_id, owner, scope) if dry_run && Process.euid != 0
           identity = operator_identity!("harness.uninstall.overlay")
           plane = resolve_plane
           bind_operator_plane!(identity, plane)
@@ -156,6 +157,59 @@ module Polispec
         state = state_adapter(true, identity, nil, read_only: dry_run)
         uninstall_from_state(installation_id, state, schedule_port_set, identity, dry_run, nil, {})
       end
+
+      def preview_owner_uninstall(installation_id, owner, scope)
+        name = owner.to_s
+        raise Failure.new("owner_required", "mutable overlay removal requires an explicit owner", exit_status: 3) if name.empty?
+        account = begin
+          Etc.getpwnam(name)
+        rescue ArgumentError
+          raise Failure.new("owner_unknown", "selected owner does not exist", exit_status: 3)
+        end
+        raise Failure.new("owner_invalid", "root cannot be selected as a mutable overlay owner", exit_status: 3) if account.uid.zero?
+        unverified = []
+        sources = []
+        begin
+          protected_state = state_adapter(true, nil, nil, read_only: true)
+          sources << ["protected", read_records(protected_state, nil)]
+        rescue Failure
+          unverified << "the protected record stream could not be read by uid #{Process.euid}"
+        end
+        if Process.euid == account.uid
+          begin
+            owner_state = state_adapter(false, nil, nil, read_only: true)
+            sources << ["owner", read_records(owner_state, nil)]
+          rescue Failure
+            unverified << "the state of #{account.name} could not be read"
+          end
+        else
+          unverified << "the state of #{account.name} cannot be read by uid #{Process.euid}"
+        end
+        committed = nil
+        sources.each do |_label, records|
+          committed ||= active_installation(records, installation_id)
+        end
+        if committed.nil?
+          findings = [finding("installation_not_found", "installation #{installation_id} was not found in the records readable by uid #{Process.euid}", nil, "lifecycle", "Run the preview as #{account.name} or as root to read the owner's records.")]
+          findings.concat(unverified.map { |detail| owner_check_finding(detail) })
+          raise Failure.new("installation_not_found", "installation #{installation_id} was not found", findings: findings)
+        end
+        receipt = stringify(committed["receipt"])
+        unverified << "mutable receipt validation against #{account.name}'s files and ownership was not performed"
+        targets = receipt.fetch("artifact_digests", {}).keys
+        {
+          "installation_id" => installation_id, "dry_run" => true, "operator_required" => true,
+          "owner" => account.name, "scope" => receipt["scope"] || scope,
+          "targets" => targets.sort, "schedule_job_ids" => Array(receipt["schedules"]).map { |job| job["job_id"] },
+          "findings" => unverified.map { |detail| owner_check_finding(detail) }
+        }
+      end
+      private_class_method :preview_owner_uninstall
+
+      def owner_check_finding(detail)
+        finding("owner_check_unverified", "The preview could not verify an owner check: #{detail}.", nil, "cli", "Run the preview as root or as the owner, or run the real uninstall through the privileged launcher, to perform this check.")
+      end
+      private_class_method :owner_check_finding
 
       def uninstall_from_state(installation_id, state, schedule_port_set, identity, dry_run, owner_profile, plane)
         records = read_records(state, identity)

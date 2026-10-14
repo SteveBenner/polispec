@@ -73,7 +73,7 @@ polispec code-hook pre|post|stop|session --harness <claude|codex|hermes|...>
 
 `validate` enforces the semantic rules of the contract: policy ids start with the spec path (slashes to dots), active harness and hybrid rules have an enforcer and a control, agent, hybrid and contextual rules have a lens (contextual also `applies_if`), rejected rules carry `rejected:`, refs resolve without a cycle, ids and directive opcodes are unique, and control, compliant and exemplar files exist. `controls` requires each `.bad` fixture to violate exactly its policy and each `.good` fixture to be clean; it exits 1 on any survivor.
 
-`specs link` creates a missing `~/.polispec/specs` link, or confirms one that already points at `<repo>/specs`, without asking. Repointing an existing link at a different target needs an interactive terminal and the typed phrase `relink specs`; an agent shell is refused with exit 1 and the link is untouched. `specs link --dry-run` previews the change (`replaces`, `needs_terminal` in `--json`) and writes nothing.
+`specs link` creates a missing `~/.polispec/specs` link, or confirms one that already points at `<repo>/specs`, without asking. Repointing an existing link at a different target needs an interactive terminal and the typed phrase `relink <full target path>`, where the target is the absolute `<repo>/specs` path the prompt shows; an agent shell is refused with exit 1 and the link is untouched. `specs link --dry-run` previews the change (`replaces`, `needs_terminal` in `--json`) and writes nothing.
 
 `specs promote` needs an interactive terminal and the phrase `promote specs`, requires a clean `validate --ref main` and `controls --ref main`, moves `stable` fast-forward only to `main`, and appends to the `spec_promotions` log.
 
