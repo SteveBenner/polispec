@@ -4,7 +4,7 @@
 
 Spec-based policy guardrails for agents working on software that serves real users. Each governed project declares its dev, test and prod environments, what an agent may do in each (allow, warn, deny), how code is promoted from one to the next, which data and secrets each environment may hold, when promotion is frozen, and which harness, model and effort each agent role gets. polispec judges every agent tool call against that policy and prints a verdict with a reason and a way forward.
 
-The policy is committed on the project's `stable` ref and the guard reads it from there, never from the working tree, so an agent cannot loosen the rules it runs under. The operator alone moves code into production, with one typed command. Until a project's stable ref carries a policy, `promote` and `deploy test` read the committed policy of the branch being promoted (`origin/main` for test, `origin/test` for stable) and report it as `bootstrap:<ref>:<sha>`; the guard keeps the ledger defaults.
+The environment policy is read from the project's committed trust ref, normally `stable`. Unsealed development retains user-controlled settings and overrides. A sealed installation adds root-owned authority, a pinned runtime, and authenticated operator actions; see [harness controls](docs/harness-controls.md) and [operator setup](docs/operator.md). An enforcing guard refuses non-read actions when a live project's trusted policy cannot be loaded. Promotion bootstrap still reads the committed candidate branch policy and reports its exact source; it does not relax the guard.
 
 Behavioral policy adds a separate contract for application directives, parameters and enforcement bindings. Applications consume compiled data through their own adapters; they do not need a running polispec service. See [the behavioral contract](docs/behavior.md).
 
@@ -50,12 +50,33 @@ polispec code controls
 polispec specs promote
 ```
 
+## Harness controls
+
+Version 0.18.0 publishes the implementation with `harness_controls` and `sealed_plane` disabled. Grammar, validation, planning, and read-only inspection are available. New installations, removals, and sealing remain gated; upgrading does not activate the new host defaults. Enabling them is a separate operator decision. Existing explicitly installed controls and active or broken seals retain their protections.
+
+Translate a request into the published grammar or a `polispec.control/v1` document, preview the native artifacts, and install only a verified tightening change.
+
+```sh
+polispec harness grammar --json
+polispec validate control examples/controls.minimal.yml --json
+polispec harness plan examples/controls.minimal.yml --harness codex --scope project --project /absolute/project --json
+polispec plane status --json
+```
+
+Backends cover Claude Code, Codex, Hermes, Antigravity CLI, and OS sandbox planning. Capability reports distinguish generated artifacts, parser acceptance, native enforcement, and lock certification. Missing evidence keeps lock inactive. The `polispec-lock` branch shares the code on `main` and differs only in `EDITION`. [The harness guide](docs/harness-controls.md) records the current native and privileged verification limits.
+
+rplugin's Antigravity integration installs skills only. polispec's separate `harness install --harness antigravity` path generates agy CLI artifacts; native operation remains unverified, and the GUI receives directives only.
+
+Standard polispec runs independently without a lock checkout or protected service. The lock branch is a separately selected edition of the same code, with stricter prerequisites; it does not require a standard installation or a local `main` branch. Its immutable parent records release lineage. One edition is selected per installation; simultaneous independent authority planes in one host namespace are not provided.
+
 ## Settings
 
-Change them with `rplugin settings`, or set the matching environment variable named below.
+For unsealed development, change settings with `rplugin settings`, or use the matching environment variable below. A sealed installation resolves protected settings first and ignores authority redirects from the calling process.
 
-- `polispec.enforce`: `advise` (log verdicts, never block) or `enforce`; default `advise`. It governs the environment guard. `polispec.code.enforce` (`advise` or `tiered`), `polispec.code.check_at` (`pre_write` or `post_write`) and `polispec.code.inject` (`once` or `every_write`) govern code specs.
+- `polispec.enforce`: `advise` (log verdicts, never block) or `enforce`; default `advise`. It governs environment and enabled harness-control verdicts. `polispec.code.enforce` (`advise` or `tiered`), `polispec.code.check_at` (`pre_write` or `post_write`) and `polispec.code.inject` (`once` or `every_write`) govern code specs.
 - `polispec.ledger`: path of the ledger of governed projects; default `~/.config/polispec/ledger.yml`. `POLISPEC_LEDGER` overrides it.
+- `polispec.edition`: `standard` or `lock`, default `standard`; the lock branch requests lock regardless of a mutable downgrade. A request alone does not certify enforcement.
+- `polispec.root_guard`: initially `false`; recorded exposure can arm it, and lock fallback forces it on.
 - `polispec.operator`: how messages name the person who promotes to stable; default `the operator`.
 - `polispec.code.specs_repo`: path of the code specs repository; default `~/polispec-specs`. `POLISPEC_SPECS_REPO` overrides it.
 - `polispec.global.repo`, `polispec.global.ref` (default `main`) and `polispec.global.path` (default `polispec`): where the optional global layer of shared rules, modules and profiles is read from. Unset means no global layer. `POLISPEC_GLOBAL` points at a plain directory for scratch runs. See `docs/schema.md`.
@@ -67,7 +88,8 @@ None is required. Policy `observability.events` may name an `rlogs` sink, and `p
 ## Documentation
 
 - `docs/schema.md`: every key of the policy, roster and ledger, with examples.
-- `docs/operator.md`: promote, deploy, allow-once, pause, settings and host wiring.
+- `docs/operator.md`: sealed authority, protected allow-once, promote, deploy, pause, and host wiring.
+- `docs/harness-controls.md`: grammar, native installation, authority ceilings, editions, and verification limits.
 - `docs/environments.md`: the environment manifest, onboarding, `[ENVS]` and git hooks.
 - `docs/roster.md`: the roster resolver.
 - `docs/behavior.md`: behavioral policy.

@@ -1,9 +1,10 @@
 schema: rplugin/v1
 id: polispec
 name: Polispec
-version: 0.17.1
+version: 0.18.0
 rplugin: ">= 1.12.0"
-description: "Spec-based policy guardrails for agentic development and operations: a versioned policy per live project, enforced from its stable ref in every harness."
+native: true
+description: "Spec-based policy guardrails for agentic development and operations: committed environment policies and deterministic harness controls, with explicit backend capabilities and enforcement limits."
 ports:
   required: [state, events]
   optional: [schedule, notify, registry, decide]
@@ -12,17 +13,19 @@ extensions:
   only: [hermes, pi, deepseek-tui, antigravity]
 corpora: null
 settings:
-  - { key: polispec.enforce, type: enum, options: [advise, enforce], default: advise, scopes: [machine], harnesses: [claude-code, codex, hermes, pi, deepseek-tui, antigravity], description: "advise logs every verdict and never blocks; enforce applies allow, warn and deny." }
-  - { key: polispec.code.enforce, type: enum, options: [advise, tiered], default: tiered, scopes: [machine], harnesses: [claude-code, codex, hermes], description: "advise logs code-spec findings and never blocks; tiered blocks MUST and MUST_NOT violations on changed lines and warns on SHOULD. polispec.enforce keeps governing only the environment guard." }
+  - { key: polispec.edition, type: enum, options: [standard, lock], default: standard, scopes: [machine], description: "Requested edition; lock still requires verified native and protected prerequisites." }
+  - { key: polispec.root_guard, type: bool, default: false, scopes: [machine], description: "Initial root-guard setting; protected exposure history and lock fallback may force it on." }
+  - { key: polispec.enforce, type: enum, options: [advise, enforce], default: advise, scopes: [machine], harnesses: [claude-code, codex, hermes, pi, deepseek-tui, antigravity], description: "Environment policy mode: advise logs verdicts; enforce applies allow, warn, and deny. Enforce combines environment and harness-control ceilings; sealed settings force enforce mode." }
+  - { key: polispec.code.enforce, type: enum, options: [advise, tiered], default: tiered, scopes: [machine], harnesses: [claude-code, codex, hermes], description: "advise logs code-spec findings and never blocks; tiered blocks MUST and MUST_NOT violations on changed lines and warns on SHOULD. polispec.enforce governs environment and enabled harness-control verdicts." }
   - { key: polispec.code.check_at, type: enum, options: [pre_write, post_write], default: pre_write, scopes: [machine], harnesses: [claude-code, codex, hermes], description: "pre_write checks the edited text and denies before anything lands; post_write lets the write land and blocks with the findings. SHOULD findings are always reported after the write." }
   - { key: polispec.code.inject, type: enum, options: [once, every_write], default: once, scopes: [machine], harnesses: [claude-code, codex, hermes], description: "once injects a language's spec chain before the first write per session and chain digest, and again after compaction; every_write injects before every write." }
-  - { key: polispec.ledger, type: path, default: "~/.config/polispec/ledger.yml", scopes: [machine], description: "Path of the host's ledger of governed projects. POLISPEC_LEDGER overrides it." }
+  - { key: polispec.ledger, type: path, default: "~/.config/polispec/ledger.yml", scopes: [machine], description: "Path of the host's ledger of governed projects. POLISPEC_LEDGER overrides it only while unsealed." }
   - { key: polispec.global.repo, type: string, default: "", scopes: [machine], description: "Path of the git repository that holds the global layer. Unset means no global layer. POLISPEC_GLOBAL, a plain directory, overrides it for scratch runs." }
   - { key: polispec.global.ref, type: string, default: main, scopes: [machine], description: "Ref of polispec.global.repo that the global layer is read from, never its working tree." }
   - { key: polispec.global.path, type: string, default: polispec, scopes: [machine], description: "Directory inside polispec.global.repo that holds global.yml, profiles.yml and modules/." }
   - { key: polispec.operator, type: string, default: "the operator", scopes: [machine], description: "How deny and next-step messages name the person who promotes to stable and redeems allow-once." }
   - { key: polispec.supervisor.status_command, type: string, default: "", scopes: [machine], description: "Command (argv, no shell) that prints JSON {\"units\": [...], \"pids\": [...]} for the components a supervisor runs. Rules with match.supervised read it; unset means the predicate is unavailable. RPLUGIN_POLISPEC_POLISPEC_SUPERVISOR_STATUS_COMMAND overrides it." }
-  - { key: polispec.code.specs_repo, type: path, default: "~/polispec-specs", scopes: [machine], description: "Path of the repository that holds the code specs. POLISPEC_SPECS_REPO overrides it." }
+  - { key: polispec.code.specs_repo, type: path, default: "~/polispec-specs", scopes: [machine], description: "Path of the repository that holds the code specs. POLISPEC_SPECS_REPO overrides it only while unsealed." }
   - { key: polispec.logs.count_command, type: string, default: "", scopes: [machine], description: "Argv template (no shell) the logs_quiet gate runs to count log lines. It takes {service}, {since} and {until} (UTC ISO 8601) and prints one integer. RPLUGIN_POLISPEC_POLISPEC_LOGS_COUNT_COMMAND overrides it. Unset fails the gate closed." }
 contents:
   skills:
@@ -35,6 +38,8 @@ contents:
     - { path: docs/schema.md }
     - { path: docs/behavior.md }
     - { path: docs/code-specs.md }
+    - { path: docs/harness-controls.md }
+    - { path: docs/operator.md }
   hooks: hooks/polispec.hooks.yml
   rules:
     - { id: polispec, path: rules/polispec.md }

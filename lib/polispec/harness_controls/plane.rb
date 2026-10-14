@@ -111,9 +111,12 @@ module Polispec
       def requested_edition
         plane = resolve
         raise Authority::Failure.new("broken_plane", "sealed plane is broken", plane["findings"]) if plane["status"] == "broken"
-        return plane["edition"] if plane["status"] == "active"
-
         floor = build_edition
+        if plane["status"] == "active"
+          raise Authority::Failure.new("edition_mismatch", "lock build cannot use a standard plane") if floor == "lock" && plane["edition"] != "lock"
+          return plane["edition"]
+        end
+
         configured = if defined?(Engine::Settings)
                        Engine::Settings.text("polispec.edition", "standard").to_s
                      else

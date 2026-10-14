@@ -5,6 +5,32 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-10-13
+
+### Added
+
+- Deterministic harness-control grammar and `polispec.control/v1`, with explicit native plans, tightening-only installation, owned-artifact receipts, verification, and authenticated removal. Backends cover Claude Code, Codex, Hermes, Antigravity CLI, and OS sandbox planning.
+- Root-owned authority generations and pinned runtime provenance, exact Git sources for standard, root-authored sources for lock, and explicit operator activation and rollback. No live project is activated by installation.
+- Protected one-use authorization service with kernel peer identity, bounded Unix transport, exact combined ask bindings, durable consumption, replay refusal, operator redemption, an explicit kill marker, and stale-socket recovery. Unit rendering does not install or start a service.
+- Container exposure scans with distinct follow-up arming, conservative protected-history validation, and separate rootless observations.
+- Standard and lock editions using one codebase, an edition-only `polispec-lock` release operation with exact leases and recovery reporting, and local provenance checks in doctor.
+
+### Fixed
+
+- Hook failures now deny non-read actions with fixed native output while preserving positive diagnostic reads. Input and judgement are bounded, native session envelopes stay separate, and multi-edit and rename endpoints are fully classified.
+- Independent control ceilings, exact MCP declaration selectors, strict overlay history and current contribution checks, and sealed settings resolution prevent mutable additions from weakening protected authority.
+- Doctor works without RubyGems, and edit classification retains the declared Ruby 2.6 API floor.
+
+### Release activation
+
+- Both feature flags remain disabled by operator direction. This release publishes the finished implementation; it does not activate host defaults, controls, a plane, or live projects. Grammar, validation, planning, and read-only inspection remain available.
+- Standard and lock operate from independent checkouts. Lock doctor verifies its immutable parent without depending on the current main ref, and a lock executable refuses an active standard-plane mismatch. Shared release source does not require the other edition to be installed.
+
+### Verification limits
+
+- Artifact, CLI, parser, and scratch transport evidence are reported separately from native enforcement. No paid model journey, root-owned host seal, protected host service installation, timer activation, or live-project activation was performed. Hermes and agy runtimes were absent; Bubblewrap namespace startup was unavailable. No backend is marked lock-certified.
+- This standalone plugin has no matching compiled rhomeostasis obligation verifier. The operator approved reviewed commits and actual CLI/rplugin verification with unavailable attestation recorded; no passed attestation is claimed.
+
 ## [0.17.1] - 2026-10-10
 
 ### Fixed

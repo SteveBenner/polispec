@@ -1,6 +1,6 @@
 # POLISPEC — Obey the Policy of a Live Project
 
-A live project is listed in the host's ledger (`POLISPEC_LEDGER`, else the `polispec.ledger` setting, else `~/.config/polispec/ledger.yml`) with `status: live` and carries a versioned policy under `specs/polispec/`. The guard reads that policy from the project's stable ref, never from the working tree, so no agent can loosen its own rules. A project with `status: onboarding` is listed but not enforced.
+A live project is listed in the host's ledger (`POLISPEC_LEDGER`, else the `polispec.ledger` setting, else `~/.config/polispec/ledger.yml`) with `status: live` and carries a versioned policy under `specs/polispec/`. The guard reads that policy from the project's stable ref. Unsealed settings remain user-controlled; the sealed authority plane supplies the protected boundary and ignores mutable authority redirects. A project with `status: onboarding` is listed but not enforced.
 
 ## Three verdicts
 
@@ -20,7 +20,7 @@ On a `warn` verdict, ask the user with the question tool. State what you are abo
 
 ## Promotion paths
 
-Branches run main (dev) to test to stable (prod). Test fast-forwards only from main, and stable fast-forwards only from test; neither is ever rewritten. An agent promotes with `polispec promote <repo> --to test`, which allows on a green gate and denies on red, and tags the release. An agent never pushes `test` or `stable` directly. Only the operator (the person named by the `polispec.operator` setting) runs `polispec promote <repo> --to stable`, `polispec deploy <repo> stable`, `polispec pause`, and `polispec allow-once`, each from a TTY with a typed phrase. The operator may hotfix stable directly; the drift rule then forces the patch back into main before the next promotion.
+Branches run main (dev) to test to stable (prod). Test fast-forwards only from main, and stable fast-forwards only from test; neither is ever rewritten. An agent promotes with `polispec promote <repo> --to test`, which allows on a green gate and denies on red, and tags the release. An agent never pushes `test` or `stable` directly. Only the operator (the person named by the `polispec.operator` setting) runs `polispec promote <repo> --to stable`, `polispec deploy <repo> stable`, `polispec pause`, and `polispec allow-once`, each with its required confirmation. Sealed actions also require authenticated privilege through the protected launcher; a TTY alone is insufficient. The operator may hotfix stable directly; the drift rule then forces the patch back into main before the next promotion.
 
 ## Roster
 
@@ -31,3 +31,11 @@ The project's `specs/polispec/roster.yml` governs the harness, model, and effort
 Projects use branches main, test, stable. Environment checkouts live at `~/.polispec/envs/<repo>/<env>`.
 
 - Only the operator runs `polispec promote --to stable`, which flips the release to Latest. Rollback is `polispec deploy <repo> stable --tag vPREV`, also the operator only.
+
+## Harness controls and protected authority
+
+Agents may add only provably tightening controls at user or project scope. Sealing, managed changes, loosening, removal, and live activation belong to the authenticated operator. A broken existing seal fails closed rather than falling back to user settings.
+
+Controls form an independent ceiling over environment policy. Pause and legacy grants cannot erase explicit control denials, protected-path refusals, root guard, or lock defaults. Standard undeclared MCP calls ask; lock denies them. Without native ask support, the action stays blocked until the operator grants the exact protected request. Only its bound action, complete ask set, policy and control digests, harness, user, and session may consume it once.
+
+Keep positive diagnostic reads available on guard failure. Shell, MCP, web, delegation, mixed calls, and malformed mutation requests are not diagnostic-read exceptions. Report unsupported native evidence honestly; generated files do not certify lock.

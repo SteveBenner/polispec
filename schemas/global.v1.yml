@@ -54,12 +54,18 @@ $defs:
     type: array
     items: { type: string, minLength: 1 }
   action_class:
-    enum: [git.commit, git.push, git.tag, git.merge, git.rewrite, git.branch, release.publish, service.control, service.config, fs.write, fs.delete, data.write, data.copy, secrets.read, policy.edit, promote, deploy]
+    enum: [git.commit, git.push, git.tag, git.merge, git.rewrite, git.branch, release.publish, service.control, service.config, fs.write, fs.delete, data.write, data.copy, secrets.read, policy.edit, promote, deploy, control.edit, mcp.call, web.fetch, agent.spawn, shell.exec]
   match:
     type: object
     additionalProperties: false
     properties:
       env: { enum: [dev, test, prod] }
+      server: { type: string, minLength: 1, maxLength: 4096 }
+      operation: { type: string, minLength: 1, maxLength: 4096 }
+      domain: { type: string, minLength: 1, maxLength: 4096 }
+      tool: { type: string, minLength: 1, maxLength: 4096 }
+      role: { type: string, minLength: 1, maxLength: 4096 }
+      path: { type: string, minLength: 1, maxLength: 4096 }
       class:
         type: array
         minItems: 1

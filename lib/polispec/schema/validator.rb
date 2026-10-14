@@ -92,6 +92,9 @@ module Polispec
         if schema["minLength"] && value.length < schema["minLength"]
           errors << Error.new(pointer, "must be at least #{schema['minLength']} characters")
         end
+        if schema["maxLength"] && value.length > schema["maxLength"]
+          errors << Error.new(pointer, "must be at most #{schema['maxLength']} characters")
+        end
         return unless schema["pattern"] && !Regexp.new(schema["pattern"]).match?(value)
 
         errors << Error.new(pointer, "must match #{schema['pattern']}")
