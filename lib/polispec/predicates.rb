@@ -381,7 +381,7 @@ module Polispec
 
       reasons = []
       reasons << existing_tag_note(repo, name, data["ref"]) if action.action_class == "git.tag"
-      reasons << remote_version_note(repo, name)
+      reasons << remote_version_note(repo, name, data["ref"])
       reasons = reasons.compact
       reasons.empty? ? no : yes([reasons.join("; "), fetch_note(repo)].compact.join("; "))
     end
@@ -396,15 +396,31 @@ module Polispec
       "tag #{name} already exists at #{existing[0, 9]}"
     end
 
-    def remote_version_note(repo, name)
+    def remote_version_note(repo, name, ref)
       text = git_ok(repo, "show", "refs/remotes/origin/main:VERSION")
       return nil unless text
 
       wanted = Gem::Version.new(name.delete_prefix("v"))
       current = Gem::Version.new(text.lines.first.to_s.strip)
-      wanted <= current ? "#{name} is not greater than origin/main's version #{current}" : nil
+      return nil if wanted > current
+      return nil if wanted == current && carries_version?(repo, ref, wanted)
+
+      "#{name} is not greater than origin/main's version #{current}"
     rescue ArgumentError
       nil
+    end
+
+    def carries_version?(repo, ref, wanted)
+      target = git_ok(repo, "rev-parse", "-q", "--verify", "#{ref || 'HEAD'}^{commit}")
+      return false unless target
+
+      _, status = git(repo, "merge-base", "--is-ancestor", target, "refs/remotes/origin/main")
+      return false unless status.success?
+
+      text = git_ok(repo, "show", "#{target}:VERSION")
+      !text.nil? && Gem::Version.new(text.lines.first.to_s.strip) == wanted
+    rescue ArgumentError
+      false
     end
 
     def fetch_note(repo)
