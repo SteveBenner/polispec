@@ -66,16 +66,23 @@ module Polispec
           }
         end
 
-        def normalize(native_event)
+        TOOL_EVENTS = %w[PreToolUse PostToolUse].freeze
+
+        def normalize(native_event, events: ["PreToolUse"])
           data = native_event.is_a?(String) ? JSON.parse(native_event) : native_event
           raise Polispec::Error, "Codex hook input must be a JSON object" unless data.is_a?(Hash)
           values = stringify(data)
           event = values["hook_event_name"] || values["event"]
-          raise Polispec::Error, "Codex backend accepts only PreToolUse input" unless event.to_s.empty? || event.to_s == "PreToolUse"
+          raise Polispec::Error, "Codex backend accepts only #{events.join(" or ")} input" unless event.to_s.empty? || events.include?(event.to_s)
           tool_name = values["tool_name"] || values["toolName"]
           tool_input = values["tool_input"] || values["toolInput"]
-          raise Polispec::Error, "Codex PreToolUse input requires tool_name" unless tool_name.is_a?(String) && !tool_name.empty?
-          raise Polispec::Error, "Codex PreToolUse input requires object tool_input" unless tool_input.is_a?(Hash)
+          if event.to_s.empty? || TOOL_EVENTS.include?(event.to_s)
+            raise Polispec::Error, "Codex #{event.to_s.empty? ? events.first : event} input requires tool_name" unless tool_name.is_a?(String) && !tool_name.empty?
+            raise Polispec::Error, "Codex #{event.to_s.empty? ? events.first : event} input requires object tool_input" unless tool_input.is_a?(Hash)
+          else
+            tool_name = nil
+            tool_input = {}
+          end
 
           Polispec::Harness::Input.new(
             tool_name: tool_name,
@@ -83,7 +90,7 @@ module Polispec
             cwd: values["cwd"],
             session_id: values["session_id"] || values["sessionId"],
             agent_type: values["agent_type"] || values["agentType"],
-            event: "PreToolUse"
+            event: event.to_s.empty? ? "PreToolUse" : event.to_s
           )
         rescue JSON::ParserError => error
           raise Polispec::Error, "invalid Codex hook JSON: #{error.message}"
