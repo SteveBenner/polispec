@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.6] - 2026-10-13
+
+### Fixed
+
+- `onboard` (service archetype) scaffolded `deploy.steps` without `deploy.health`, so validate, promote and deploy refused the new policy. test and prod now carry a placeholder `deploy.health.run` that exits 1 and says to replace it: the policy validates and promotes to test, and `deploy` fails its health check until the operator writes a real one (`templates/onboard/service/environments.yml`, `docs/environments.md`).
+- `onboard` validates the ledger with the new entry before writing any file, so a `ledger_invalid` failure leaves no scaffold behind.
+- `onboard` created test and stable at main before the scaffold was committed, so with `--push` origin stable carried no policy and doctor reported `policy_missing`. The branches are now created only once the scaffold is committed on main; otherwise step 5 is skipped with the exact commands to run (`lib/polispec/commands/onboard.rb`).
+- `onboard` dry-run and re-run wording ("would wrote", "would fresh added", "kept kept") now reads "would write", "would add fresh to", "already present".
+- `status` reported no finding for a policy that `promote` rejects as `policy_invalid`; it now reports the same `policy_invalid` finding for a missing health check, bad environment names or invalid profiles (`lib/polispec/commands/status.rb`).
+
 ## [0.18.5] - 2026-10-13
 
 ### Fixed
