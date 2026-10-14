@@ -370,12 +370,15 @@ module Polispec
       paths = @touched.uniq
       return note("4b_commit", "kept", "onboard wrote no files, so there is nothing to commit") if paths.empty?
 
-      return note("4b_commit", "would", "commit #{paths.join(', ')} on main as '#{COMMIT_MESSAGE}'") if @options.dry
-
       branch = @git.run("symbolic-ref", "--quiet", "--short", "HEAD").out.strip
       unless branch == "main"
-        note("4b_commit", "skipped", "HEAD is #{branch.empty? ? 'detached' : branch}, not main, so nothing was committed; run: #{commit_command}")
+        note("4b_commit", "skipped", "HEAD is #{branch.empty? ? 'detached' : branch}, not main, so nothing #{@options.dry ? 'would be' : 'was'} committed; run: #{commit_command}")
         return
+      end
+
+      if @options.dry
+        @commit_planned = true
+        return note("4b_commit", "would", "commit #{paths.join(', ')} on main as '#{COMMIT_MESSAGE}'")
       end
 
       @git.run!("add", "--", *paths, code: "commit_failed")
@@ -388,6 +391,14 @@ module Polispec
       trust = @options.trust_ref
       unless @git.rev("refs/heads/main")
         note("5_branches", "skipped", "no local main branch; create #{test_branch} and #{trust} by hand")
+        return
+      end
+
+      if @commit_planned && !scaffold_on_main?
+        created = [test_branch, trust].reject { |name| @git.rev("refs/heads/#{name}") }
+        _status, tail = push_outcome(test_branch, trust)
+        detail = created.empty? ? "#{test_branch} and #{trust} already exist" : "create #{created.join(' and ')} at main after the commit"
+        note("5_branches", "would", "#{detail}; #{tail}")
         return
       end
 
