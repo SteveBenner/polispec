@@ -25,7 +25,13 @@ module Polispec
         result = verb == "link" ? Code::Admin.link(repo, dry_run: dry_run) : Code::Admin.public_send(verb, repo)
         json ? puts(JSON.generate(result)) : print_text(verb, result)
         0
-      rescue Operator::Tty::NotTty, Operator::Tty::PhraseMismatch, Code::Error => e
+      rescue Operator::Tty::NotTty => e
+        warn "polispec specs: not_tty: #{e.message}"
+        1
+      rescue Operator::Tty::PhraseMismatch => e
+        warn "polispec specs: confirmation_failed: #{e.message}"
+        1
+      rescue Code::Error => e
         warn "polispec specs: #{e.message}"
         1
       end
