@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.1] - 2026-10-13
+
+### Fixed
+
+- `tag_claimed` no longer refuses the release tag itself. A tag equal to the `VERSION` at `refs/remotes/origin/main` matched as taken even when it named the release commit on origin/main, so the order the rule asks for (re-bump, push main, tag last) was always denied, for `git tag` and for the tag push. An equal version now matches only when the tagged commit is not an ancestor of origin/main or its own `VERSION` differs; a lower version still matches (`lib/polispec/predicates.rb`).
+- `git tag vX <commit-ish>` is judged on the commit it names. The classifier gave `tag_claimed` the current branch for a SHA target and the local branch for `origin/main` (`ref` strips the remote for environment resolution), so a clone without a current local `main` was refused for tagging origin/main's release commit. The `git.tag` hint now carries the commit-ish as written in `at`, which `tag_claimed` checks; `ref` is unchanged (`lib/polispec/classify/commands/git.rb`, `docs/schema.md`).
+
 ## [0.18.0] - 2026-10-13
 
 ### Added

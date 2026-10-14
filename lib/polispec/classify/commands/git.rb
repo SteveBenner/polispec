@@ -227,7 +227,7 @@ module Polispec
 
           ref = pos[1] && !pos[1].match?(/\A[0-9a-f]{7,40}\z/) ? ref_name(pos[1]) : current(inv)
           deleting = flags.include?("-d") || flags.include?("--delete")
-          out = [action(inv, "git.tag", ref: ref, tag: pos[0], delete: deleting ? true : nil)]
+          out = [action(inv, "git.tag", ref: ref, tag: pos[0], at: pos[1], delete: deleting ? true : nil)]
           out << action(inv, "git.rewrite", ref: ref, tag: pos[0]) if flags.include?("-f") || flags.include?("--force")
           out
         end
@@ -338,8 +338,8 @@ module Polispec
           fs_path(inv)
         end
 
-        def action(inv, klass, ref: nil, tag: nil, base: nil, delete: nil)
-          Support.act(klass, inv.cmd.text, base(inv).merge(Support.hint(ref: ref, tag: tag, base: base, delete: delete)))
+        def action(inv, klass, ref: nil, tag: nil, base: nil, delete: nil, at: nil)
+          Support.act(klass, inv.cmd.text, base(inv).merge(Support.hint(ref: ref, tag: tag, at: at, base: base, delete: delete)))
         end
 
         def base(inv)
