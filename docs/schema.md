@@ -171,6 +171,33 @@ projects:
   - { id: shop, status: live, repo: ~/src/shop, trust_ref: stable, policy: specs/polispec/policy.yml, roster: specs/polispec/roster.yml }
 ```
 
+## Smoke ledger: `polispec.smoke/v1`
+
+Records smoke tests that proved a spec or sub-spec in reality (`docs/smoke.md`). The file is `smoke.yml` at the git toplevel of the working directory; `POLISPEC_SMOKE`, then the `polispec.smoke.path` setting, override it. Written only by `polispec smoke record`.
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `schema` | `polispec.smoke/v1` | Document type. |
+| `entries[]` | list | Append-only, oldest first. |
+| `entries[].id` | `smk_` + 12 hex | sha256 prefix of the entry without `id` and `digest`. |
+| `entries[].recorded_at`, `started_at`, `finished_at` | ISO 8601 | `recorded_at` is set by `record`; the others are optional. |
+| `entries[].proves` | object | `spec` (path relative to the toplevel of a YAML file), `at` (slash path: mapping key or list item `name`/`id`; `~1` is `/`, `~0` is `~`; empty for the whole file), `spec_digest` (sha256 of the file), `at_digest` (sha256 of the canonical JSON of the node). |
+| `entries[].verdict` | `pass`, `fail`, `partial`, `blocked` | |
+| `entries[].summary` | string | What was shown. |
+| `entries[].steps[]` | list | `run`, `exit` (integer or null), `expect`, `observed`. |
+| `entries[].evidence[]` | list | `path` (relative to the toplevel, else a basename), `sha256`, `bytes`, `kind`. |
+| `entries[].runner` | object | `kind` (`human`, `agent`), `harness`, `harness_version`, `model`, `effort`. |
+| `entries[].runtime` | object | Captured OS, kernel, architecture, container and WSL flags, time zone, locale, Ruby, polispec version, edition, commit, dirty flag, install kind, rplugin version, enforce mode. No host or user identity. |
+| `entries[].target` | object | Captured `commit`, `branch`, `dirty` (ignoring the ledger file), and `project`, `env`, `policy_digest` when the toplevel is governed. |
+| (anchor) | | Not in the file: `record` keeps the head `{digest, count, recorded_at}` per ledger real path in `smoke-heads.json` under the polispec state home; `verify` reports `truncated` against it. |
+| `entries[].prev`, `digest` | sha256 or null | `prev` is the previous entry's `digest` (null first); `digest` covers the canonical JSON of the entry without `digest`. |
+
+```yaml
+schema: polispec.smoke/v1
+entries:
+  - { id: smk_4980154c744d, proves: { spec: specs/app.yml, at: "commands/promote, deploy", spec_digest: "…", at_digest: "…" }, verdict: pass, summary: "promote --to test moved test and deploy recorded a verified receipt", steps: [], evidence: [], runner: { kind: agent, harness: claude-code, harness_version: 2.1.296, model: claude-haiku-5-5, effort: null }, runtime: {}, target: {}, recorded_at: "2026-10-13T23:59:00Z", prev: null, digest: "…" }
+```
+
 ## Layers: `polispec.global/v1`, `polispec.module/v1`, `polispec.profiles/v1`
 
 A policy is composed from layers: the global layer, the repo policy, then any ledgered child project nested under the repo that contains the path, nearest last. The global layer is `global.yml`, `profiles.yml` and `modules/<name>.yml` read from the `polispec.global.*` settings (see `docs/operator.md`). With no global source configured, verdicts are exactly those of the repo policy alone.

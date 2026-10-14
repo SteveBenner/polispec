@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.2] - 2026-10-13
+
+### Added
+
+- Smoke ledger: `smoke.yml` (`polispec.smoke/v1`, `schemas/smoke.v1.yml`) records smoke tests that proved a spec or sub-spec in reality. `polispec smoke record` checks that the `--spec`/`--at` reference resolves, stores the node's digest, the verdict (`pass`, `fail`, `partial`, `blocked`), steps and evidence digests, and captures the runtime (OS, kernel, architecture, container and WSL flags, time zone, locale, Ruby, polispec version, edition, commit and install kind, rplugin version, enforce mode) and the target (commit, branch, dirty flag, governed project, environment and policy digest). No hostname, user name or absolute path is recorded. Entries are hash-chained and appended under a lock in the git common dir. `record` also anchors the head digest and count per ledger in `smoke-heads.json` under the state home. `smoke list`, `show`, `verify` (schema, digest, chain, duplicate ids, truncation against the anchor; stale and unresolved references) and `coverage` (per-unit status against the current spec, from `smoke.coverage_units` in `specs/app.yml` or `--at` patterns) read it back; `polispec validate smoke` validates it. `record` emits `polispec.smoke`. Setting `polispec.smoke.path`, overridden by `POLISPEC_SMOKE` (`lib/polispec/smoke.rb`, `lib/polispec/commands/smoke.rb`, `docs/smoke.md`).
+- `ROADMAP.md`, with shipping a bundled smoke-test suite as its first item. Operators run their own smoke tests today.
+
 ## [0.18.1] - 2026-10-13
 
 ### Fixed
