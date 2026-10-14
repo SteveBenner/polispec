@@ -6964,3 +6964,459 @@ entries:
     policy_digest:
   prev: 497b74760b6b8e7f2bc2ef7337668dff46493cbd27c8040fe26b9fd1952f7bfd
   digest: 050c9a813ecbc6d410f9d5b102f148aa0e0706e3d7c5fe9cdd6985ce0c2fcfaa
+- id: smk_19f59032240c
+  recorded_at: '2026-10-14T03:38:42Z'
+  started_at: '2026-10-14T03:10:00Z'
+  finished_at: '2026-10-14T03:30:00Z'
+  proves:
+    spec: specs/app.yml
+    at: code_specs/commands/code detect|chain|show|check|validate|baseline|controls|generate|classify
+    spec_digest: d6e75b9eb2da57fea22666f146c6e0f36d4d5b08c9714fa021587d2f4529f039
+    at_digest: 49bc3fe2ad1c9ceeeef3a5d22b9560ecf091cdcf98aac0162784690b688d8cb3
+  verdict: pass
+  summary: 'fix5: code classify on a non-spec file now exits 1 with the reason.'
+  steps:
+  - run: 'main: polispec specs link --repo repoB with HOME scratch, stdin null'
+    exit: 0
+    expect: refused without terminal
+    observed: link repointed A to B silently
+  - run: 'worktree: same'
+    exit: 1
+    expect: refused
+    observed: needs an interactive terminal; link unchanged
+  - run: worktree pty wrong phrase
+    exit: 1
+    expect: mismatch, unchanged
+    observed: typed phrase did not match; link unchanged
+  - run: worktree pty phrase relink specs
+    exit: 0
+    expect: relinked
+    observed: link repointed
+  - run: worktree specs link missing link / same target / --dry-run
+    exit: 0
+    expect: no prompt
+    observed: created; already linked; preview with replaces and needs_terminal
+  - run: 'Haiku runner main vs worktree: specs link --repo repoB'
+    exit:
+    expect: main replaces, worktree refuses
+    observed: 'main: link -> repoB; worktree: needs an interactive terminal, link
+      stayed repoA'
+  - run: harness uninstall inst_x --dry-run --json (non-root)
+    exit: 1
+    expect: preview path, not operator_required
+    observed: 'main exit 3 operator_required uid 0; fixed: installation_not_found
+      (real lookup), non-dry still feature_disabled'
+  - run: harness scan --json with HOME overridden
+    exit: 3
+    expect: ok false with cause
+    observed: main ok true exit 0 Polispec::Error; fixed ok false exit 3 naming the
+      rplugin state port unavailable
+  - run: seal --from repo@HEAD --dry-run with example ledger
+    exit:
+    expect: no invalid_bundle
+    observed: 'main invalid_bundle onboarded must be string got date; fixed: only
+      protected-runtime readiness findings'
+  - run: code classify non-spec.txt
+    exit: 1
+    expect: reason
+    observed: 'main: exit 0/empty or decide port message; fixed: defines no policy
+      rules in this pack'
+  evidence:
+  - path: haiku.jsonl
+    sha256: 31adc36f7f21157d529200e1c12d5241534f680c868ae2ca434b9fd18847712a
+    bytes: 18457
+    kind: transcript
+  - path: hook.jsonl
+    sha256: 71acb499a995e34bdacb22725bc9f157457ceb8a0c4d80ecd2ba61bff4c3d94c
+    bytes: 4134
+    kind: events
+  - path: haiku.jsonl
+    sha256: 778f48c0c4349b094f257bbf677c5d1006735e20b137dff5fb7977f9973932eb
+    bytes: 19399
+    kind: transcript
+  - path: hook.jsonl
+    sha256: 8fa75e924adc4519f4492816dc65adbdd2711b20a5d7dd49cb4e2a91b3ceb0ad
+    bytes: 4123
+    kind: events
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: claude-haiku-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.7
+      edition: standard
+      commit: a0abd2f39303ce67e481e210306eaebba0ec5457
+      dirty: false
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: a0abd2f39303ce67e481e210306eaebba0ec5457
+    branch: fix/b5
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: 050c9a813ecbc6d410f9d5b102f148aa0e0706e3d7c5fe9cdd6985ce0c2fcfaa
+  digest: a85d99d6e84c1fba232b1a2a036c6be44e42424165503037a99b5133340060e6
+- id: smk_1433a2e13318
+  recorded_at: '2026-10-14T03:38:43Z'
+  started_at: '2026-10-14T03:10:00Z'
+  finished_at: '2026-10-14T03:30:00Z'
+  proves:
+    spec: specs/app.yml
+    at: code_specs/commands/specs link|status|promote
+    spec_digest: d6e75b9eb2da57fea22666f146c6e0f36d4d5b08c9714fa021587d2f4529f039
+    at_digest: 66c6c45f122acfa315324979d78428301ac060a99258d8149327b65e06f6ecf1
+  verdict: pass
+  summary: 'fix5: specs link: replacement of a different target needs a terminal and
+    the phrase relink specs (pty verified, Haiku refused); create and same-target
+    need neither; --dry-run previews; run with HOME and POLISPEC_HOME in scratch.'
+  steps:
+  - run: 'main: polispec specs link --repo repoB with HOME scratch, stdin null'
+    exit: 0
+    expect: refused without terminal
+    observed: link repointed A to B silently
+  - run: 'worktree: same'
+    exit: 1
+    expect: refused
+    observed: needs an interactive terminal; link unchanged
+  - run: worktree pty wrong phrase
+    exit: 1
+    expect: mismatch, unchanged
+    observed: typed phrase did not match; link unchanged
+  - run: worktree pty phrase relink specs
+    exit: 0
+    expect: relinked
+    observed: link repointed
+  - run: worktree specs link missing link / same target / --dry-run
+    exit: 0
+    expect: no prompt
+    observed: created; already linked; preview with replaces and needs_terminal
+  - run: 'Haiku runner main vs worktree: specs link --repo repoB'
+    exit:
+    expect: main replaces, worktree refuses
+    observed: 'main: link -> repoB; worktree: needs an interactive terminal, link
+      stayed repoA'
+  - run: harness uninstall inst_x --dry-run --json (non-root)
+    exit: 1
+    expect: preview path, not operator_required
+    observed: 'main exit 3 operator_required uid 0; fixed: installation_not_found
+      (real lookup), non-dry still feature_disabled'
+  - run: harness scan --json with HOME overridden
+    exit: 3
+    expect: ok false with cause
+    observed: main ok true exit 0 Polispec::Error; fixed ok false exit 3 naming the
+      rplugin state port unavailable
+  - run: seal --from repo@HEAD --dry-run with example ledger
+    exit:
+    expect: no invalid_bundle
+    observed: 'main invalid_bundle onboarded must be string got date; fixed: only
+      protected-runtime readiness findings'
+  - run: code classify non-spec.txt
+    exit: 1
+    expect: reason
+    observed: 'main: exit 0/empty or decide port message; fixed: defines no policy
+      rules in this pack'
+  evidence:
+  - path: haiku.jsonl
+    sha256: 31adc36f7f21157d529200e1c12d5241534f680c868ae2ca434b9fd18847712a
+    bytes: 18457
+    kind: transcript
+  - path: hook.jsonl
+    sha256: 71acb499a995e34bdacb22725bc9f157457ceb8a0c4d80ecd2ba61bff4c3d94c
+    bytes: 4134
+    kind: events
+  - path: haiku.jsonl
+    sha256: 778f48c0c4349b094f257bbf677c5d1006735e20b137dff5fb7977f9973932eb
+    bytes: 19399
+    kind: transcript
+  - path: hook.jsonl
+    sha256: 8fa75e924adc4519f4492816dc65adbdd2711b20a5d7dd49cb4e2a91b3ceb0ad
+    bytes: 4123
+    kind: events
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: claude-haiku-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.7
+      edition: standard
+      commit: a0abd2f39303ce67e481e210306eaebba0ec5457
+      dirty: true
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: a0abd2f39303ce67e481e210306eaebba0ec5457
+    branch: fix/b5
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: a85d99d6e84c1fba232b1a2a036c6be44e42424165503037a99b5133340060e6
+  digest: ac8103139a6c1357ed1961b78322818f2808356ea3ac09fc533562fbd692b213
+- id: smk_8fa3f5a75d50
+  recorded_at: '2026-10-14T03:38:43Z'
+  started_at: '2026-10-14T03:10:00Z'
+  finished_at: '2026-10-14T03:30:00Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/harness
+    spec_digest: d6e75b9eb2da57fea22666f146c6e0f36d4d5b08c9714fa021587d2f4529f039
+    at_digest: 66483712a1db9d0a0ff3b3edf247fb8b592cc39338f3202505a08373203d6c07
+  verdict: pass
+  summary: 'fix5: uninstall --dry-run previews without root, scan reports the real
+    cause with ok false exit 3; mutation still feature_disabled.'
+  steps:
+  - run: 'main: polispec specs link --repo repoB with HOME scratch, stdin null'
+    exit: 0
+    expect: refused without terminal
+    observed: link repointed A to B silently
+  - run: 'worktree: same'
+    exit: 1
+    expect: refused
+    observed: needs an interactive terminal; link unchanged
+  - run: worktree pty wrong phrase
+    exit: 1
+    expect: mismatch, unchanged
+    observed: typed phrase did not match; link unchanged
+  - run: worktree pty phrase relink specs
+    exit: 0
+    expect: relinked
+    observed: link repointed
+  - run: worktree specs link missing link / same target / --dry-run
+    exit: 0
+    expect: no prompt
+    observed: created; already linked; preview with replaces and needs_terminal
+  - run: 'Haiku runner main vs worktree: specs link --repo repoB'
+    exit:
+    expect: main replaces, worktree refuses
+    observed: 'main: link -> repoB; worktree: needs an interactive terminal, link
+      stayed repoA'
+  - run: harness uninstall inst_x --dry-run --json (non-root)
+    exit: 1
+    expect: preview path, not operator_required
+    observed: 'main exit 3 operator_required uid 0; fixed: installation_not_found
+      (real lookup), non-dry still feature_disabled'
+  - run: harness scan --json with HOME overridden
+    exit: 3
+    expect: ok false with cause
+    observed: main ok true exit 0 Polispec::Error; fixed ok false exit 3 naming the
+      rplugin state port unavailable
+  - run: seal --from repo@HEAD --dry-run with example ledger
+    exit:
+    expect: no invalid_bundle
+    observed: 'main invalid_bundle onboarded must be string got date; fixed: only
+      protected-runtime readiness findings'
+  - run: code classify non-spec.txt
+    exit: 1
+    expect: reason
+    observed: 'main: exit 0/empty or decide port message; fixed: defines no policy
+      rules in this pack'
+  evidence:
+  - path: haiku.jsonl
+    sha256: 31adc36f7f21157d529200e1c12d5241534f680c868ae2ca434b9fd18847712a
+    bytes: 18457
+    kind: transcript
+  - path: hook.jsonl
+    sha256: 71acb499a995e34bdacb22725bc9f157457ceb8a0c4d80ecd2ba61bff4c3d94c
+    bytes: 4134
+    kind: events
+  - path: haiku.jsonl
+    sha256: 778f48c0c4349b094f257bbf677c5d1006735e20b137dff5fb7977f9973932eb
+    bytes: 19399
+    kind: transcript
+  - path: hook.jsonl
+    sha256: 8fa75e924adc4519f4492816dc65adbdd2711b20a5d7dd49cb4e2a91b3ceb0ad
+    bytes: 4123
+    kind: events
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: claude-haiku-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.7
+      edition: standard
+      commit: a0abd2f39303ce67e481e210306eaebba0ec5457
+      dirty: true
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: a0abd2f39303ce67e481e210306eaebba0ec5457
+    branch: fix/b5
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: ac8103139a6c1357ed1961b78322818f2808356ea3ac09fc533562fbd692b213
+  digest: 492632506f63f0e99812e679819cc64c9b8bf3061b57a2c2d28e0eb5cb547e60
+- id: smk_c76de2bd02f4
+  recorded_at: '2026-10-14T03:38:43Z'
+  started_at: '2026-10-14T03:10:00Z'
+  finished_at: '2026-10-14T03:30:00Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/seal
+    spec_digest: d6e75b9eb2da57fea22666f146c6e0f36d4d5b08c9714fa021587d2f4529f039
+    at_digest: 3e2c575439bc3afb58acaf10f8a73ef5154ff9e6e4fc53d595174ada878e4b9e
+  verdict: pass
+  summary: 'fix5: seal --dry-run accepts examples/ledger.example.yml (YAML dates normalised
+    as the ledger loader does).'
+  steps:
+  - run: 'main: polispec specs link --repo repoB with HOME scratch, stdin null'
+    exit: 0
+    expect: refused without terminal
+    observed: link repointed A to B silently
+  - run: 'worktree: same'
+    exit: 1
+    expect: refused
+    observed: needs an interactive terminal; link unchanged
+  - run: worktree pty wrong phrase
+    exit: 1
+    expect: mismatch, unchanged
+    observed: typed phrase did not match; link unchanged
+  - run: worktree pty phrase relink specs
+    exit: 0
+    expect: relinked
+    observed: link repointed
+  - run: worktree specs link missing link / same target / --dry-run
+    exit: 0
+    expect: no prompt
+    observed: created; already linked; preview with replaces and needs_terminal
+  - run: 'Haiku runner main vs worktree: specs link --repo repoB'
+    exit:
+    expect: main replaces, worktree refuses
+    observed: 'main: link -> repoB; worktree: needs an interactive terminal, link
+      stayed repoA'
+  - run: harness uninstall inst_x --dry-run --json (non-root)
+    exit: 1
+    expect: preview path, not operator_required
+    observed: 'main exit 3 operator_required uid 0; fixed: installation_not_found
+      (real lookup), non-dry still feature_disabled'
+  - run: harness scan --json with HOME overridden
+    exit: 3
+    expect: ok false with cause
+    observed: main ok true exit 0 Polispec::Error; fixed ok false exit 3 naming the
+      rplugin state port unavailable
+  - run: seal --from repo@HEAD --dry-run with example ledger
+    exit:
+    expect: no invalid_bundle
+    observed: 'main invalid_bundle onboarded must be string got date; fixed: only
+      protected-runtime readiness findings'
+  - run: code classify non-spec.txt
+    exit: 1
+    expect: reason
+    observed: 'main: exit 0/empty or decide port message; fixed: defines no policy
+      rules in this pack'
+  evidence:
+  - path: haiku.jsonl
+    sha256: 31adc36f7f21157d529200e1c12d5241534f680c868ae2ca434b9fd18847712a
+    bytes: 18457
+    kind: transcript
+  - path: hook.jsonl
+    sha256: 71acb499a995e34bdacb22725bc9f157457ceb8a0c4d80ecd2ba61bff4c3d94c
+    bytes: 4134
+    kind: events
+  - path: haiku.jsonl
+    sha256: 778f48c0c4349b094f257bbf677c5d1006735e20b137dff5fb7977f9973932eb
+    bytes: 19399
+    kind: transcript
+  - path: hook.jsonl
+    sha256: 8fa75e924adc4519f4492816dc65adbdd2711b20a5d7dd49cb4e2a91b3ceb0ad
+    bytes: 4123
+    kind: events
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.296
+    model: claude-haiku-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.18.7
+      edition: standard
+      commit: a0abd2f39303ce67e481e210306eaebba0ec5457
+      dirty: true
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: a0abd2f39303ce67e481e210306eaebba0ec5457
+    branch: fix/b5
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: 492632506f63f0e99812e679819cc64c9b8bf3061b57a2c2d28e0eb5cb547e60
+  digest: 29426eb11f2772e9b106e68512a25d8bb5f3e37068980e234658563723bc750e
