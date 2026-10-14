@@ -16,7 +16,7 @@ module Polispec
                else
                  { "digest" => Behavior.digest(doc), "decisions" => Behavior.decisions(doc, rest[0], JSON.parse(File.read(rest[1]))) }
                end
-      puts JSON.pretty_generate(output)
+      puts JSON.pretty_generate(output).gsub(/\[\n\s*\]/, "[]").gsub(/\{\n\s*\}/, "{}")
       0
     rescue JSON::ParserError, SystemCallError, ArgumentError => e
       raise Polispec::Error, e.message
