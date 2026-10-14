@@ -15,6 +15,12 @@ module Polispec
         HarnessControls::Backends::Claude.normalize(text)
       end
 
+      CODE_HOOK_EVENTS = { "pre" => "PreToolUse", "post" => "PostToolUse", "stop" => "Stop", "session" => "SessionStart" }.freeze
+
+      def parse_for(text, mode)
+        HarnessControls::Backends::Claude.normalize(text, events: [CODE_HOOK_EVENTS.fetch(mode)])
+      end
+
       def render(verdict)
         output = HarnessControls::Backends::Claude.render(verdict, "PreToolUse")
         @exit_status = output["exit_status"]
