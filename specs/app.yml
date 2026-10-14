@@ -1,6 +1,6 @@
 schema_version: 1
 name: polispec
-version: 0.18.2
+version: 0.18.3
 kind: plugin
 purpose: "Spec-based policy guardrails for agentic development and operations. Every live project carries a versioned policy and, beside it, an environment manifest (main, test, stable), both read from the trust ref; the policy declares what agents may do in each environment, how code is promoted, what data and secrets each environment may hold, when it is frozen, and which harness, model and effort each agent role gets."
 ports:
@@ -69,7 +69,7 @@ code_specs:
   commands:
     - { name: "code detect|chain|show|check|validate|baseline|controls|generate|classify", status: built }
     - { name: "specs link|status|promote", status: built }
-    - { name: "code-hook pre|post|stop|session", status: built }
+    - { name: "code-hook pre|post|stop|session", status: built, note: "--harness claude and --harness codex accept exactly the event of their mode: pre PreToolUse, post PostToolUse, stop Stop, session SessionStart. Any other event, or a payload that fails to parse, makes the hook print a one-line diagnostic on stderr and exit 0 without checking; it never fails silently." }
   settings: [polispec.code.enforce, polispec.code.check_at, polispec.code.inject, polispec.code.specs_repo]
   ports_optional: [decide]
 

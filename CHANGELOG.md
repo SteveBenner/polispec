@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.3] - 2026-10-13
+
+### Fixed
+
+- `polispec code-hook post|stop|session` with `--harness claude` or `--harness codex` rejected every payload that was not `PreToolUse` and failed open without a trace: a `post_write` MUST violation landed unblocked, `stop` never reviewed, and compact/clear never re-armed injection. Each mode now normalizes its own event (`PreToolUse`, `PostToolUse`, `Stop`, `SessionStart`) for both harnesses, and a hook failure prints a one-line diagnostic on stderr; the exit status stays 0 (`lib/polispec/harness_controls/backends/claude.rb`, `codex.rb`, `lib/polispec/harness/*.rb`, `lib/polispec/code/hook.rb`). Found by the 0.18.2 smoke sign-off; a Haiku session now gets the post and stop blocks.
+
 ## [0.18.2] - 2026-10-13
 
 ### Added
