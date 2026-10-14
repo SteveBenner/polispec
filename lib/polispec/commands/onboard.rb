@@ -346,11 +346,16 @@ module Polispec
       note("3_ledger", would("done"), @options.dry ? "add #{@id} to #{path} with status onboarding" : "#{@id} added to #{path} with status onboarding")
     end
 
+    def planned_text(relative)
+      path = File.join(@root, relative)
+      File.exist?(path) ? File.read(path) : @rendered[relative]
+    end
+
     def render_step
       source =
         if @options.dry
-          combined = Environments.combine(@rendered[POLICY_FILE], @rendered[ENVIRONMENTS_FILE], POLICY_FILE)
-          AgentsRender::Source.new(combined.data, Schema::Document.parse(@rendered[ENVIRONMENTS_FILE], ENVIRONMENTS_FILE), @id)
+          combined = Environments.combine(planned_text(POLICY_FILE), planned_text(ENVIRONMENTS_FILE), POLICY_FILE)
+          AgentsRender::Source.new(combined.data, Schema::Document.parse(planned_text(ENVIRONMENTS_FILE), ENVIRONMENTS_FILE), @id)
         else
           AgentsRender.source_from_worktree(@root, POLICY_FILE)
         end
@@ -368,7 +373,7 @@ module Polispec
       return unless @options.commit
 
       paths = @touched.uniq
-      return note("4b_commit", "kept", "onboard wrote no files, so there is nothing to commit") if paths.empty?
+      return note("4b_commit", "skipped", "onboard #{@options.dry ? 'would write' : 'wrote'} no files, so there is nothing to commit") if paths.empty?
 
       branch = @git.run("symbolic-ref", "--quiet", "--short", "HEAD").out.strip
       unless branch == "main"

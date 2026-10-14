@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.1] - 2026-10-13
+
+### Fixed
+
+- `onboard --dry-run` rendered `4_render` from the templates even when the scaffold files already existed and were kept, so on a scaffolded repository it previewed a render and a commit the real run did not perform; it now previews from the files in the repository (`lib/polispec/commands/onboard.rb`, `docs/environments.md`).
+- `onboard --commit` reported step `4b_commit` as `kept` when onboard wrote no files; it is now `skipped` with nothing to commit (`lib/polispec/commands/onboard.rb`, `docs/environments.md`).
+- Removed the unused `started` variable that `ruby -w` reported in `lib/polispec/commands/harness.rb`.
+
 ## [0.19.0] - 2026-10-13
 
 ### Added
