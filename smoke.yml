@@ -8088,3 +8088,79 @@ entries:
     policy_digest:
   prev: 107b227defbb8270f08e3c01b1873dea4b7928a5e68e6fe2118b59b34a47f196
   digest: 0b9e3a10b9dbee85aa06992a4bb879203feb4bdf78906cfe2fbe15ca423e3ae3
+- id: smk_029c9c1b3fcd
+  recorded_at: '2026-10-14T06:24:17Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/onboard
+    spec_digest: 972cb2ae810fc5aeaebed169f3769698b52340386e4aea4afe5c3b0c21dc557c
+    at_digest: d9ab3e412991561a06fcf25738334fcf15df4712e600b2eed20ec6f6190fa0a6
+  verdict: pass
+  summary: 'onboard 0.19.1: dry-run render previews from kept scaffold files and agrees
+    with the real run; 4b_commit is skipped when nothing was written; fresh-repo output
+    unchanged'
+  steps:
+  - run: onboard r1 --serves real_users --commit (scaffolded repo, ledger without
+      r1), 0.19.0
+    exit: 0
+    expect: 4b_commit reports nothing to commit accurately
+    observed: '4b_commit: kept onboard wrote no files'
+  - run: onboard r1 --serves real_users --commit --dry-run, 0.19.0
+    exit: 0
+    expect: dry run agrees with the real run
+    observed: '4_render: would render envs.md; 4b_commit: would commit envs.md (real
+      run: kept, nothing to commit)'
+  - run: onboard r1 --serves real_users --commit --dry-run, installed 0.19.1
+    exit: 0
+    expect: 4_render kept, 4b_commit skipped
+    observed: '4_render: kept [ENVS] row and envs.md already current; 4b_commit: skipped
+      onboard would write no files'
+  - run: onboard r1 --serves real_users --commit, 0.19.1
+    exit: 0
+    expect: 4b_commit skipped, no commit
+    observed: '4b_commit: skipped onboard wrote no files; HEAD unchanged at 68482ef'
+  - run: onboard r3 (fresh) --commit --dry-run and without --commit, 0.19.1
+    exit: 0
+    expect: fresh output unchanged
+    observed: would write the three scaffold files, would render envs.md and AGENTS.md,
+      would commit all five; no 4b_commit line without --commit
+  evidence: []
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.299
+    model: claude-opus-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-34-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.19.1
+      edition: standard
+      commit: '0099be334a3a4d09579a17bda1802c69605c675a'
+      dirty: false
+      install: clone
+    rplugin: 1.13.0
+    enforce: enforce
+  target:
+    commit: '0099be334a3a4d09579a17bda1802c69605c675a'
+    branch: main
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: 0b9e3a10b9dbee85aa06992a4bb879203feb4bdf78906cfe2fbe15ca423e3ae3
+  digest: 265326e26878ca2ed1a1f7612a95b94fab262d156e2a47d053fae2f2ace98a09
