@@ -1,0 +1,184 @@
+schema: is.v1
+metadata:
+  name: Polispec recursive spec composition
+  slug: composition
+  version: 0.1.0
+  created: '2026-10-14'
+  status: accepted
+  base_commit: 521e01d
+  base_version: 0.19.1
+  intended_release: 0.20.0
+  contract: specs/app.yml#composition
+  worker: {harness: claude-code, model: sonnet, effort: medium}
+vision:
+  problem: >-
+    Environment policy already composes modules recursively and stacks nested ledgered projects, but a nested child
+    layer drops its own includes and contributes rules only, so its modules, gates, freezes and hermetic settings vanish
+    silently. Modules can live only in the global shelf, take no parameters, and the project owning a nested path depends
+    on ledger order.
+  outcome: >-
+    A spec can have a subspec, which can have a subspec, to any depth, everywhere: modules include modules (local or
+    global, parameterised), and nested projects contribute everything they declare. Nothing is dropped silently: every
+    composition problem is an error that validate, doctor and resolve --layers report and that makes promote refuse.
+  non_goals:
+    - Parameters for profiles.yml lists (they stay plain module names).
+    - Composition of behavior, control, roster or code-spec documents.
+    - Changing how the repo policy's own gates replace a module gate with the same id (unite keeps own-wins inside the owner).
+    - Changing environment-checkout resolution.
+constraints:
+  - Ruby standard library only; same Ruby floor as the rest of lib/.
+  - AGENTS.md Part Q: no comments or docstrings in code. Keep the two-line header (shebang, SPDX) every lib file carries.
+  - AGENTS.md Part S: write no tests. Verification is by running bin/polispec for real against scratch repositories.
+  - AGENTS.md Part F: no authorship attribution anywhere.
+  - AGENTS.md Part E: back up a file in place before deleting it; never run a wipe verb.
+  - AGENTS.md Part J: query codebase memory (project home-sven-github-foss-polispec) before grepping.
+  - Never touch ~/.ai/polispec, the real ledger, or any live project. Use POLISPEC_LEDGER, POLISPEC_GLOBAL, POLISPEC_HOME and XDG_STATE_HOME pointed into a scratch directory for every run.
+  - Do not commit, tag, push, bump VERSION or edit CHANGELOG, README, FEATURES or docs. The primary does that.
+owns_paths:
+  - lib/polispec/layers.rb
+  - lib/polispec/ledger.rb
+  - lib/polispec/policy_source.rb
+  - lib/polispec/resolve.rb
+  - lib/polispec/cli.rb
+  - lib/polispec/commands/resolve.rb
+  - lib/polispec/operator/gates.rb
+  - schemas/policy.v1.yml
+  - schemas/module.v1.yml
+  - schemas/global.v1.yml
+shared_surfaces: []
+design:
+  include_entry:
+    forms:
+      - 'a module name string matching ^[a-z0-9][a-z0-9-]{0,40}$'
+      - '{ module: <name>, with: { <param>: <value> } } where with is optional and values are string, integer, number, boolean or an array of strings/numbers'
+    normalize: 'Layers.normalize_include(entry) returns [name, with_hash]; any other shape is an error "include <inspect> is not a module name or { module, with }".'
+  params:
+    declaration: 'module doc key params: mapping of ^[a-z][a-z0-9_]*$ to { type: string|integer|number|boolean|list, default: <value of that type>, summary: <string> }. type is required; default and summary optional.'
+    binding: >-
+      For an instance: unknown key in with -> error "module <name>: unknown parameter <key>". Declared key absent from with
+      and without default -> error "module <name>: parameter <key> is required". A value whose Ruby class does not match
+      type -> error "module <name>: parameter <key> must be <type>". Types: string String; integer Integer; number Integer
+      or Float; boolean true or false; list Array whose items are String or Numeric. On any error the instance is not applied.
+    substitution: >-
+      Deep-walk the module doc except the keys schema, name and params. A String equal to /\A\{\{([a-z][a-z0-9_]*)\}\}\z/
+      becomes the bound typed value (deep-dup arrays). Inside any other String, every /\{\{([a-z][a-z0-9_]*)\}\}/ is
+      replaced by the value's to_s; a list value used inside text is an error "module <name>: list parameter <key> used
+      inside text". A placeholder naming no declared parameter is an error "module <name>: unresolved placeholder {{<key>}}".
+      Hash keys are not substituted. The includes array of the module is substituted like everything else, so a module
+      passes its parameters down with with: { hours: "{{hours}}" }.
+    validation: >-
+      The raw module file is parsed and checked only for: a Hash, name equal to the file name, params well formed
+      (Schema.validate of the raw doc must be skipped for modules that declare params, because placeholders do not
+      satisfy typed fields). Every instance (substituted doc with params removed) is validated against
+      polispec.module/v1; problems become "module <name>: <pointer> <message>" (first 3) and the instance is not applied.
+      A module without params is validated as today and behaves exactly as today.
+    instance_key: 'name plus JSON.generate of the bound params with keys sorted; an instance is expanded once per layer expansion (seen map keyed by instance_key). Cycle detection stays by module name on the include stack.'
+    instance_text: 'For digests: module text plus "\n#params " plus the canonical JSON of the bound params when params are non-empty; otherwise the module text alone.'
+  shelves:
+    store_kinds: >-
+      Store gains a keyword local: false. A local Store does not load global.yml or profiles.yml and records no errors
+      about their absence. Store.new(source, local: true).
+    local_source: >-
+      Layers.local_source(project, policy_source) returns a Source or nil.
+      policy_source "file:<path>" -> Source(kind: :dir, root: File.dirname(File.expand_path(path))).
+      "bootstrap:<ref>:<sha>" (ref is everything between the first and the last colon) -> Source(kind: :repo, repo:
+      File.expand_path(project.repo), ref: ref, path: File.dirname(project.policy)).
+      "<trust_ref>:<sha>" when project.trust_ref is non-empty and policy_source starts with "#{project.trust_ref}:" ->
+      Source(kind: :repo, repo: File.expand_path(project.repo), ref: project.trust_ref, path: File.dirname(project.policy)).
+      nil project, nil source, "policy", "defaults", "global", "ledger" -> nil.
+      Module files are read as modules/<name>.yml under that root/path, through the existing read_dir/read_repo.
+      Local stores are memoised in the same @stores map keyed by [:local, *source.key].
+    resolver: >-
+      Layers::Shelf.new(local_store_or_nil, global_store_or_nil) with expand(includes, errors, seen = {}, stack = [],
+      out = []). Lookup of a name: present in both -> error "module <name> is ambiguous: defined in <local describe> and
+      <global describe>" and the include is skipped; present only locally -> local; only globally -> global; neither ->
+      today's "module <name>[ (included by <parent>)]: not found in <describe of local or global source>" error. Includes
+      inside a global module are expanded with a global-only Shelf (local nil); includes inside a local module see both.
+      The existing Store#expand is replaced by Shelf#expand everywhere (global_layer uses Shelf.new(nil, global_store)).
+      Mod becomes Struct(:name, :doc, :text, :params, :origin) where doc is the substituted instance doc.
+  duplicate_ids:
+    rule: >-
+      After expanding the modules of one layer, collect ids per bucket: rules, to_test gates, to_stable gates,
+      preflight, freezes. An id produced by two different instances in the same layer -> error "layer <layer name>: id
+      <id> is defined by module <a> and module <b>" (instance labels are the name, plus the canonical params JSON when
+      non-empty). Both stay applied in order (first-match unchanged); the error is what blocks promotion.
+  layers:
+    repo_layer: >-
+      repo_layer(shelf, policy, digest, label, errors) expands policy includes with Shelf.new(local_store(local_source),
+      global_store). Its digest: when the expansion yields no modules, unchanged (raw_digests[policy] || digest ||
+      sha(JSON)); otherwise sha of [that digest] + each module instance_text joined with "\n--\n".
+    child_layer: >-
+      child_layer(child, ledger, errors) reads the child's raw policy (PolicySource.raw(child), see policy_source below),
+      returns nil when it is missing or invalid (unchanged behaviour). It expands the child's includes with
+      Shelf.new(child local store at child.trust_ref and File.dirname(child.policy), global store), rules = module rules +
+      child own rules, modules = instance labels, extras = extras_of(module docs + [child_extras_doc(child_policy)]) with
+      every gate (to_test, to_stable, preflight) given dir per children.dir below. digest: the child's raw digest when no
+      modules, else sha of digest + instance texts. Name "child:<id>". Duplicate-id check applies.
+    child_extras_doc: '{ "freezes" => policy["freezes"], "hermetic" => policy["hermetic"], "gates" => { "to_test" => policy.dig("promotion","to_test","gates"), "to_stable" => policy.dig("promotion","to_stable","gates") }, "preflight" => policy.dig("promotion","to_stable","preflight") } with nils dropped to [] / {}'
+    load_signature: 'Layers.load(project, path = nil, policy:, digest:, ledger:, policy_source:, local: :auto). local: :auto derives Layers.local_source(project, policy_source); an explicit Source or nil overrides.'
+    chain_for: 'uses Layers.local_source(project, target.policy_source). The early return when no global source and no children must also not return when the policy has includes and a local source exists.'
+  children:
+    path_scoped: 'children(project, ledger, path) is unchanged in selection (every non-retired other project whose repo is strictly under the owner repo and contains the path, shortest root first) and feeds pick-time rule layers.'
+    descendants: 'Layers.descendants(project, ledger) returns every non-retired other project whose expanded repo is strictly under the owner repo, shortest root first. compose uses descendants, not children, because a promotion ships the whole tree.'
+    dir: 'rel = child repo relative to owner repo (Pathname relative_path_from on expanded paths). A contributed gate gets "dir" => (gate["dir"] ? File.join(rel, gate["dir"]) : rel).'
+    collisions: >-
+      In compose, start a taken-id set per bucket (to_test, to_stable, preflight, freezes) from the global and repo
+      layer extras plus the owner policy's own promotion gates, preflight and freezes. For each descendant in order, an
+      item whose id is taken -> error "id_collision: <bucket> <id> from child:<child id> already defined by <owner or
+      layer>" and the item is dropped; otherwise add it and mark the id taken.
+  compose:
+    signature: 'Layers.compose(project, policy, digest, ledger: nil, local: :auto) -> [merged, effective_digest]. Runs when policy is a Hash and (a global store exists OR the policy has includes OR descendants exist).'
+    steps:
+      - 'chain = load(project, nil, policy:, digest:, ledger:, local:) for global + repo layers.'
+      - 'child layers for descendants(project, ledger) built with child_layer; their extras pass through the collision filter.'
+      - 'merged = merge_policy(policy, [global extras, repo extras, filtered child extras...]).'
+      - 'effective digest = sha over the ordered digests of global, repo and every descendant child layer.'
+      - 'all errors (chain errors + child errors + collisions) stored in a WeakMap keyed by merged (composed_errors) and emitted once as today (layers_invalid finding).'
+    accessor: 'Layers.errors_for(policy) returns composed_errors[policy] or nil.'
+  policy_errors: 'Layers.policy_errors(policy, project: nil, ledger: nil, file: nil): return errors_for(policy) when non-nil; otherwise run compose with local: (file ? Source(:dir, File.dirname(File.expand_path(file))) : :auto) and return errors_for of the result. Works without a global store (local modules alone).'
+  document_errors: >-
+    Layers.document_errors(kind, data, file): for kind module, dir = parent of the file's directory when that directory
+    is named modules. If dir contains global.yml, behave as today with a global-only Shelf over Store(dir). Otherwise
+    treat it as a project-local module: Shelf.new(Store(dir, local: true), Layers.store). Expansion starts from
+    [{module: data["name"]}] using the file's own declared defaults so params, substitution and instance schema
+    validation are reported; a required param without default is bound to a sample (string "x", integer 1, number 1,
+    boolean true, list []) for this check only.
+  cli_validate: >-
+    In Polispec::CLI validate: for kind module whose doc declares params, skip the raw schema validation result and use
+    instead the document_errors outcome (so placeholders in typed fields are not reported). For kind policy pass file:
+    to Layers.policy_errors so sibling modules/ resolve.
+  policy_source:
+    raw: 'PolicySource.raw(project, ledger: nil) returns Loaded(policy: data, source: "<trust_ref>:<sha>", digest:) from lookup without composing, or nil when missing, :repo_missing or invalid.'
+    resolve: 'pass local: :auto (source string is built before compose; compute it first and pass Layers.local_source explicitly).'
+    bootstrap: 'bootstrap now composes: Layers.compose(project, data, digest, ledger: Ledger.load-or-nil, local: Layers.local_source(project, "bootstrap:<ref>:<sha>")) and returns the merged policy.'
+  resolve_rb: 'from_trust_ref passes local: Layers.local_source(project, "#{project.trust_ref}:#{sha}").'
+  promote: 'Operator::Gates.load_project appends Layers.policy_errors(policy, project: entry, ledger: ledger) to problems before the policy_invalid raise.'
+  gate_dir:
+    schema: 'policy.v1 gate gains dir: { type: string, pattern: "^[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*$" } (no leading dot segment, so no .. and no absolute paths). module.v1 and global.v1 gate defs gain the same property.'
+    runtime: 'gate_location joins chdir with gate["dir"] when present (after run_in active is resolved), refuses with gate_failed "gate <id>: dir <dir> is not a directory under <chdir>" when the joined path is not an existing directory or its realpath escapes the realpath of chdir.'
+  schemas:
+    include_item: 'policy.v1 includes, global.v1 includes and module.v1 includes items: oneOf [ module_name string, object { module: module_name (required), with: object of ^[a-z][a-z0-9_]*$ to string|integer|number|boolean|array } additionalProperties false ].'
+    module_params: 'module.v1 gains params: object whose additionalProperties is the param definition (the in-house validator supports neither propertyNames nor patternProperties, so Layers checks every params key and every with key against ^[a-z][a-z0-9_]*$ and reports "module <name>: parameter name <key> is not valid"); each value { type: enum [string, integer, number, boolean, list] (required), default: any, summary: string } additionalProperties false.'
+  ownership:
+    ledger_locate: >-
+      Ledger#locate: first scan all non-retired entries for env_checkout (unchanged: first match returns). Otherwise
+      collect every entry's :repo match (root = the matching expanded/real root) and :worktree match (root = the
+      shortest ancestor directory matching one of its globs); return the match with the shortest root, ties broken by
+      ledger order. Location struct and kinds unchanged.
+  resolve_command: 'commands/resolve.rb chain_for passes policy_source as today; Layer#to_h already prints modules; modules now list instance labels.'
+slices:
+  - id: composition
+    owns_paths: [lib/polispec/layers.rb, lib/polispec/ledger.rb, lib/polispec/policy_source.rb, lib/polispec/resolve.rb, lib/polispec/cli.rb, lib/polispec/commands/resolve.rb, lib/polispec/operator/gates.rb, schemas/policy.v1.yml, schemas/module.v1.yml, schemas/global.v1.yml]
+    depends_on: []
+    deliverable: Everything under design implemented.
+    acceptance:
+      - 'ruby -c on every changed Ruby file; bin/polispec validate auto on every file in examples/ still passes; bin/polispec validate module on each ~/.ai/polispec/modules/*.yml (read only) still passes.'
+      - 'Scratch: POLISPEC_GLOBAL=<scratch>/global with global.yml and a module soak declaring params hours (integer, default 24) and env (string, default test) and a to_stable gate { id: "G-SOAK-{{env}}", builtin: soaked, env: "{{env}}", hours: "{{hours}}" } validates with validate module.'
+      - 'Scratch git repo owner (main, test, stable branches) with specs/polispec/policy.yml + environments.yml committed on stable, includes [{module: soak, with: {hours: 48}}, local-guard] and specs/polispec/modules/local-guard.yml (local, includes soak with env prod) ; scratch ledger lists owner. resolve <repo> --layers --json shows the repo layer modules soak{...}, local-guard, soak{env prod...}; a Ruby one-liner calling Polispec::PolicySource.resolve shows merged promotion.to_stable.gates containing G-SOAK-test with hours 48 and G-SOAK-prod with hours 24.'
+      - 'A child project nested at <owner>/services/api, ledgered BEFORE the owner in the ledger, with its own policy including a local module that adds rule R-API-DENY (deny fs.write on a path) and a to_test gate G-API; resolve of a file under services/api reports project owner (outermost owns) and layers global, repo, child:api with the child module listed; the merged owner policy has G-API with dir services/api.'
+      - 'Errors: a local module named like a global module -> ambiguous error in validate policy and doctor; unknown param, missing required param, wrong type, unresolved placeholder each reported; a child gate id equal to an owner gate id -> id_collision; promote --dry-run on the owner refuses with policy_invalid naming the error.'
+      - 'A gate with dir pointing at a missing directory makes promote --dry-run fail with gate_failed naming the dir; dir "../x" fails schema validation.'
+      - 'With no global source and no includes anywhere, resolve --layers and a hook verdict for a sample path are byte-identical to the base commit (compare against git stash or a worktree at 521e01d).'
+out_of_scope:
+  - README, docs/schema.md, docs/VISION.md, CHANGELOG, VERSION, FEATURES, TODO, specs/app.yml (primary).
+  - Tests of any kind.

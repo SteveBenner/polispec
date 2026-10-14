@@ -1,0 +1,8 @@
+schema: polispec.module/v1
+name: quiet-hours
+summary: "No release reaches stable while the business is open, or shortly before it opens."
+params:
+  command: { type: list, summary: "command that prints the opening hours as JSON windows" }
+  lead_minutes: { type: integer, default: 30, summary: "minutes before a window that releases stop" }
+freezes:
+  - { id: F-OPEN, applies_to: [promote.to_stable], source: command, command: "{{command}}", kind: open_hours, lead_minutes: "{{lead_minutes}}" }

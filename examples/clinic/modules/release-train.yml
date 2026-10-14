@@ -1,0 +1,13 @@
+schema: polispec.module/v1
+name: release-train
+summary: "The path to the live app: tested on test, soaked, and never released while the clinic is open."
+params:
+  soak_hours: { type: integer, default: 24, summary: "hours a release must run on test before stable" }
+  calendar: { type: list, summary: "command that prints the clinic's opening hours as JSON windows" }
+  lead_minutes: { type: integer, default: 30, summary: "minutes before opening that releases stop" }
+includes:
+  - { module: soak, with: { hours: "{{soak_hours}}" } }
+  - { module: quiet-hours, with: { command: "{{calendar}}", lead_minutes: "{{lead_minutes}}" } }
+gates:
+  to_test:
+    - { id: G-CHECKS, run: "bin/check --all", pass: exit_zero }

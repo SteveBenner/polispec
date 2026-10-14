@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - 2026-10-14
+
+### Added
+
+- Project-local modules: a project ships its own `modules/<name>.yml` beside its policy, read from the same source as the policy (trust ref, bootstrap ref, or the sibling directory of a validated file). A project module may include project and global modules; a name on both shelves is an `ambiguous` error (`lib/polispec/layers.rb`, `docs/schema.md`).
+- Typed module parameters: a module declares `params` (`string`, `integer`, `number`, `boolean`, `list`, with `default` and `summary`); an include is a name or `{ module, with }`; `"{{name}}"` keeps the type, `{{name}}` inside text interpolates, and includes pass parameters down. Unknown, missing or mistyped parameters, unresolved placeholders and duplicate instance ids are errors (`lib/polispec/layers.rb`, `schemas/module.v1.yml`, `schemas/policy.v1.yml`, `schemas/global.v1.yml`).
+- Gate `dir`: a gate may run in a subdirectory of its run location; a missing directory or a path escaping it fails the gate (`lib/polispec/operator/gates.rb`, `schemas/policy.v1.yml`).
+- `examples/clinic/`: a booking-app policy composed three levels deep from parameterised project modules.
+- `docs/VISION.md`: where polispec is going, every item labelled Built, Partial, Planned or Idea.
+
+### Changed
+
+- Nested ledgered projects contribute everything they declare: a child layer expands its own includes ahead of its rules, and every descendant's promotion gates (run in the child's directory), preflight, freezes and hermetic settings join the owner's promotion. A child id that collides with the owner or global layer is an `id_collision` error (`lib/polispec/layers.rb`, `lib/polispec/policy_source.rb`).
+- The outermost ledgered repo or worktree root containing a path owns it, regardless of ledger order (`lib/polispec/ledger.rb`).
+- Composition errors make `promote` refuse with `policy_invalid` instead of promoting with fewer gates; `resolve --layers` lists them (`lib/polispec/operator/gates.rb`, `lib/polispec/commands/resolve.rb`).
+- Promotion bootstrap now composes the candidate branch's policy with the global layer and its project modules (`lib/polispec/policy_source.rb`).
+- A layer digest covers its module instances and their resolved parameters.
+- README rewritten: plain-language introduction, table of contents, the clinic worked example, how a verdict is made, composition, alternatives, honest limits and FAQ, with the project hero image.
+
 ## [0.19.1] - 2026-10-13
 
 ### Fixed
