@@ -528,7 +528,7 @@ module Polispec
           "sequence" => nil,
           "root_guard" => values["edition"].to_s == "lock" || values["requested_edition"].to_s == "lock",
           "lock_eligible" => false,
-          "findings" => [finding("environment_scan_failed", "The bounded environment scan failed: #{error.class}.", "Restore the scanner prerequisites and repeat the scan.")]
+          "findings" => [finding("environment_scan_failed", "The bounded environment scan failed: #{error.class}: #{error.message.to_s[0, 300]}", "Restore the scanner prerequisites and repeat the scan.")]
         }
       end
       private_class_method :failure_result
