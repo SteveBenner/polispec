@@ -26,7 +26,7 @@ module Polispec
         @adapter = adapter_for(harness)
         raw = $stdin.read.to_s
         @raw = JSON.parse(raw)
-        @input = @adapter.parse(raw)
+        @input = @adapter.parse_for(raw, mode)
         @session_cwd = @input.cwd.to_s.empty? ? Dir.pwd : @input.cwd.to_s
         output = send("handle_#{mode}")
         $stdout.write(output) if output
@@ -35,6 +35,7 @@ module Polispec
         0
       rescue StandardError, ScriptError => e
         Telemetry.emit("polispec.code.finding", kind: "hook_error", detail: "#{e.class}: #{e.message.to_s[0, 200]}")
+        warn "[POLISPEC code] code-hook #{mode} failed and did not run: #{e.class}: #{e.message.to_s[0, 300]}"
         0
       ensure
         Telemetry.flush

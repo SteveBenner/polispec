@@ -107,19 +107,26 @@ module Polispec
           }
         end
 
-        def normalize(payload)
+        TOOL_EVENTS = %w[PreToolUse PostToolUse].freeze
+
+        def normalize(payload, events: ["PreToolUse"])
           payload = JSON.parse(payload) if payload.is_a?(String)
           raise Polispec::Error, "Claude hook input must be a JSON object" unless payload.is_a?(Hash)
 
           input = stringify_hash(payload)
           event = input["hook_event_name"] || input["event"]
-          raise Polispec::Error, "Claude hook event must be PreToolUse" unless event == "PreToolUse"
+          raise Polispec::Error, "Claude hook event must be #{events.join(" or ")}" unless events.include?(event)
 
           tool_name = input["tool_name"]
           tool_input = input["tool_input"]
           cwd = input["cwd"]
-          raise Polispec::Error, "Claude hook input requires tool_name" unless tool_name.is_a?(String) && !tool_name.empty?
-          raise Polispec::Error, "Claude hook input requires object tool_input" unless tool_input.is_a?(Hash)
+          if TOOL_EVENTS.include?(event)
+            raise Polispec::Error, "Claude hook input requires tool_name" unless tool_name.is_a?(String) && !tool_name.empty?
+            raise Polispec::Error, "Claude hook input requires object tool_input" unless tool_input.is_a?(Hash)
+          else
+            tool_name = nil
+            tool_input = {}
+          end
           raise Polispec::Error, "Claude hook cwd must be a string" unless cwd.nil? || cwd.is_a?(String)
 
           Harness::Input.new(

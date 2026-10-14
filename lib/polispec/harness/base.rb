@@ -37,6 +37,10 @@ module Polispec
         )
       end
 
+      def parse_for(text, _mode)
+        parse(text)
+      end
+
       def calls(input)
         tool = input.tool_name.to_s
         data = input.tool_input.is_a?(Hash) ? input.tool_input : { "command" => input.tool_input.to_s }
