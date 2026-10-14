@@ -6,7 +6,7 @@ require_relative "validator"
 
 module Polispec
   module Schema
-    KINDS = %w[policy environments roster ledger behavior spec waivers global module profiles control].freeze
+    KINDS = %w[policy environments roster ledger behavior spec waivers global module profiles control smoke].freeze
     CONTROL_EFFECT_KEYS = {
       "deny" => [],
       "ask" => [],

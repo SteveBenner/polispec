@@ -1,0 +1,74 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.smoke/v1
+title: Polispec smoke ledger
+type: object
+additionalProperties: false
+required: [schema, entries]
+properties:
+  schema: { const: polispec.smoke/v1 }
+  entries:
+    type: array
+    items: { $ref: "#/$defs/entry" }
+$defs:
+  sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+  nullable_string:
+    type: [string, "null"]
+  entry:
+    type: object
+    additionalProperties: false
+    required: [id, recorded_at, proves, verdict, summary, steps, evidence, runner, runtime, target, prev, digest]
+    properties:
+      id: { type: string, pattern: "^smk_[0-9a-f]{12}$" }
+      recorded_at: { type: string, minLength: 1 }
+      started_at: { type: string, minLength: 1 }
+      finished_at: { type: string, minLength: 1 }
+      proves:
+        type: object
+        additionalProperties: false
+        required: [spec, at, spec_digest, at_digest]
+        properties:
+          spec: { type: string, minLength: 1 }
+          at: { type: string }
+          spec_digest: { $ref: "#/$defs/sha256" }
+          at_digest: { $ref: "#/$defs/sha256" }
+      verdict: { enum: [pass, fail, partial, blocked] }
+      summary: { type: string, minLength: 1 }
+      steps:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [run, exit, expect, observed]
+          properties:
+            run: { type: string }
+            exit: { type: [integer, "null"] }
+            expect: { $ref: "#/$defs/nullable_string" }
+            observed: { $ref: "#/$defs/nullable_string" }
+      evidence:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [path, sha256, bytes, kind]
+          properties:
+            path: { type: string, minLength: 1 }
+            sha256: { $ref: "#/$defs/sha256" }
+            bytes: { type: integer, minimum: 0 }
+            kind: { type: string, minLength: 1 }
+      runner:
+        type: object
+        additionalProperties: false
+        required: [kind, harness, harness_version, model, effort]
+        properties:
+          kind: { enum: [human, agent] }
+          harness: { $ref: "#/$defs/nullable_string" }
+          harness_version: { $ref: "#/$defs/nullable_string" }
+          model: { $ref: "#/$defs/nullable_string" }
+          effort: { $ref: "#/$defs/nullable_string" }
+      runtime: { type: object, additionalProperties: true }
+      target: { type: object, additionalProperties: true }
+      prev:
+        anyOf:
+          - { type: "null" }
+          - { $ref: "#/$defs/sha256" }
+      digest: { $ref: "#/$defs/sha256" }

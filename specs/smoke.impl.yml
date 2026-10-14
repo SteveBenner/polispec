@@ -1,0 +1,110 @@
+schema: is.v1
+metadata:
+  name: Polispec smoke ledger
+  slug: smoke
+  version: 0.1.0
+  created: '2026-10-13'
+  status: accepted
+  base_commit: 63dd9d8
+  base_version: 0.18.1
+  intended_release: 0.18.2
+  contract: specs/app.yml#smoke
+  worker: {harness: claude-code, model: sonnet, effort: medium}
+vision:
+  problem: Nothing records that a spec or sub-spec was shown to work in reality, or on what runtime. FEATURES.md verification prose is unstructured and cannot be checked.
+  outcome: An operator or agent appends a smoke entry through polispec smoke record; polispec captures the runtime, chains the entry, verifies the ledger, and reports which spec units have a current pass.
+  non_goals:
+    - Shipping or running a smoke suite. polispec records smoke tests; it does not contain them.
+    - Recording hostname, user name, or absolute paths.
+    - Doctor findings for missing coverage.
+constraints:
+  - Ruby standard library only; same Ruby floor as the rest of lib/.
+  - No comments or docstrings in code. Keep the existing two-line header (shebang, SPDX) that every lib file carries.
+  - No tests. Verification is by running the CLI for real against scratch repositories.
+  - Commands are files; a new command adds lib/polispec/commands/smoke.rb and calls Polispec::CLI.register. Edit no registry beyond Schema::KINDS and Events::FIELDS.
+owns_paths:
+  - lib/polispec/smoke.rb
+  - lib/polispec/commands/smoke.rb
+  - schemas/smoke.v1.yml
+shared_surfaces:
+  - {path: lib/polispec/schema/core.rb, change: 'add "smoke" to KINDS'}
+  - {path: lib/polispec/events.rb, change: 'add "polispec.smoke" => %w[project id spec at verdict] to FIELDS'}
+  - {path: lib/polispec/cli.rb, change: 'add smoke to the validate USAGE kind list'}
+  - {path: lib/polispec/engine.rb, change: 'Engine::Settings gains SMOKE_KEY = "polispec.smoke.path" and smoke_path returning text(SMOKE_KEY, nil)'}
+  - {path: polispec.rplugin.yml, change: 'settings gains { key: polispec.smoke.path, type: string, default: "", scopes: [machine], description: "Path of the smoke ledger. POLISPEC_SMOKE overrides it. Empty means smoke.yml at the git toplevel of the working directory." }'}
+interfaces:
+  path_resolution: POLISPEC_SMOKE (expanded) when nonempty, else Engine::Settings.smoke_path when nonempty, else File.join(git toplevel of Dir.pwd, "smoke.yml"). Outside a git repository without an override, raise Polispec::Error "not in a git repository; set POLISPEC_SMOKE".
+  file_shape: |
+    schema: polispec.smoke/v1
+    entries: [ ... ]
+    A missing file is an empty ledger. Written as YAML (YAML.dump of the hash with string keys).
+  entry_fields:
+    id: '"smk_" + first 12 hex of digest'
+    recorded_at: UTC ISO 8601, set by record
+    started_at: optional, --started, ISO 8601
+    finished_at: optional, --finished, ISO 8601
+    proves: '{spec: repo-relative path, at: slash path or "", spec_digest: sha256 hex of the file bytes, at_digest: sha256 hex of canonical JSON of the resolved node}'
+    verdict: one of pass fail partial blocked
+    summary: string, required, nonempty
+    steps: 'list of {run: string, exit: integer|null, expect: string|null, observed: string|null}; may be empty'
+    evidence: 'list of {path, sha256, bytes, kind}; kind is a free word (transcript, events, log, file)'
+    runner: '{kind: human|agent, harness: string|null, harness_version: string|null, model: string|null, effort: string|null}'
+    runtime: see runtime_capture
+    target: see target_capture
+    prev: digest of the previous entry or null
+    digest: sha256 hex of canonical JSON of the entry without the digest key
+  canonical_json: JSON.generate of the value with every Hash's keys sorted recursively; arrays keep order.
+  pointer_resolution: |
+    at is split on "/" after which each segment has "~1" -> "/" then "~0" -> "~" applied. Empty at resolves to the whole document.
+    Hash: segment is a key (string compare). Array: the first item that is a Hash whose "name" or "id" (to_s) equals the segment.
+    A missing step raises Polispec::Error "<spec>#<at> does not resolve at <segment>".
+    spec must be a relative path inside the toplevel (no "..", not absolute after expansion against the toplevel), a regular file, and parse as YAML (YAML.safe_load with aliases: false, permitted_classes: [Date, Time]).
+  runtime_capture: |
+    os: {id, name, version} from /etc/os-release ID, NAME, VERSION_ID when present; on darwin from `sw_vers -productName` and `-productVersion` with id "macos"; else nils.
+    kernel: `uname -r`; arch: `uname -m`; platform: RUBY_PLATFORM.
+    container: true when /.dockerenv or /run/.containerenv exists, or /proc/1/cgroup mentions docker, kubepods or containerd; else false.
+    wsl: true when the kernel release matches /microsoft/i.
+    tz: ENV["TZ"] when set, else Time.now.zone. locale: ENV["LC_ALL"] || ENV["LANG"] || nil.
+    ruby: {engine: RUBY_ENGINE, version: RUBY_VERSION, platform: RUBY_PLATFORM}.
+    polispec: {version: Polispec.version, edition: content of ROOT/EDITION stripped or null, commit: git rev-parse HEAD in ROOT or null, dirty: git status --porcelain nonempty in ROOT (null when not a repo), install: "clone" when ROOT/.git exists, else "package"}.
+    rplugin: Rplugin::VERSION when defined, else first line of `rplugin version` output from PATH or ~/.rplugin/bin/rplugin, else null.
+    enforce: Engine::Settings.enforce_mode.
+    Every external command runs without a shell, with a 2 s timeout, stderr discarded; failure yields null. No hostname, user name, uid, home or absolute path appears anywhere in runtime.
+  target_capture: |
+    commit, branch (symbolic-ref --short, null when detached), dirty for the toplevel.
+    project, env, policy_digest from Resolve::Resolver.new(Ledger.load).describe(toplevel) fields "project", "env", "policy_digest"; any error leaves them null.
+  runner_capture: |
+    --runner human|agent (default agent when ENV["CLAUDECODE"] or ENV["CODEX_SANDBOX"] or ENV["CODEX_THREAD_ID"] is set, else human).
+    --harness, --model, --effort override. harness default: "claude-code" when ENV["CLAUDECODE"], "codex" when a CODEX_ env is set, else null.
+    model default: ENV["ANTHROPIC_MODEL"] || ENV["CLAUDE_MODEL"] || null.
+    harness_version: `claude --version` first token for claude-code, `codex --version` last token for codex, else null; 2 s timeout.
+  scrubbing: In summary, steps run/expect/observed, and evidence path, replace the toplevel prefix with "." and then Dir.home with "~". Evidence path is stored relative to the toplevel when inside it, else File.basename.
+  locking_and_write: Open "<ledger>.lock" (create 0600), flock LOCK_EX, read the ledger, compute prev from the last entry, append, write "<ledger>.tmp.<pid>" and File.rename over the ledger, release. Create the parent directory only if it is the toplevel itself (never mkdir elsewhere).
+  events: After the write, Events.emit("polispec.smoke", project: target project, id:, spec:, at:, verdict:). Errors are swallowed (emit already rescues).
+cli:
+  usage: |
+    usage: polispec smoke record --spec FILE [--at PATH] --verdict pass|fail|partial|blocked --summary TEXT [--step-file FILE] [--evidence PATH[:KIND]]... [--runner human|agent] [--harness H] [--model M] [--effort E] [--started ISO] [--finished ISO] [--json]
+           polispec smoke list [--spec FILE] [--at PATH] [--verdict V] [--json]
+           polispec smoke show <id> [--json]
+           polispec smoke verify [--json]
+           polispec smoke coverage [--spec FILE] [--at PATTERN]... [--json]
+  record: --step-file is YAML or JSON holding a list of {run, exit, expect, observed}. --evidence hashes the file (must exist and be a regular file). Prints the new id (text) or the full entry (--json). Exit 0; 2 on usage; 1 with "polispec: <message>" on Polispec::Error.
+  list: One line per entry "id verdict spec#at recorded_at summary" filtered by exact spec, exact at, verdict. --json prints {"ledger": relative-or-basename path, "entries": [...]}.
+  show: Full entry as YAML (text) or JSON. Unknown id exits 1.
+  verify: |
+    Reports findings: schema errors (Schema.validate("smoke", data)); per entry digest_mismatch, chain_broken (prev not equal to previous digest, first entry prev must be null), duplicate_id, unresolved (proves no longer resolves), stale (at_digest differs from the node's current digest). unresolved and stale are informational. Exit 1 when any schema, digest_mismatch, chain_broken or duplicate_id finding exists, else 0. Text: "smoke: N entries, M finding(s)" plus one line per finding. --json: {"ledger", "entries", "findings": [{kind, id, detail}]}.
+  coverage: |
+    --spec default specs/app.yml relative to the toplevel. Patterns: --at values, else the spec's smoke.coverage_units list when it is a list of strings, else ["commands/*"].
+    A pattern ending in "/*" resolves the prefix; a Hash expands to prefix/<key> for each key, an Array to prefix/<name or id> for each Hash item having one (escape "/" as "~1" and "~" as "~0"). Any other pattern is a single unit.
+    Per unit: current_digest, latest entry (by recorded_at, then file order) for exact spec and at, and status: proven (a pass whose at_digest equals current_digest exists), stale (a pass exists but none matches), failing (latest verdict is fail), blocked (latest verdict is blocked), partial (latest verdict is partial), none (no entry). Text: one line per unit "status unit latest_id"; then "coverage: P/U proven". --json: {"spec", "units": [{unit, status, current_digest, latest}], "proven", "total"}. Exit 0.
+schema_file: |
+  schemas/smoke.v1.yml follows the style of schemas/ledger.v1.yml ($schema draft 2020-12, $id polispec.smoke/v1, additionalProperties false at every object level). Root requires schema and entries. Entry requires id, recorded_at, proves, verdict, summary, steps, evidence, runner, runtime, target, prev, digest. id pattern ^smk_[0-9a-f]{12}$; digest and prev pattern ^[0-9a-f]{64}$ (prev also null); verdict enum; runtime and target are objects (additionalProperties true is acceptable for runtime and target only, since capture fields may grow).
+acceptance:
+  - AC-1 polispec validate smoke <file> and validate auto accept a ledger written by record and reject one with an unknown verdict.
+  - AC-2 record in a scratch git repo with specs/app.yml copied from polispec, --spec specs/app.yml --at "commands/promote, deploy" succeeds; --at commands/nope fails with exit 1 and the does-not-resolve message; --spec ../x fails.
+  - AC-3 Two records produce a chain; verify exits 0. Hand-editing a summary makes verify report digest_mismatch and exit 1. Deleting the first entry makes verify report chain_broken.
+  - AC-4 Editing the resolved node in the spec makes verify report stale and coverage report stale for that unit; editing an unrelated node does not.
+  - AC-5 The written file contains no occurrence of the hostname, the user name, or Dir.home (grep the file for each).
+  - AC-6 coverage on polispec's own specs/app.yml expands smoke.coverage_units and prints a status per unit.
+  - AC-7 Eight concurrent record processes against one ledger leave eight entries and a valid chain.
+  - AC-8 rplugin check polispec reports 0 findings from a checkout named polispec (run it in the primary's tree after integration; the worker runs ruby -c on every changed file and polispec validate on the schema-bearing outputs).

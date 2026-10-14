@@ -9,7 +9,8 @@ module Polispec
       "polispec.deploy" => %w[project env sha tag steps health pinned_behind actor result],
       "polispec.pause" => %w[project minutes reason expires_at actor],
       "polispec.allow_once" => %w[project id action_class rule_id redeemed_at consumed_by_session],
-      "polispec.finding" => %w[project kind detail policy_source]
+      "polispec.finding" => %w[project kind detail policy_source],
+      "polispec.smoke" => %w[project id spec at verdict]
     }.freeze
 
     module_function

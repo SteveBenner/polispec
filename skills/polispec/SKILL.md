@@ -27,6 +27,11 @@ Moving `stable`, deploying production, pausing the guard, redeeming an allow-onc
 - `docs/schema.md` documents every key with an example.
 - `polispec help` lists the commands installed in this version.
 
+## Smoke tests
+
+- After showing that a spec or sub-spec works for real, record it: `polispec smoke record --spec FILE --at PATH --verdict pass|fail|partial|blocked --summary TEXT` with `--step-file` and `--evidence`. Judge the verdict from evidence outside yourself (hook logs, git state, exit codes), never from your own account.
+- `polispec smoke verify` checks the chain; `polispec smoke coverage` lists units without a current pass. Never edit `smoke.yml` by hand. `docs/smoke.md` documents it.
+
 ## Environments
 
 - A live repository's environment facts (branches, checkouts, audience, exposure, operators, rollback) are in `specs/polispec/environments.yml`, read from the stable ref like the policy; `docs/environments.md` documents it.

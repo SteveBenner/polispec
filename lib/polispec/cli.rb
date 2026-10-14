@@ -14,7 +14,7 @@ module Polispec
     @all_loaded = false
 
     class Validate
-      USAGE = "usage: polispec validate <policy|environments|roster|ledger|behavior|global|module|profiles|control|auto> <file> [--json]"
+      USAGE = "usage: polispec validate <policy|environments|roster|ledger|behavior|global|module|profiles|control|smoke|auto> <file> [--json]"
 
       def run(args)
         json = args.delete("--json")
@@ -160,7 +160,7 @@ module Polispec
         load_all
         io.puts "polispec #{Polispec.version}: spec-based policy guardrails"
         io.puts
-        io.puts "  validate <policy|environments|roster|ledger|behavior|global|module|profiles|control|auto> <file> [--json]   check a file against its schema"
+        io.puts "  validate <policy|environments|roster|ledger|behavior|global|module|profiles|control|smoke|auto> <file> [--json]   check a file against its schema"
         @commands.values.reject { |entry| entry.name == "validate" }.sort_by(&:name).each do |entry|
           io.puts format("  %-12s %s", entry.name, entry.summary)
         end

@@ -1,6 +1,6 @@
 schema_version: 1
 name: polispec
-version: 0.18.1
+version: 0.18.2
 kind: plugin
 purpose: "Spec-based policy guardrails for agentic development and operations. Every live project carries a versioned policy and, beside it, an environment manifest (main, test, stable), both read from the trust ref; the policy declares what agents may do in each environment, how code is promoted, what data and secrets each environment may hold, when it is frozen, and which harness, model and effort each agent role gets."
 ports:
@@ -13,6 +13,7 @@ setting:
   polispec.code.specs_repo: "Path of the code specs repository. POLISPEC_SPECS_REPO overrides it only while unsealed. Default ~/polispec-specs."
   polispec.edition: "Requested edition standard or lock; default standard. EDITION lock cannot be downgraded through a mutable setting. Certification requires observed enforcement evidence."
   polispec.root_guard: "Initially false; a distinct follow-up exposure record can arm it. Lock refusal on root-equivalent or unknown exposure forces the guard."
+  polispec.smoke.path: "Path of the smoke ledger. POLISPEC_SMOKE overrides it. Default smoke.yml at the git toplevel of the working directory."
 harnesses:
   claude-code: "supported: the host wires the guard hook; see docs/operator.md"
   codex: "supported: the host wires the guard hook; see docs/operator.md; warn becomes deny with an allow-once id"
@@ -27,10 +28,11 @@ schemas:
   roster: { id: polispec.roster/v1, file: schemas/roster.v1.yml, path_in_project: specs/polispec/roster.yml }
   behavior: { id: polispec.behavior/v1, file: schemas/behavior.v1.yml, runtime: "Compiled data consumed by an application-owned adapter; authority comes from the release or authenticated package, never this declaration." }
   environments: { id: polispec.environments/v1, file: schemas/environments.v1.yml, path_in_project: specs/polispec/environments.yml, note: "Read from the trust ref beside policy.yml and merged into it; the file wins over an inline policy environments block (finding environments_duplicate). Only the fields policy.v1 knows go to the engine; audience, exposure, host, operators, rollback, pii_spec, freezes and notes feed the [ENVS] render. A project's serves flag lives in its component manifest, not here." }
+  smoke: { id: polispec.smoke/v1, file: schemas/smoke.v1.yml, path: "POLISPEC_SMOKE, then polispec.smoke.path, then smoke.yml at the git toplevel of the working directory." }
   ledger: { id: polispec.ledger/v1, file: schemas/ledger.v1.yml, path: "Unsealed: POLISPEC_LEDGER, then polispec.ledger, then ~/.config/polispec/ledger.yml. Sealed: verified protected authority selects the ledger." }
 commands:
   - { name: behavior, status: built, usage: "polispec behavior compile FILE | decide FILE EVENT FACTS.json" }
-  - { name: validate, status: built, usage: "polispec validate <policy|environments|roster|ledger|global|module|profiles|behavior|control|auto> <file> [--json]", note: "validate policy merges a sibling environments.yml when the policy has no environments block" }
+  - { name: validate, status: built, usage: "polispec validate <policy|environments|roster|ledger|global|module|profiles|behavior|control|smoke|auto> <file> [--json]", note: "validate policy merges a sibling environments.yml when the policy has no environments block" }
   - { name: onboard, status: built, usage: "polispec onboard <repo> --serves real_users|internal|none [--archetype service|distributed] [--id ID] [--trust-ref REF] [--push] [--checkouts] [--dry-run] [--json]", note: "scaffolds specs/polispec environments, policy and roster from templates/onboard, appends serves: and a polispec: pointer to the component manifest (*.rstack_component.yml, else *.rplugin.yml), inserts a status onboarding ledger entry after a backup, renders [ENVS], creates local test and stable branches; --push and --checkouts are opt-in (impl environments FR-10)" }
   - { name: "agents render", status: built, usage: "polispec agents render <project|repo> [--from worktree|REF] [--check] [--json]", note: "writes .agents/directives/envs.md and upserts the AGENTS.md line keyed by the [ENVS] opcode; doctor reports agents_drift when the trust ref disagrees with a fresh render; edits to the row or envs.md classify as policy.edit (impl environments FR-5 to FR-8)" }
   - { name: "hook git", status: built, usage: "polispec hook git pre-commit|pre-push|reference-transaction | install|uninstall <project> dev|test|prod|all [--dry-run]", note: "judges git operations in a live project with the same rules and environment resolution as the harness guard; shims chain to the previous core.hooksPath; POLISPEC_OPERATOR=1, set by polispec's operator git, skips them; a seatbelt for processes outside a harness, not a security boundary (impl environments FR-9)" }
@@ -46,6 +48,7 @@ commands:
   - { name: seal, status: built, usage: "polispec seal --from REPO@COMMIT | --source /etc/polispec/source [--dry-run] [--json]" }
   - { name: plane, status: built, usage: "polispec plane status|verify|activate|rollback", note: "Activation and rollback require an authenticated protected operator; development does not activate live projects." }
   - { name: authorizations, status: built, usage: "polispec authorizations status|unit|serve|recover", note: "Fixed local socket; unit renders without installing; request and consume have no remote redemption operation." }
+  - { name: smoke, status: built, usage: "polispec smoke record|list|show|verify|coverage", note: "Appends and reads the smoke ledger; see the smoke section." }
 extension_points:
   commands: "lib/polispec/commands/*.rb is glob-loaded; a file calls Polispec::CLI.register(name, klass, summary:) and klass responds to run(args) returning an exit status, either as a class method or on a new instance."
   classifier: "lib/polispec/classify/commands/*.rb is glob-loaded; a file calls Polispec::Classify::Registry.register(family, klass) and klass responds to call(tool_name, tool_input, cwd) returning [Polispec::Action]."
@@ -107,3 +110,15 @@ protected_authorizations:
   consumption: "Durably record consumption before replying. Replay, concurrent consumers, changed authority, unavailable service, and lost replies never produce another grant."
   bounds: { request_bytes: 16384, response_bytes: 32768, deadline_seconds: 2, ttl_seconds: 600, backlog: 8, inflight: 1, uid_requests_per_minute: 60, global_requests_per_minute: 300 }
   deployment: "Built, not installed or started on the release host. Unit rendering and stale-socket recovery are explicit operator commands."
+smoke:
+  summary: "A smoke ledger records smoke tests that proved a spec or sub-spec worked in reality, each with the runtime it ran in. Operators run their own smoke tests and record them; polispec records, chains, verifies and reports coverage but ships no smoke suite."
+  file: "smoke.yml, schema polispec.smoke/v1: schema plus an append-only entries list. Writes go only through polispec smoke record, under an exclusive file lock with an atomic replace."
+  proves: "spec is a path relative to the git toplevel of a YAML file that parses to a mapping or list; at is a slash path into it: a mapping key, or a list item whose name or id equals the segment; ~1 escapes / and ~0 escapes ~. An empty at proves the whole file. record refuses a reference that does not resolve, and stores at_digest, the sha256 of the canonical JSON of the resolved node."
+  verdicts: [pass, fail, partial, blocked]
+  entry: "id, recorded_at, started_at, finished_at, proves, verdict, summary, steps (run, exit, expect, observed), evidence (path relative to the toplevel or a basename, sha256, bytes, kind), runner (kind human or agent, harness, harness_version, model, effort), runtime, target, prev, digest."
+  runtime: "Captured by record: os id, name and version, kernel release, arch, container and wsl flags, time zone, locale, ruby engine, version and platform, polispec version, edition, commit and dirty flag, install kind, rplugin version, enforce mode. No hostname, user name or absolute path is recorded: in summary, step and evidence text the home directory prefix becomes ~ and the toplevel prefix becomes ."
+  events: "record emits polispec.smoke through the events port after the ledger write, carrying the entry id, proves and verdict only. An event failure does not fail the record."
+  target: "Captured by record: the git commit, branch and dirty flag of the toplevel, the ledger project id when the toplevel is a governed project, the resolved environment, and the effective policy digest when one resolves."
+  chain: "digest is the sha256 of the canonical JSON of the entry without digest; prev is the previous entry's digest, null for the first. record also anchors the head digest and entry count per ledger real path in smoke-heads.json under the state home, and verify reports truncated against it (only where that anchor exists). verify reports schema errors, a broken chain, a digest mismatch, and references that no longer resolve or whose at_digest changed."
+  coverage: "polispec smoke coverage [--spec FILE] [--at PATTERN]... expands each pattern against the spec (a trailing * expands the items of a list or the keys of a mapping) and reports, per unit, the latest entry and whether a pass exists whose at_digest equals the node's current digest. Default spec specs/app.yml; default patterns from that file's smoke.coverage_units list, else commands/*."
+  coverage_units: [commands/*, code_specs/commands/*, code_specs, deployment_receipts, harness_controls, protected_authorizations, smoke]

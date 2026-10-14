@@ -24,6 +24,7 @@ module Polispec
       OPERATOR_KEY = "polispec.operator"
       OPERATOR_DEFAULT = "the operator".freeze
       LEDGER_KEY = "polispec.ledger"
+      SMOKE_KEY = "polispec.smoke.path"
       SUPERVISOR_KEY = "polispec.supervisor.status_command"
       ROOT_GUARD_KEY = "polispec.root_guard"
       module_function
@@ -65,6 +66,10 @@ module Polispec
 
       def ledger_path
         text(LEDGER_KEY, nil)
+      end
+
+      def smoke_path
+        text(SMOKE_KEY, nil)
       end
 
       def enforce_mode

@@ -69,6 +69,16 @@ rplugin's Antigravity integration installs skills only. polispec's separate `har
 
 Standard polispec runs independently without a lock checkout or protected service. The lock branch is a separately selected edition of the same code, with stricter prerequisites; it does not require a standard installation or a local `main` branch. Its immutable parent records release lineage. One edition is selected per installation; simultaneous independent authority planes in one host namespace are not provided.
 
+## Smoke tests
+
+polispec records smoke tests; it does not ship them. Run your own against a real installation and record each result in `smoke.yml` at the root of the repository whose spec it proves. Each entry names the spec node it proves, carries the verdict, steps and evidence digests, and captures the runtime (OS, kernel, Ruby, polispec version and commit, harness and model) without host or user identity. Entries are chained, `verify` detects edits, and `coverage` shows which units have a current pass. `docs/smoke.md` covers the format and how to write good smoke tests.
+
+```sh
+polispec smoke record --spec specs/app.yml --at commands/resolve --verdict pass --summary "resolve named the stable checkout prod"
+polispec smoke verify
+polispec smoke coverage
+```
+
 ## Settings
 
 For unsealed development, change settings with `rplugin settings`, or use the matching environment variable below. A sealed installation resolves protected settings first and ignores authority redirects from the calling process.
@@ -79,6 +89,7 @@ For unsealed development, change settings with `rplugin settings`, or use the ma
 - `polispec.root_guard`: initially `false`; recorded exposure can arm it, and lock fallback forces it on.
 - `polispec.operator`: how messages name the person who promotes to stable; default `the operator`.
 - `polispec.code.specs_repo`: path of the code specs repository; default `~/polispec-specs`. `POLISPEC_SPECS_REPO` overrides it.
+- `polispec.smoke.path`: path of the smoke ledger; empty means `smoke.yml` at the git toplevel of the working directory. `POLISPEC_SMOKE` overrides it.
 - `polispec.global.repo`, `polispec.global.ref` (default `main`) and `polispec.global.path` (default `polispec`): where the optional global layer of shared rules, modules and profiles is read from. Unset means no global layer. `POLISPEC_GLOBAL` points at a plain directory for scratch runs. See `docs/schema.md`.
 
 ## Optional integrations
@@ -94,6 +105,7 @@ None is required. Policy `observability.events` may name an `rlogs` sink, and `p
 - `docs/roster.md`: the roster resolver.
 - `docs/behavior.md`: behavioral policy.
 - `docs/code-specs.md`: code specs.
+- `docs/smoke.md`: the smoke ledger.
 - `examples/`: the `shop` (web service) and `widget` (distributed plugin) projects and an example ledger.
 
 ## License
