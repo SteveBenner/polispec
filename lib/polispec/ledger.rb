@@ -84,13 +84,19 @@ module Polispec
       real = canonical(path)
       return nil if real.nil?
 
-      projects.each do |entry|
-        next if entry.status == "retired"
-
-        found = locate_in(entry, real)
-        return found if found
+      live = projects.reject { |entry| entry.status == "retired" }
+      live.each do |entry|
+        env = env_checkout(entry, real)
+        return Location.new(project: entry, kind: :env_checkout, env: env) if env
       end
-      nil
+      candidates = []
+      live.each_with_index do |entry, index|
+        root = roots(entry.repo).find { |candidate| under?(real, candidate) }
+        candidates << [root.length, index, Location.new(project: entry, kind: :repo, env: "dev")] if root
+        shelter = worktree_root(entry, real)
+        candidates << [shelter.length, index, Location.new(project: entry, kind: :worktree, env: "dev")] if shelter
+      end
+      candidates.min_by { |length, index, _| [length, index] }&.last
     end
 
     private
@@ -104,13 +110,11 @@ module Polispec
       )
     end
 
-    def locate_in(entry, real)
-      env = env_checkout(entry, real)
-      return Location.new(project: entry, kind: :env_checkout, env: env) if env
-      return Location.new(project: entry, kind: :repo, env: "dev") if roots(entry.repo).any? { |root| under?(real, root) }
-      return Location.new(project: entry, kind: :worktree, env: "dev") if worktree?(entry, real)
+    def worktree_root(entry, real)
+      patterns = entry.worktree_globs.map { |glob| File.expand_path(glob) }
+      return nil if patterns.empty?
 
-      nil
+      ancestors(real).select { |dir| patterns.any? { |glob| File.fnmatch?(glob, dir, File::FNM_PATHNAME | File::FNM_DOTMATCH) } }.last
     end
 
     def env_checkout(entry, real)
@@ -118,13 +122,6 @@ module Polispec
       return nil unless under?(real, base)
 
       real.sub(%r{\A#{Regexp.escape(base)}/?}, "").split("/").first
-    end
-
-    def worktree?(entry, real)
-      patterns = entry.worktree_globs.map { |glob| File.expand_path(glob) }
-      return false if patterns.empty?
-
-      ancestors(real).any? { |dir| patterns.any? { |glob| File.fnmatch?(glob, dir, File::FNM_PATHNAME | File::FNM_DOTMATCH) } }
     end
 
     def ancestors(real)

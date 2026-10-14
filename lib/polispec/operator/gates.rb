@@ -322,6 +322,7 @@ module Polispec
         raise Failure.new("policy_unavailable", "project #{id} has no usable promotion policy (source #{source})", "policy_source" => source) unless usable
 
         problems = health_required_errors(policy) + env_names_errors(policy) + Polispec::ValidateProfiles.errors(policy, entry, ledger: ledger)
+        problems += Polispec::Layers.policy_errors(policy, project: entry, ledger: ledger)
         raise Failure.new("policy_invalid", problems.join("; "), "policy_source" => source, "errors" => problems) unless problems.empty?
 
         Project.new(ledger: ledger, entry: entry, policy: policy, source: source, digest: digest, repo: repo)
@@ -434,12 +435,24 @@ module Polispec
           chdir = active_dir(context.project, own)
           raise Failure.new("gate_failed", "gate #{gate['id']}: no active #{own} checkout at #{chdir}", "gate_id" => gate["id"]) unless File.directory?(chdir)
         end
+        chdir = gate_dir(gate, chdir) if gate["dir"]
         extra = gate["env_from"] ? env_file_vars(context.project, gate["env_from"]) : {}
         [chdir, extra.merge(gate_env(context))]
       rescue Failure => e
         raise e if e.code == "gate_failed"
 
         raise Failure.new("gate_failed", "gate #{gate['id']}: #{e.message}", "gate_id" => gate["id"])
+      end
+
+      def gate_dir(gate, chdir)
+        joined = File.join(chdir, gate["dir"].to_s)
+        base = File.realpath(chdir)
+        real = File.directory?(joined) ? File.realpath(joined) : nil
+        return joined if real && (real == base || real.start_with?("#{base}/"))
+
+        raise Failure.new("gate_failed", "gate #{gate['id']}: dir #{gate['dir']} is not a directory under #{chdir}", "gate_id" => gate["id"])
+      rescue SystemCallError
+        raise Failure.new("gate_failed", "gate #{gate['id']}: dir #{gate['dir']} is not a directory under #{chdir}", "gate_id" => gate["id"])
       end
 
       def gate_env(context)
