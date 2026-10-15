@@ -1,0 +1,303 @@
+schema: polispec.smoke-scenario/v1
+unit: code_specs
+summary: the pack is read from the stable ref by default, main and worktree are selectable per command or through POLISPEC_CODE_REF, and the hook fails open when stable does not exist
+fixture:
+  enforce: enforce
+  files:
+    "pack/specs/code/spec.yml": |
+      schema: polispec.spec/v1
+      spec: code
+      version: 1.0.0
+      summary: Smoke pack root.
+      activation:
+        languages: ["*"]
+      policy:
+        id: code.root
+        title: Smoke root
+        subpolicies:
+          - id: code.no-aws-key
+            title: No AWS access key literals
+            statement: Never commit an AWS access key id.
+            level: MUST_NOT
+            severity: critical
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [pre_write]
+              enforcer: { kind: grep, pattern: "AKIA[0-9A-Z]{16}", decides: all }
+            control:
+              fixture: no-aws-key.bad.txt
+              compliant: no-aws-key.good.txt
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+    "pack/specs/code/ruby/spec.yml": |
+      schema: polispec.spec/v1
+      spec: code/ruby
+      parent: code
+      version: 1.0.0
+      summary: Smoke ruby pack.
+      activation:
+        languages: [ruby]
+      detection:
+        extensions: [".rb"]
+        filenames: ["Rakefile"]
+        shebangs: ["ruby"]
+      policy:
+        id: code.ruby.smoke
+        title: Smoke ruby
+        subpolicies:
+          - id: code.ruby.no-binding-pry
+            title: No debugger calls
+            statement: Do not leave binding.pry in committed code.
+            level: MUST_NOT
+            severity: high
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [pre_write]
+              enforcer: { kind: grep, pattern: "binding\\.pry", decides: all }
+            control:
+              fixture: no-binding-pry.bad.rb
+              compliant: no-binding-pry.good.rb
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+          - id: code.ruby.prefer-logger
+            title: Prefer the logger
+            statement: Use the logger instead of printing debug output.
+            level: SHOULD
+            severity: low
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [post_write]
+              enforcer: { kind: grep, pattern: "^\\s*pp\\s", decides: all }
+            control:
+              fixture: prefer-logger.bad.rb
+              compliant: prefer-logger.good.rb
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+    "pack/specs/code/shell/spec.yml": |
+      schema: polispec.spec/v1
+      spec: code/shell
+      parent: code
+      version: 1.0.0
+      summary: Smoke shell pack.
+      activation:
+        languages: [shell]
+      detection:
+        extensions: [".sh"]
+        shebangs: ["sh", "bash"]
+      policy:
+        id: code.shell.smoke
+        title: Smoke shell
+        subpolicies:
+          - id: code.shell.no-eval
+            title: No eval
+            statement: Do not use eval.
+            level: MUST_NOT
+            severity: high
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [pre_write]
+              enforcer: { kind: grep, pattern: "\\beval\\b", decides: all }
+            control:
+              fixture: no-eval.bad.sh
+              compliant: no-eval.good.sh
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+    "pack/controls/code/no-aws-key.bad.txt": |
+      key = AKIAABCDEFGHIJKLMNOP
+    "pack/controls/code/no-aws-key.good.txt": |
+      key = ENV["KEY"]
+    "pack/controls/code/ruby/no-binding-pry.bad.rb": |
+      binding.pry
+    "pack/controls/code/ruby/no-binding-pry.good.rb": |
+      puts 1
+    "pack/controls/code/ruby/prefer-logger.bad.rb": |
+      pp value
+    "pack/controls/code/ruby/prefer-logger.good.rb": |
+      logger.info value
+    "pack/controls/code/shell/no-eval.bad.sh": |
+      eval "$1"
+    "pack/controls/code/shell/no-eval.good.sh": |
+      echo "$1"
+    "extra/ruby-spec.yml": |
+      schema: polispec.spec/v1
+      spec: code/ruby
+      parent: code
+      version: 1.0.0
+      summary: Smoke ruby pack.
+      activation:
+        languages: [ruby]
+      detection:
+        extensions: [".rb"]
+        filenames: ["Rakefile"]
+        shebangs: ["ruby"]
+      policy:
+        id: code.ruby.smoke
+        title: Smoke ruby
+        subpolicies:
+          - id: code.ruby.no-binding-pry
+            title: No debugger calls
+            statement: Do not leave binding.pry in committed code.
+            level: MUST_NOT
+            severity: high
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [pre_write]
+              enforcer: { kind: grep, pattern: "binding\\.pry", decides: all }
+            control:
+              fixture: no-binding-pry.bad.rb
+              compliant: no-binding-pry.good.rb
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+          - id: code.ruby.prefer-logger
+            title: Prefer the logger
+            statement: Use the logger instead of printing debug output.
+            level: SHOULD
+            severity: low
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [post_write]
+              enforcer: { kind: grep, pattern: "^\\s*pp\\s", decides: all }
+            control:
+              fixture: prefer-logger.bad.rb
+              compliant: prefer-logger.good.rb
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+          - id: code.ruby.no-sleep
+            title: No sleep calls
+            statement: Do not call sleep in committed code.
+            level: MUST_NOT
+            severity: medium
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [pre_write]
+              enforcer: { kind: grep, pattern: "\\bsleep\\b", decides: all }
+            control:
+              fixture: no-sleep.bad.rb
+              compliant: no-sleep.good.rb
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+    "extra/no-sleep.bad.rb": |
+      sleep 1
+    "extra/no-sleep.good.rb": |
+      puts 1
+    "samples/sleeper.rb": |
+      sleep 1
+    "work/lib/bad.rb": |
+      binding.pry
+    "work/lib/good.rb": |
+      puts 1
+steps:
+  - name: build the code specs repository from the fixture pack
+    run: [sh, -c, 'mkdir -p "$2" && cp -R "$1/." "$2/" && cd "$2" && git init -q -b main . && git add specs controls && git commit -q -m pack && git branch stable && git rev-parse --short stable', sh, "{{files}}/pack", "{{scratch}}/specs-repo"]
+    stop: true
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/specs-repo/specs/code/spec.yml", "{{scratch}}/specs-repo/.git"]
+  - name: commit a new rule on main only
+    run: [sh, -c, 'cd "$2" && cp "$1/extra/ruby-spec.yml" specs/code/ruby/spec.yml && cp "$1/extra/no-sleep.bad.rb" "$1/extra/no-sleep.good.rb" controls/code/ruby/ && git add specs controls && git commit -q -m "no sleep" && git rev-parse --short main', sh, "{{files}}", "{{scratch}}/specs-repo"]
+    stop: true
+    expect:
+      exit: 0
+  - name: build a pack that has no stable ref
+    run: [sh, -c, 'mkdir -p "$2" && cp -R "$1/." "$2/" && cd "$2" && git init -q -b main . && git add specs controls && git commit -q -m nostable', sh, "{{files}}/pack", "{{scratch}}/nostable-repo"]
+    expect:
+      exit: 0
+  - name: the default ref is stable and does not see the new rule
+    run: ["{{polispec}}", code, chain, ruby, --json]
+    expect:
+      exit: 0
+      json:
+        language: ruby
+        rules: [code.no-aws-key, code.ruby.no-binding-pry, code.ruby.prefer-logger]
+      stdout_excludes: [code.ruby.no-sleep]
+  - name: the text chain names the stable ref
+    run: ["{{polispec}}", code, chain, ruby]
+    expect:
+      exit: 0
+      stdout_includes: ["pack stable:"]
+  - name: --ref main sees the new rule
+    run: ["{{polispec}}", code, chain, ruby, --ref, main, --json]
+    expect:
+      exit: 0
+      json:
+        rules: [code.no-aws-key, code.ruby.no-binding-pry, code.ruby.prefer-logger, code.ruby.no-sleep]
+  - name: --ref worktree reads the working tree
+    run: ["{{polispec}}", code, chain, ruby, --ref, worktree]
+    expect:
+      exit: 0
+      stdout_includes: ["pack worktree:", "code.ruby.no-sleep"]
+  - name: POLISPEC_CODE_REF sets the default ref
+    run: ["{{polispec}}", code, chain, ruby, --json]
+    env: { POLISPEC_CODE_REF: main }
+    expect:
+      exit: 0
+      json:
+        rules: [code.no-aws-key, code.ruby.no-binding-pry, code.ruby.prefer-logger, code.ruby.no-sleep]
+  - name: check on stable allows the sleep call
+    run: ["{{polispec}}", code, check, "{{files}}/samples/sleeper.rb"]
+    expect:
+      exit: 0
+      stdout_includes: ["0 findings"]
+  - name: check on main blocks the sleep call
+    run: ["{{polispec}}", code, check, "{{files}}/samples/sleeper.rb", --ref, main]
+    expect:
+      exit: 1
+      stdout_includes: ["BLOCKED", "[code.ruby.no-sleep] MUST_NOT medium"]
+  - name: the hook reads stable and allows the sleep write
+    run: ["{{polispec}}", code-hook, pre, --harness, claude]
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"cs1","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/s.rb","content":"sleep 1\n"}}'
+    expect:
+      exit: 0
+      stdout_excludes: ['"permissionDecision":"deny"', "code.ruby.no-sleep"]
+  - name: the hook reads main when POLISPEC_CODE_REF says so
+    run: ["{{polispec}}", code-hook, pre, --harness, claude]
+    env: { POLISPEC_CODE_REF: main }
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"cs2","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/s.rb","content":"sleep 1\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ['"permissionDecision":"deny"', "lib/s.rb:1 [code.ruby.no-sleep] MUST_NOT"]
+  - name: the hook fails open when the pack has no stable ref
+    run: ["{{polispec}}", code-hook, pre, --harness, claude]
+    env: { POLISPEC_SPECS_REPO: "{{scratch}}/nostable-repo" }
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"cs3","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/s.rb","content":"binding.pry\n"}}'
+    expect:
+      exit: 0
+      stdout_excludes: ['"permissionDecision":"deny"']
+  - name: the same pack at main still enforces
+    run: ["{{polispec}}", code-hook, pre, --harness, claude]
+    env: { POLISPEC_SPECS_REPO: "{{scratch}}/nostable-repo", POLISPEC_CODE_REF: main }
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"cs4","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/s.rb","content":"binding.pry\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ['"permissionDecision":"deny"', "[code.ruby.no-binding-pry] MUST_NOT"]
+  - name: the parsed pack is cached under the scratch state directory
+    run: [sh, -c, 'find "$1" -type f | grep -c cache', sh, "{{scratch}}/state"]
+    expect:
+      exit: 0
+  - name: build the work repository with one existing violation
+    run: [sh, -c, 'cd "$1" && git init -q -b main . && git add lib && git commit -q -m work', sh, "{{files}}/work"]
+    expect:
+      exit: 0
+  - name: baseline records the existing violation
+    run: ["{{polispec}}", code, baseline, "{{files}}/work"]
+    expect:
+      exit: 0
+      stdout_includes: ["scanned 2 files, 1 policy/path entries, 1 violations"]
+  - name: raise the violation count in the work file
+    run: [sh, -c, 'printf "binding.pry\nbinding.pry\n" > "$1/lib/bad.rb"', sh, "{{files}}/work"]
+    expect:
+      exit: 0
+  - name: a write that raises the baselined count adds a SHOULD finding
+    run: ["{{polispec}}", code-hook, post, --harness, claude]
+    env: { RPLUGIN_POLISPEC_POLISPEC_CODE_ENFORCE: advise }
+    stdin: '{"hook_event_name":"PostToolUse","session_id":"rt1","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/bad.rb","content":"binding.pry\nbinding.pry\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["lib/bad.rb:2 [code.ruby.no-binding-pry] MUST_NOT", "[code.ruby.no-binding-pry] SHOULD violations of code.ruby.no-binding-pry in lib/bad.rb rose from 1 to 2", "the baseline may only shrink"]

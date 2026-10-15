@@ -1,0 +1,91 @@
+schema: polispec.smoke-scenario/v1
+unit: harness_controls
+summary: a project-scope install of the minimal control writes the controls and hook into the scratch project, verifies, backs up the changed settings and denies the fixture write; non-root uninstall is refused and leaves it installed
+requires: [harness_controls]
+fixture:
+  enforce: enforce
+  files:
+    "proj/README.md": "scratch project\n"
+    "proj/.claude/settings.json": "{\"permissions\":{\"allow\":[\"Read\"]}}\n"
+    "lc.sh": |
+      #!/bin/sh
+      home="$1"
+      polispec="$2"
+      shift 2
+      dir=$(dirname "$0")
+      count=$#
+      while [ "$count" -gt 0 ]; do
+        word="$1"
+        shift
+        if [ "$word" = "@ID@" ]; then word=$(cat "$dir/installation-id"); fi
+        set -- "$@" "$word"
+        count=$((count - 1))
+      done
+      RPLUGIN_HOME="$HOME/.rplugin"
+      export RPLUGIN_HOME
+      HOME="$home"
+      export HOME
+      if [ "$1" = "harness" ] && [ "$2" = "install" ]; then
+        "$polispec" "$@" > "$dir/install.out"
+        status=$?
+        cat "$dir/install.out"
+        sed -n 's/.*"installation_id":"\([^"]*\)".*/\1/p' "$dir/install.out" | head -n 1 > "$dir/installation-id"
+        exit $status
+      fi
+      exec "$polispec" "$@"
+steps:
+  - name: install the minimal control into the scratch project
+    run: [sh, "{{files}}/lc.sh", "{{home}}", "{{polispec}}", harness, install, "{{tree}}/examples/controls.minimal.yml", --harness, claude-code, --scope, project, --project, "{{files}}/proj", --json]
+    expect:
+      exit: 0
+      stdout_includes: ['"ok":true', '"operation":"install"', '"schema":"polispec.harness.receipt/v1"', '"installation_id":"install_']
+      files_exist: ["{{files}}/proj/.polispec/harness/claude-code/controls.json", "{{files}}/proj/.claude/settings.json"]
+  - name: the controls file carries the control
+    run: [cat, "{{files}}/proj/.polispec/harness/claude-code/controls.json"]
+    expect:
+      exit: 0
+      stdout_includes: [ctl_minimal_write_guard, '"effect": "deny"']
+  - name: the settings keep the existing permission and gain the hook
+    run: [cat, "{{files}}/proj/.claude/settings.json"]
+    expect:
+      exit: 0
+      stdout_includes: ['"Read"', '"PreToolUse"', '"--controls-file"', "{{files}}/proj/.polispec/harness/claude-code/controls.json"]
+  - name: the changed settings file was backed up in place
+    run: [sh, -c, 'ls "$1"/.claude/', sh, "{{files}}/proj"]
+    expect:
+      exit: 0
+      stdout_includes: ["settings.json.polispec-backup-"]
+  - name: verify finds the installation intact and owned but not certified
+    run: [sh, "{{files}}/lc.sh", "{{home}}", "{{polispec}}", harness, verify, "@ID@", --json]
+    expect:
+      exit: 0
+      json:
+        ok: true
+        operation: verify
+        data: { schema: polispec.harness.verification/v1, integrity: true, ownership: true, certified: false }
+  - name: the guard denies the fixture write
+    run: [sh, "{{files}}/lc.sh", "{{home}}", "{{polispec}}", hook, pretool, --harness, claude, --controls-file, "{{files}}/proj/.polispec/harness/claude-code/controls.json", --controls-project, "{{files}}/proj"]
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"smoke","cwd":"{{files}}/proj","tool_name":"Write","tool_input":{"file_path":"/tmp/polispec-control-fixtures/fixture.txt","content":"polispec fixture\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ['"permissionDecision":"deny"', ctl_minimal_write_guard]
+  - name: the guard allows a write outside the protected directory
+    run: [sh, "{{files}}/lc.sh", "{{home}}", "{{polispec}}", hook, pretool, --harness, claude, --controls-file, "{{files}}/proj/.polispec/harness/claude-code/controls.json", --controls-project, "{{files}}/proj"]
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"smoke","cwd":"{{files}}/proj","tool_name":"Write","tool_input":{"file_path":"{{files}}/proj/notes.txt","content":"notes\n"}}'
+    expect:
+      exit: 0
+      stdout_excludes: ['"permissionDecision":"deny"']
+  - name: uninstall without the privileged launcher is refused
+    run: [sh, "{{files}}/lc.sh", "{{home}}", "{{polispec}}", harness, uninstall, "@ID@", --json]
+    expect:
+      exit: 3
+      json:
+        ok: false
+        operation: uninstall
+        findings:
+          - { code: operator_required }
+  - name: the refused uninstall left the installation in place
+    run: [cat, "{{files}}/proj/.claude/settings.json"]
+    expect:
+      exit: 0
+      stdout_includes: ['"PreToolUse"', '"--controls-file"']
