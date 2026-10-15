@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.2] - 2026-10-15
+
+### Fixed
+
+- `polispec smoke run` works from a pinned install. The runner took the git top level of the tree as its root, and a pinned release lives inside another checkout (`rstack-uber/plugins/.pinned/…`), so every scenario failed with `specs/app.yml is not a regular file`. The git top level is used only when it is the tree itself (`lib/polispec/smoke/run.rb`).
+- `--scenarios smoke/live` together with `--live` no longer runs each live scenario twice into the same fixture directory.
+
+### Added
+
+- `smoke/scenarios/smoke-suite.yml` covers the `smoke` unit: a nested run of one bundled scenario without recording, and the live kill switch blocking a live scenario before any harness starts.
+
 ## [0.23.1] - 2026-10-15
 
 ### Fixed

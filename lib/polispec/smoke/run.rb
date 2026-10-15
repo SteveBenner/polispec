@@ -82,7 +82,7 @@ module Polispec
       def scenarios
         files = Dir.glob(File.join(scenario_dir, "*.yml")).sort
         files.concat(Dir.glob(File.join(tree, "smoke", "live", "*.yml")).sort) unless options.live.empty?
-        files.map do |path|
+        files.uniq { |path| File.expand_path(path) }.map do |path|
           begin
             scenario = Scenario.load(path)
             { path: path, scenario: scenario, error: nil }
@@ -195,7 +195,10 @@ module Polispec
       end
 
       def toplevel
-        @toplevel ||= Smoke.git(tree, "rev-parse", "--show-toplevel") || tree
+        @toplevel ||= begin
+          top = Smoke.git(tree, "rev-parse", "--show-toplevel")
+          top && File.realpath(top) == File.realpath(tree) ? top : tree
+        end
       end
 
       def record_all(results)
