@@ -39,6 +39,7 @@ module Polispec
 
           if config_generated
             callback = runtime + ["hook", "pretool", "--harness", "codex", "--controls-file", paths["controls"]]
+            callback += ["--controls-project", values["project"]] if scope == "project"
             config_content = config_toml(scope, edition, callback, restrictions)
             raise Polispec::Error, "generated Codex TOML exceeds #{CONFIG_LIMIT} bytes" if config_content.bytesize > CONFIG_LIMIT
             artifacts << artifact(paths["config"], config_content, "toml", "toml_block", ["codex/v1"], control_ids)
