@@ -183,7 +183,7 @@ module Polispec
         if control_gate && actions.empty? && governed && !diagnostic_read?(input.tool_name)
           known = calls.flat_map { |tool, data| Classify.positive(tool, data, cwd) }
           actions.concat(known)
-          actions << unknown_action(input, cwd) if known.empty? && !(calls.any? && calls.all? { |tool, data| Classify.benign?(tool, data, cwd) })
+          actions << unknown_action(input, cwd) if known.empty? && !(calls.any? && calls.all? { |tool, data| Classify.benign?(tool, data, cwd) || Classify.parsed_shell?(tool, data, cwd) })
         end
         groups = group(actions, ledger, cwd, baseline)
         mode = enforce_mode

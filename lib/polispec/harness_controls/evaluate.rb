@@ -149,9 +149,10 @@ module Polispec
         target = action.env_hint["path"].to_s
         return false if target.empty?
         absolute = canonical_path(target)
+        fallback = action.env_hint["unknown"] == true
         paths.any? do |path|
           protected = canonical_path(path)
-          absolute == protected || absolute.start_with?("#{protected}/") || protected.start_with?("#{absolute}/")
+          absolute == protected || absolute.start_with?("#{protected}/") || (!fallback && protected.start_with?("#{absolute}/"))
         end
       end
       private_class_method :protected_action?

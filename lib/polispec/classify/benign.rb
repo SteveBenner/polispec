@@ -56,6 +56,7 @@ module Polispec
         "behavior" => [{ "compile" => {}, "decide" => {} }]
       }.freeze
       WRAPPERS = %w[eval exec source env sudo doas nohup timeout xargs command builtin nice ionice stdbuf setsid unbuffer flock time bash sh zsh dash ksh ash].freeze
+      OPAQUE = %w[eval source .].freeze
       SUBSTITUTION = /\$\(|`|<\(|>\(/.freeze
       SHORT_OUTPUT = /\A-[A-Za-z]*o/.freeze
       REDIRECT_DUP = /\A(?:\d+|-)\z/.freeze
@@ -105,6 +106,17 @@ module Polispec
         return false unless script && !script.commands.empty?
 
         script.commands.all? { |cmd| command?(cmd) }
+      rescue StandardError
+        false
+      end
+
+      def parsed_shell?(tool_name, tool_input, cwd)
+        return false unless Support::BASH_TOOLS.include?(tool_name.to_s.downcase)
+
+        script = Support.script_for(tool_name, tool_input, cwd)
+        return false if script.nil? || script.commands.empty?
+
+        script.commands.none? { |cmd| OPAQUE.include?(cmd.name.to_s) }
       rescue StandardError
         false
       end

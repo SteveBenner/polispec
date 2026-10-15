@@ -70,3 +70,18 @@ steps:
   - name: a declared MCP operation is allowed under codex
     hook: { harness: codex, event: pretool, tool: mcp__desk__page, input: {}, cwd: "{{project.shop}}" }
     expect: { decision: allow }
+  - name: a parsed read line outside the benign list is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "sed -n 1,2p README.md; git branch -a" }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: a path-qualified read-only polispec call is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "bin/polispec smoke verify 2>&1 | tail -4" }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: an unknown harness tool still asks
+    hook: { harness: claude, event: pretool, tool: CronCreate, input: {}, cwd: "{{project.shop}}" }
+    expect: { decision: ask }
+  - name: an unrecognised program run above the protected runtime is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "smoke-unknown-tool status" }, cwd: "{{tree}}/.." }
+    expect: { decision: allow }
+  - name: an explicit recursive change above the protected runtime is denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "chmod -R 700 {{tree}}/.." }, cwd: "{{scratch}}" }
+    expect: { decision: deny }

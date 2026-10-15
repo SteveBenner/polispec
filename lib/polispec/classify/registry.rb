@@ -65,6 +65,10 @@ module Polispec
       Benign.benign?(tool_name, tool_input, cwd)
     end
 
+    def self.parsed_shell?(tool_name, tool_input, cwd)
+      Benign.parsed_shell?(tool_name, tool_input, cwd)
+    end
+
     def self.positive(tool_name, tool_input, cwd)
       Benign.positive(tool_name, tool_input, cwd)
     end
