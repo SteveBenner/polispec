@@ -41,7 +41,7 @@ IR input is limited to 1 MiB and 256 controls. Hook input is limited to 64 KiB; 
 
 ## Install and verify
 
-The 0.18.0 release leaves both `harness_controls` and `sealed_plane` disabled by operator choice. The mutation examples below describe the implemented lifecycle after separate activation; running them with release defaults returns `feature_disabled`. Grammar, validation, planning, verification, and dry-run previews remain available. Publication installs no controls, services, or timers and activates no live project.
+Since 0.23.0 `harness_controls` is enabled by default and `sealed_plane` stays disabled, both by operator choice. Install and verify run with release defaults; uninstall needs the protected operator, and sealing returns `feature_disabled`. Under a governed baseline the guard recognises harness-internal tools (TodoWrite, Skill, Glob and the like) and fully parsed read-only shell lines as benign, gives WebFetch, WebSearch, Agent and Task known classes, and asks about every other unclassified call and every undeclared MCP operation; `bin/polispec-guard`'s fast path skips only the tools listed in `fastpath.tools`. Grammar, validation, planning, verification, and dry-run previews remain available. Publication installs no controls, services, or timers and activates no live project.
 
 Supported backend names are `claude-code`, `codex`, `hermes`, `antigravity`, and `os`. Scopes are `user`, `project`, and `managed`. Project scope requires an absolute `--project` directory; other scopes reject that option.
 

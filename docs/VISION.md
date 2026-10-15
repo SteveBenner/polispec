@@ -94,7 +94,7 @@ A rule nobody can show working is a claim, not a control.
 | Negative-control fixtures for code-spec enforcers (`code controls`) | **Built** | |
 | Smoke ledger: chained records that a spec node was shown to work, with the runtime it ran on | **Built** | |
 | Deployment receipts: proof that the deployed SHA passed its health check | **Built** | |
-| A bundled smoke-test suite with scenario definitions, fixture builders, and headless harness runners | **Planned** | See `ROADMAP.md`. |
+| A bundled smoke-test suite with scenario definitions, fixture builders, and headless harness runners | **Built** | `polispec smoke run`, since 0.23.0. |
 | Modules that ship their own negative controls and smoke checklist, so a project inherits proof obligations along with rules | **Idea** | |
 | Coverage per composed rule: which rules in the effective rulebook have a current passing proof | **Idea** | Smoke coverage works per spec node today. |
 

@@ -315,7 +315,7 @@ polispec code controls
 polispec specs promote
 ```
 
-**Harness controls and sealed authority.** Version 0.18.0 published harness controls and the sealed plane with both feature flags off (`harness_controls`, `sealed_plane`). Grammar, validation, planning, and read-only inspection work. New installations, removals, and sealing stay gated until the operator enables them. Backends cover Claude Code, Codex, Hermes, Antigravity CLI, and OS sandbox planning. Capability reports keep generated artifacts, parser acceptance, native enforcement, and lock certification separate. The `polispec-lock` branch is the same code with `EDITION` set to `lock`; one edition is selected per installation ([harness controls](docs/harness-controls.md)).
+**Harness controls and sealed authority.** Harness controls are on by default since 0.23.0 (`harness_controls`): the guard caps every verdict with the installed controls, asks about unknown non-read calls and undeclared MCP operations in governed scope, and `harness install` and `verify` work. Built-in harness tools and read-only shell commands are recognised and stay allowed. The sealed plane stays off (`sealed_plane`), so uninstall, sealing and the authorizations service remain gated. Declare the MCP operations you use (an exact `server` and `operation` in a rule of your global shelf or project policy) before you install a release with controls on, or every MCP call asks. Backends cover Claude Code, Codex, Hermes, Antigravity CLI, and OS sandbox planning. Capability reports keep generated artifacts, parser acceptance, native enforcement, and lock certification separate. The `polispec-lock` branch is the same code with `EDITION` set to `lock`; one edition is selected per installation ([harness controls](docs/harness-controls.md)).
 
 ```sh
 polispec harness grammar --json
@@ -333,12 +333,13 @@ polispec apply project:clinic-booking --confirm plan_3f9c0d2e1a7b4c58e6d09a12
 
 **Packages.** A package is a named, versioned setup: templates, modules, parameters, and ordered steps. `environment-control` (variants `service` and `distributed`) is the first. The ledger records each package a project carries, `doctor` reports available upgrades and edited files, and an upgrade never overwrites a file you changed.
 
-**Smoke ledger.** polispec records smoke tests; it does not ship them. Each entry names the spec node it proves, the verdict, the steps, the evidence digests, and the runtime, with no host or user identity. Entries are chained, `verify` detects edits, and `coverage` shows which units have a current pass ([smoke](docs/smoke.md)).
+**Smoke ledger and suite.** polispec ships a smoke suite and records smoke tests. `polispec smoke run` runs the bundled scenarios against the tree it runs from, in scratch fixtures, compares every verdict with another release (`--against`), replays probes on copies of your ledger (`--host-copy`), and drives real Claude Code and Codex sessions (`--live`). Each entry names the spec node it proves, the verdict, the steps, the evidence digests, and the runtime, with no host or user identity. Entries are chained, `verify` detects edits, and `coverage` shows which units have a current pass ([smoke](docs/smoke.md)).
 
 ```sh
 polispec smoke record --spec specs/app.yml --at commands/resolve --verdict pass --summary "resolve named the stable checkout prod"
 polispec smoke verify
 polispec smoke coverage
+polispec smoke run --against ~/.rplugins/polispec
 ```
 
 **Deployment receipts.** `polispec status <project> --json` includes `projects[].deployments` (contract `polispec.status.deployments/v1`). Each environment carries `receipt`, `latest_attempt`, and `verified`:
@@ -402,7 +403,7 @@ Applying the `environment-control` package does the setup in one pass:
 | `polispec behavior compile\|decide` | Compile and evaluate a behavioral policy |
 | `polispec code …` / `polispec specs …` | Code specs: detect, chain, check, baseline, controls; link and promote the specs repository |
 | `polispec harness …` / `seal` / `plane` / `authorizations` | Harness controls and the sealed authority plane |
-| `polispec smoke record\|list\|show\|verify\|coverage` | The smoke ledger |
+| `polispec smoke record\|list\|show\|verify\|coverage\|run` | The smoke ledger and the bundled suite |
 
 `specs/app.yml` is the full contract for every command.
 
@@ -417,6 +418,7 @@ For unsealed development, change settings with `rplugin settings`, or with the m
 - `polispec.operator`: how messages name the person who promotes to stable; default `the operator`.
 - `polispec.code.specs_repo`: path of the code specs repository; default `~/polispec-specs`. `POLISPEC_SPECS_REPO` overrides it.
 - `polispec.smoke.path`: path of the smoke ledger. Empty means `smoke.yml` at the git toplevel of the working directory. `POLISPEC_SMOKE` overrides it.
+- `polispec.smoke.live`: `on` (default) or `off`. Off stops `polispec smoke run --live` from launching any harness session; `POLISPEC_SMOKE_LIVE=off` does the same for one run.
 - `polispec.verdicts.journal`: `off` (default) or `on`. When on, the guard keeps a bounded local journal of verdict facts, never command text, that `polispec plan` replays against a proposed rulebook.
 - `polispec.global.repo`, `polispec.global.ref` (default `main`), and `polispec.global.path` (default `polispec`): where the optional global shelf of shared rules, modules, and profiles is read from. Unset means no global layer. `POLISPEC_GLOBAL` points at a plain directory for scratch runs. See [schema](docs/schema.md).
 
@@ -437,10 +439,10 @@ Optional integrations: none is required. Policy `observability.events` may name 
 - **Unsealed polispec is a guardrail, not a security boundary.** Without the sealed authority plane, a process with your user's rights can change settings, edit the ledger, or bypass the hook. It stops agents from doing the wrong thing by accident or by drift. It does not stop a determined adversary on the same account.
 - **Advise mode blocks nothing.** The default is `advise`. Enforcement starts when you set `polispec.enforce` to `enforce` and the operator flips a project to `live`.
 - **Native enforcement is verified per harness, and not everywhere.** Capability reports state what was observed. Hermes and Antigravity runtime enforcement is unverified on the release host, and Pi and the DeepSeek TUI receive skills only. Lock certification needs observed evidence, and none is claimed.
-- **Harness controls ship disabled.** The 0.18.0 feature flags are off until the operator turns them on.
+- **The sealed plane ships disabled.** Harness controls are on, but without a sealed plane a harness with no native ask (Codex) resolves a control ask as a denial; environment-policy warnings still get an allow-once id.
 - **Classification is deterministic, so it can miss.** An action that hides its effect from the classifier (an opaque script, a renamed binary) is judged by what it appears to be. Unknown non-read actions in governed scope ask or deny rather than allow, which narrows that gap.
 - **Git hooks are a seatbelt.** They help with plain `git` outside a harness, and `--no-verify` skips them.
-- **polispec ships no smoke suite.** You run your own smoke tests and record them.
+- **The smoke suite proves what it covers.** Units behind the sealed plane (`plane`, `authorizations`, `protected_authorizations`) record `blocked`, and `--live` runs cost money.
 - **Deployment receipts are evidence from deployment time.** They are not continuous health monitoring.
 
 ## FAQ
@@ -484,7 +486,7 @@ Today polispec governs where an agent may act and how code travels to users. Wit
 - [`docs/roster.md`](docs/roster.md): the roster resolver.
 - [`docs/behavior.md`](docs/behavior.md): behavioral policy.
 - [`docs/code-specs.md`](docs/code-specs.md): code specs.
-- [`docs/smoke.md`](docs/smoke.md): the smoke ledger.
+- [`docs/smoke.md`](docs/smoke.md): the smoke ledger and the bundled suite.
 - [`docs/VISION.md`](docs/VISION.md): where polispec is going.
 - [`examples/`](examples/): the `clinic` (booking app with nested modules), `shop` (web service), and `widget` (distributed plugin) projects, harness controls, and an example ledger.
 - [`specs/app.yml`](specs/app.yml): the contract.
