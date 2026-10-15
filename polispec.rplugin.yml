@@ -1,7 +1,7 @@
 schema: rplugin/v1
 id: polispec
 name: Polispec
-version: 0.20.0
+version: 0.21.0
 rplugin: ">= 1.12.0"
 native: true
 description: "Spec-based policy guardrails for agentic development and operations: committed environment policies and deterministic harness controls, with explicit backend capabilities and enforcement limits."
@@ -45,6 +45,7 @@ contents:
   hooks: hooks/polispec.hooks.yml
   rules:
     - { id: polispec, path: rules/polispec.md }
+    - { id: polispec-stewardship, path: rules/polispec-stewardship.md }
 compatibility:
   ruby: ">= 2.6"
   harnesses: { claude-code: supported, codex: supported, hermes: supported, pi: skills-only, deepseek-tui: skills-only, antigravity: skills-only, cowork: unsupported }

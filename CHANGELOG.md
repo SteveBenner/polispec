@@ -5,6 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.0] - 2026-10-14
+
+### Added
+
+- `polispec plan` and `polispec apply`: one preview-then-apply path for every rulebook change. Targets are a package (`<name> --repo REPO [--variant V] [--param k=v]`), `project:<id>`, `global`, and `ledger --from FILE`. A plan lists files, the ledger effect, the composed policy difference, and the verdicts that change, classifies the change as tightening, loosening, mixed, or neutral, and prints a plan id. Loosening, mixed, and global plans apply only with `--confirm <plan-id>`; a stale id refuses with `plan_changed` (`lib/polispec/plan.rb`, `lib/polispec/commands/plan.rb`, `lib/polispec/commands/apply.rb`, `docs/packages.md`).
+- Packages: `packages/<name>/package.yml` (`polispec.package/v1`) with parameters, variants, files, modules, and ordered built-in steps, found in the shipped `packages/` and on the global shelf. `environment-control` (variants `service` and `distributed`) is the first. The ledger records each applied package with its version and file digests; `status` lists them, `doctor` reports `package_upgrade_available` and `package_file_drift`, and an upgrade keeps edited files as conflicts (`lib/polispec/packages.rb`, `schemas/package.v1.yml`, `schemas/ledger.v1.yml`).
+- Verdict replay: plans judge synthetic probes generated from each project's environments, and, with the new setting `polispec.verdicts.journal` (`off` by default), the last 14 days of journaled verdict facts. The journal never holds command text (`lib/polispec/probes.rb`, `lib/polispec/journal.rb`).
+- Stewardship: the shipped rule `rules/polispec-stewardship.md` tells agents how to develop, install, upgrade, and repair polispec and change its rulebooks without disrupting the host. rplugin installs it as a rule where a harness has a rules surface (Antigravity CLI); every other harness reaches it through the polispec skill and the `[POLISPEC]` directive, and AGENTS.md points to it.
+- Runtime awareness: polispec knows whether it runs from a pinned rplugin release, a working clone, or the sealed plane, verifies a pinned release's tree digest, and `doctor` prints `runtime:`. A built-in protected root denies writes into a pinned runtime and warns on writes into a clone runtime (`R-POLISPEC-RUNTIME`) (`lib/polispec/runtime.rb`, `lib/polispec/engine.rb`).
+- `polispec apply --with-stewardship` checks that the installed plugin ships the stewardship rule (reinstalling it from the running tree when not), checks the runtime protection, and pins a clone runtime to the tag of the running version with `rplugin install <clone> --ref <tag>` before applying anything; any failure stops it first (`lib/polispec/stewardship.rb`).
+
+### Changed
+
+- `polispec apply … --confirm`, and `apply global` or `apply ledger` with or without it, classify as `policy.edit`, so on a live policy the harness asks the user (`R-POLICY`); `polispec plan` and `apply <package>` classify as before (`lib/polispec/classify/commands/release.rb`).
+- `doctor` prints `runtime:` before its findings; info findings (`package_upgrade_available`, `package_file_drift`) do not affect `ok` or the exit code. A pinned runtime's provenance requires its commit to be on the source's `main` (`lib/polispec/commands/doctor.rb`).
+
+### Removed
+
+- `polispec onboard`, with no alias. `polispec apply environment-control --repo <repo>` runs the same steps; `--serves`, `--archetype`, `--id`, and `--trust-ref` became `--param serves=`, `--variant`, `--param id=`, and `--param trust_ref=`, and `--dry-run` became `polispec plan`. `templates/onboard/` moved into `packages/environment-control/`.
+
 ## [0.20.0] - 2026-10-14
 
 ### Added
