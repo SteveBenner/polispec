@@ -204,6 +204,11 @@ steps:
     expect:
       exit: 0
       json: { language: unknown }
+  - name: detect gives unknown for an empty file
+    run: [sh, -c, ': > "$1/empty.dat" && "$2" code detect "$1/empty.dat" --json', sh, "{{files}}", "{{polispec}}"]
+    expect:
+      exit: 0
+      json: { language: unknown }
   - name: chain for ruby lists the root and ruby specs but not shell
     run: ["{{polispec}}", code, chain, ruby]
     expect:

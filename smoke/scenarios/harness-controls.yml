@@ -33,6 +33,26 @@ fixture:
         exit $status
       fi
       exec "$polispec" "$@"
+    "ih.sh": |
+      #!/bin/sh
+      home="$1"
+      settings="$2"
+      RPLUGIN_HOME="$HOME/.rplugin"
+      export RPLUGIN_HOME
+      HOME="$home"
+      export HOME
+      exec ruby -rjson -e 'h = JSON.parse(File.read(ARGV[0])).dig("hooks", "PreToolUse", 0, "hooks", 0); exec(h["command"], *h["args"])' "$settings"
+    "proj-codex/README.md": "scratch codex project\n"
+    "ic.sh": |
+      #!/bin/sh
+      home="$1"
+      config="$2"
+      RPLUGIN_HOME="$HOME/.rplugin"
+      export RPLUGIN_HOME
+      HOME="$home"
+      export HOME
+      command=$(sed -n 's/^command = "\(.*\)"$/\1/p' "$config" | head -n 1)
+      exec sh -c "$command"
 steps:
   - name: install the minimal control into the scratch project
     run: [sh, "{{files}}/lc.sh", "{{home}}", "{{polispec}}", harness, install, "{{tree}}/examples/controls.minimal.yml", --harness, claude-code, --scope, project, --project, "{{files}}/proj", --json]
@@ -89,3 +109,33 @@ steps:
     expect:
       exit: 0
       stdout_includes: ['"PreToolUse"', '"--controls-file"']
+  - name: the as-installed hook denies the fixture write
+    run: [sh, "{{files}}/ih.sh", "{{home}}", "{{files}}/proj/.claude/settings.json"]
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"smoke","cwd":"{{files}}/proj","tool_name":"Write","tool_input":{"file_path":"/tmp/polispec-control-fixtures/fixture.txt","content":"polispec fixture\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ['"permissionDecision":"deny"', ctl_minimal_write_guard]
+  - name: the as-installed hook gives no decision for a Read in the project
+    run: [sh, "{{files}}/ih.sh", "{{home}}", "{{files}}/proj/.claude/settings.json"]
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"smoke","cwd":"{{files}}/proj","tool_name":"Read","tool_input":{"file_path":"{{files}}/proj/README.md"}}'
+    expect:
+      exit: 0
+      stdout_excludes: [permissionDecision]
+  - name: install the minimal control into a scratch codex project
+    run: [sh, "{{files}}/lc.sh", "{{home}}", "{{polispec}}", harness, install, "{{tree}}/examples/controls.minimal.yml", --harness, codex, --scope, project, --project, "{{files}}/proj-codex", --json]
+    expect:
+      exit: 0
+      stdout_includes: ['"ok":true', '"harness":"codex"']
+      files_exist: ["{{files}}/proj-codex/.codex/config.toml", "{{files}}/proj-codex/.polispec/harness/codex/controls.json"]
+  - name: the as-installed codex hook denies the fixture write
+    run: [sh, "{{files}}/ic.sh", "{{home}}", "{{files}}/proj-codex/.codex/config.toml"]
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"smoke","cwd":"{{files}}/proj-codex","tool_name":"Write","tool_input":{"file_path":"/tmp/polispec-control-fixtures/fixture.txt","content":"polispec fixture\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ['"permissionDecision":"deny"', ctl_minimal_write_guard]
+  - name: the as-installed codex hook gives no decision for a Read in the project
+    run: [sh, "{{files}}/ic.sh", "{{home}}", "{{files}}/proj-codex/.codex/config.toml"]
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"smoke","cwd":"{{files}}/proj-codex","tool_name":"Read","tool_input":{"file_path":"{{files}}/proj-codex/README.md"}}'
+    expect:
+      exit: 0
+      stdout_excludes: [permissionDecision]

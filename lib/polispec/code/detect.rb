@@ -48,7 +48,7 @@ module Polispec
       def read_head(path)
         return "" unless File.file?(path)
 
-        File.open(path, "rb") { |file| file.read(HEAD_BYTES) }.to_s.force_encoding(Encoding::UTF_8).scrub
+        File.open(path, "rb") { |file| file.read(HEAD_BYTES) }.to_s.dup.force_encoding(Encoding::UTF_8).scrub
       rescue SystemCallError
         ""
       end
