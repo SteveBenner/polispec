@@ -1,0 +1,144 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/status, digest, doctor
+summary: status reports policy source, packages, outstanding allow-once ids and policy_invalid findings (and a JSON unknown_project error), digest counts recorded denials, warnings and the empty window, and doctor reports health_required, package_file_drift and not_live findings with exit 1
+fixture:
+  global: example
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+steps:
+  - name: status lists the live project with its package and policy source
+    run: ["{{polispec}}", status]
+    expect:
+      exit: 0
+      stdout_includes: ["guard mode enforce", "shop: live trust_ref=stable", "package environment-control 1.0.0 (service) applied ", "policy stable:", "allow-once ids outstanding or unconsumed: 0"]
+  - name: status as json for the project
+    run: ["{{polispec}}", status, shop, --json]
+    expect:
+      exit: 0
+      json: { enforce: enforce, projects: [{ id: shop, status: live, trust_ref: stable, finding: null, pause: null, freezes: [], pending_allow_once: 0, deployments: {} }] }
+  - name: status of an unknown project as json is a structured error
+    run: ["{{polispec}}", status, nope, --json]
+    expect:
+      exit: 1
+      json: { ok: false, error: { code: unknown_project, message: "nope is not in the ledger" } }
+  - name: status of an unknown project as text names the code
+    run: ["{{polispec}}", status, nope]
+    expect:
+      exit: 1
+      stderr_includes: ["unknown_project: nope is not in the ledger"]
+  - name: two project arguments are a usage error
+    run: ["{{polispec}}", status, a, b]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec status [<project>] [--json]"]
+  - name: digest of an empty window says nothing was recorded
+    run: ["{{polispec}}", digest]
+    expect:
+      exit: 0
+      stdout_includes: ["polispec digest, last 24h", "nothing recorded"]
+  - name: digest of an empty window as json
+    run: ["{{polispec}}", digest, --json]
+    expect:
+      exit: 0
+      json: { since: 24h, projects: {} }
+  - name: a push to stable is denied and recorded
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: a policy edit asks and is recorded as a warning
+    hook:
+      harness: claude
+      event: pretool
+      tool: Write
+      input: { file_path: "{{project.shop}}/specs/polispec/policy.yml", content: "x" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: R-POLICY
+  - name: a codex policy edit issues an allow-once id
+    hook:
+      harness: codex
+      event: pretool
+      tool: Write
+      input: { file_path: "{{project.shop}}/specs/polispec/policy.yml", content: "x" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-POLICY
+  - name: digest counts the denial, the warnings and the issued allow-once id
+    run: ["{{polispec}}", digest]
+    expect:
+      exit: 0
+      stdout_includes: ["shop: deny 1, warn 2, pauses 0, allow-once events 1", "deny R-PROD-GIT x1", "warn R-POLICY x2"]
+  - name: digest as json over a shorter window lists the denial with its environment, class and rule
+    run: ["{{polispec}}", digest, --since, 1h, --json]
+    expect:
+      exit: 0
+      json: { since: 1h, projects: { shop: { deny: [{ env: prod, action_class: git.push, rule_id: R-PROD-GIT, harness: claude, enforced: true, verdict: deny }], pauses: [] } } }
+  - name: a malformed window is a usage error
+    run: ["{{polispec}}", digest, --since, bogus]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec digest [--since 24h] [--json]"]
+  - name: status counts the outstanding allow-once id
+    run: ["{{polispec}}", status, shop, --json]
+    expect:
+      exit: 0
+      json: { projects: [{ id: shop, pending_allow_once: 1 }] }
+  - name: doctor on a healthy scratch ledger reports no project finding
+    run: ["{{polispec}}", doctor, --json]
+    expect:
+      exit: [0, 1]
+      stdout_includes: ['"kind":"edition_provenance_invalid"']
+      stdout_excludes: ['"project":"shop"']
+  - name: the trust ref is changed so a deploying environment has no health check
+    run: [sh, -c, 'git checkout -q stable && sed -i "/^      health:$/,/^        run: /d" specs/polispec/environments.yml && git add specs/polispec/environments.yml && git commit -q -m nohealth -- specs/polispec/environments.yml && git checkout -q main']
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+  - name: status reports the policy_invalid finding
+    run: ["{{polispec}}", status, shop]
+    expect:
+      exit: 0
+      stdout_includes: ["finding policy_invalid: env test deploys without a health check; G-TESTED can never pass"]
+  - name: status as json carries the same finding
+    run: ["{{polispec}}", status, shop, --json]
+    expect:
+      exit: 0
+      json: { projects: [{ id: shop, finding: { kind: policy_invalid } }] }
+  - name: doctor reports health_required for each environment
+    run: ["{{polispec}}", doctor, --json]
+    expect:
+      exit: 1
+      stdout_includes: ['"project":"shop","kind":"health_required","detail":"env test deploys without a health check; G-TESTED can never pass"', '"project":"shop","kind":"health_required","detail":"env prod deploys without a health check; G-TESTED can never pass"']
+  - name: an edited package file is reported as drift and a new project is not live
+    run: [sh, -c, 'echo "# edited" >> specs/polispec/roster.yml && mkdir "$1" && cd "$1" && git init -q -b main && echo hi > README.md && git add README.md && git commit -q -m init && "$0" apply environment-control --repo "$1" --variant distributed --commit', "{{polispec}}", "{{scratch}}/fresh"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ["ledger: done fresh added", "with status onboarding"]
+  - name: doctor reports package_file_drift as info and not_live
+    run: ["{{polispec}}", doctor]
+    expect:
+      exit: 1
+      stdout_includes: ["shop  package_file_drift (info)  specs/polispec/roster.yml differs from the environment-control 1.0.0 record", "fresh  not_live  status onboarding: the guard does not enforce this project"]
+  - name: status lists both projects
+    run: ["{{polispec}}", status]
+    expect:
+      exit: 0
+      stdout_includes: ["shop: live trust_ref=stable", "fresh: onboarding trust_ref=stable", "package environment-control 1.0.0 (distributed)"]
+  - name: doctor with an argument is a usage error
+    run: ["{{polispec}}", doctor, extra]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec doctor [--json]"]

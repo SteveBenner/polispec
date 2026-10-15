@@ -1,0 +1,147 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/hook git
+summary: hook git install and uninstall manage core.hooksPath idempotently and restore the previous path, and the shims judge commits and pushes made outside any harness, refusing under enforce and only warning under advise
+fixture:
+  global: example
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+      files:
+        "lib/app.rb": "puts 1\n"
+steps:
+  - name: dry-run install previews all three checkouts and sets nothing
+    run: ["{{polispec}}", hook, git, install, shop, all, --dry-run]
+    expect:
+      exit: 0
+      stdout_includes: ["would set core.hooksPath", "git-hooks/shop/dev", "git-hooks/shop/test", "git-hooks/shop/prod"]
+  - name: the dev checkout has no hooks path after the dry run
+    run: [git, config, --get, core.hooksPath]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 1
+  - name: apply already installed the hooks in the test and prod checkouts, so install is a no-op
+    run: ["{{polispec}}", hook, git, install, shop, prod]
+    expect:
+      exit: 0
+      stdout_includes: ["unchanged prod:", "already uses"]
+  - name: uninstall restores the previous hooks path of the prod checkout
+    run: ["{{polispec}}", hook, git, uninstall, shop, prod]
+    expect:
+      exit: 0
+      stdout_includes: ["uninstalled prod:"]
+  - name: the prod checkout no longer points at the shims
+    run: [git, config, --get, core.hooksPath]
+    cwd: "{{checkout.shop.stable}}"
+    expect:
+      exit: 1
+  - name: a second uninstall changes nothing
+    run: ["{{polispec}}", hook, git, uninstall, shop, prod]
+    expect:
+      exit: 0
+      stdout_includes: ["unchanged prod:", "does not use"]
+  - name: install sets the hooks path and records the previous one
+    run: ["{{polispec}}", hook, git, install, shop, prod]
+    expect:
+      exit: 0
+      stdout_includes: ["installed prod:", "(previous "]
+      files_exist: ["{{scratch}}/state/git-hooks/shop/prod/pre-commit", "{{scratch}}/state/git-hooks/shop/prod/pre-push", "{{scratch}}/state/git-hooks/shop/prod/reference-transaction"]
+  - name: install a second time is a no-op
+    run: ["{{polispec}}", hook, git, install, shop, prod]
+    expect:
+      exit: 0
+      stdout_includes: ["unchanged prod:"]
+  - name: the recorded previous path is the checkout's own hooks directory
+    run: [git, config, --get, polispec.previousHooksPath]
+    cwd: "{{checkout.shop.stable}}"
+    expect:
+      exit: 0
+      stdout_includes: ["/.git/hooks"]
+  - name: install in the dev checkout
+    run: ["{{polispec}}", hook, git, install, shop, dev]
+    expect:
+      exit: 0
+      stdout_includes: ["installed dev:"]
+  - name: a bad scope is refused
+    run: ["{{polispec}}", hook, git, install, shop, bogus]
+    expect:
+      exit: 1
+      stderr_includes: ["scope must be dev, test, prod or all"]
+  - name: an unledgered project is refused
+    run: ["{{polispec}}", hook, git, install, nope, prod]
+    expect:
+      exit: 1
+      stderr_includes: ["nope is not in the ledger"]
+  - name: no subcommand prints the usage
+    run: ["{{polispec}}", hook, git]
+    expect:
+      exit: 1
+      stderr_includes: ["usage: polispec hook git"]
+  - name: a commit in the production checkout is refused under enforce
+    run: [sh, -c, 'echo x > f.txt && git add f.txt && git commit -q -m try']
+    cwd: "{{checkout.shop.stable}}"
+    expect:
+      exit: 1
+      stderr_includes: ["polispec: denied by R-PROD-GIT", "env prod, git.commit", "polispec promote shop --to stable"]
+  - name: the stable branch did not move
+    run: [git, rev-parse, stable]
+    cwd: "{{checkout.shop.stable}}"
+    expect:
+      exit: 0
+      git: { repo: "{{checkout.shop.stable}}", ref: stable, unchanged: true }
+  - name: a commit in the test checkout is refused with R-TEST-DIRECT
+    run: [sh, -c, 'echo y > g.txt && git add g.txt && git commit -q -m try']
+    cwd: "{{checkout.shop.test}}"
+    expect:
+      exit: 1
+      stderr_includes: ["denied by R-TEST-DIRECT", "polispec promote shop --to test"]
+  - name: an ordinary dev commit is allowed
+    run: [sh, -c, 'echo a > a.txt && git add a.txt && git commit -q -m dev']
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+  - name: a push of main to the stable branch is refused by the pre-push shim
+    run: [git, push, origin, "main:stable"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 1
+      stderr_includes: ["denied by R-PROD-GIT"]
+  - name: the remote stable branch did not move
+    run: [sh, -c, 'test "$(git rev-parse origin/stable)" = "$(git --git-dir="$1" rev-parse stable)" && echo same', sh, "{{scratch}}/projects/shop.git"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: [same]
+  - name: a push of main to the remote main is allowed
+    run: [git, push, origin, main]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+  - name: under advise the same production commit only warns and proceeds
+    run: [sh, -c, 'echo z > h.txt && git add h.txt && git commit -q -m advised && git log -1 --format=%s']
+    cwd: "{{checkout.shop.stable}}"
+    env: { RPLUGIN_POLISPEC_POLISPEC_ENFORCE: advise }
+    expect:
+      exit: 0
+      stderr_includes: ["polispec (advise): would deny R-PROD-GIT"]
+      stdout_includes: [advised]
+  - name: the operator marker skips the shims
+    run: [sh, -c, 'echo w > i.txt && git add i.txt && git commit -q -m operator && git log -1 --format=%s']
+    cwd: "{{checkout.shop.stable}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+      stdout_includes: [operator]
+  - name: uninstall of all three restores every checkout
+    run: ["{{polispec}}", hook, git, uninstall, shop, all]
+    expect:
+      exit: 0
+      stdout_includes: ["uninstalled dev:", "uninstalled test:", "uninstalled prod:"]
+  - name: after uninstall a commit in the test checkout is no longer judged
+    run: [sh, -c, 'echo y2 > g2.txt && git add g2.txt && git commit -q -m free && git log -1 --format=%s']
+    cwd: "{{checkout.shop.test}}"
+    expect:
+      exit: 0
+      stdout_includes: [free]

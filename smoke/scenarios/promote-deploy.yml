@@ -1,0 +1,172 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/promote, deploy
+summary: promote moves main to test through the gates and a deploy with a passing health command, stable needs a terminal and the typed phrase, an agent is denied stable promotion and deploy by the guard, and the refusal codes (nothing_to_promote, version_not_bumped, gate_failed, tag_unsupported, tag_not_found, not_tty) are reported
+fixture:
+  global: example
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+      files:
+        "lib/app.rb": "puts 1\n"
+        "VERSION": "0.1.0\n"
+steps:
+  - name: the health placeholder is replaced by the command true and stable is published
+    run: [sh, -c, 'sed -i "s/run: polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml/run: \"true\"/" specs/polispec/environments.yml && git add specs/polispec/environments.yml && git commit -q -m health -- specs/polispec/environments.yml && git push -q origin main main:stable && git fetch -q origin && git branch -f stable origin/stable && echo 0.2.0 > VERSION && git add VERSION && git commit -q -m bump -- VERSION && git push -q origin main && git rev-parse main stable']
+    cwd: "{{project.shop}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+  - name: waive-soak is refused for test
+    run: ["{{polispec}}", promote, shop, --to, test, --waive-soak, --dry-run]
+    expect:
+      exit: 1
+      stderr_includes: ["waive_soak_unsupported: --waive-soak applies to promotions past test"]
+  - name: dry-run promote to test runs the gates and moves nothing
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run]
+    expect:
+      exit: 0
+      git: { repo: "{{project.shop}}", ref: origin/test, unchanged: true }
+      stdout_includes: ["dry run: shop to test at ", "(v0.2.0, actor agent)", "gate G-CLEAN: pass", "gate G-VHOMES: pass"]
+  - name: dry-run promote as json
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run, --json]
+    expect:
+      exit: 0
+      json: { ok: true, dry_run: true, project: shop, to: test, tag: v0.2.0, version: 0.2.0, actor: agent }
+  - name: promote to test lands the candidate and deploys test with a healthy check
+    run: ["{{polispec}}", promote, shop, --to, test]
+    expect:
+      exit: 0
+      stdout_includes: ["promoted: shop to test at ", "(v0.2.0, actor agent)", "gate G-CLEAN: pass", "gate G-VHOMES: pass", "deploy test: health ok, 1 steps"]
+  - name: promoting the same sha again has nothing to promote
+    run: ["{{polispec}}", promote, shop, --to, test]
+    expect:
+      exit: 1
+      stderr_includes: ["nothing_to_promote: test already points at "]
+  - name: status shows a verified test deployment
+    run: ["{{polispec}}", status, shop, --json]
+    expect:
+      exit: 0
+      json: { projects: [{ id: shop, deployments: { test: { receipt: { tag: v0.2.0, health: ok, pinned_behind: false }, verified: true } } }] }
+  - name: dry-run promote to stable passes the tested and freeze gates
+    run: ["{{polispec}}", promote, shop, --to, stable, --dry-run]
+    expect:
+      exit: 0
+      stdout_includes: ["(v0.2.0, actor operator)", "gate G-TESTED: pass", "gate G-FREEZE: pass"]
+  - name: promote to stable without a terminal is refused
+    run: ["{{polispec}}", promote, shop, --to, stable]
+    expect:
+      exit: 1
+      stderr_includes: ["not_tty: promote --to stable needs an interactive terminal"]
+  - name: an agent promote to stable is denied by the guard
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "polispec promote shop --to stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-SVC
+  - name: an agent deploy to stable is denied by the guard
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "polispec deploy shop stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-SVC
+  - name: an agent promote to test is allowed by the guard
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "polispec promote shop --to test" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: a wrong typed phrase changes nothing
+    run: ["{{polispec}}", promote, shop, --to, stable]
+    tty: ["nope"]
+    expect:
+      exit: 1
+      stdout_includes: ["Type exactly: promote shop to stable", "confirmation_failed: the typed phrase did not match; nothing was done"]
+  - name: the right phrase promotes to stable and deploys it
+    run: ["{{polispec}}", promote, shop, --to, stable]
+    tty: ["promote shop to stable"]
+    expect:
+      exit: 0
+      stdout_includes: ["promoted: shop to stable at ", "(v0.2.0, actor operator)", "gate G-TESTED: pass", "deploy stable: health ok, 1 steps"]
+  - name: status shows verified test and stable deployments
+    run: ["{{polispec}}", status, shop, --json]
+    expect:
+      exit: 0
+      json: { projects: [{ id: shop, deployments: { test: { verified: true }, stable: { receipt: { tag: v0.2.0, health: ok }, verified: true } } }] }
+  - name: deploy to stable without a terminal is refused
+    run: ["{{polispec}}", deploy, shop, stable]
+    expect:
+      exit: 1
+      stderr_includes: ["not_tty: deploy to prod needs an interactive terminal"]
+  - name: a tag on test is refused
+    run: ["{{polispec}}", deploy, shop, test, --tag, v0.2.0]
+    expect:
+      exit: 1
+      stderr_includes: ["tag_unsupported: test deploys follow the branch tip; --tag applies to stable only"]
+  - name: deploy test runs the step and the health command
+    run: ["{{polispec}}", deploy, shop, test]
+    expect:
+      exit: 0
+      stdout_includes: ["deployed shop test v0.2.0 (version 0.2.0)", "step true: exit 0", "health: ok (run exited 0", "pinned_behind: false"]
+  - name: deploy dry-run as json names the steps and health
+    run: ["{{polispec}}", deploy, shop, test, --dry-run, --json]
+    expect:
+      exit: 0
+      json: { ok: true, dry_run: true, project: shop, env: test, steps: ["true"], strategy: in_place, health: { run: "true" } }
+  - name: deploy stable with the typed phrase
+    run: ["{{polispec}}", deploy, shop, stable, --tag, v0.2.0]
+    tty: ["deploy shop to prod"]
+    expect:
+      exit: 0
+      stdout_includes: ["Type exactly: deploy shop to prod", "deployed shop stable v0.2.0 (version 0.2.0)", "health: ok"]
+  - name: an unknown tag is refused after the phrase
+    run: ["{{polispec}}", deploy, shop, stable, --tag, v9.9.9]
+    tty: ["deploy shop to prod"]
+    expect:
+      exit: 1
+      stdout_includes: ["tag_not_found: tag v9.9.9 does not exist"]
+  - name: an unknown environment is refused
+    run: ["{{polispec}}", deploy, shop, canary]
+    expect:
+      exit: 1
+      stderr_includes: ["invalid_env: env must be test or stable"]
+  - name: an unknown project is refused
+    run: ["{{polispec}}", promote, nope, --to, test]
+    expect:
+      exit: 1
+      stderr_includes: ["unknown_project: no project \"nope\""]
+  - name: a commit without a version bump is refused
+    run: [sh, -c, 'echo 2 > lib/app.rb && git add lib/app.rb && git commit -q -m nobump -- lib/app.rb && git push -q origin main']
+    cwd: "{{project.shop}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+  - name: promote refuses without a bump
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run]
+    expect:
+      exit: 1
+      stderr_includes: ["version_not_bumped: VERSION 0.2.0 does not exceed the last tag v0.2.0"]
+  - name: a bump with an uncommitted tracked change fails the clean-tree gate
+    run: [sh, -c, 'echo 0.3.0 > VERSION && git add VERSION && git commit -q -m bump3 -- VERSION && git push -q origin main && echo 3 >> lib/app.rb']
+    cwd: "{{project.shop}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+  - name: promote refuses on the dirty tree
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run, --json]
+    expect:
+      exit: 1
+      json: { ok: false, error: { code: gate_failed, payload: { gate_id: G-CLEAN } } }
