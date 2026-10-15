@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 require_relative "../validate_profiles"
+require_relative "../packages"
 
 module Polispec
   class DoctorCommand
@@ -29,8 +30,9 @@ module Polispec
       check_runtime(findings)
       check_release(findings)
       check_plane(findings)
-      json ? puts(JSON.generate("ok" => findings.empty?, "runtime" => runtime_info, "findings" => findings)) : print_text(findings)
-      findings.empty? ? 0 : 1
+      blocking = findings.reject { |item| item["severity"] == "info" }
+      json ? puts(JSON.generate("ok" => blocking.empty?, "runtime" => runtime_info, "findings" => findings)) : print_text(findings)
+      blocking.empty? ? 0 : 1
     end
 
     private
@@ -70,6 +72,29 @@ module Polispec
       findings << finding(project.id, "roster_missing", "#{project.trust_ref}:#{project.roster} not found") if roster.nil? && !defaults
       AgentsRender.drift(project.repo, project.trust_ref, project).each { |detail| findings << finding(project.id, "agents_drift", detail) } unless defaults
       findings << finding(project.id, "not_live", "status #{project.status}: the guard does not enforce this project") unless project.status == "live"
+      check_packages(project, findings)
+    end
+
+    def check_packages(project, findings)
+      project.packages.each do |record|
+        offered = Packages.latest_version(record["name"])
+        if offered && Packages.newer?(offered, record["version"])
+          findings << info(project.id, "package_upgrade_available", "#{record['name']} #{offered} is available; #{record['version']} is applied")
+        end
+        root = File.expand_path(project.repo)
+        record["files"].to_h.each do |path, digest|
+          file = File.join(root, path)
+          next unless File.file?(file)
+
+          findings << info(project.id, "package_file_drift", "#{path} differs from the #{record['name']} #{record['version']} record") unless Packages.sha(File.read(file)) == digest
+        end
+      end
+    rescue Polispec::Error, SystemCallError
+      nil
+    end
+
+    def info(project, kind, detail)
+      finding(project, kind, detail).merge("severity" => "info")
     end
 
     def check_runtime(findings)
@@ -377,11 +402,12 @@ module Polispec
 
     def print_text(findings)
       puts "runtime: #{Runtime.kind} #{Runtime.commit ? Runtime.commit[0, 12] : '-'} #{Runtime.root}"
+      blocking = findings.reject { |item| item["severity"] == "info" }
       if findings.empty?
         puts "polispec doctor: 0 findings"
       else
-        puts "polispec doctor: #{findings.length} finding#{'s' unless findings.length == 1}"
-        findings.each { |item| puts "  #{item['project'] || '-'}  #{item['kind']}  #{item['detail']}" }
+        puts "polispec doctor: #{blocking.length} finding#{'s' unless blocking.length == 1}"
+        findings.each { |item| puts "  #{item['project'] || '-'}  #{item['kind']}#{item['severity'] == 'info' ? ' (info)' : ''}  #{item['detail']}" }
       end
     end
 

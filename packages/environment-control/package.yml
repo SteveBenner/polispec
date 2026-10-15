@@ -1,0 +1,44 @@
+schema: polispec.package/v1
+name: environment-control
+version: 1.0.0
+summary: Scaffold environments, policy and roster for a component, point its manifest, ledger the repository and render the [ENVS] row.
+params:
+  serves:
+    type: string
+    default: real_users
+    allowed: [real_users, internal, none]
+    summary: Who the component serves. real_users scaffolds the environments; internal and none only record the serves line in the manifest.
+  id:
+    type: string
+    summary: Ledger id of the project. Derived from the component manifest name or the repository directory when omitted.
+  trust_ref:
+    type: string
+    default: stable
+    summary: Branch the guard trusts for the production policy.
+  envs_root:
+    type: string
+    default: ~/.polispec/envs
+    summary: Directory that holds the test and stable checkouts. The ledger's own envs_root is used when this is not given.
+default_variant: service
+variants:
+  service:
+    summary: A service with a persistent test instance and a production instance.
+    files:
+      specs/polispec/environments.yml: variants/service/environments.yml
+      specs/polispec/policy.yml: variants/service/policy.yml
+  distributed:
+    summary: A distributed component released by tag.
+    files:
+      specs/polispec/environments.yml: variants/distributed/environments.yml
+      specs/polispec/policy.yml: variants/distributed/policy.yml
+files:
+  specs/polispec/roster.yml: roster.yml
+steps:
+  - { kind: files, when: { param: serves, equals: real_users } }
+  - kind: manifest
+  - { kind: ledger, when: { param: serves, equals: real_users } }
+  - { kind: render, when: { param: serves, equals: real_users } }
+  - { kind: commit, when: { param: serves, equals: real_users } }
+  - { kind: branches, when: { param: serves, equals: real_users } }
+  - { kind: push, when: { param: serves, equals: real_users } }
+  - { kind: checkouts, when: { param: serves, equals: real_users } }
