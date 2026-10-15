@@ -102,7 +102,7 @@ A rule nobody can show working is a claim, not a control.
 
 | Capability | Status | Notes |
 |---|---|---|
-| Guard hook for Claude Code and Codex | **Built** | |
+| Guard hook for Claude Code and Codex | **Built** | Since 0.22.0 Claude Code gets it from the plugin's native install; Codex still calls the shim from a host bridge. |
 | Native artifacts for Hermes and Antigravity CLI | **Partial** | Generated; native runtime enforcement unverified on the release host. |
 | Pi and DeepSeek TUI | **Partial** | Skills only; no native control backend. |
 | OS sandbox (Bubblewrap) launch | **Partial** | Planning only; launch unavailable on the release host. |
