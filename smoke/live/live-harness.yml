@@ -33,8 +33,9 @@ steps:
     run:
       - sh
       - -c
-      - 'RPLUGIN_HOME="$(getent passwd "$(id -u)" | cut -d: -f6)/.rplugin"; export RPLUGIN_HOME; exec "$0" "$@"'
+      - 'RPLUGIN_HOME="$(getent passwd "$(id -u)" | cut -d: -f6)/.rplugin"; export RPLUGIN_HOME; s="$1"; shift; mkdir -p "$s"; for t in bwrap socat; do command -v "$t" >/dev/null || { printf "#!/bin/sh\nexit 0\n" > "$s/$t"; chmod +x "$s/$t"; }; done; PATH="$s:$PATH"; export PATH; exec "$0" "$@"'
       - "{{polispec}}"
+      - "{{files}}/sandbox-shim"
       - harness
       - install
       - "{{files}}/controls.yml"
