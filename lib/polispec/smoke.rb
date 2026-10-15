@@ -374,6 +374,44 @@ module Polispec
       { "kind" => kind, "harness" => harness, "harness_version" => version, "model" => model, "effort" => options[:effort] }
     end
 
+    def evidence(item, top)
+      path, kind = item, "file"
+      head, sep, tail = item.rpartition(":")
+      if !sep.empty? && !head.empty? && tail.match?(/\A[a-z][a-z0-9_-]*\z/)
+        path = head
+        kind = tail
+      end
+      full = File.expand_path(path)
+      raise Polispec::Error, "evidence #{scrub(path, top)} is not a regular file" unless File.file?(full)
+
+      bytes = File.binread(full)
+      { "path" => scrub(display_path(full, top), top), "sha256" => sha256(bytes), "bytes" => bytes.bytesize, "kind" => kind }
+    end
+
+    def record(top:, path:, spec:, at:, verdict:, summary:, steps:, evidence:, runner:, started: nil, finished: nil)
+      clean, full = relative_spec(spec, top)
+      bytes, data = load_spec(clean, full)
+      node = resolve_node(data, clean, at.to_s)
+      raise Polispec::Error, "#{clean}##{at} resolves to an empty node" if node.nil?
+
+      captured = self.runtime
+      subject = self.target(top, path)
+      proves = { "spec" => clean, "at" => at.to_s, "spec_digest" => sha256(bytes), "at_digest" => node_digest(node) }
+      recorded = Time.now.utc.iso8601
+      entry = append(path, top, lambda { |prev|
+        base = { "recorded_at" => recorded }
+        base["started_at"] = started if started
+        base["finished_at"] = finished if finished
+        base.merge(
+          "proves" => proves, "verdict" => verdict, "summary" => scrub(summary, top),
+          "steps" => steps, "evidence" => evidence, "runner" => runner, "runtime" => captured,
+          "target" => subject, "prev" => prev
+        )
+      })
+      Events.emit("polispec.smoke", project: subject["project"], id: entry["id"], spec: clean, at: at.to_s, verdict: verdict)
+      entry
+    end
+
     def verify(path, top)
       data = read(path)
       findings = Schema.validate("smoke", data).map { |error| { "kind" => "schema", "id" => nil, "detail" => "#{error.pointer.empty? ? '/' : error.pointer} #{error.message}" } }

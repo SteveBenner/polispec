@@ -1,0 +1,56 @@
+schema: polispec.smoke-scenario/v1
+unit: harness_controls
+summary: with harness controls on, benign built-in tools and read-only shell commands stay allowed in a governed live project while an undeclared MCP call still asks
+requires: [harness_controls]
+fixture:
+  enforce: enforce
+  global: files
+  global_files:
+    "global.yml": "schema: polispec.global/v1\nsummary: Smoke baseline with one rule so every path is governed.\nrules:\n  - { id: SMOKE-NOSECRETS, match: { class: [secrets.read], env: prod }, verdict: deny, reason: \"smoke baseline: no production secrets\" }\n"
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      files:
+        "README.md": "shop\n"
+        "lib/app.rb": "puts 1\n"
+steps:
+  - name: ls is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: ls }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: echo is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "echo hi" }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: git status is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "git status" }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: cat is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "cat README.md" }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: grep is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "grep -rn app lib" }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: Skill is allowed
+    hook: { harness: claude, event: pretool, tool: Skill, input: { skill: update-config }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: TodoWrite is allowed
+    hook: { harness: claude, event: pretool, tool: TodoWrite, input: { todos: [] }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: WebSearch is allowed
+    hook: { harness: claude, event: pretool, tool: WebSearch, input: { query: ruby }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: WebFetch is allowed
+    hook: { harness: claude, event: pretool, tool: WebFetch, input: { url: "https://example.com", prompt: summarise }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: Agent is allowed
+    hook: { harness: claude, event: pretool, tool: Agent, input: { description: probe, prompt: noop, subagent_type: general-purpose }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: Read in the project is allowed
+    hook: { harness: claude, event: pretool, tool: Read, input: { file_path: "{{project.shop}}/lib/app.rb" }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: Edit in the project is allowed
+    hook: { harness: claude, event: pretool, tool: Edit, input: { file_path: "{{project.shop}}/lib/app.rb", old_string: "puts 1", new_string: "puts 2" }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: an undeclared MCP call asks
+    hook: { harness: claude, event: pretool, tool: mcp__srv__op, input: {}, cwd: "{{project.shop}}" }
+    expect: { decision: ask }

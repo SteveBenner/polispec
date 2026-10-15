@@ -1,0 +1,13 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/version
+summary: version prints the polispec release recorded in VERSION
+steps:
+  - name: version prints the name and a number
+    run: ["{{polispec}}", version]
+    expect:
+      exit: 0
+      stdout_includes: ["polispec "]
+  - name: version equals the VERSION file
+    run: [sh, -c, '[ "polispec $(cat "$1/VERSION")" = "$("$2" version)" ]', sh, "{{tree}}", "{{polispec}}"]
+    expect:
+      exit: 0

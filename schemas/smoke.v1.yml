@@ -60,7 +60,7 @@ $defs:
         additionalProperties: false
         required: [kind, harness, harness_version, model, effort]
         properties:
-          kind: { enum: [human, agent] }
+          kind: { enum: [human, agent, suite] }
           harness: { $ref: "#/$defs/nullable_string" }
           harness_version: { $ref: "#/$defs/nullable_string" }
           model: { $ref: "#/$defs/nullable_string" }

@@ -1,0 +1,69 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/validate
+summary: every shipped example validates with its own kind, a corrupted copy fails with the pointer, and auto detection agrees
+steps:
+  - name: ledger example validates as ledger
+    run: ["{{polispec}}", validate, ledger, "{{tree}}/examples/ledger.example.yml"]
+    expect:
+      exit: 0
+      stdout_includes: ["ok (polispec.ledger/v1)"]
+  - name: policy example validates as policy with its environments
+    run: ["{{polispec}}", validate, policy, "{{tree}}/examples/policy.shop.yml"]
+    expect:
+      exit: 0
+      stdout_includes: ["ok (polispec.policy/v1 + environments.yml)"]
+  - name: environments example validates as environments
+    run: ["{{polispec}}", validate, environments, "{{tree}}/examples/environments.shop.yml"]
+    expect:
+      exit: 0
+      stdout_includes: ["ok (polispec.environments/v1)"]
+  - name: roster example validates as roster
+    run: ["{{polispec}}", validate, roster, "{{tree}}/examples/roster.shop.yml"]
+    expect:
+      exit: 0
+      stdout_includes: ["ok (polispec.roster/v1)"]
+  - name: control example validates as control
+    run: ["{{polispec}}", validate, control, "{{tree}}/examples/controls.minimal.yml"]
+    expect:
+      exit: 0
+      stdout_includes: ["ok (polispec.control/v1)"]
+  - name: scheduled control example validates as control
+    run: ["{{polispec}}", validate, control, "{{tree}}/examples/controls.scheduled.yml"]
+    expect:
+      exit: 0
+      stdout_includes: ["ok (polispec.control/v1)"]
+  - name: clinic module example validates as module
+    run: ["{{polispec}}", validate, module, "{{tree}}/examples/clinic/modules/soak.yml"]
+    expect:
+      exit: 0
+      stdout_includes: ["ok (polispec.module/v1)"]
+  - name: every example validates by auto detection
+    run: [sh, -c, 'for f in "$1"/examples/*.yml "$1"/examples/clinic/*.yml "$1"/examples/clinic/modules/*.yml; do "$2" validate auto "$f" || exit 1; done', sh, "{{tree}}", "{{polispec}}"]
+    expect:
+      exit: 0
+      stdout_excludes: ["invalid"]
+  - name: corrupt a copy of the ledger example
+    run: [sh, -c, 'sed "s/verdict: allow/verdict: maybe/" "$1/examples/ledger.example.yml" > "$2/bad-ledger.yml"', sh, "{{tree}}", "{{files}}"]
+    expect:
+      exit: 0
+      files_exist: ["{{files}}/bad-ledger.yml"]
+  - name: corrupted ledger fails with a pointer
+    run: ["{{polispec}}", validate, ledger, "{{files}}/bad-ledger.yml"]
+    expect:
+      exit: 1
+      stdout_includes: ["invalid (polispec.ledger/v1)", "/defaults/rules/4/verdict", "must be one of allow, warn, deny"]
+  - name: corrupted ledger fails as json
+    run: ["{{polispec}}", validate, auto, "{{files}}/bad-ledger.yml", --json]
+    expect:
+      exit: 1
+      json: { ok: false, schema: polispec.ledger/v1 }
+  - name: wrong kind is rejected
+    run: ["{{polispec}}", validate, roster, "{{tree}}/examples/ledger.example.yml"]
+    expect:
+      exit: 1
+      stdout_includes: ["invalid (polispec.roster/v1)"]
+  - name: unknown kind prints usage
+    run: ["{{polispec}}", validate, nonsense, "{{tree}}/examples/ledger.example.yml"]
+    expect:
+      exit: [1, 2]
+      stderr_includes: ["usage: polispec validate"]

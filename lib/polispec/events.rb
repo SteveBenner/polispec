@@ -32,6 +32,8 @@ module Polispec
     end
 
     def through_port(type, payload)
+      return false if State.redirected
+
       ports = port_set
       return false unless ports
 

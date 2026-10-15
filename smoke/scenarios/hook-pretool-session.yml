@@ -1,0 +1,116 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/hook pretool|session
+summary: the hook denies a push to stable in a live project, allows a dev write, asks on a policy edit, renders the verdict for claude and codex, and prints the environment context at session start
+fixture:
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+steps:
+  - name: claude push to stable is denied
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+      stdout_includes: ["[POLISPEC R-PROD-GIT] DENIED:", "polispec promote shop --to stable"]
+  - name: stable did not move
+    run: [git, -C, "{{project.shop}}", rev-parse, stable]
+    expect:
+      exit: 0
+      git: { repo: "{{project.shop}}", ref: stable, unchanged: true }
+  - name: codex push to stable is denied
+    hook:
+      harness: codex
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: claude dev write is allowed
+    hook:
+      harness: claude
+      event: pretool
+      tool: Write
+      input: { file_path: "{{project.shop}}/lib/new.rb", content: "puts 1\n" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: codex dev write is allowed
+    hook:
+      harness: codex
+      event: pretool
+      tool: Write
+      input: { file_path: "{{project.shop}}/lib/new.rb", content: "puts 1\n" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: claude policy edit asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Write
+      input: { file_path: "{{project.shop}}/specs/polispec/policy.yml", content: "schema: x\n" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: R-POLICY
+      stdout_includes: ["[POLISPEC R-POLICY] WARNING:"]
+  - name: codex policy edit becomes a denial with an allow-once id
+    hook:
+      harness: codex
+      event: pretool
+      tool: Write
+      input: { file_path: "{{project.shop}}/specs/polispec/policy.yml", content: "schema: x\n" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-POLICY
+      stdout_includes: ["AUTHORIZATION REQUIRED", "polispec allow-once alo_"]
+  - name: editing the production checkout is denied
+    hook:
+      harness: claude
+      event: pretool
+      tool: Edit
+      input: { file_path: "{{checkout.shop.stable}}/lib/app.rb", old_string: a, new_string: b }
+      cwd: "{{scratch}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: a payload without an event name is denied by the guard itself
+    run: ["{{polispec}}", hook, pretool, --harness, claude]
+    stdin: '{"tool_name":"Bash","tool_input":{"command":"ls"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["[POLISPEC internal] guard unavailable; call denied."]
+  - name: claude session start prints the environment context
+    hook:
+      harness: claude
+      event: session
+      cwd: "{{project.shop}}"
+    expect:
+      decision: context
+      stdout_includes: ["POLISPEC: shop is a live project", "dev environment (branch main)", "guard mode enforce", "polispec promote shop --to test"]
+  - name: codex session start prints the same context
+    hook:
+      harness: codex
+      event: session
+      cwd: "{{project.shop}}"
+    expect:
+      decision: context
+      stdout_includes: ["POLISPEC: shop is a live project", "dev environment (branch main)", "guard mode enforce"]
+  - name: session start outside a project prints nothing
+    hook:
+      harness: claude
+      event: session
+      cwd: "{{files}}"
+    expect:
+      decision: allow
