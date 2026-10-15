@@ -42,6 +42,7 @@ fixture:
       HOME="$home"
       export HOME
       exec ruby -rjson -e 'h = JSON.parse(File.read(ARGV[0])).dig("hooks", "PreToolUse", 0, "hooks", 0); exec(h["command"], *h["args"])' "$settings"
+    "proj-nosocat/README.md": "scratch project without socat\n"
     "proj-codex/README.md": "scratch codex project\n"
     "ic.sh": |
       #!/bin/sh
@@ -54,8 +55,32 @@ fixture:
       command=$(sed -n 's/^command = "\(.*\)"$/\1/p' "$config" | head -n 1)
       exec sh -c "$command"
 steps:
+  - name: build scratch PATH directories with and without socat
+    run: [sh, -c, 'for d in "$1/fakebin" "$1/nosocat"; do mkdir -p "$d"; for tool in ruby sh cat sed head dirname env git ls; do ln -sf "$(command -v $tool)" "$d/$tool"; done; printf "#!/bin/sh\nexit 0\n" > "$d/bwrap"; chmod +x "$d/bwrap"; done; printf "#!/bin/sh\nexit 0\n" > "$1/fakebin/socat"; chmod +x "$1/fakebin/socat"; printf "#!/bin/sh\necho 2.1.300\n" > "$1/fakebin/claude"; chmod +x "$1/fakebin/claude"', sh, "{{files}}"]
+    expect:
+      exit: 0
+  - name: install without socat on PATH is refused and writes nothing
+    run: [sh, "{{files}}/lc.sh", "{{home}}", "{{polispec}}", harness, install, "{{tree}}/examples/controls.minimal.yml", --harness, claude-code, --scope, project, --project, "{{files}}/proj-nosocat", --json]
+    env: { PATH: "{{files}}/nosocat" }
+    expect:
+      exit: 1
+      json:
+        ok: false
+        operation: install
+        findings:
+          - { code: sandbox_unavailable }
+      stdout_includes: [socat]
+      files_absent: ["{{files}}/proj-nosocat/.claude/settings.json", "{{files}}/proj-nosocat/.polispec"]
+  - name: a dry-run without socat on PATH still plans and reports the same finding
+    run: [sh, "{{files}}/lc.sh", "{{home}}", "{{polispec}}", harness, install, "{{tree}}/examples/controls.minimal.yml", --harness, claude-code, --scope, project, --project, "{{files}}/proj-nosocat", --dry-run, --json]
+    env: { PATH: "{{files}}/nosocat" }
+    expect:
+      exit: 0
+      stdout_includes: ['"dry_run":true', '"code":"sandbox_unavailable"']
+      files_absent: ["{{files}}/proj-nosocat/.claude/settings.json"]
   - name: install the minimal control into the scratch project
     run: [sh, "{{files}}/lc.sh", "{{home}}", "{{polispec}}", harness, install, "{{tree}}/examples/controls.minimal.yml", --harness, claude-code, --scope, project, --project, "{{files}}/proj", --json]
+    env: { PATH: "{{files}}/fakebin:{{files}}/nosocat" }
     expect:
       exit: 0
       stdout_includes: ['"ok":true', '"operation":"install"', '"schema":"polispec.harness.receipt/v1"', '"installation_id":"install_']

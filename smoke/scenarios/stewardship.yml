@@ -76,6 +76,16 @@ steps:
       decision: ask
       rule: R-POLICY
       stdout_includes: ["policy.edit: polispec apply project:shop --confirm"]
+  - name: polispec plan is a read-only command and is silent
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "polispec plan project:shop" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+      stdout_excludes: [POLISPEC-TOOL-UNKNOWN]
   - name: an unchanged project plan is neutral
     run: ["{{polispec}}", plan, "project:shop", --json]
     expect:
