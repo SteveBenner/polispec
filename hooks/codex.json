@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT}/bin/polispec\" hook session --harness codex",
+            "command": "\"${PLUGIN_ROOT}/bin/polispec-guard\" session --harness codex",
             "timeout": 10
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT}/bin/polispec\" hook pretool --harness codex",
+            "command": "\"${PLUGIN_ROOT}/bin/polispec-guard\" pretool --harness codex",
             "timeout": 10
           }
         ]
