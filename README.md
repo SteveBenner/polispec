@@ -29,6 +29,7 @@
 - [Commands](#commands)
 - [Settings](#settings)
 - [Compared to alternatives](#compared-to-alternatives)
+- [Current State of Polispec](#current-state-of-polispec)
 - [Honest limits](#honest-limits)
 - [FAQ](#faq)
 - [Where polispec is going](#where-polispec-is-going)
@@ -434,6 +435,14 @@ Optional integrations: none is required. Policy `observability.events` may name 
 | **Harness permission settings** (allow/deny lists in an agent tool) | Quick per-tool rules for one harness. | One rulebook for every harness, read from a trusted branch rather than from user-editable settings, aware of which copy of the project a path belongs to, and composable across projects. polispec can generate native harness controls from the same grammar. |
 | **Code review** | A person reads the change. | Review still matters. polispec makes sure the change reaches users only through the path where review and checks happen. |
 
+## Current State of Polispec
+
+polispec is pre-1.0 software in daily use by its maintainer. The guard is deterministic and is backed by a bundled smoke suite that includes live Claude Code and Codex sessions. The sealed plane ships disabled, the default mode is `advise`, and native enforcement is verified only for some harnesses.
+
+On 14 October 2026, an acquaintance working in AI research independently reviewed polispec **0.19.1**. They found a promising architecture and unusually candid documentation of its verification gaps. They asked for a smaller, harder, reproducible enforcement matrix before any broad claim of native protection. We intend to act on the review's recommendations. Its two highest-priority items come first: reproduce the post-write failure and prove prevention, and test the authority boundary's failure modes. Until both are done, polispec makes no claim of preventive enforcement.
+
+[`docs/CURRENT-STATE.md`](docs/CURRENT-STATE.md) has the full picture: each finding, where it stands in the current release, and what comes next. The review itself is kept unchanged in [`independent/assessments/2026-10-14-peer-review/`](independent/assessments/2026-10-14-peer-review/).
+
 ## Honest limits
 
 - **Unsealed polispec is a guardrail, not a security boundary.** Without the sealed authority plane, a process with your user's rights can change settings, edit the ledger, or bypass the hook. It stops agents from doing the wrong thing by accident or by drift. It does not stop a determined adversary on the same account.
@@ -477,6 +486,7 @@ Today polispec governs where an agent may act and how code travels to users. Wit
 
 ## Documentation
 
+- [`docs/CURRENT-STATE.md`](docs/CURRENT-STATE.md): where polispec stands today, the independent review of 0.19.1, and the plan that follows from it.
 - [`docs/schema.md`](docs/schema.md): every key of the policy, roster, ledger, global layer, modules, and profiles, with examples.
 - [`docs/environments.md`](docs/environments.md): the environment manifest, applying environment control, `[ENVS]`, and git hooks.
 - [`docs/packages.md`](docs/packages.md): packages, `plan`, `apply`, classification, verdict replay, and `--with-stewardship`.
