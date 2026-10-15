@@ -11,9 +11,12 @@ module Polispec
       DIGEST = /\bsha256:[0-9a-f]{64}\b/
       ENTRY_ID = /\bsmk_[0-9a-f]{12}\b/
       PLAN_ID = /\bplan_[0-9a-f]{24}\b/
+      RECORD_ID = /\b([a-z]{2,5})_[0-9a-f]{12,32}\b/
+      HEX_ID = /\b[0-9a-f]{16,39}\b/
       HEX64 = /\b[0-9a-f]{64}\b/
       SHORT_SHA = /\b[0-9a-f]{12}\b/
-      DURATION = /\b\d+ ms\b/
+      DURATION = /\b\d+(?:\.\d+)? ?ms\b/
+      DURATION_FIELD = /"duration_ms":\d+(?:\.\d+)?/
       EXCERPT = 160
 
       module_function
@@ -26,7 +29,8 @@ module Polispec
           out = out.gsub(path, token)
         end
         out = out.gsub(TIMESTAMP, "<TS>").gsub(DIGEST, "sha256:<DIGEST>").gsub(HEX64, "<HEX>").gsub(GIT_SHA, "<SHA>").gsub(ENTRY_ID, "smk_<ID>")
-        out.gsub(PLAN_ID, "plan_<ID>").gsub(SHORT_SHA, "<SHORT>").gsub(DURATION, "<N> ms")
+        out = out.gsub(PLAN_ID, "plan_<ID>").gsub(RECORD_ID) { "#{Regexp.last_match(1)}_<ID>" }.gsub(HEX_ID, "<HEXID>")
+        out.gsub(SHORT_SHA, "<SHORT>").gsub(DURATION, "<N> ms").gsub(DURATION_FIELD, "\"duration_ms\":<N>")
       end
 
       def excerpt(text)
@@ -46,7 +50,11 @@ module Polispec
         return nil if mine == theirs
 
         index = (0...[mine.length, theirs.length].max).find { |line| mine[line] != theirs[line] }
-        ["line #{index + 1}: #{excerpt(mine[index])}", "line #{index + 1}: #{excerpt(theirs[index])}"]
+        left = mine[index].to_s
+        right = theirs[index].to_s
+        column = (0...[left.length, right.length].max).find { |char| left[char] != right[char] }.to_i
+        start = [column - (EXCERPT / 4), 0].max
+        ["line #{index + 1}: #{excerpt(left[start..])}", "line #{index + 1}: #{excerpt(right[start..])}"]
       end
 
       def compare(scenario, candidate, against, candidate_roots, against_roots)
