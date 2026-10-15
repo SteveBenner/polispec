@@ -14,15 +14,49 @@ module Polispec
       File.join(State.home, "fastpath.txt")
     end
 
+    WATCH_CAP = 200
+
+    def watch_path
+      File.join(State.home, "fastpath.watch")
+    end
+
     def refresh(ledger, context = {})
       return unless stale?(ledger, context)
 
       FileUtils.mkdir_p(State.home, mode: 0o700)
+      watch_tmp = "#{watch_path}.#{Process.pid}"
+      File.write(watch_tmp, watched(ledger).join("\n") + "\n")
+      File.rename(watch_tmp, watch_path)
       tmp = "#{path}.#{Process.pid}"
       File.write(tmp, ([key(ledger, context)] + needles(ledger)).join("\n") + "\n")
       File.rename(tmp, path)
     rescue SystemCallError
       nil
+    end
+
+    def watched(ledger)
+      list = [ledger.path.to_s]
+      list.concat(global_files)
+      config = ENV["XDG_CONFIG_HOME"].to_s
+      config = File.join(Dir.home, ".config") if config.empty?
+      list << File.join(config, "rplugin", "polispec", "settings.yml")
+      list << "/etc/polispec/active.json"
+      list.reject(&:empty?).map { |file| File.expand_path(file) }.select { |file| File.file?(file) }.uniq
+    end
+
+    def global_files
+      source = Layers.source
+      return [] unless source
+
+      if source.kind == :dir
+        Dir.glob(File.join(source.root, "**", "*")).sort.select { |file| File.file?(file) }.first(WATCH_CAP)
+      else
+        git = File.join(source.repo, ".git")
+        git = source.repo unless File.directory?(git)
+        [File.join(git, "refs", "heads", source.ref.to_s), File.join(git, "packed-refs")]
+      end
+    rescue StandardError
+      []
     end
 
     def stale?(ledger, context = {})
