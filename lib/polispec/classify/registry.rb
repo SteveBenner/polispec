@@ -46,6 +46,7 @@ module Polispec
     end
 
     autoload :Shapes, File.join(LIB, "classify", "shapes")
+    autoload :Benign, File.join(LIB, "classify", "benign")
 
     TOOL = File.join(LIB, "classify", "tool.rb")
     @tool_loaded = false
@@ -58,6 +59,14 @@ module Polispec
       end
       found = Registry.families.values.flat_map { |klass| Array(klass.call(tool_name, tool_input, cwd)) }
       Shapes.annotate(found, tool_name, tool_input, cwd)
+    end
+
+    def self.benign?(tool_name, tool_input, cwd)
+      Benign.benign?(tool_name, tool_input, cwd)
+    end
+
+    def self.positive(tool_name, tool_input, cwd)
+      Benign.positive(tool_name, tool_input, cwd)
     end
   end
 end
