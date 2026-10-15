@@ -53,6 +53,7 @@ $defs:
     anyOf:
       - { required: [run] }
       - { required: [hook] }
+      - { required: [live] }
     properties:
       name: { type: string, minLength: 1 }
       run:
@@ -60,6 +61,7 @@ $defs:
         minItems: 1
         items: { type: string }
       hook: { $ref: "#/$defs/hook" }
+      live: { $ref: "#/$defs/live" }
       cwd: { type: string, minLength: 1 }
       env: { $ref: "#/$defs/string_map" }
       stdin: { type: string }
@@ -79,10 +81,31 @@ $defs:
       tool: { type: string, minLength: 1 }
       input: { type: object }
       cwd: { type: string, minLength: 1 }
+  live:
+    type: object
+    additionalProperties: false
+    required: [harness, prompt]
+    properties:
+      harness: { enum: [claude-code, codex] }
+      prompt: { type: string, minLength: 1 }
+      max_turns: { type: integer, minimum: 1, maximum: 20 }
+      timeout: { type: integer, minimum: 1, maximum: 600 }
+  hook_log_entry:
+    type: object
+    additionalProperties: false
+    required: [tool, decision]
+    properties:
+      tool: { type: string, minLength: 1 }
+      decision: { enum: [allow, ask, deny, context] }
+      rule: { type: string, minLength: 1 }
   expect:
     type: object
     additionalProperties: false
     properties:
+      hook_log:
+        type: array
+        minItems: 1
+        items: { $ref: "#/$defs/hook_log_entry" }
       exit:
         anyOf:
           - { type: integer }
