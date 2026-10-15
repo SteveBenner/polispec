@@ -5,6 +5,7 @@ require "fileutils"
 require_relative "layers"
 require_relative "harness/base"
 require_relative "classify/tool"
+require_relative "classify/benign"
 
 module Polispec
   module Fastpath
@@ -20,6 +21,10 @@ module Polispec
       File.join(State.home, "fastpath.watch")
     end
 
+    def tools_path
+      File.join(State.home, "fastpath.tools")
+    end
+
     def refresh(ledger, context = {})
       return unless stale?(ledger, context)
 
@@ -27,6 +32,9 @@ module Polispec
       watch_tmp = "#{watch_path}.#{Process.pid}"
       File.write(watch_tmp, watched(ledger).join("\n") + "\n")
       File.rename(watch_tmp, watch_path)
+      tools_tmp = "#{tools_path}.#{Process.pid}"
+      File.write(tools_tmp, skippable.join("\n") + "\n")
+      File.rename(tools_tmp, tools_path)
       tmp = "#{path}.#{Process.pid}"
       File.write(tmp, ([key(ledger, context)] + needles(ledger)).join("\n") + "\n")
       File.rename(tmp, path)
@@ -60,7 +68,7 @@ module Polispec
     end
 
     def stale?(ledger, context = {})
-      return true unless File.file?(path)
+      return true unless File.file?(path) && File.file?(tools_path)
       return true if ledger.path && File.file?(ledger.path) && File.mtime(ledger.path) > File.mtime(path)
 
       File.open(path, &:gets).to_s.chomp != key(ledger, context)
@@ -71,6 +79,12 @@ module Polispec
       plane = context["plane"].is_a?(Hash) ? context["plane"] : { "status" => "unsealed" }
       material = [ledger.digest.to_s, global, plane["status"], plane["generation"], context["control_digest"], context["edition"], context["fail_mode"], context["root_guard"], context["mcp_default"]]
       Digest::SHA256.hexdigest(material.map(&:to_s).join("\0"))
+    end
+
+    def skippable
+      return ["*"] unless Layers.baseline?
+
+      (Harness::Base::READ_TOOLS + Classify::Benign::INTERNAL_TOOLS).map(&:downcase).uniq
     end
 
     def tool_needles

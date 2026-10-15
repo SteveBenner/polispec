@@ -1,0 +1,62 @@
+schema: polispec.smoke-scenario/v1
+unit: harness_controls
+summary: through the bin/polispec-guard fast path under a governed baseline, undeclared MCP and unknown tools still reach the guard and ask while harness-internal tools are skipped
+requires: [harness_controls]
+fixture:
+  enforce: enforce
+  global: files
+  global_files:
+    "global.yml": "schema: polispec.global/v1\nsummary: Smoke baseline with one rule so every path is governed.\nrules:\n  - { id: SMOKE-NOSECRETS, match: { class: [secrets.read], env: prod }, verdict: deny, reason: \"smoke baseline: no production secrets\" }\n"
+steps:
+  - name: link the candidate binary outside the shim directory
+    run: [ln, -sfn, "{{polispec}}", "{{files}}/polispec"]
+    expect: { exit: 0 }
+  - name: cold MCP call through the shim asks
+    run: ["{{tree}}/bin/polispec-guard", pretool, --harness, claude]
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    stdin: "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"mcp__srv__op\",\"tool_input\":{},\"cwd\":\"{{scratch}}\",\"session_id\":\"s\"}"
+    expect: { exit: 0, stdout_includes: ["\"permissionDecision\":\"ask\"", "POLISPEC-MCP-UNDECLARED"] }
+    parity: ignore
+  - name: fast path files are written with a tool list
+    run: [test, -s, "{{scratch}}/state/fastpath.tools"]
+    expect: { exit: 0 }
+    parity: ignore
+  - name: warm MCP call through the shim still asks
+    run: ["{{tree}}/bin/polispec-guard", pretool, --harness, claude]
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    stdin: "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"mcp__srv__op\",\"tool_input\":{},\"cwd\":\"{{scratch}}\",\"session_id\":\"s\"}"
+    expect: { exit: 0, stdout_includes: ["POLISPEC-MCP-UNDECLARED"] }
+    parity: ignore
+  - name: warm unknown tool through the shim asks
+    run: ["{{tree}}/bin/polispec-guard", pretool, --harness, claude]
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    stdin: "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"CronCreate\",\"tool_input\":{},\"cwd\":\"{{scratch}}\",\"session_id\":\"s\"}"
+    expect: { exit: 0, stdout_includes: ["POLISPEC-TOOL-UNKNOWN"] }
+    parity: ignore
+  - name: warm Skill call is skipped and allowed
+    run: ["{{tree}}/bin/polispec-guard", pretool, --harness, claude]
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    stdin: "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Skill\",\"tool_input\":{\"skill\":\"x\"},\"cwd\":\"{{scratch}}\",\"session_id\":\"s\"}"
+    expect: { exit: 0, stdout_excludes: ["permissionDecision"] }
+    parity: ignore
+  - name: write a fake guard that only reports it was called
+    run: [sh, -c, "mkdir -p \"$1\" && printf \"#!/bin/sh\\necho CALLED\\n\" > \"$1/polispec\" && chmod +x \"$1/polispec\"", sh, "{{files}}/fake"]
+    expect: { exit: 0, files_exist: ["{{files}}/fake/polispec"] }
+  - name: warm MCP call reaches the guard
+    run: ["{{tree}}/bin/polispec-guard", pretool, --harness, claude]
+    env: { POLISPEC_BIN: "{{files}}/fake/polispec" }
+    stdin: "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"mcp__srv__op\",\"tool_input\":{},\"cwd\":\"/\",\"session_id\":\"s\"}"
+    expect: { exit: 0, stdout_includes: [CALLED] }
+    parity: ignore
+  - name: warm unknown tool reaches the guard
+    run: ["{{tree}}/bin/polispec-guard", pretool, --harness, claude]
+    env: { POLISPEC_BIN: "{{files}}/fake/polispec" }
+    stdin: "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"CronCreate\",\"tool_input\":{},\"cwd\":\"/\",\"session_id\":\"s\"}"
+    expect: { exit: 0, stdout_includes: [CALLED] }
+    parity: ignore
+  - name: warm Skill call never reaches the guard
+    run: ["{{tree}}/bin/polispec-guard", pretool, --harness, claude]
+    env: { POLISPEC_BIN: "{{files}}/fake/polispec" }
+    stdin: "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Skill\",\"tool_input\":{\"skill\":\"x\"},\"cwd\":\"/\",\"session_id\":\"s\"}"
+    expect: { exit: 0, stdout_excludes: [CALLED] }
+    parity: ignore

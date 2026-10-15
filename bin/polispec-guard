@@ -14,12 +14,18 @@ done
 input="$(cat 2>/dev/null || true)"
 self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
 state="${XDG_STATE_HOME:-$HOME/.local/state}/polispec"
+if [ -n "${POLISPEC_STATE_HOME:-}" ] && [ ! -e /etc/polispec/active.json ]; then state="$POLISPEC_STATE_HOME"; fi
 if [ "$mode" = pretool ] && [ -f "$state/fastpath.txt" ] && [ -f "$state/fastpath.watch" ]; then
   fresh=1
   while IFS= read -r watched; do
     [ -n "$watched" ] || continue
     if [ ! -e "$watched" ] || [ "$watched" -nt "$state/fastpath.txt" ]; then fresh=0; break; fi
   done < "$state/fastpath.watch"
+  [ -f "$state/fastpath.tools" ] || fresh=0
+  if [ "$fresh" = 1 ] && [ "$(head -n 1 "$state/fastpath.tools")" != "*" ]; then
+    tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/' | tr '[:upper:]' '[:lower:]')"
+    if [ -z "$tool" ] || ! grep -qxF -- "$tool" "$state/fastpath.tools"; then fresh=0; fi
+  fi
   if [ "$fresh" = 1 ]; then
     [ "$(wc -l < "$state/fastpath.txt")" -gt 1 ] || exit 0
     printf '%s' "$input" | grep -qiF -f <(tail -n +2 "$state/fastpath.txt") || exit 0
