@@ -1,0 +1,115 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/harness
+summary: harness grammar, parse, plan, install --dry-run and scan return structured polispec.harness.result/v1 results and write nothing
+fixture:
+  files:
+    "proj/README.md": "scratch project\n"
+    "sentence.txt": "when agent delete file where path = \"/tmp/polispec-control-fixtures/*\" then deny because \"keep fixtures\"\n"
+steps:
+  - name: grammar publishes the verb and object catalogue
+    run: ["{{polispec}}", harness, grammar, --json]
+    expect:
+      exit: 0
+      json:
+        schema: polispec.harness.result/v1
+        ok: true
+        operation: grammar
+      stdout_includes: ['"verbs":["read","write","delete"', '"effects":["deny","ask","restrict","inject"']
+  - name: parse turns a grammar sentence into a control
+    run: ["{{polispec}}", harness, parse, 'when agent write file where path = "/tmp/polispec-control-fixtures/*" then deny because "protect synthetic files"', --json]
+    expect:
+      exit: 0
+      json:
+        ok: true
+        operation: parse
+        data:
+          schema: polispec.control/v1
+          controls:
+            - { trigger: pre_tool, action: fs.write, effect: deny, match: { path: "/tmp/polispec-control-fixtures/*" } }
+  - name: parse reads a sentence from a file
+    run: ["{{polispec}}", harness, parse, --file, "{{files}}/sentence.txt", --json]
+    expect:
+      exit: 0
+      json: { ok: true, operation: parse }
+  - name: parse rejects an unknown vocabulary with an offset
+    run: ["{{polispec}}", harness, parse, "frobnicate the widgets", --json]
+    expect:
+      exit: 1
+      json:
+        ok: false
+        operation: parse
+        data: { code: unknown_vocabulary, offset: 0 }
+        findings:
+          - { code: unknown_vocabulary, capability: grammar }
+  - name: the minimal control example validates
+    run: ["{{polispec}}", validate, control, "{{tree}}/examples/controls.minimal.yml", --json]
+    expect:
+      exit: 0
+      json: { ok: true }
+  - name: plan for claude-code writes a project artifact set
+    run: ["{{polispec}}", harness, plan, "{{tree}}/examples/controls.minimal.yml", --harness, claude-code, --scope, project, --project, "{{files}}/proj", --json]
+    expect:
+      exit: 0
+      json:
+        ok: true
+        operation: plan
+        data: { schema: polispec.harness.plan/v1, harness: claude-code, scope: project }
+      stdout_includes: ["{{files}}/proj/.polispec/harness/claude-code/controls.json", "{{files}}/proj/.claude/settings.json"]
+      files_absent: ["{{files}}/proj/.polispec", "{{files}}/proj/.claude"]
+  - name: plan for antigravity names its own backend
+    run: ["{{polispec}}", harness, plan, "{{tree}}/examples/controls.minimal.yml", --harness, antigravity, --scope, project, --project, "{{files}}/proj", --json]
+    expect:
+      exit: 0
+      json:
+        ok: true
+        data: { schema: polispec.harness.plan/v1, harness: antigravity }
+  - name: plan for os reports findings instead of pretending
+    run: ["{{polispec}}", harness, plan, "{{tree}}/examples/controls.minimal.yml", --harness, os, --scope, project, --project, "{{files}}/proj", --json]
+    expect:
+      exit: 0
+      json: { ok: true, operation: plan }
+  - name: project scope without a project is a usage or input error
+    run: ["{{polispec}}", harness, plan, "{{tree}}/examples/controls.minimal.yml", --harness, claude-code, --scope, project, --json]
+    expect:
+      exit: 2
+      json:
+        ok: false
+        findings:
+          - { code: usage }
+  - name: install --dry-run previews and writes nothing
+    run: ["{{polispec}}", harness, install, "{{tree}}/examples/controls.minimal.yml", --harness, claude-code, --scope, project, --project, "{{files}}/proj", --dry-run, --json]
+    expect:
+      exit: 0
+      json:
+        ok: true
+        operation: install
+        data: { dry_run: true, plan: { schema: polispec.harness.plan/v1 } }
+      files_absent: ["{{files}}/proj/.polispec", "{{files}}/proj/.claude"]
+  - name: verify of an unknown installation is an explicit finding
+    run: ["{{polispec}}", harness, verify, install_000000000000000000000000, --json]
+    expect:
+      exit: 1
+      json:
+        ok: false
+        findings:
+          - { code: installation_not_found }
+  - name: uninstall --dry-run of an unknown installation is an explicit finding
+    run: ["{{polispec}}", harness, uninstall, install_000000000000000000000000, --dry-run, --json]
+    expect:
+      exit: 1
+      json:
+        ok: false
+        operation: uninstall
+        findings:
+          - { code: installation_not_found }
+  - name: scan returns a structured result
+    run: [sh, -c, 'RPLUGIN_HOME="$HOME/.rplugin" HOME="$1" exec "$2" harness scan --json', sh, "{{home}}", "{{polispec}}"]
+    expect:
+      exit: 0
+      json: { schema: polispec.harness.result/v1, ok: true, operation: scan }
+      files_exist: ["{{home}}/.local/state/rplugin/polispec/harness_scans.jsonl"]
+  - name: an unknown verb is a usage error
+    run: ["{{polispec}}", harness, frobnicate]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec harness"]

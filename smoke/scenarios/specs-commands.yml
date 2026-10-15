@@ -1,0 +1,298 @@
+schema: polispec.smoke-scenario/v1
+unit: code_specs/commands/specs link|status|promote
+summary: specs status reports the repo, link and refs; link creates, confirms and refuses to repoint without the typed relink phrase; promote needs a terminal and the phrase and moves stable fast-forward only after clean controls
+fixture:
+  enforce: enforce
+  files:
+    "pack/specs/code/spec.yml": |
+      schema: polispec.spec/v1
+      spec: code
+      version: 1.0.0
+      summary: Smoke pack root.
+      activation:
+        languages: ["*"]
+      policy:
+        id: code.root
+        title: Smoke root
+        subpolicies:
+          - id: code.no-aws-key
+            title: No AWS access key literals
+            statement: Never commit an AWS access key id.
+            level: MUST_NOT
+            severity: critical
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [pre_write]
+              enforcer: { kind: grep, pattern: "AKIA[0-9A-Z]{16}", decides: all }
+            control:
+              fixture: no-aws-key.bad.txt
+              compliant: no-aws-key.good.txt
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+    "pack/specs/code/ruby/spec.yml": |
+      schema: polispec.spec/v1
+      spec: code/ruby
+      parent: code
+      version: 1.0.0
+      summary: Smoke ruby pack.
+      activation:
+        languages: [ruby]
+      detection:
+        extensions: [".rb"]
+        filenames: ["Rakefile"]
+        shebangs: ["ruby"]
+      policy:
+        id: code.ruby.smoke
+        title: Smoke ruby
+        subpolicies:
+          - id: code.ruby.no-binding-pry
+            title: No debugger calls
+            statement: Do not leave binding.pry in committed code.
+            level: MUST_NOT
+            severity: high
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [pre_write]
+              enforcer: { kind: grep, pattern: "binding\\.pry", decides: all }
+            control:
+              fixture: no-binding-pry.bad.rb
+              compliant: no-binding-pry.good.rb
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+          - id: code.ruby.prefer-logger
+            title: Prefer the logger
+            statement: Use the logger instead of printing debug output.
+            level: SHOULD
+            severity: low
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [post_write]
+              enforcer: { kind: grep, pattern: "^\\s*pp\\s", decides: all }
+            control:
+              fixture: prefer-logger.bad.rb
+              compliant: prefer-logger.good.rb
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+    "pack/specs/code/shell/spec.yml": |
+      schema: polispec.spec/v1
+      spec: code/shell
+      parent: code
+      version: 1.0.0
+      summary: Smoke shell pack.
+      activation:
+        languages: [shell]
+      detection:
+        extensions: [".sh"]
+        shebangs: ["sh", "bash"]
+      policy:
+        id: code.shell.smoke
+        title: Smoke shell
+        subpolicies:
+          - id: code.shell.no-eval
+            title: No eval
+            statement: Do not use eval.
+            level: MUST_NOT
+            severity: high
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [pre_write]
+              enforcer: { kind: grep, pattern: "\\beval\\b", decides: all }
+            control:
+              fixture: no-eval.bad.sh
+              compliant: no-eval.good.sh
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+    "pack/controls/code/no-aws-key.bad.txt": |
+      key = AKIAABCDEFGHIJKLMNOP
+    "pack/controls/code/no-aws-key.good.txt": |
+      key = ENV["KEY"]
+    "pack/controls/code/ruby/no-binding-pry.bad.rb": |
+      binding.pry
+    "pack/controls/code/ruby/no-binding-pry.good.rb": |
+      puts 1
+    "pack/controls/code/ruby/prefer-logger.bad.rb": |
+      pp value
+    "pack/controls/code/ruby/prefer-logger.good.rb": |
+      logger.info value
+    "pack/controls/code/shell/no-eval.bad.sh": |
+      eval "$1"
+    "pack/controls/code/shell/no-eval.good.sh": |
+      echo "$1"
+    "other/specs/code/spec.yml": |
+      schema: polispec.spec/v1
+      spec: code
+      version: 1.0.0
+      summary: Smoke pack root.
+      activation:
+        languages: ["*"]
+      policy:
+        id: code.root
+        title: Smoke root
+        subpolicies:
+          - id: code.no-aws-key
+            title: No AWS access key literals
+            statement: Never commit an AWS access key id.
+            level: MUST_NOT
+            severity: critical
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [pre_write]
+              enforcer: { kind: grep, pattern: "AKIA[0-9A-Z]{16}", decides: all }
+            control:
+              fixture: no-aws-key.bad.txt
+              compliant: no-aws-key.good.txt
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+steps:
+  - name: build the code specs repository from the fixture pack
+    run: [sh, -c, 'mkdir -p "$2" && cp -R "$1/." "$2/" && cd "$2" && git init -q -b main . && git add specs controls && git commit -q -m pack && git branch stable && git rev-parse --short stable', sh, "{{files}}/pack", "{{scratch}}/specs-repo"]
+    stop: true
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/specs-repo/specs/code/spec.yml", "{{scratch}}/specs-repo/.git"]
+  - name: build a second specs repository with a broken control
+    run: [sh, -c, 'mkdir -p "$2" && cp -R "$1/." "$2/" && cd "$2" && cp "$2/controls/code/shell/no-eval.good.sh" "$2/controls/code/shell/no-eval.bad.sh" && git init -q -b main . && git add specs controls && git commit -q -m broken && git branch stable && git commit -q --allow-empty -m ahead', sh, "{{files}}/pack", "{{scratch}}/broken-repo"]
+    expect:
+      exit: 0
+  - name: build a link target repository
+    run: [sh, -c, 'mkdir -p "$2" && cp -R "$1/." "$2/" && cd "$2" && git init -q -b main . && git add specs controls && git commit -q -m other', sh, "{{files}}/pack", "{{scratch}}/other-repo"]
+    expect:
+      exit: 0
+  - name: commit a change on main so it is ahead of stable
+    run: [sh, -c, 'cd "$1" && git commit -q --allow-empty -m "main ahead"', sh, "{{scratch}}/specs-repo"]
+    expect:
+      exit: 0
+  - name: status before linking reports the repo, no link and main ahead by one
+    run: ["{{polispec}}", specs, status]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["repo {{scratch}}/specs-repo", "not linked", "ahead of stable by 1", "controls main not recorded; stable not recorded"]
+  - name: status as json is structured
+    run: ["{{polispec}}", specs, status, --json]
+    home: true
+    expect:
+      exit: 0
+      json: { repo: "{{scratch}}/specs-repo", linked: false, main_ahead: 1, controls_main: null, controls_stable: null }
+  - name: link --dry-run previews the creation and writes nothing
+    run: ["{{polispec}}", specs, link, --dry-run]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["dry run: would create the link"]
+      files_absent: ["{{scratch}}/polispec-home/specs"]
+  - name: link creates the missing link without asking
+    run: ["{{polispec}}", specs, link]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["{{scratch}}/polispec-home/specs -> {{scratch}}/specs-repo/specs"]
+      files_exist: ["{{scratch}}/polispec-home/specs/code/spec.yml"]
+  - name: link again confirms the same target
+    run: ["{{polispec}}", specs, link]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["(already linked)"]
+  - name: status after linking reports the link ok
+    run: ["{{polispec}}", specs, status]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["ok"]
+      stdout_excludes: ["not linked"]
+  - name: link --dry-run to another repository previews a replacement that needs a terminal
+    run: ["{{polispec}}", specs, link, --dry-run, --repo, "{{scratch}}/other-repo", --json]
+    home: true
+    expect:
+      exit: 0
+      json: { dry_run: true, target: "{{scratch}}/other-repo/specs", needs_terminal: true }
+  - name: repointing without a terminal is refused
+    run: ["{{polispec}}", specs, link, --repo, "{{scratch}}/other-repo"]
+    home: true
+    expect:
+      exit: 1
+      stderr_includes: [not_tty]
+  - name: the refused repoint left the link on the original repository
+    run: [readlink, "{{scratch}}/polispec-home/specs"]
+    expect:
+      exit: 0
+      stdout_includes: ["{{scratch}}/specs-repo/specs"]
+  - name: a wrong typed phrase is refused
+    run: ["{{polispec}}", specs, link, --repo, "{{scratch}}/other-repo"]
+    home: true
+    tty: ["relink specs"]
+    expect:
+      exit: 1
+      stdout_includes: ["Type exactly: relink {{scratch}}/other-repo/specs", confirmation_failed]
+  - name: the wrong phrase left the link on the original repository
+    run: [readlink, "{{scratch}}/polispec-home/specs"]
+    expect:
+      exit: 0
+      stdout_includes: ["{{scratch}}/specs-repo/specs"]
+  - name: the typed relink phrase with the full target path repoints the link
+    run: ["{{polispec}}", specs, link, --repo, "{{scratch}}/other-repo"]
+    home: true
+    tty: ["relink {{scratch}}/other-repo/specs"]
+    expect:
+      exit: 0
+      stdout_includes: ["Type exactly: relink {{scratch}}/other-repo/specs"]
+  - name: the link now points at the other repository
+    run: [readlink, "{{scratch}}/polispec-home/specs"]
+    expect:
+      exit: 0
+      stdout_includes: ["{{scratch}}/other-repo/specs"]
+  - name: promote without a terminal is refused and stable does not move
+    run: ["{{polispec}}", specs, promote]
+    home: true
+    expect:
+      exit: 1
+      stderr_includes: [not_tty]
+      git: { repo: "{{scratch}}/specs-repo", ref: stable, unchanged: true }
+  - name: promote with the wrong phrase is refused and stable does not move
+    run: ["{{polispec}}", specs, promote]
+    home: true
+    tty: ["promote"]
+    expect:
+      exit: 1
+      stdout_includes: ["Type exactly: promote specs", confirmation_failed]
+      git: { repo: "{{scratch}}/specs-repo", ref: stable, unchanged: true }
+  - name: promote is refused while the controls fail and stable does not move
+    run: ["{{polispec}}", specs, promote, --repo, "{{scratch}}/broken-repo"]
+    home: true
+    tty: ["promote specs"]
+    expect:
+      exit: 1
+      stdout_includes: ["has 1 survivors"]
+      git: { repo: "{{scratch}}/broken-repo", ref: stable, unchanged: true }
+  - name: promote with the typed phrase moves stable to main
+    run: ["{{polispec}}", specs, promote]
+    home: true
+    tty: ["promote specs"]
+    expect:
+      exit: 0
+      stdout_includes: ["promoted stable", "(4 controls)"]
+      git: { repo: "{{scratch}}/specs-repo", ref: stable, unchanged: false }
+  - name: stable now equals main
+    run: [sh, -c, 'test "$(git -C "$1" rev-parse stable)" = "$(git -C "$1" rev-parse main)"', sh, "{{scratch}}/specs-repo"]
+    expect:
+      exit: 0
+  - name: status after promote reports nothing ahead and the controls record
+    run: ["{{polispec}}", specs, status]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["ahead of stable by 0", "controls main clean (4 at", "stable clean (4 at"]
+  - name: promote again with nothing ahead keeps stable where it is
+    run: ["{{polispec}}", specs, promote]
+    home: true
+    tty: ["promote specs"]
+    expect:
+      exit: 1
+      stdout_includes: ["stable is already at main"]
+      git: { repo: "{{scratch}}/specs-repo", ref: stable, unchanged: true }

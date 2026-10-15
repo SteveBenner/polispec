@@ -1,0 +1,324 @@
+schema: polispec.smoke-scenario/v1
+unit: code_specs/commands/code-hook pre|post|stop|session
+summary: code-hook pre injects the chain once per session and denies a MUST_NOT write before it lands, post and stop block a landed violation under post_write, codex gets deny-once, advise never blocks and a committed waiver suppresses a policy
+fixture:
+  enforce: enforce
+  files:
+    "pack/specs/code/spec.yml": |
+      schema: polispec.spec/v1
+      spec: code
+      version: 1.0.0
+      summary: Smoke pack root.
+      activation:
+        languages: ["*"]
+      policy:
+        id: code.root
+        title: Smoke root
+        subpolicies:
+          - id: code.no-aws-key
+            title: No AWS access key literals
+            statement: Never commit an AWS access key id.
+            level: MUST_NOT
+            severity: critical
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [pre_write]
+              enforcer: { kind: grep, pattern: "AKIA[0-9A-Z]{16}", decides: all }
+            control:
+              fixture: no-aws-key.bad.txt
+              compliant: no-aws-key.good.txt
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+    "pack/specs/code/ruby/spec.yml": |
+      schema: polispec.spec/v1
+      spec: code/ruby
+      parent: code
+      version: 1.0.0
+      summary: Smoke ruby pack.
+      activation:
+        languages: [ruby]
+      detection:
+        extensions: [".rb"]
+        filenames: ["Rakefile"]
+        shebangs: ["ruby"]
+      policy:
+        id: code.ruby.smoke
+        title: Smoke ruby
+        subpolicies:
+          - id: code.ruby.no-binding-pry
+            title: No debugger calls
+            statement: Do not leave binding.pry in committed code.
+            level: MUST_NOT
+            severity: high
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [pre_write]
+              enforcer: { kind: grep, pattern: "binding\\.pry", decides: all }
+            control:
+              fixture: no-binding-pry.bad.rb
+              compliant: no-binding-pry.good.rb
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+          - id: code.ruby.prefer-logger
+            title: Prefer the logger
+            statement: Use the logger instead of printing debug output.
+            level: SHOULD
+            severity: low
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [post_write]
+              enforcer: { kind: grep, pattern: "^\\s*pp\\s", decides: all }
+            control:
+              fixture: prefer-logger.bad.rb
+              compliant: prefer-logger.good.rb
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+    "pack/specs/code/shell/spec.yml": |
+      schema: polispec.spec/v1
+      spec: code/shell
+      parent: code
+      version: 1.0.0
+      summary: Smoke shell pack.
+      activation:
+        languages: [shell]
+      detection:
+        extensions: [".sh"]
+        shebangs: ["sh", "bash"]
+      policy:
+        id: code.shell.smoke
+        title: Smoke shell
+        subpolicies:
+          - id: code.shell.no-eval
+            title: No eval
+            statement: Do not use eval.
+            level: MUST_NOT
+            severity: high
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [pre_write]
+              enforcer: { kind: grep, pattern: "\\beval\\b", decides: all }
+            control:
+              fixture: no-eval.bad.sh
+              compliant: no-eval.good.sh
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+    "pack/controls/code/no-aws-key.bad.txt": |
+      key = AKIAABCDEFGHIJKLMNOP
+    "pack/controls/code/no-aws-key.good.txt": |
+      key = ENV["KEY"]
+    "pack/controls/code/ruby/no-binding-pry.bad.rb": |
+      binding.pry
+    "pack/controls/code/ruby/no-binding-pry.good.rb": |
+      puts 1
+    "pack/controls/code/ruby/prefer-logger.bad.rb": |
+      pp value
+    "pack/controls/code/ruby/prefer-logger.good.rb": |
+      logger.info value
+    "pack/controls/code/shell/no-eval.bad.sh": |
+      eval "$1"
+    "pack/controls/code/shell/no-eval.good.sh": |
+      echo "$1"
+    "work/README.md": |
+      work repository
+    "work/lib/existing.rb": |
+      puts 1
+    "work/lib/legacy/old.rb": |
+      puts 2
+    "work/specs/polispec/code-waivers.yml": |
+      schema: polispec.waivers/v1
+      waivers:
+        - policy: code.ruby.no-binding-pry
+          paths: ["lib/legacy/**"]
+          reason: legacy debugging helpers are being removed
+          recorded: "2026-10-14"
+          review_after: "2099-01-01"
+steps:
+  - name: build the code specs repository from the fixture pack
+    run: [sh, -c, 'mkdir -p "$2" && cp -R "$1/." "$2/" && cd "$2" && git init -q -b main . && git add specs controls && git commit -q -m pack && git branch stable && git rev-parse --short stable', sh, "{{files}}/pack", "{{scratch}}/specs-repo"]
+    stop: true
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/specs-repo/specs/code/spec.yml", "{{scratch}}/specs-repo/.git"]
+  - name: build the work repository with a committed waiver
+    run: [sh, -c, 'cd "$1" && git init -q -b main . && git add README.md lib specs && git commit -q -m work', sh, "{{files}}/work"]
+    stop: true
+    expect:
+      exit: 0
+  - name: claude denies a MUST_NOT write before it lands
+    run: ["{{polispec}}", code-hook, pre, --harness, claude]
+    cwd: "{{files}}/work"
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"c1","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/a.rb","content":"binding.pry\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["\"permissionDecision\":\"deny\"", "[POLISPEC code] blocked: the edit adds MUST violations on changed lines", "lib/a.rb:1 [code.ruby.no-binding-pry] MUST_NOT", "POLISPEC code specs for ruby", "[code.no-aws-key] MUST_NOT"]
+  - name: claude injects the chain on a compliant first write
+    run: ["{{polispec}}", code-hook, pre, --harness, claude]
+    cwd: "{{files}}/work"
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"c2","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/a.rb","content":"puts 1\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["POLISPEC code specs for ruby", "additionalContext", "[code.ruby.no-binding-pry] MUST_NOT", "[code.ruby.prefer-logger] SHOULD"]
+      stdout_excludes: ["\"permissionDecision\":\"deny\""]
+  - name: claude does not inject twice in one session
+    run: ["{{polispec}}", code-hook, pre, --harness, claude]
+    cwd: "{{files}}/work"
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"c2","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/b.rb","content":"puts 2\n"}}'
+    expect:
+      exit: 0
+      stdout_excludes: ["POLISPEC code specs for ruby", "\"permissionDecision\":\"deny\"", "additionalContext"]
+  - name: codex first write is denied once with the chain
+    run: ["{{polispec}}", code-hook, pre, --harness, codex]
+    cwd: "{{files}}/work"
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"x1","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/a.rb","content":"puts 1\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["\"permissionDecision\":\"deny\"", "the code specs for this language are below", "POLISPEC code specs for ruby"]
+  - name: codex identical retry is allowed
+    run: ["{{polispec}}", code-hook, pre, --harness, codex]
+    cwd: "{{files}}/work"
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"x1","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/a.rb","content":"puts 1\n"}}'
+    expect:
+      exit: 0
+      stdout_excludes: ["\"permissionDecision\":\"deny\"", "POLISPEC code specs for ruby"]
+  - name: codex denies a MUST_NOT write with the findings
+    run: ["{{polispec}}", code-hook, pre, --harness, codex]
+    cwd: "{{files}}/work"
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"x2","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/a.rb","content":"binding.pry\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["\"permissionDecision\":\"deny\"", "blocked: the edit adds MUST violations on changed lines", "[code.ruby.no-binding-pry] MUST_NOT"]
+  - name: POLISPEC_CODE_PRE_CONTEXT=deny gives claude deny-once
+    run: ["{{polispec}}", code-hook, pre, --harness, claude]
+    cwd: "{{files}}/work"
+    env: { POLISPEC_CODE_PRE_CONTEXT: deny }
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"d1","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/a.rb","content":"puts 1\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["\"permissionDecision\":\"deny\"", "the code specs for this language are below", "POLISPEC code specs for ruby"]
+  - name: deny-once retry is allowed
+    run: ["{{polispec}}", code-hook, pre, --harness, claude]
+    cwd: "{{files}}/work"
+    env: { POLISPEC_CODE_PRE_CONTEXT: deny }
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"d1","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/a.rb","content":"puts 1\n"}}'
+    expect:
+      exit: 0
+      stdout_excludes: ["\"permissionDecision\":\"deny\"", "POLISPEC code specs for ruby"]
+  - name: claude denies an Edit that adds a violation
+    run: ["{{polispec}}", code-hook, pre, --harness, claude]
+    cwd: "{{files}}/work"
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"e1","cwd":"{{files}}/work","tool_name":"Edit","tool_input":{"file_path":"{{files}}/work/lib/existing.rb","old_string":"puts 1","new_string":"binding.pry"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["\"permissionDecision\":\"deny\"", "lib/existing.rb:1 [code.ruby.no-binding-pry] MUST_NOT"]
+  - name: advise mode never blocks
+    run: ["{{polispec}}", code-hook, pre, --harness, claude]
+    cwd: "{{files}}/work"
+    env: { RPLUGIN_POLISPEC_POLISPEC_CODE_ENFORCE: advise }
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"a1","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/a.rb","content":"binding.pry\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["additionalContext", "Findings on this edit", "[code.ruby.no-binding-pry] MUST_NOT"]
+      stdout_excludes: ["\"permissionDecision\":\"deny\""]
+  - name: a committed waiver suppresses the policy on its paths
+    run: ["{{polispec}}", code-hook, pre, --harness, claude]
+    cwd: "{{files}}/work"
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"w1","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/legacy/new.rb","content":"binding.pry\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["POLISPEC code specs for ruby"]
+      stdout_excludes: ["\"permissionDecision\":\"deny\"", "Findings on this edit"]
+  - name: the same content outside the waived paths is still denied
+    run: ["{{polispec}}", code-hook, pre, --harness, claude]
+    cwd: "{{files}}/work"
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"w2","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/other.rb","content":"binding.pry\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["\"permissionDecision\":\"deny\"", "lib/other.rb:1 [code.ruby.no-binding-pry] MUST_NOT"]
+  - name: land a violating and a style-only file
+    run: [sh, -c, 'printf "binding.pry\n" > "$1/lib/landed.rb"; printf "pp value\n" > "$1/lib/should.rb"', sh, "{{files}}/work"]
+    expect:
+      exit: 0
+      files_exist: ["{{files}}/work/lib/landed.rb", "{{files}}/work/lib/should.rb"]
+  - name: post under pre_write reports findings as context only
+    run: ["{{polispec}}", code-hook, post, --harness, claude]
+    cwd: "{{files}}/work"
+    stdin: '{"hook_event_name":"PostToolUse","session_id":"p1","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/landed.rb","content":"binding.pry\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["additionalContext", "[POLISPEC code] findings on the lines you changed", "landed.rb:1 [code.ruby.no-binding-pry] MUST_NOT"]
+      stdout_excludes: ["\"decision\":\"block\""]
+  - name: post under post_write blocks a landed MUST_NOT write
+    run: ["{{polispec}}", code-hook, post, --harness, claude]
+    cwd: "{{files}}/work"
+    env: { RPLUGIN_POLISPEC_POLISPEC_CODE_CHECK_AT: post_write }
+    stdin: '{"hook_event_name":"PostToolUse","session_id":"p2","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/landed.rb","content":"binding.pry\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["\"decision\":\"block\"", "the write landed with MUST violations on changed lines", "landed.rb:1 [code.ruby.no-binding-pry] MUST_NOT"]
+  - name: post reports a SHOULD finding without blocking
+    run: ["{{polispec}}", code-hook, post, --harness, claude]
+    cwd: "{{files}}/work"
+    env: { RPLUGIN_POLISPEC_POLISPEC_CODE_CHECK_AT: post_write }
+    stdin: '{"hook_event_name":"PostToolUse","session_id":"p3","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/should.rb","content":"pp value\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["should.rb:1 [code.ruby.prefer-logger] SHOULD"]
+      stdout_excludes: ["\"decision\":\"block\""]
+  - name: post blocks for codex as well
+    run: ["{{polispec}}", code-hook, post, --harness, codex]
+    cwd: "{{files}}/work"
+    env: { RPLUGIN_POLISPEC_POLISPEC_CODE_CHECK_AT: post_write }
+    stdin: '{"hook_event_name":"PostToolUse","session_id":"p4","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/landed.rb","content":"binding.pry\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["\"decision\":\"block\"", "landed.rb:1 [code.ruby.no-binding-pry] MUST_NOT"]
+  - name: stop blocks once when MUST findings remain
+    run: ["{{polispec}}", code-hook, stop, --harness, claude]
+    cwd: "{{files}}/work"
+    env: { RPLUGIN_POLISPEC_POLISPEC_CODE_CHECK_AT: post_write }
+    stdin: '{"hook_event_name":"Stop","session_id":"p2","cwd":"{{files}}/work"}'
+    expect:
+      exit: 0
+      stdout_includes: ["\"decision\":\"block\"", "files changed this session still carry MUST violations", "landed.rb:1 [code.ruby.no-binding-pry] MUST_NOT"]
+  - name: stop does not block twice
+    run: ["{{polispec}}", code-hook, stop, --harness, claude]
+    cwd: "{{files}}/work"
+    env: { RPLUGIN_POLISPEC_POLISPEC_CODE_CHECK_AT: post_write }
+    stdin: '{"hook_event_name":"Stop","session_id":"p2","cwd":"{{files}}/work","stop_hook_active":true}'
+    expect:
+      exit: 0
+      stdout_excludes: ["\"decision\"", "landed.rb"]
+  - name: stop is silent for a session that wrote nothing
+    run: ["{{polispec}}", code-hook, stop, --harness, claude]
+    cwd: "{{files}}/work"
+    env: { RPLUGIN_POLISPEC_POLISPEC_CODE_CHECK_AT: post_write }
+    stdin: '{"hook_event_name":"Stop","session_id":"nothing","cwd":"{{files}}/work"}'
+    expect:
+      exit: 0
+      stdout_excludes: ["\"decision\""]
+  - name: session startup prints nothing
+    run: ["{{polispec}}", code-hook, session, --harness, claude]
+    cwd: "{{files}}/work"
+    stdin: '{"hook_event_name":"SessionStart","session_id":"c3","cwd":"{{files}}/work","source":"startup"}'
+    expect:
+      exit: 0
+      stdout_excludes: ["\"decision\"", "additionalContext"]
+  - name: session compact re-arms the injection
+    run: ["{{polispec}}", code-hook, session, --harness, claude]
+    cwd: "{{files}}/work"
+    stdin: '{"hook_event_name":"SessionStart","session_id":"c2","cwd":"{{files}}/work","source":"compact"}'
+    expect:
+      exit: 0
+      stdout_excludes: ["\"decision\""]
+  - name: the chain is injected again after the re-arm
+    run: ["{{polispec}}", code-hook, pre, --harness, claude]
+    cwd: "{{files}}/work"
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"c2","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/b.rb","content":"puts 2\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["POLISPEC code specs for ruby", "additionalContext"]
+      stdout_excludes: ["\"permissionDecision\":\"deny\""]
