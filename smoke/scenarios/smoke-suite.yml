@@ -1,0 +1,19 @@
+schema: polispec.smoke-scenario/v1
+unit: smoke
+summary: smoke run executes a bundled scenario in its own scratch fixture without recording, and the live kill switch blocks a live scenario before any harness starts
+steps:
+  - name: a nested run of one bundled scenario passes without recording
+    run: ["{{polispec}}", smoke, run, --unit, commands/version, --no-record, --out, "{{scratch}}/inner"]
+    expect:
+      exit: 0
+      stdout_includes: ["pass commands/version", "1/1 scenarios passed"]
+      stdout_excludes: [recorded]
+  - name: the nested run wrote its fixture under the chosen output directory
+    run: [test, -d, "{{scratch}}/inner/version"]
+    expect: { exit: 0 }
+  - name: the live kill switch blocks a live scenario without launching a harness
+    run: ["{{polispec}}", smoke, run, --scenarios, "{{tree}}/smoke/live", --unit, "commands/hook pretool|session", --live, claude-code, --no-record, --out, "{{scratch}}/killed"]
+    env: { POLISPEC_SMOKE_LIVE: "off" }
+    expect:
+      exit: 0
+      stdout_includes: ["claude-code is denied the push to stable and may write a dev file: live live_disabled", "0/1 scenarios passed, 0 failed, 1 blocked"]
