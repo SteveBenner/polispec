@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 require "securerandom"
+require "tmpdir"
 require_relative "scenario"
 require_relative "process"
 require_relative "fixture"
@@ -63,7 +64,7 @@ module Polispec
       end
 
       def prepare_out
-        out = File.expand_path(options.out || File.join(tree, ".polispec-smoke", "#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}-#{SecureRandom.hex(3)}"))
+        out = File.expand_path(options.out || File.join(Dir.tmpdir, "polispec-smoke", "#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}-#{SecureRandom.hex(3)}"))
         FileUtils.mkdir_p(out)
         out
       end

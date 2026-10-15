@@ -351,6 +351,7 @@ module Polispec
       control_warn = control_verdict.warn?
       return Verdict.worst(independent) unless legacy_warn || control_warn
       return Verdict.worst(independent) if edition == "lock" && (control_warn || !legacy_warn)
+      return Verdict.worst(independent) if @plane["status"] != "active" && !control_warn
 
       ask_set = warning_rows.map { |row| ["environment", *row] }
       ask_set.concat(Array(control["ask_ids"]).map { |id| ["control", id.to_s] }) if control_warn
