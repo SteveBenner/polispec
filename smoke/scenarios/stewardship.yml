@@ -1,0 +1,155 @@
+schema: polispec.smoke-scenario/v1
+unit: stewardship
+summary: a plan is classified tightening, loosening, mixed or neutral with a plan id, apply runs a tightening plan and refuses confirm_required for a mixed one, an invalid proposed policy is refused, apply --confirm is a guarded policy edit, journal replay is reported when the journal is on, and the protected runtime root warns in a clone tree
+fixture:
+  global: example
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+steps:
+  - name: doctor names the runtime kind of this tree
+    run: ["{{polispec}}", doctor]
+    expect:
+      exit: [0, 1]
+      stdout_includes: ["runtime: clone "]
+  - name: an agent write into the clone runtime asks with R-POLISPEC-RUNTIME
+    hook:
+      harness: claude
+      event: pretool
+      tool: Write
+      input: { file_path: "{{tree}}/lib/polispec/scratch_marker.rb", content: "x" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: R-POLISPEC-RUNTIME
+      stdout_includes: ["this tree is the live polispec guard for this host", "build in a worktree", "rplugin install <repo> --ref <tag>"]
+  - name: a commit in the clone runtime asks as well
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git commit -m x" }
+      cwd: "{{tree}}"
+    expect:
+      decision: ask
+      rule: R-POLISPEC-RUNTIME
+  - name: codex turns the runtime warning into a denial with an allow-once id
+    hook:
+      harness: codex
+      event: pretool
+      tool: Write
+      input: { file_path: "{{tree}}/lib/polispec/scratch_marker.rb", content: "x" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-POLISPEC-RUNTIME
+      stdout_includes: ["polispec allow-once alo_"]
+  - name: reading the runtime is allowed
+    hook:
+      harness: claude
+      event: pretool
+      tool: Read
+      input: { file_path: "{{tree}}/lib/polispec/scratch_marker.rb" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: writing elsewhere is allowed
+    hook:
+      harness: claude
+      event: pretool
+      tool: Write
+      input: { file_path: "{{files}}/elsewhere.rb", content: "x" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: apply --confirm is classified as a policy edit and asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "polispec apply project:shop --confirm plan_0123456789abcdef01234567" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: R-POLICY
+      stdout_includes: ["policy.edit: polispec apply project:shop --confirm"]
+  - name: an unchanged project plan is neutral
+    run: ["{{polispec}}", plan, "project:shop", --json]
+    expect:
+      exit: 0
+      json: { schema: polispec.plan/v1, classification: neutral, needs_confirm: false }
+  - name: a rule is added on main
+    run: [sh, -c, 'sed -i "s/^  - { id: R-DEV, match: { env: dev }, verdict: allow }/  - { id: R-NEW, match: { env: prod, class: [fs.delete] }, verdict: deny, reason: \"new\" }\n&/" specs/polispec/policy.yml && git diff --stat | tail -1']
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ["1 file changed, 1 insertion(+)"]
+  - name: the plan is tightening and needs no confirmation
+    run: ["{{polispec}}", plan, "project:shop"]
+    expect:
+      exit: 0
+      stdout_includes: ["classification: tightening; needs_confirm: false", "tighten: shop adds rule repo/R-NEW", "policy shop: rules +1", "-> deny R-NEW", "journal: 0 replayed, 0 changed"]
+  - name: a plan that does not validate is refused
+    run: [sh, -c, 'cp specs/polispec/policy.yml "$1" && sed -i "s/class: \[fs.delete\]/class: [fs.nothing]/" specs/polispec/policy.yml && "$0" plan project:shop; code=$?; cp "$1" specs/polispec/policy.yml; exit $code', "{{polispec}}", "{{scratch}}/policy.backup.yml"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 1
+      stderr_includes: ["policy_invalid: the proposed policy for shop does not validate", "must be one of git.commit"]
+  - name: apply of a tightening plan needs no confirmation and commits on main
+    run: [sh, -c, '"$0" apply project:shop && git log -1 --format=%s', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ["committed specs/polispec/policy.yml", "Apply polispec plan plan_"]
+  - name: the committed change stays a pending tightening against the trust ref until promoted
+    run: ["{{polispec}}", plan, "project:shop", --json]
+    expect:
+      exit: 0
+      json: { classification: tightening }
+  - name: a rule is removed and another added so the plan is mixed
+    run: [sh, -c, 'sed -i "/id: R-TEST-REWRITE/d; s/^  - { id: R-DEV, match: { env: dev }, verdict: allow }/  - { id: R-NEW2, match: { env: prod, class: [data.copy] }, verdict: deny, reason: \"new two\" }\n&/" specs/polispec/policy.yml && git diff --stat | tail -1']
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+  - name: the plan is mixed and names both directions
+    run: ["{{polispec}}", plan, "project:shop"]
+    expect:
+      exit: 0
+      stdout_includes: ["classification: mixed; needs_confirm: true", "loosen: shop removes rule repo/R-TEST-REWRITE", "tighten: shop adds rule repo/R-NEW2", "loosen: shop probe git.rewrite test (test): deny R-TEST-REWRITE -> allow NO-RULE"]
+  - name: apply of the mixed plan is refused without a confirmation
+    run: ["{{polispec}}", apply, "project:shop"]
+    expect:
+      exit: 1
+      stderr_includes: ["confirm_required: this plan is mixed and needs confirmation", "classification: mixed"]
+  - name: apply does not take effect from a branch other than main
+    run: [sh, -c, 'git checkout -q -b side && id=$("$0" plan project:shop --json | sed -n "s/.*\"plan_id\":\"\([^\"]*\)\".*/\1/p") && "$0" apply project:shop --confirm "$id"; code=$?; git checkout -q main; exit $code', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 1
+  - name: the confirmed apply on main commits the mixed change
+    run: [sh, -c, 'id=$("$0" plan project:shop --json | sed -n "s/.*\"plan_id\":\"\([^\"]*\)\".*/\1/p") && "$0" apply project:shop --confirm "$id" && git log -1 --format=%s', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ["Apply polispec plan plan_"]
+  - name: with the journal on the guard keeps canonical facts of judged actions
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    env: { RPLUGIN_POLISPEC_POLISPEC_VERDICTS_JOURNAL: "on" }
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: a plan replays the journaled push and shows it loosening
+    run: [sh, -c, 'sed -i "s/verdict: deny, reason: \"the production branch moves/verdict: allow, reason: \"the production branch moves/" specs/polispec/policy.yml && "$0" plan project:shop', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    env: { RPLUGIN_POLISPEC_POLISPEC_VERDICTS_JOURNAL: "on" }
+    expect:
+      exit: 0
+      stdout_includes: ["classification: mixed; needs_confirm: true", "loosen: shop probe journal git.push stable", "journal: 1 replayed, 1 changed"]

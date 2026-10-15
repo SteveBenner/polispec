@@ -1,0 +1,49 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/seal
+summary: seal --dry-run against a committed scratch source never activates anything and reports a blocked structured result with exit 1, a real seal is blocked as well, an unresolvable commit and a bad option set are refused, and no plane state is written
+fixture:
+  global: example
+steps:
+  - name: a committed scratch source holds the example ledger
+    run: [sh, -c, 'mkdir -p "$1" && cd "$1" && git init -q -b main && cp "$2/examples/ledger.example.yml" ledger.yml && git add ledger.yml && git commit -q -m seed && git rev-parse HEAD', sh, "{{scratch}}/seal-src", "{{tree}}"]
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/seal-src/ledger.yml"]
+  - name: seal --dry-run returns a structured blocked result
+    run: [sh, -c, '"$0" seal --from "$1@$(git -C "$1" rev-parse HEAD)" --dry-run --json', "{{polispec}}", "{{scratch}}/seal-src"]
+    expect:
+      exit: 1
+      json: { schema: polispec.harness.result/v1, ok: false, operation: seal }
+      stdout_includes: ['"findings":[{"code":']
+  - name: seal --dry-run as text says blocked and lists each finding
+    run: [sh, -c, '"$0" seal --from "$1@$(git -C "$1" rev-parse HEAD)" --dry-run', "{{polispec}}", "{{scratch}}/seal-src"]
+    expect:
+      exit: 1
+      stdout_includes: ["polispec seal: blocked"]
+  - name: a real seal does not activate anything either
+    run: [sh, -c, '"$0" seal --from "$1@$(git -C "$1" rev-parse HEAD)" --json', "{{polispec}}", "{{scratch}}/seal-src"]
+    expect:
+      exit: 1
+      json: { ok: false, operation: seal }
+  - name: the plane is still unsealed
+    run: ["{{polispec}}", plane, status, --json]
+    expect:
+      exit: 0
+      stdout_includes: [unsealed]
+  - name: an unresolvable commit is refused with a git finding
+    run: ["{{polispec}}", seal, --from, "{{scratch}}/seal-src@deadbeef", --dry-run, --json]
+    expect:
+      exit: 1
+      json: { ok: false, operation: seal }
+      stdout_includes: ['"code":']
+  - name: no authority source is a usage error
+    run: ["{{polispec}}", seal, --dry-run]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec seal (--from REPO@COMMIT | --source /etc/polispec/source) [--dry-run] [--json]"]
+  - name: a missing source directory is an invalid-arguments result
+    run: ["{{polispec}}", seal, --source, "{{scratch}}/nope", --dry-run, --json]
+    expect:
+      exit: 2
+      json: { ok: false, operation: seal }
+      stdout_includes: ['"code":"invalid_arguments"']

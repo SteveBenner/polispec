@@ -1,0 +1,160 @@
+schema: polispec.smoke-scenario/v1
+unit: composition
+summary: the examples/clinic policy composes a three-level parameterised module chain (release-train, soak and quiet-hours) with a global shelf module, resolve --layers lists the instances with their resolved parameters, and a missing, unknown or mistyped parameter, a missing module, an include cycle and an ambiguous module name are reported by validate, doctor and resolve and make promote refuse with policy_invalid
+fixture:
+  enforce: enforce
+  global: files
+  global_files:
+    "global.yml": |
+      schema: polispec.global/v1
+      summary: Smoke baseline with a shared module.
+      rules: []
+    "modules/shared-note.yml": |
+      schema: polispec.module/v1
+      name: shared-note
+      summary: A module that lives on the global shelf.
+      rules:
+        - { id: R-SHARED, match: { env: prod, class: [fs.delete] }, verdict: deny, reason: "shared shelf rule" }
+  projects:
+    - id: clinic
+      variant: service
+      status: live
+      files:
+        "lib/app.rb": "puts 1\n"
+steps:
+  - name: the example policy validates with its sibling environments
+    run: ["{{polispec}}", validate, policy, "{{tree}}/examples/clinic/policy.yml", --json]
+    expect:
+      exit: 0
+      json: { ok: true, errors: [] }
+  - name: every example module validates
+    run: [sh, -c, 'for f in "$1"/examples/clinic/modules/*.yml; do "$0" validate module "$f" --json || exit 1; done', "{{polispec}}", "{{tree}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['"schema":"polispec.module/v1","errors":[]']
+  - name: the clinic example is installed on main and published to the trust ref
+    run: [sh, -c, 'cp "$1/examples/clinic/policy.yml" "$1/examples/clinic/environments.yml" specs/polispec/ && mkdir -p specs/polispec/modules && cp "$1/examples/clinic/modules/"*.yml specs/polispec/modules/ && cp specs/polispec/policy.yml "$2" && sed -i "s/^  - patient-data/  - patient-data\n  - shared-note/" specs/polispec/policy.yml && cp specs/polispec/policy.yml "$2.shared" && git add specs/polispec && git commit -q -m clinic -- specs/polispec && git branch -f stable main && git log --oneline | head -1', sh, "{{tree}}", "{{scratch}}/policy.orig.yml"]
+    cwd: "{{project.clinic}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+      stdout_includes: [clinic]
+  - name: resolve --layers shows the global and repo layers, the rule counts and no error
+    run: ["{{polispec}}", resolve, "{{project.clinic}}/lib/app.rb", --layers]
+    expect:
+      exit: 0
+      stdout_includes: ["clinic dev branch=main policy=stable:", "  global  dir:", "  repo  stable:", "rules=14", "  effective sha256:"]
+      stdout_excludes: ["error:"]
+  - name: the three-level chain resolves its parameters downward
+    run: ["{{polispec}}", resolve, "{{project.clinic}}/lib/app.rb", --layers, --json]
+    expect:
+      exit: 0
+      json: { project: clinic, env: dev, branch: main, errors: [] }
+      stdout_includes: ['"patient-data"', '"shared-note"', 'soak{\"hours\":24}', 'quiet-hours{\"command\":[\"bin/clinic-calendar\",\"open-hours\",\"--json\"],\"lead_minutes\":60}', 'release-train{\"calendar\":[\"bin/clinic-calendar\",\"open-hours\",\"--json\"],\"lead_minutes\":60,\"soak_hours\":24}']
+  - name: doctor reports no composition finding for the valid chain
+    run: ["{{polispec}}", doctor, --json]
+    expect:
+      exit: [0, 1]
+      stdout_excludes: ["layers_invalid"]
+  - name: a module rule from the second level applies in the effective policy
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin main:stable" }
+      cwd: "{{project.clinic}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: the required parameter calendar is removed from the include
+    run: [sh, -c, 'cp "$1" specs/polispec/policy.yml && sed -i "s/calendar: \[bin\/clinic-calendar, open-hours, --json\], //" specs/polispec/policy.yml && git add specs/polispec/policy.yml && git commit -q -m missing -- specs/polispec/policy.yml && git branch -f stable main', sh, "{{scratch}}/policy.orig.yml.shared"]
+    cwd: "{{project.clinic}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+  - name: resolve --layers reports the missing parameter
+    run: ["{{polispec}}", resolve, "{{project.clinic}}/lib/app.rb", --layers]
+    expect:
+      exit: 0
+      stdout_includes: ["  error: module release-train: parameter calendar is required"]
+  - name: validate reports it under /layers
+    run: ["{{polispec}}", validate, policy, "{{project.clinic}}/specs/polispec/policy.yml"]
+    expect:
+      exit: 1
+      stdout_includes: ["/layers  module release-train: parameter calendar is required"]
+  - name: doctor reports layers_invalid
+    run: ["{{polispec}}", doctor]
+    expect:
+      exit: 1
+      stdout_includes: ["clinic  layers_invalid  module release-train: parameter calendar is required"]
+  - name: promote refuses with policy_invalid instead of promoting with fewer gates
+    run: ["{{polispec}}", promote, clinic, --to, test, --dry-run]
+    expect:
+      exit: 1
+      stderr_includes: ["policy_invalid: module release-train: parameter calendar is required"]
+  - name: an unknown parameter is passed to the include
+    run: [sh, -c, 'cp "$1" specs/polispec/policy.yml && sed -i "s/lead_minutes: 60 }/lead_minutes: 60, bogus: 1 }/" specs/polispec/policy.yml && git add specs/polispec/policy.yml && git commit -q -m unknown -- specs/polispec/policy.yml && git branch -f stable main', sh, "{{scratch}}/policy.orig.yml.shared"]
+    cwd: "{{project.clinic}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+  - name: the unknown parameter is reported
+    run: ["{{polispec}}", resolve, "{{project.clinic}}/lib/app.rb", --layers]
+    expect:
+      exit: 0
+      stdout_includes: ["  error: module release-train: unknown parameter bogus"]
+  - name: a mistyped parameter is passed to the include
+    run: [sh, -c, 'cp "$1" specs/polispec/policy.yml && sed -i "s/soak_hours: 24/soak_hours: many/" specs/polispec/policy.yml && git add specs/polispec/policy.yml && git commit -q -m mistyped -- specs/polispec/policy.yml && git branch -f stable main', sh, "{{scratch}}/policy.orig.yml.shared"]
+    cwd: "{{project.clinic}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+  - name: the mistyped parameter is reported
+    run: ["{{polispec}}", resolve, "{{project.clinic}}/lib/app.rb", --layers]
+    expect:
+      exit: 0
+      stdout_includes: ["  error: module release-train: parameter soak_hours must be integer"]
+  - name: an include of a module that exists nowhere
+    run: [sh, -c, 'cp "$1" specs/polispec/policy.yml && sed -i "s/^  - patient-data/  - no-such-module/" specs/polispec/policy.yml && git add specs/polispec/policy.yml && git commit -q -m nomodule -- specs/polispec/policy.yml && git branch -f stable main', sh, "{{scratch}}/policy.orig.yml.shared"]
+    cwd: "{{project.clinic}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+  - name: the missing module is reported with where it was looked for
+    run: ["{{polispec}}", resolve, "{{project.clinic}}/lib/app.rb", --layers]
+    expect:
+      exit: 0
+      stdout_includes: ["  error: module no-such-module: not found in "]
+  - name: two local modules include each other
+    run: [sh, -c, 'cp "$1" specs/polispec/policy.yml && sed -i "s/^  - patient-data/  - cycle-a/" specs/polispec/policy.yml && printf "%s\n" "schema: polispec.module/v1" "name: cycle-a" "summary: first" "includes: [cycle-b]" > specs/polispec/modules/cycle-a.yml && printf "%s\n" "schema: polispec.module/v1" "name: cycle-b" "summary: second" "includes: [cycle-a]" > specs/polispec/modules/cycle-b.yml && git add specs/polispec -A && git commit -q -m cycle -- specs/polispec && git branch -f stable main', sh, "{{scratch}}/policy.orig.yml.shared"]
+    cwd: "{{project.clinic}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+  - name: the include cycle is reported
+    run: ["{{polispec}}", resolve, "{{project.clinic}}/lib/app.rb", --layers]
+    expect:
+      exit: 0
+      stdout_includes: ["  error: ", "cycle"]
+  - name: a local module takes the name of a global shelf module
+    run: [sh, -c, 'cp "$1" specs/polispec/policy.yml && printf "%s\n" "schema: polispec.module/v1" "name: shared-note" "summary: local copy" "rules:" "  - { id: R-LOCAL, match: { env: prod, class: [fs.delete] }, verdict: deny, reason: local }" > specs/polispec/modules/shared-note.yml && git add specs/polispec -A && git commit -q -m ambiguous -- specs/polispec && git branch -f stable main', sh, "{{scratch}}/policy.orig.yml.shared"]
+    cwd: "{{project.clinic}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+  - name: the ambiguous name is reported and the include is not applied
+    run: ["{{polispec}}", resolve, "{{project.clinic}}/lib/app.rb", --layers]
+    expect:
+      exit: 0
+      stdout_includes: ["  error: module shared-note is ambiguous: defined in ", "rules=13"]
+  - name: the valid policy is restored on the trust ref
+    run: [sh, -c, 'git rm -q -f specs/polispec/modules/cycle-a.yml specs/polispec/modules/cycle-b.yml specs/polispec/modules/shared-note.yml && cp "$1" specs/polispec/policy.yml && git add specs/polispec/policy.yml && git commit -q -m restore -- specs/polispec && git branch -f stable main', sh, "{{scratch}}/policy.orig.yml.shared"]
+    cwd: "{{project.clinic}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+  - name: the chain composes again with no error
+    run: ["{{polispec}}", resolve, "{{project.clinic}}/lib/app.rb", --layers, --json]
+    expect:
+      exit: 0
+      json: { project: clinic, errors: [] }

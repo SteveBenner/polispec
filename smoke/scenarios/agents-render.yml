@@ -1,0 +1,110 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/agents render
+summary: agents render writes the [ENVS] row and envs.md, --check reports drift with exit 1 and writes nothing, a hand edit is repaired by a render, doctor reports agents_drift from the trust ref, and edits to the generated files classify as policy edits
+fixture:
+  global: example
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      files:
+        "lib/app.rb": "puts 1\n"
+steps:
+  - name: check on a freshly applied project is ok
+    run: ["{{polispec}}", agents, render, shop, --check]
+    expect:
+      exit: 0
+      stdout_includes: [ok]
+  - name: check as json lists the files and the row
+    run: ["{{polispec}}", agents, render, shop, --check, --json]
+    expect:
+      exit: 0
+      json: { project: shop }
+      stdout_includes: ['"status":"unchanged"', "[ENVS] when developing this repo: it serves real users; dev is `main`, test is `test`, prod is `stable`"]
+  - name: a hand edit of envs.md is detected and nothing is written
+    run: [sh, -c, 'echo drift >> .agents/directives/envs.md && "$0" agents render shop --check', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 1
+      stdout_includes: ["differs", ".agents/directives/envs.md"]
+  - name: the drift is still in the file after --check
+    run: [grep, -c, "^drift$", ".agents/directives/envs.md"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ["1"]
+  - name: render rewrites envs.md and leaves a matching AGENTS.md alone
+    run: ["{{polispec}}", agents, render, shop]
+    expect:
+      exit: 0
+      stdout_includes: ["wrote ", ".agents/directives/envs.md", "unchanged ", "AGENTS.md"]
+  - name: check is ok again
+    run: ["{{polispec}}", agents, render, shop, --check]
+    expect:
+      exit: 0
+      stdout_includes: [ok]
+  - name: a repository path works as well as a project id
+    run: ["{{polispec}}", agents, render, "{{project.shop}}", --check]
+    expect:
+      exit: 0
+  - name: the render is deterministic
+    run: [sh, -c, 'cp .agents/directives/envs.md "$1" && "$0" agents render shop && cmp .agents/directives/envs.md "$1" && echo identical', "{{polispec}}", "{{scratch}}/envs.before.md"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: [identical]
+  - name: a removed [ENVS] row is detected and restored
+    run: [sh, -c, 'grep -v "^\[ENVS\]" AGENTS.md > AGENTS.tmp && mv AGENTS.tmp AGENTS.md && "$0" agents render shop --check; echo "check=$?"; "$0" agents render shop; grep -c "^\[ENVS\]" AGENTS.md', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ["check=1", "wrote ", "1"]
+  - name: an unknown project is refused
+    run: ["{{polispec}}", agents, render, nope]
+    expect:
+      exit: 1
+      stderr_includes: ["nope is neither a ledger project nor a directory"]
+  - name: doctor is clean of drift while the trust ref agrees
+    run: ["{{polispec}}", doctor, --json]
+    expect:
+      exit: [0, 1]
+      stdout_excludes: ["agents_drift"]
+  - name: the trust ref is moved to a different environments file
+    run: [sh, -c, 'git checkout -q stable && sed -i "s/exposure: public/exposure: tailnet/" specs/polispec/environments.yml && git add specs/polispec/environments.yml && git commit -q -m drift -- specs/polispec/environments.yml && git checkout -q main']
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+  - name: doctor reports agents_drift for the trust ref
+    run: ["{{polispec}}", doctor]
+    expect:
+      exit: 1
+      stdout_includes: ["shop  agents_drift", ".agents/directives/envs.md at stable differs from a fresh render"]
+  - name: a write to envs.md is a policy edit and asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Write
+      input: { file_path: "{{project.shop}}/.agents/directives/envs.md", content: "x\n" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: R-POLICY
+  - name: an edit of the [ENVS] row asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Edit
+      input: { file_path: "{{project.shop}}/AGENTS.md", old_string: "[ENVS] when", new_string: "[ENVS] now" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: R-POLICY
+  - name: an edit of another AGENTS.md line is an ordinary write and is allowed
+    hook:
+      harness: claude
+      event: pretool
+      tool: Edit
+      input: { file_path: "{{project.shop}}/AGENTS.md", old_string: "# AGENTS.md: shop", new_string: "# Shop" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow

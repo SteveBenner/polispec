@@ -1,0 +1,140 @@
+schema: polispec.smoke-scenario/v1
+unit: deployment_receipts
+summary: status --json carries a receipt, a latest attempt and verified true after verified deploys of test and stable, and verified goes false for a newer failed attempt, a newer in-progress attempt, a receipt without a record id, unchecked health and a pinned-behind tag, while only the receipt and latest_attempt fields are exposed
+fixture:
+  global: example
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+      files:
+        "lib/app.rb": "puts 1\n"
+        "VERSION": "0.1.0\n"
+steps:
+  - name: status before any deploy has no deployments
+    run: ["{{polispec}}", status, shop, --json]
+    expect:
+      exit: 0
+      json: { projects: [{ id: shop, deployments: {} }] }
+  - name: stable is published with a passing health command and the version is bumped
+    run: [sh, -c, 'sed -i "s/run: polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml/run: \"true\"/" specs/polispec/environments.yml && git add specs/polispec/environments.yml && git commit -q -m health -- specs/polispec/environments.yml && git push -q origin main main:stable && git fetch -q origin && git branch -f stable origin/stable && echo 0.2.0 > VERSION && git add VERSION && git commit -q -m bump -- VERSION && git push -q origin main']
+    cwd: "{{project.shop}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+  - name: promote to test deploys it
+    run: ["{{polispec}}", promote, shop, --to, test]
+    expect:
+      exit: 0
+      stdout_includes: ["deploy test: health ok"]
+  - name: the operator promotes to stable
+    run: ["{{polispec}}", promote, shop, --to, stable]
+    tty: ["promote shop to stable"]
+    expect:
+      exit: 0
+      stdout_includes: ["deploy stable: health ok"]
+  - name: test and stable are verified with the same record identity in receipt and latest attempt
+    run: ["{{polispec}}", status, shop, --json]
+    expect:
+      exit: 0
+      json:
+        projects:
+          - id: shop
+            deployments:
+              test: { receipt: { tag: v0.2.0, health: ok, pinned_behind: false }, latest_attempt: { tag: v0.2.0, health: ok, pinned_behind: false }, verified: true }
+              stable: { receipt: { tag: v0.2.0, health: ok, pinned_behind: false }, latest_attempt: { tag: v0.2.0, health: ok, pinned_behind: false }, verified: true }
+  - name: receipt and latest attempt expose only the contract fields
+    run:
+      - ruby
+      - -rjson
+      - -ropen3
+      - -e
+      - |
+        out, = Open3.capture2(ARGV[0], "status", "shop", "--json")
+        env = JSON.parse(out)["projects"][0]["deployments"]["test"]
+        puts "receipt=#{env['receipt'].keys.sort.join(',')}"
+        puts "attempt=#{env['latest_attempt'].keys.sort.join(',')}"
+        puts "same=#{env['receipt']['record_id'] == env['latest_attempt']['id']}"
+      - "{{polispec}}"
+    expect:
+      exit: 0
+      stdout_includes: ["receipt=at,health,pinned_behind,record_id,sha,tag", "attempt=at,health,id,pinned_behind,sha,tag", "same=true"]
+  - name: a newer failed attempt of test is appended to the deploy log
+    run: [sh, -c, 'printf "%s\n" "{\"id\":\"dpl_tamper_failed\",\"project\":\"shop\",\"env\":\"test\",\"sha\":\"0000000000000000000000000000000000000000\",\"tag\":\"v0.3.0\",\"health\":\"failed\",\"pinned_behind\":false,\"at\":\"2099-01-01T00:00:00Z\"}" >> "$1/deploys.jsonl"', sh, "{{scratch}}/state"]
+    expect:
+      exit: 0
+  - name: test is unverified after the newer failed attempt and stable is untouched
+    run: ["{{polispec}}", status, shop, --json]
+    expect:
+      exit: 0
+      json:
+        projects:
+          - id: shop
+            deployments:
+              test: { receipt: { health: ok }, latest_attempt: { id: dpl_tamper_failed, health: failed }, verified: false }
+              stable: { verified: true }
+  - name: a newer in-progress attempt of stable is appended
+    run: [sh, -c, 'printf "%s\n" "{\"id\":\"dpl_tamper_running\",\"project\":\"shop\",\"env\":\"stable\",\"health\":\"running\",\"at\":\"2099-01-02T00:00:00Z\"}" >> "$1/deploys.jsonl"', sh, "{{scratch}}/state"]
+    expect:
+      exit: 0
+  - name: stable is unverified while a newer attempt is in progress
+    run: ["{{polispec}}", status, shop, --json]
+    expect:
+      exit: 0
+      json:
+        projects:
+          - id: shop
+            deployments:
+              stable: { latest_attempt: { id: dpl_tamper_running }, verified: false }
+  - name: a fresh verified deploy of test restores verification
+    run: ["{{polispec}}", deploy, shop, test]
+    expect:
+      exit: 0
+      stdout_includes: ["health: ok"]
+  - name: test is verified again
+    run: ["{{polispec}}", status, shop, --json]
+    expect:
+      exit: 0
+      json: { projects: [{ id: shop, deployments: { test: { verified: true } } }] }
+  - name: the receipt of test loses its record id as a legacy receipt would
+    run: [ruby, -ryaml, -e, 'file = File.join(ARGV[0], "state.yml"); data = YAML.load_file(file); data["deployments"]["shop"]["test"].delete("record_id"); File.write(file, YAML.dump(data))', "{{scratch}}/state"]
+    expect:
+      exit: 0
+  - name: a receipt without a record id is unverified
+    run: ["{{polispec}}", status, shop, --json]
+    expect:
+      exit: 0
+      json: { projects: [{ id: shop, deployments: { test: { verified: false } } }] }
+  - name: a fresh deploy of test restores the record id
+    run: ["{{polispec}}", deploy, shop, test]
+    expect:
+      exit: 0
+  - name: the receipt of test now claims unchecked health
+    run: [ruby, -ryaml, -e, 'file = File.join(ARGV[0], "state.yml"); data = YAML.load_file(file); data["deployments"]["shop"]["test"]["health"] = "unchecked"; File.write(file, YAML.dump(data))', "{{scratch}}/state"]
+    expect:
+      exit: 0
+  - name: unchecked health is unverified
+    run: ["{{polispec}}", status, shop, --json]
+    expect:
+      exit: 0
+      json: { projects: [{ id: shop, deployments: { test: { receipt: { health: unchecked }, verified: false } } }] }
+  - name: a fresh deploy of test restores health
+    run: ["{{polispec}}", deploy, shop, test]
+    expect:
+      exit: 0
+  - name: the receipt of test now claims a pinned-behind tag
+    run: [ruby, -ryaml, -e, 'file = File.join(ARGV[0], "state.yml"); data = YAML.load_file(file); data["deployments"]["shop"]["test"]["pinned_behind"] = true; File.write(file, YAML.dump(data))', "{{scratch}}/state"]
+    expect:
+      exit: 0
+  - name: pinned_behind true is unverified
+    run: ["{{polispec}}", status, shop, --json]
+    expect:
+      exit: 0
+      json: { projects: [{ id: shop, deployments: { test: { receipt: { pinned_behind: true }, verified: false } } }] }
+  - name: a malformed deploy log line does not make an unverified env look verified
+    run: [sh, -c, 'printf "%s\n" "not json at all" >> "$1/deploys.jsonl" && "$0" status shop --json', "{{polispec}}", "{{scratch}}/state"]
+    expect:
+      exit: 0
+      json: { projects: [{ id: shop, deployments: { test: { verified: false } } }] }

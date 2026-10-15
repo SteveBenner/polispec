@@ -1,0 +1,142 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/roster resolve|check
+summary: roster resolve returns the default, bounds, environment permission and digest for a role and a pipeline phase, reports unknown names with exit 1, and roster check accepts a conforming profile and reports each baseline and bounds violation with exit 1
+fixture:
+  global: example
+  files:
+    "roster.yml": |
+      schema: polispec.roster/v1
+      project: shop
+      harness_effort:
+        claude: [low, medium, high, xhigh, max]
+        codex: [low, medium, high, xhigh]
+      roles:
+        reviewer: { default: { harness: claude, model: opus, effort: high }, bounds: { effort: { min: high } } }
+      pipelines:
+        feature:
+          phases:
+            build: { default: { harness: claude, model: sonnet, effort: medium, agent: coding-worker }, bounds: { harnesses: [claude, codex], effort: { min: medium, max: high }, budget_usd: { max: 5 } } }
+            spec: { default: { harness: claude, model: opus, effort: high } }
+      budgets: { per_run_usd_max: 8 }
+      environments:
+        dev: { roles: ["*"], pipelines: ["*"] }
+        test: { roles: [reviewer], pipelines: ["feature.*"] }
+        prod: { roles: [], pipelines: [] }
+    "good.json": '{"schema":1,"phases":{"spec":{"run":"own","harness":"claude","model":"opus","effort":"high","budget_usd":2},"build":{"harness":"claude","model":"sonnet","effort":"medium","budget_usd":3}}}'
+    "bare.json": '{"spec":{"run":"own","harness":"claude","model":"opus","effort":"high","budget_usd":2},"build":{"harness":"claude","model":"sonnet","effort":"high","budget_usd":3}}'
+    "low.json": '{"spec":{"run":"own","harness":"claude","model":"opus","effort":"high","budget_usd":2},"build":{"harness":"claude","model":"sonnet","effort":"low","budget_usd":3}}'
+    "over.json": '{"spec":{"run":"own","harness":"claude","model":"opus","effort":"high","budget_usd":2},"build":{"harness":"claude","model":"sonnet","effort":"max","budget_usd":50}}'
+    "haiku.json": '{"spec":{"run":"own","harness":"claude","model":"opus","effort":"high","budget_usd":2},"build":{"harness":"claude","model":"haiku","effort":"low","budget_usd":3}}'
+    "codex.json": '{"spec":{"run":"own","harness":"claude","model":"opus","effort":"high","budget_usd":2},"build":{"harness":"codex","model":"gpt-5.5-codex","effort":"max","budget_usd":3}}'
+    "badkey.json": '{"spec":{"run":"own","harness":"claude","model":"opus","effort":"high","budget_usd":2},"build":{"bogus":1}}'
+  projects:
+    - id: shop
+      variant: service
+      status: live
+steps:
+  - name: resolve a role from the trust ref roster as text
+    run: ["{{polispec}}", roster, resolve, shop, --role, coding-worker]
+    expect:
+      exit: 0
+      stdout_includes: ['default: {"harness":"claude","model":"sonnet","effort":"medium","agent":"coding-worker"}', "env_allowed (dev): true", "roster_digest: sha256:"]
+  - name: resolve a role as json
+    run: ["{{polispec}}", roster, resolve, shop, --role, coding-worker, --json]
+    expect:
+      exit: 0
+      json: { default: { harness: claude, model: sonnet, effort: medium, agent: coding-worker }, bounds: { effort: { min: medium } }, env_allowed: true }
+  - name: a role that the prod environment does not list is not allowed there
+    run: ["{{polispec}}", roster, resolve, shop, --role, reviewer, --env, prod, --json]
+    expect:
+      exit: 0
+      json: { default: { model: opus, effort: high }, env_allowed: false }
+  - name: an unknown role exits 1 with a json error
+    run: ["{{polispec}}", roster, resolve, shop, --role, nonexistent, --json]
+    expect:
+      exit: 1
+      json: { ok: false, error: "no role nonexistent in the roster" }
+  - name: resolve a pipeline phase from a roster file
+    run: ["{{polispec}}", roster, resolve, shop, --pipeline, feature, --phase, build, --roster, "{{files}}/roster.yml", --json]
+    expect:
+      exit: 0
+      json: { default: { model: sonnet, agent: coding-worker }, bounds: { effort: { min: medium, max: high }, budget_usd: { max: 5 } }, env_allowed: true }
+  - name: the phase is permitted in test by the pipeline glob and refused in prod
+    run: ["{{polispec}}", roster, resolve, shop, --pipeline, feature, --phase, build, --roster, "{{files}}/roster.yml", --env, prod, --json]
+    expect:
+      exit: 0
+      json: { env_allowed: false }
+  - name: an unknown phase exits 1
+    run: ["{{polispec}}", roster, resolve, shop, --pipeline, feature, --phase, nope, --roster, "{{files}}/roster.yml", --json]
+    expect:
+      exit: 1
+      json: { ok: false, error: "no phase nope in pipeline feature" }
+  - name: an unknown pipeline exits 1
+    run: ["{{polispec}}", roster, resolve, shop, --pipeline, nope, --phase, build, --json]
+    expect:
+      exit: 1
+      json: { ok: false, error: "no pipeline nope in the roster" }
+  - name: an unknown verb is a usage error
+    run: ["{{polispec}}", roster, bogus]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec roster resolve", "polispec roster check"]
+  - name: a conforming profile passes
+    run: ["{{polispec}}", roster, check, shop, --pipeline, feature, --profile, "{{files}}/good.json", --roster, "{{files}}/roster.yml", --json]
+    expect:
+      exit: 0
+      json: { ok: true }
+  - name: a bare phases map is accepted
+    run: ["{{polispec}}", roster, check, shop, --pipeline, feature, --profile, "{{files}}/bare.json", --roster, "{{files}}/roster.yml", --json]
+    expect:
+      exit: 0
+      json: { ok: true }
+  - name: a profile on stdin is read
+    run: ["{{polispec}}", roster, check, shop, --pipeline, feature, --profile, "-", --roster, "{{files}}/roster.yml", --json]
+    stdin: '{"spec":{"run":"own","harness":"claude","model":"opus","effort":"high","budget_usd":2},"build":{"harness":"claude","model":"sonnet","effort":"medium","budget_usd":3}}'
+    expect:
+      exit: 0
+      json: { ok: true }
+  - name: an effort below the bound is a violation
+    run: ["{{polispec}}", roster, check, shop, --pipeline, feature, --profile, "{{files}}/low.json", --roster, "{{files}}/roster.yml", --json]
+    expect:
+      exit: 1
+      json: { ok: false, violations: [{ phase: build, field: effort, value: low, bound: min medium }] }
+  - name: an effort and a budget above the bounds are violations
+    run: ["{{polispec}}", roster, check, shop, --pipeline, feature, --profile, "{{files}}/over.json", --roster, "{{files}}/roster.yml", --json]
+    expect:
+      exit: 1
+      stdout_includes: ['"field":"effort","value":"max","bound":"max high"', '"field":"budget_usd","value":50,"bound":"max 5"', '"bound":"max 8 (per_run_usd_max)"']
+  - name: an effort on a haiku model is a baseline violation
+    run: ["{{polispec}}", roster, check, shop, --pipeline, feature, --profile, "{{files}}/haiku.json", --roster, "{{files}}/roster.yml", --json]
+    expect:
+      exit: 1
+      stdout_includes: ['"bound":"empty for haiku models"']
+  - name: an effort outside the codex vocabulary is a baseline violation
+    run: ["{{polispec}}", roster, check, shop, --pipeline, feature, --profile, "{{files}}/codex.json", --roster, "{{files}}/roster.yml", --json]
+    expect:
+      exit: 1
+      stdout_includes: ['"bound":"empty or one of low, medium, high, xhigh for codex"']
+  - name: a disallowed key is reported as text
+    run: ["{{polispec}}", roster, check, shop, --pipeline, feature, --profile, "{{files}}/badkey.json", --roster, "{{files}}/roster.yml"]
+    expect:
+      exit: 1
+      stdout_includes: ["build.bogus = 1  (key not allowed in build)"]
+  - name: a missing phase is reported
+    run: ["{{polispec}}", roster, check, shop, --pipeline, feature, --profile, "-", --roster, "{{files}}/roster.yml", --json]
+    stdin: '{"build":{"harness":"claude","model":"sonnet","effort":"medium","budget_usd":3}}'
+    expect:
+      exit: 1
+      json: { ok: false, violations: [{ phase: spec, field: phase, bound: required }] }
+  - name: a phase that the environment does not permit is a violation
+    run: ["{{polispec}}", roster, check, shop, --pipeline, feature, --profile, "{{files}}/good.json", --roster, "{{files}}/roster.yml", --env, prod, --json]
+    expect:
+      exit: 1
+      stdout_includes: ['"bound":"pipeline feature.build not permitted in prod"']
+  - name: the same profile passes where the environment permits the pipeline
+    run: ["{{polispec}}", roster, check, shop, --pipeline, feature, --profile, "{{files}}/good.json", --roster, "{{files}}/roster.yml", --env, test]
+    expect:
+      exit: 0
+  - name: an unledgered project is refused
+    run: ["{{polispec}}", roster, check, nope, --pipeline, feature, --profile, "{{files}}/good.json"]
+    expect:
+      exit: 1
+      stderr_includes: ["project nope is not in the ledger"]

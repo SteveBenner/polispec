@@ -1,0 +1,136 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/plan, apply
+summary: plan previews and classifies a package, project, ledger and global change without writing; apply runs a tightening package, refuses a loosening plan until the recomputed plan id is confirmed, and refuses a repeat or a stale id
+fixture:
+  global: example
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      files:
+        "lib/app.rb": "puts 1\n"
+steps:
+  - name: a fresh repository is created for the package
+    run: [sh, -c, 'mkdir "$1" && cd "$1" && git init -q -b main && echo hi > README.md && git add README.md && git commit -q -m init', sh, "{{scratch}}/fresh"]
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/fresh/README.md"]
+  - name: plan of a package is tightening and writes nothing
+    run: ["{{polispec}}", plan, environment-control, --repo, "{{scratch}}/fresh", --variant, service, --json]
+    expect:
+      exit: 0
+      json: { schema: polispec.plan/v1, classification: tightening, needs_confirm: false }
+      files_absent: ["{{scratch}}/fresh/specs"]
+  - name: plan text lists files, the ledger change, probes and the step names
+    run: ["{{polispec}}", plan, environment-control, --repo, "{{scratch}}/fresh", --variant, service]
+    expect:
+      exit: 0
+      stdout_includes: ["classification: tightening; needs_confirm: false", "add specs/polispec/policy.yml", "adds project fresh with status onboarding", "probes: 36 judged", "files = 1_scaffold", "checkouts = 6_checkouts"]
+  - name: apply --dry-run is the same as plan and writes nothing
+    run: ["{{polispec}}", apply, environment-control, --repo, "{{scratch}}/fresh", --variant, service, --dry-run]
+    expect:
+      exit: 0
+      stdout_includes: ["files:", "ledger: would add fresh"]
+      files_absent: ["{{scratch}}/fresh/specs"]
+  - name: apply of the tightening package needs no confirmation
+    run: ["{{polispec}}", apply, environment-control, --repo, "{{scratch}}/fresh", --variant, service, --commit]
+    expect:
+      exit: 0
+      stdout_includes: ["files: done wrote specs/polispec/environments.yml", "ledger: done fresh added", "render: done", "commit: done committed", "branches: done created test and stable at main"]
+      files_exist: ["{{scratch}}/fresh/specs/polispec/policy.yml", "{{scratch}}/fresh/.agents/directives/envs.md", "{{scratch}}/fresh/AGENTS.md"]
+  - name: the second apply is refused as already applied
+    run: ["{{polispec}}", apply, environment-control, --repo, "{{scratch}}/fresh", --variant, service, --commit]
+    expect:
+      exit: 1
+      stderr_includes: ["already_applied: environment-control 1.0.0 is already applied to fresh"]
+  - name: status records the package for the new project
+    run: ["{{polispec}}", status, fresh]
+    expect:
+      exit: 0
+      stdout_includes: ["fresh: onboarding trust_ref=stable", "package environment-control 1.0.0 (service)"]
+  - name: an unknown package is refused
+    run: ["{{polispec}}", plan, no-such-package, --repo, "{{scratch}}/fresh"]
+    expect:
+      exit: 1
+  - name: an unchanged project plan is neutral
+    run: ["{{polispec}}", plan, "project:shop", --json]
+    expect:
+      exit: 0
+      json: { classification: neutral, needs_confirm: false }
+  - name: the project policy is loosened on main
+    run: [sh, -c, 'sed -i "s/verdict: deny, reason: \"the production branch moves/verdict: allow, reason: \"the production branch moves/" specs/polispec/policy.yml && git diff --stat']
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ["specs/polispec/policy.yml | 2 +-"]
+  - name: plan of the loosened project names the changed probes
+    run: ["{{polispec}}", plan, "project:shop"]
+    expect:
+      exit: 0
+      stdout_includes: ["classification: loosening; needs_confirm: true", "loosen: shop probe git.push stable (prod): deny R-PROD-GIT -> allow R-PROD-GIT", "policy shop: rules ~1", "probes: 36 judged, 5 changed"]
+  - name: apply of the loosening plan is refused without a confirmation
+    run: ["{{polispec}}", apply, "project:shop"]
+    expect:
+      exit: 1
+      stderr_includes: ["confirm_required: this plan is loosening and needs confirmation", "plan_id: plan_"]
+  - name: a stale plan id is refused as plan_changed
+    run: ["{{polispec}}", apply, "project:shop", --confirm, plan_000000000000000000000000]
+    expect:
+      exit: 1
+      stderr_includes: ["plan_changed: the plan changed since plan_000000000000000000000000"]
+  - name: apply with the recomputed plan id commits on main
+    run: [sh, -c, 'id=$("$0" plan project:shop --json | sed -n "s/.*\"plan_id\":\"\([^\"]*\)\".*/\1/p") && "$0" apply project:shop --confirm "$id" && git log -1 --format=%s', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ["committed specs/polispec/policy.yml", "Apply polispec plan plan_"]
+  - name: the working tree is clean after the confirmed apply
+    run: [git, status, --short]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_excludes: ["policy.yml"]
+  - name: a proposed ledger that changes a status is loosening
+    run: [sh, -c, 'sed "s/^    status: live/    status: onboarding/" "$1" > "$2" && "$0" plan ledger --from "$2"', "{{polispec}}", "{{ledger}}", "{{scratch}}/ledger.proposed.yml"]
+    expect:
+      exit: 0
+      stdout_includes: ["classification: loosening; needs_confirm: true", "loosen: ledger changes status of shop"]
+  - name: apply of that ledger is refused without a confirmation
+    run: [sh, -c, '"$0" apply ledger --from "$1"', "{{polispec}}", "{{scratch}}/ledger.proposed.yml"]
+    expect:
+      exit: 1
+      stderr_includes: ["confirm_required"]
+  - name: the live ledger still says live
+    run: ["{{polispec}}", status, shop]
+    expect:
+      exit: 0
+      stdout_includes: ["shop: live"]
+  - name: apply of the confirmed ledger replaces it and backs the old one up
+    run: [sh, -c, 'id=$("$0" plan ledger --from "$1" --json | sed -n "s/.*\"plan_id\":\"\([^\"]*\)\".*/\1/p") && "$0" apply ledger --from "$1" --confirm "$id"', "{{polispec}}", "{{scratch}}/ledger.proposed.yml"]
+    expect:
+      exit: 0
+  - name: status now reports onboarding
+    run: ["{{polispec}}", status, shop]
+    expect:
+      exit: 0
+      stdout_includes: ["shop: onboarding"]
+  - name: plan global needs a proposed directory when the global layer is a plain directory
+    run: ["{{polispec}}", plan, global]
+    expect:
+      exit: 1
+      stderr_includes: ["global_from_required"]
+  - name: a proposed global shelf that drops a deny is loosening and always needs confirmation
+    run: [sh, -c, 'mkdir "$1" && sed "s/verdict: deny/verdict: allow/" "$2/global.yml" > "$1/global.yml" && "$0" plan global --from "$1"', "{{polispec}}", "{{scratch}}/global-proposed", "{{global}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["classification: loosening; needs_confirm: true", "global changes always need confirmation", "changes rule global/SMOKE-NOSECRETS"]
+  - name: apply global refuses without a confirmation
+    run: ["{{polispec}}", apply, global, --from, "{{scratch}}/global-proposed"]
+    expect:
+      exit: 1
+      stderr_includes: ["confirm_required"]
+  - name: a confirmed apply of a plain-directory global is refused as not a repository
+    run: [sh, -c, 'id=$("$0" plan global --from "$1" --json | sed -n "s/.*\"plan_id\":\"\([^\"]*\)\".*/\1/p") && "$0" apply global --from "$1" --confirm "$id"', "{{polispec}}", "{{scratch}}/global-proposed"]
+    expect:
+      exit: 1
+      stderr_includes: ["global_not_repo: apply global needs polispec.global.repo"]

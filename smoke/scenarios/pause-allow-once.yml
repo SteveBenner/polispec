@@ -1,0 +1,186 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/pause, allow-once
+summary: pause and allow-once refuse without a terminal and on a wrong phrase, a typed pause is capped at 240 minutes and relaxes the guard, and a redeemed allow-once id allows exactly the matching call once and then denies with a new id
+fixture:
+  global: example
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+steps:
+  - name: a codex policy edit is denied with an allow-once id
+    hook:
+      harness: codex
+      event: pretool
+      tool: Write
+      input: { file_path: "{{project.shop}}/specs/polispec/policy.yml", content: "x" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-POLICY
+      stdout_includes: ["AUTHORIZATION REQUIRED", "polispec allow-once alo_", "the agent must never run it"]
+  - name: an unknown allow-once id is refused
+    run: ["{{polispec}}", allow-once, alo_000000000000]
+    expect:
+      exit: 1
+      stderr_includes: ["unknown allow-once id alo_000000000000"]
+  - name: a real id without a terminal is refused
+    run: [sh, -c, 'id=$(echo "$1" | "$0" hook pretool --harness codex | sed -n "s/.*\(alo_[0-9a-f]*\).*/\1/p" | head -1) && "$0" allow-once "$id"', "{{polispec}}", '{"hook_event_name":"PreToolUse","session_id":"s","cwd":"{{project.shop}}","tool_name":"Write","tool_input":{"file_path":"{{project.shop}}/specs/polispec/policy.yml","content":"x"}}']
+    expect:
+      exit: 1
+      stderr_includes: ["not_tty: this action needs an interactive terminal"]
+  - name: allow-once without an id prints the usage
+    run: ["{{polispec}}", allow-once]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec allow-once <alo_id>"]
+  - name: a wrong typed phrase leaves the grant unredeemed
+    run:
+      - ruby
+      - -e
+      - |
+        require "pty"
+        pol, payload, mode = ARGV
+        ask = lambda do
+          IO.popen([pol, "hook", "pretool", "--harness", "codex"], "r+") { |io| io.write(payload); io.close_write; io.read }
+        end
+        id = ask.call[/alo_[0-9a-f]+/]
+        abort "no id" unless id
+        puts "id=#{id}"
+        buf = +""
+        status = nil
+        PTY.spawn(pol, "allow-once", id) do |r, w, pid|
+          buf << r.readpartial(4096) until buf.include?("> ")
+          w.puts(mode == "right" ? "allow-once #{id}" : "nope")
+          begin
+            loop { buf << r.readpartial(4096) }
+          rescue EOFError, Errno::EIO
+          end
+          _, status = Process.wait2(pid)
+        end
+        puts buf
+        if mode == "right"
+          first = ask.call
+          puts "retry1=#{first.empty? ? 'allowed' : 'blocked'}"
+          second = ask.call
+          puts "retry2=#{second.include?('AUTHORIZATION REQUIRED') ? 'denied' : 'other'}"
+          puts "newid=#{second[/alo_[0-9a-f]+/] != id}"
+        else
+          puts "still=#{ask.call.include?('AUTHORIZATION REQUIRED') ? 'denied' : 'other'}"
+        end
+        exit status.exitstatus
+      - "{{polispec}}"
+      - '{"hook_event_name":"PreToolUse","session_id":"s","cwd":"{{project.shop}}","tool_name":"Write","tool_input":{"file_path":"{{project.shop}}/specs/polispec/policy.yml","content":"x"}}'
+      - wrong
+    expect:
+      exit: 1
+      stdout_includes: ["Allow one call for shop (dev, policy.edit, rule R-POLICY):", "write {{project.shop}}/specs/polispec/policy.yml", "Type exactly: allow-once alo_", "confirmation_failed: the typed phrase did not match; nothing was done", "still=denied"]
+  - name: the typed phrase redeems the id, allows the call once, then denies with a new id
+    run:
+      - ruby
+      - -e
+      - |
+        require "pty"
+        pol, payload, mode = ARGV
+        ask = lambda do
+          IO.popen([pol, "hook", "pretool", "--harness", "codex"], "r+") { |io| io.write(payload); io.close_write; io.read }
+        end
+        id = ask.call[/alo_[0-9a-f]+/]
+        abort "no id" unless id
+        puts "id=#{id}"
+        buf = +""
+        status = nil
+        PTY.spawn(pol, "allow-once", id) do |r, w, pid|
+          buf << r.readpartial(4096) until buf.include?("> ")
+          w.puts(mode == "right" ? "allow-once #{id}" : "nope")
+          begin
+            loop { buf << r.readpartial(4096) }
+          rescue EOFError, Errno::EIO
+          end
+          _, status = Process.wait2(pid)
+        end
+        puts buf
+        if mode == "right"
+          first = ask.call
+          puts "retry1=#{first.empty? ? 'allowed' : 'blocked'}"
+          second = ask.call
+          puts "retry2=#{second.include?('AUTHORIZATION REQUIRED') ? 'denied' : 'other'}"
+          puts "newid=#{second[/alo_[0-9a-f]+/] != id}"
+        else
+          puts "still=#{ask.call.include?('AUTHORIZATION REQUIRED') ? 'denied' : 'other'}"
+        end
+        exit status.exitstatus
+      - "{{polispec}}"
+      - '{"hook_event_name":"PreToolUse","session_id":"s","cwd":"{{project.shop}}","tool_name":"Write","tool_input":{"file_path":"{{project.shop}}/specs/polispec/policy.yml","content":"x"}}'
+      - right
+    expect:
+      exit: 0
+      stdout_includes: ["redeemed; the matching call is allowed once within 10 minutes", "retry1=allowed", "retry2=denied", "newid=true"]
+  - name: the allow-once events show in the digest
+    run: ["{{polispec}}", digest]
+    expect:
+      exit: 0
+      stdout_includes: ["shop: deny "]
+  - name: a push to stable is denied before any pause
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: pause without a terminal is refused
+    run: ["{{polispec}}", pause, shop, --minutes, "30", --reason, testing]
+    expect:
+      exit: 1
+      stderr_includes: ["not_tty: this action needs an interactive terminal"]
+  - name: pause without a reason prints the usage
+    run: ["{{polispec}}", pause, shop]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec pause <project> --minutes N --reason TEXT"]
+  - name: pause of an unledgered project is refused
+    run: ["{{polispec}}", pause, nope, --minutes, "30", --reason, testing]
+    expect:
+      exit: 1
+      stderr_includes: ["nope is not in the ledger"]
+  - name: a wrong typed phrase pauses nothing
+    run: ["{{polispec}}", pause, shop, --minutes, "30", --reason, testing]
+    tty: ["wrong"]
+    expect:
+      exit: 1
+      stdout_includes: ["Pause the guard for shop for 30 minutes (reason: testing).", "Type exactly: pause shop", "confirmation_failed: the typed phrase did not match; nothing was done"]
+  - name: status shows no pause yet
+    run: ["{{polispec}}", status, shop]
+    expect:
+      exit: 0
+      stdout_excludes: ["paused until"]
+  - name: the typed phrase pauses and caps the minutes at 240
+    run: ["{{polispec}}", pause, shop, --minutes, "500", --reason, testing]
+    tty: ["pause shop"]
+    expect:
+      exit: 0
+      stdout_includes: ["for 240 minutes", "polispec: shop paused until ", "(capped from 500)"]
+  - name: status shows the pause and its reason
+    run: ["{{polispec}}", status, shop]
+    expect:
+      exit: 0
+      stdout_includes: ["paused until ", "(testing)"]
+  - name: the push to stable is allowed during the pause
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: the digest counts the pause
+    run: ["{{polispec}}", digest]
+    expect:
+      exit: 0
+      stdout_includes: ["pauses 1", "pause 240m by operator: testing"]
