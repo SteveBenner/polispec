@@ -35,8 +35,9 @@ global shelf or the ledger. In short:
 - Rulebook changes go through `polispec plan` and `polispec apply`. Loosening,
   mixed and global plans, status flips and enforce-mode changes need the user's
   yes before `apply --confirm <plan-id>`.
-- `polispec apply --with-stewardship` makes sure the installed polispec ships
-  this rule, checks the runtime protection and pins the runtime before it
+- `polispec steward --check` reports whether the host is protected;
+  `polispec steward` (or `apply --with-stewardship`) makes sure the installed
+  polispec ships this rule, checks the runtime protection and pins the runtime before it
   applies anything.
 
 ## Changing it

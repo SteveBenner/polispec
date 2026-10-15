@@ -15,7 +15,7 @@ The polispec that runs the guard judges every agent tool call on the host. If it
 ## Install, upgrade, repair
 
 - Install and upgrade through rplugin only: `rplugin install polispec`, pinned with `--ref <tag>`, then `rplugin doctor polispec` at zero findings. Never copy files into the plugin store or edit generated harness artifacts by hand.
-- `polispec apply --with-stewardship` checks, and where missing sets up, the installed copy of this rule, the runtime protection, and a pinned runtime at the running version's tag before doing anything else. Use it the first time polispec meets a host or a project.
+- `polispec steward --check` reports whether the host is protected, and `polispec steward` (or `polispec apply --with-stewardship`) checks, and where missing sets up, the installed copy of this rule, the runtime protection, and a pinned runtime at the running version's tag before doing anything else. Use it the first time polispec meets a host or a project.
 - Settings change only through `rplugin settings`. Switching `polispec.enforce` between `advise` and `enforce`, or changing the ledger or global source, needs the user's explicit yes through the question tool.
 - Sealing, plane activation, rollback and harness-control loosening belong to the authenticated operator. Give them the command; do not run it.
 

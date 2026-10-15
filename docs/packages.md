@@ -11,7 +11,7 @@ Every change to a rulebook goes through two commands. `polispec plan` shows what
 - [The environment-control package](#the-environment-control-package)
 - [Upgrades](#upgrades)
 - [Verdict replay](#verdict-replay)
-- [apply --with-stewardship](#apply---with-stewardship)
+- [Stewardship: polispec steward and apply --with-stewardship](#stewardship-polispec-steward-and-apply---with-stewardship)
 
 ## What can be planned
 
@@ -114,12 +114,12 @@ A plan judges a set of actions twice, once against the current composed rulebook
 - **Probes** are generated from each affected project's environments: git operations on every environment branch, writes and deletes in every checkout, secret reads, data writes, service control, deploy and promote per environment, data copies between every pair of environments, an edit of the policy file, and a write into the polispec runtime.
 - **Journal** entries are replayed too when `polispec.verdicts.journal` is `on`. The journal keeps the canonical facts of the last 5000 judged actions (project, environment, action class, tool, ref, home-relative path, verdict and rule id) and never command text, file contents or environment values. A plan replays the last 14 days. It is off by default.
 
-## apply --with-stewardship
+## Stewardship: polispec steward and apply --with-stewardship
 
-`--with-stewardship` makes apply protect the host before it changes anything. It runs three checks, skips each one already satisfied, and stops before the apply on any failure:
+`polispec steward` protects the host on its own; `polispec steward --check` only reports, changes nothing, and exits 1 when a step is not satisfied. `apply --with-stewardship` runs the same steps before an apply and stops before changing anything on any failure. Each step is skipped when already satisfied:
 
-1. **Rule.** The running polispec and the tree the plugin store links to both ship `rules/polispec-stewardship.md` in the manifest's rules; if not, `rplugin install <runtime root>`. rplugin installs rules natively where a harness has a rules surface (Antigravity CLI); other harnesses read the same guidance through the polispec skill.
+1. **Rule.** The running polispec and the tree the plugin store links to both ship `rules/polispec-stewardship.md` in the manifest's rules; if not, `rplugin install <runtime root>`. With rplugin 1.15.0 or later and a Claude Code home present, the rule must also be linked at `<claude home>/rules/rplugin/polispec/polispec-stewardship.md`; if not, `rplugin install polispec`. Antigravity CLI loads rules natively too; Codex, Hermes, Pi and the DeepSeek TUI have no rules directory and read the same guidance through the polispec skill.
 2. **Protection.** The runtime is a clone or a pinned release, so the built-in `R-POLISPEC-RUNTIME` protection applies.
-3. **Pin.** A clone runtime is pinned to the tag of the version it is running with `rplugin install <clone> --ref v<VERSION>`. It never upgrades or downgrades; a missing tag fails the step.
+3. **Pin.** A clone runtime is pinned to the tag of the version it is running with `rplugin install <clone> --ref v<VERSION>`, so running `polispec steward` from a clone at a newer released version re-pins the host to that version. A missing tag fails the step.
 
-Each prints `stewardship_<n>: ok|installed|failed <detail>`. See [operator](operator.md#the-runtime-and-stewardship) for the runtime kinds.
+Each prints `stewardship_<n>: ok|installed|missing|failed <detail>` (`missing` only under `--check`, naming what would run); `--json` prints the runtime, the steps and `ok`. See [operator](operator.md#the-runtime-and-stewardship) for the runtime kinds.
