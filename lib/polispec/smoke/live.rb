@@ -226,7 +226,7 @@ module Polispec
         hooks["PostToolUse"] = entry.call(commands["post"], "*") unless commands["post"].empty?
         hooks["Stop"] = entry.call(commands["stop"], nil) unless commands["stop"].empty?
         settings = File.join(dir, "claude-settings.json")
-        body = { "hooks" => hooks }
+        body = { "hooks" => hooks, "permissions" => { "allow" => ["Bash(polispec resolve:*)", "Bash(polispec resolve)"] } }
         body["sandbox"] = { "enabled" => false, "failIfUnavailable" => false } if sandbox_off
         File.write(settings, JSON.pretty_generate(body))
         [which("claude"), "-p", live["prompt"], "--model", CLAUDE_MODEL, "--setting-sources", "project", "--settings", settings, "--strict-mcp-config",
