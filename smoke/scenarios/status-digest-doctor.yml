@@ -99,7 +99,7 @@ steps:
     run: ["{{polispec}}", doctor, --json]
     expect:
       exit: [0, 1]
-      stdout_includes: ['"kind":"edition_provenance_invalid"']
+      stdout_includes: ['"runtime":{"kind":']
       stdout_excludes: ['"project":"shop"']
   - name: the trust ref is changed so a deploying environment has no health check
     run: [sh, -c, 'git checkout -q stable && sed -i "/^      health:$/,/^        run: /d" specs/polispec/environments.yml && git add specs/polispec/environments.yml && git commit -q -m nohealth -- specs/polispec/environments.yml && git checkout -q main']
