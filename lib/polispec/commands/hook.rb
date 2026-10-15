@@ -328,8 +328,9 @@ module Polispec
       lambda do |action|
         target = target_for.call(action)
         next false unless target && target.policy.is_a?(Hash) && target.policy_source != "controls"
-        Array(target.policy["rules"]).any? do |rule|
-          match = rule["match"] || {}
+        layer_context = { cwd: cwd, ledger: ledger }
+        rule, = Layers.pick(target, layer_context) do |candidate|
+          match = candidate["match"] || {}
           exact = match["server"].to_s == action.env_hint["server"].to_s && match["operation"].to_s == action.env_hint["operation"].to_s
           next false unless exact && !match["server"].to_s.empty? && !match["operation"].to_s.empty?
           context = { cwd: cwd, ledger: ledger, predicate_memo: {}, findings: [], tool: input.tool_name.to_s, role: input.agent_type.to_s }
@@ -337,6 +338,7 @@ module Polispec
           raise Polispec::Error, "policy declaration predicate evidence is unavailable" unless context[:findings].empty?
           matched
         end
+        !rule.nil?
       end
     end
 

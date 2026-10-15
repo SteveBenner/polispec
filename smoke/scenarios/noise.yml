@@ -1,12 +1,13 @@
 schema: polispec.smoke-scenario/v1
 unit: harness_controls
-summary: with harness controls on, benign built-in tools and read-only shell commands stay allowed in a governed live project while an undeclared MCP call still asks
+summary: with harness controls on, benign built-in tools and read-only shell commands stay allowed in a governed live project while an undeclared MCP call still asks and a declared one is allowed
 requires: [harness_controls]
 fixture:
   enforce: enforce
   global: files
   global_files:
-    "global.yml": "schema: polispec.global/v1\nsummary: Smoke baseline with one rule so every path is governed.\nrules:\n  - { id: SMOKE-NOSECRETS, match: { class: [secrets.read], env: prod }, verdict: deny, reason: \"smoke baseline: no production secrets\" }\n"
+    "modules/mcp-declared.yml": "schema: polispec.module/v1\nname: mcp-declared\nsummary: Smoke module declaring one MCP operation.\nrules:\n  - { id: SMOKE-MCP-DESK-TRIAGE, match: { class: [mcp.call], server: desk, operation: triage }, verdict: allow, reason: \"smoke declaration: the desk may triage\" }\n"
+    "global.yml": "schema: polispec.global/v1\nsummary: Smoke baseline with one rule so every path is governed.\nincludes: [mcp-declared]\nrules:\n  - { id: SMOKE-NOSECRETS, match: { class: [secrets.read], env: prod }, verdict: deny, reason: \"smoke baseline: no production secrets\" }\n  - { id: SMOKE-MCP-DESK-PAGE, match: { class: [mcp.call], server: desk, operation: page }, verdict: allow, reason: \"smoke declaration: the desk may page\" }\n"
   projects:
     - id: shop
       variant: service
@@ -54,3 +55,18 @@ steps:
   - name: an undeclared MCP call asks
     hook: { harness: claude, event: pretool, tool: mcp__srv__op, input: {}, cwd: "{{project.shop}}" }
     expect: { decision: ask }
+  - name: a declared MCP operation is allowed
+    hook: { harness: claude, event: pretool, tool: mcp__desk__page, input: {}, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: another operation of the declared server still asks
+    hook: { harness: claude, event: pretool, tool: mcp__desk__restore, input: {}, cwd: "{{project.shop}}" }
+    expect: { decision: ask }
+  - name: a declared MCP operation outside any project is allowed
+    hook: { harness: claude, event: pretool, tool: mcp__desk__page, input: {}, cwd: "{{scratch}}" }
+    expect: { decision: allow }
+  - name: an operation declared in an included module is allowed
+    hook: { harness: claude, event: pretool, tool: mcp__desk__triage, input: {}, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: a declared MCP operation is allowed under codex
+    hook: { harness: codex, event: pretool, tool: mcp__desk__page, input: {}, cwd: "{{project.shop}}" }
+    expect: { decision: allow }

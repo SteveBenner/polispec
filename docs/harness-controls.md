@@ -62,7 +62,7 @@ Verification checks current owned entries, permissions, provenance, and backend 
 
 Unsealed callbacks use `polispec.enforce`; select `enforce` for blocking behavior. `advise` reports decisions without blocking. Protected plane settings force `enforce`. Native permissions generated into a harness remain subject to that harness's own behavior.
 
-The guard loads the protected core and validated user/project installation receipts. A callback's `--controls-file` argument cannot replace protected authority. Mutable overlays may tighten the result but cannot declare an otherwise undeclared MCP operation allowed.
+The guard loads the protected core and validated user/project installation receipts. A callback's `--controls-file` argument cannot replace protected authority. Mutable overlays may tighten the result but cannot declare an otherwise undeclared MCP operation allowed. An MCP operation is declared by a rule with an exact `server` and `operation` in any layer the engine composes for the call: the global shelf, a module it includes, or a live project's committed policy, for example `{ id: MCP-DESK-PAGE, match: { class: [mcp.call], server: teach-service-desk, operation: page }, verdict: allow }`. Keep `class: [mcp.call]` on the rule so it does not count as governing reads. The rule's verdict then applies as usual. Under Codex with no sealed plane an undeclared operation is denied rather than asked, because a control ask needs the plane.
 
 ## Decisions and editions
 
