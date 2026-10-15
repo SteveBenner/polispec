@@ -1,4 +1,5 @@
 schema: rplugin.hooks/v1
 hooks:
-  - { event: pre_tool, match: any, run: ["${PLUGIN_ROOT}/bin/polispec", "hook", "pretool", "--harness", "${HARNESS}"], timeout_s: 10, blocking: true }
-  - { event: session_start, run: ["${PLUGIN_ROOT}/bin/polispec", "hook", "session", "--harness", "${HARNESS}"], timeout_s: 10, blocking: false }
+  - { event: pre_tool, match: any, run: ["${PLUGIN_ROOT}/bin/polispec-guard", "pretool", "--harness", "${HARNESS}"], timeout_s: 10, blocking: true }
+  - { event: session_start, run: ["${PLUGIN_ROOT}/bin/polispec-guard", "session", "--harness", "${HARNESS}"], timeout_s: 10, blocking: false }
+  - { event: subagent_start, run: ["${PLUGIN_ROOT}/bin/polispec-guard", "session", "--harness", "${HARNESS}"], timeout_s: 10, blocking: false }

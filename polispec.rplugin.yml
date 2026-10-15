@@ -9,8 +9,8 @@ ports:
   required: [state, events]
   optional: [schedule, notify, registry, decide]
 extensions:
-  enabled: [rstack, hermes, pi, deepseek-tui, antigravity, os]
-  only: [hermes, pi, deepseek-tui, antigravity]
+  enabled: [rstack, claude-code, hermes, pi, deepseek-tui, antigravity, os]
+  only: [claude-code, hermes, pi, deepseek-tui, antigravity]
 corpora: null
 settings:
   - { key: polispec.edition, type: enum, options: [standard, lock], default: standard, scopes: [machine], description: "Requested edition; lock still requires verified native and protected prerequisites." }

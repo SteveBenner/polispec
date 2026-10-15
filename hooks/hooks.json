@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/polispec\" hook session --harness claude-code",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/polispec-guard\" session --harness claude-code",
             "timeout": 10
           }
         ]
@@ -16,7 +16,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/polispec\" hook pretool --harness claude-code",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/polispec-guard\" pretool --harness claude-code",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/polispec-guard\" session --harness claude-code",
             "timeout": 10
           }
         ]
