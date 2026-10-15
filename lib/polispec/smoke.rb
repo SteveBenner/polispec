@@ -313,7 +313,8 @@ module Polispec
     end
 
     def polispec_info
-      dirty = git(ROOT, "status", "--porcelain")
+      pinned = Runtime.pinned?
+      dirty = pinned ? "" : git(ROOT, "status", "--porcelain")
       repo = File.exist?(File.join(ROOT, ".git"))
       edition = begin
         File.read(File.join(ROOT, "EDITION")).strip
@@ -322,9 +323,9 @@ module Polispec
       end
       {
         "version" => Polispec.version, "edition" => edition,
-        "commit" => git(ROOT, "rev-parse", "HEAD"),
+        "commit" => Runtime.commit,
         "dirty" => dirty.nil? ? nil : !dirty.empty?,
-        "install" => repo ? "clone" : "package"
+        "install" => pinned ? "pinned" : (repo ? "clone" : "package")
       }
     end
 

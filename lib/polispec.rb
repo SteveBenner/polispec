@@ -63,6 +63,7 @@ module Polispec
   end
 end
 
+require_relative "polispec/runtime"
 require_relative "polispec/types"
 require_relative "polispec/state"
 require_relative "polispec/events"

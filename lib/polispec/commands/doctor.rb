@@ -29,7 +29,7 @@ module Polispec
       check_runtime(findings)
       check_release(findings)
       check_plane(findings)
-      json ? puts(JSON.generate("ok" => findings.empty?, "findings" => findings)) : print_text(findings)
+      json ? puts(JSON.generate("ok" => findings.empty?, "runtime" => runtime_info, "findings" => findings)) : print_text(findings)
       findings.empty? ? 0 : 1
     end
 
@@ -160,10 +160,28 @@ module Polispec
       nil
     end
 
+    def git_dir
+      Runtime.pinned? ? Runtime.release["source"].to_s : ROOT
+    end
+
+    def check_pinned_digest(findings)
+      return true unless Runtime.pinned?
+      return true if Runtime.tree_digest(Runtime.root) == Runtime.release["tree_digest"]
+
+      findings << finding(nil, "edition_provenance_invalid", "pinned release differs from its record")
+      false
+    end
+
     def check_edition_provenance(edition, version, manifest, findings)
-      root = git!("rev-parse", "--show-toplevel").stdout.chomp
-      raise GitFailure, "Git top level differs from the plugin root" unless File.realpath(root) == File.realpath(ROOT)
-      head = git_oid("HEAD^{commit}")
+      return unless check_pinned_digest(findings)
+      if Runtime.pinned?
+        raise GitFailure, "source repository #{git_dir} is unavailable" unless File.directory?(git_dir) && git("rev-parse", "--git-dir", allowed: [0, 128]).status.zero?
+        head = git_oid("#{Runtime.release['commit']}^{commit}")
+      else
+        root = git!("rev-parse", "--show-toplevel").stdout.chomp
+        raise GitFailure, "Git top level differs from the plugin root" unless File.realpath(root) == File.realpath(ROOT)
+        head = git_oid("HEAD^{commit}")
+      end
       committed_edition!(head, edition)
       if version && manifest
         committed_file!(head, "VERSION", File.binread(File.join(ROOT, "VERSION"), FILE_LIMIT + 1))
@@ -177,12 +195,23 @@ module Polispec
 
     def check_standard_provenance(head)
       main = required_ref("refs/heads/main")
+      return check_on_branch(head, "main") if Runtime.pinned?
       raise GitFailure, "invalid: standard HEAD differs from local main" unless main == head
+    end
+
+    def check_on_branch(head, branch)
+      result = git("merge-base", "--is-ancestor", head, "refs/heads/#{branch}", allowed: [0, 1])
+      return if result.status.zero?
+      raise GitFailure, "invalid: pinned release #{head[0, 12]} is not on #{branch} of #{git_dir}"
     end
 
     def check_lock_provenance(head)
       lock = required_ref("refs/heads/polispec-lock")
-      raise GitFailure, "invalid: lock HEAD differs from local polispec-lock" unless lock == head
+      if Runtime.pinned?
+        check_on_branch(head, "polispec-lock")
+      else
+        raise GitFailure, "invalid: lock HEAD differs from local polispec-lock" unless lock == head
+      end
       fields = git!("rev-list", "--parents", "-n", "1", head).stdout.split
       valid_parent = fields.length == 2 && fields.all? { |oid| oid.match?(OID) } && fields[0] == head
       raise GitFailure, "invalid: lock commit must have exactly one parent" unless valid_parent
@@ -227,7 +256,7 @@ module Polispec
     end
 
     def git(*args, allowed:)
-      command = ["git", "--no-optional-locks", "-C", ROOT, *args]
+      command = ["git", "--no-optional-locks", "-C", git_dir, *args]
       stdout = +""
       stderr = +""
       status = nil
@@ -342,7 +371,12 @@ module Polispec
       { "project" => project, "kind" => kind, "detail" => detail }
     end
 
+    def runtime_info
+      { "kind" => Runtime.kind, "commit" => Runtime.commit, "root" => Runtime.root, "release_ref" => Runtime.release && Runtime.release["ref"] }
+    end
+
     def print_text(findings)
+      puts "runtime: #{Runtime.kind} #{Runtime.commit ? Runtime.commit[0, 12] : '-'} #{Runtime.root}"
       if findings.empty?
         puts "polispec doctor: 0 findings"
       else

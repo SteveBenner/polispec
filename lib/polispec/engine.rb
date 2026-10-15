@@ -806,7 +806,13 @@ module Polispec
       def of(ctx)
         source = ctx[:global]
         list = source.respond_to?(:protected_roots) ? source.protected_roots : (source.is_a?(Hash) ? (source["protected_roots"] || source[:protected_roots]) : nil)
-        Array(list).map { |entry| root(entry) }.compact
+        Array(list).map { |entry| root(entry) }.compact + builtin
+      end
+
+      def builtin
+        return [] unless %w[pinned clone].include?(Polispec::Runtime.kind)
+
+        [Root.new(Polispec::Runtime.root, ["rplugin"])]
       end
 
       def root(entry)
@@ -816,6 +822,35 @@ module Polispec
         return nil if path.to_s.strip.empty? || Polispec::Engine.store_ref?(path)
 
         Root.new(path.to_s, Array(entry["writers"] || entry[:writers]).map { |name| File.basename(name.to_s) })
+      end
+    end
+
+    module RuntimeGuard
+      RULE_ID = "R-POLISPEC-RUNTIME"
+      CLASSES = %w[fs.write fs.delete git.commit git.push git.tag git.merge git.rewrite git.branch release.publish].freeze
+      PINNED = "this is the polispec runtime that judges every agent action; build in a worktree or the clone, release, and reinstall with rplugin install --ref"
+      CLONE = "this tree is the live polispec guard for this host; build in a worktree, or pin the runtime with polispec apply --with-stewardship"
+
+      module_function
+
+      def decide(action, ctx)
+        return nil unless CLASSES.include?(action.action_class)
+
+        kind = Polispec::Runtime.kind
+        return nil unless %w[pinned clone].include?(kind)
+        return nil unless inside?(action, ctx)
+        return nil if Locations.writer?(action, Locations::Loc.new(nil, nil, Polispec::Runtime.root, ["rplugin"]), ctx)
+
+        kind == "pinned" ? ["deny", PINNED] : ["warn", CLONE]
+      end
+
+      def inside?(action, ctx)
+        hint = Envs.hint_of(action)
+        cwd = ctx[:cwd].to_s
+        origin = hint["path"].to_s.empty? ? cwd : hint["path"].to_s
+        return false if origin.empty? || Polispec::Engine.store_ref?(origin)
+
+        Envs.under?(Envs.canonical(Envs.absolute(origin, cwd.empty? ? Dir.pwd : cwd)), Polispec::Runtime.root)
       end
     end
 
@@ -906,6 +941,7 @@ module Polispec
       copy: "Copy only data classes the destination environment allows (deidentified or synthetic data into test and dev).",
       policy: "Policy files take effect only after promotion to stable; edit them on main and promote.",
       warn: "Get explicit confirmation from the user first (use the question tool).",
+      runtime: "Make the change in a worktree of the polispec repository, release it, and reinstall with `rplugin install <repo> --ref <tag>`.",
       generic: "Ask %<operator>s how to proceed."
     }.freeze
     UNOWNED_STEPS = {
@@ -969,7 +1005,7 @@ module Polispec
 
       def judge(action, target, ctx)
         env = Envs.for_action(action, target, ctx)
-        verdict = frozen(action, env, target, ctx) || by_rule(action, env, target, ctx)
+        verdict = frozen(action, env, target, ctx) || runtime_guard(action, env, ctx) || by_rule(action, env, target, ctx)
         Row.new(action, env, cleared(verdict, action, env, target, ctx))
       end
 
@@ -981,6 +1017,13 @@ module Polispec
 
         Verdict.new(level: "deny", rule_id: window.id, reason: "promotion to stable is frozen: #{window.label} (env #{env}, #{action.action_class}: #{clip(action.raw)})",
                     next_step: "Wait for the freeze to end, or ask #{Settings.operator}.")
+      end
+
+      def runtime_guard(action, env, ctx)
+        level, reason = RuntimeGuard.decide(action, ctx)
+        return nil unless level
+
+        Verdict.new(level: level, rule_id: RuntimeGuard::RULE_ID, reason: "#{reason} (env #{env}, #{action.action_class}: #{clip(action.raw)})", next_step: NEXT_STEPS[:runtime])
       end
 
       def by_rule(action, env, target, ctx)
