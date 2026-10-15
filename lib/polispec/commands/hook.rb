@@ -180,7 +180,11 @@ module Polispec
         control_gate = @plane["status"] == "active" || option_applies || HarnessControls::Features.enabled?("harness_controls")
         actions.concat(HarnessControls::RootGuard.classify(input.tool_name, input.tool_input, cwd)) if control_gate
         governed = baseline || relevant?(ledger, cwd, calls) || @plane["status"] == "active" || option_applies
-        actions << unknown_action(input, cwd) if control_gate && actions.empty? && governed && !diagnostic_read?(input.tool_name)
+        if control_gate && actions.empty? && governed && !diagnostic_read?(input.tool_name)
+          known = calls.flat_map { |tool, data| Classify.positive(tool, data, cwd) }
+          actions.concat(known)
+          actions << unknown_action(input, cwd) if known.empty? && !(calls.any? && calls.all? { |tool, data| Classify.benign?(tool, data, cwd) })
+        end
         groups = group(actions, ledger, cwd, baseline)
         mode = enforce_mode
         @policy_digests = []
