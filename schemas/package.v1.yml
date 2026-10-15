@@ -1,0 +1,63 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.package/v1
+title: Polispec package
+type: object
+additionalProperties: false
+required: [schema, name, version, summary, steps]
+properties:
+  schema: { const: polispec.package/v1 }
+  name: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }
+  version: { type: string, pattern: "^\\d+\\.\\d+\\.\\d+$" }
+  summary: { type: string, minLength: 1 }
+  params:
+    type: object
+    additionalProperties: { $ref: "#/$defs/param" }
+  default_variant: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }
+  variants:
+    type: object
+    additionalProperties: { $ref: "#/$defs/variant" }
+  files: { $ref: "#/$defs/file_map" }
+  modules:
+    type: array
+    items: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }
+  steps:
+    type: array
+    minItems: 1
+    items: { $ref: "#/$defs/step" }
+$defs:
+  param:
+    type: object
+    additionalProperties: false
+    required: [type]
+    properties:
+      type: { enum: [string, integer, number, boolean, list] }
+      default: {}
+      summary: { type: string }
+      allowed:
+        type: array
+        minItems: 1
+  file_map:
+    type: object
+    additionalProperties: { type: string, minLength: 1 }
+  variant:
+    type: object
+    additionalProperties: false
+    properties:
+      summary: { type: string }
+      files: { $ref: "#/$defs/file_map" }
+  step_kind: { enum: [files, manifest, ledger, render, commit, branches, push, checkouts] }
+  step:
+    oneOf:
+      - { $ref: "#/$defs/step_kind" }
+      - type: object
+        additionalProperties: false
+        required: [kind]
+        properties:
+          kind: { $ref: "#/$defs/step_kind" }
+          when:
+            type: object
+            additionalProperties: false
+            required: [param, equals]
+            properties:
+              param: { type: string, pattern: "^[a-z][a-z0-9_]*$" }
+              equals: {}

@@ -8,6 +8,7 @@ require_relative "../harness_controls/plane"
 require_relative "../harness_controls/lifecycle"
 require_relative "../harness_controls/evaluate"
 require_relative "../harness_controls/authorizations"
+require_relative "../journal"
 
 module Polispec
   module DeferredEvents
@@ -518,6 +519,7 @@ module Polispec
       context = { ledger: ledger, cwd: cwd, session_id: input.session_id, role: (input.agent_type.to_s.empty? ? nil : input.agent_type), tool: input.tool_name.to_s, issue_allow_once: mode == "enforce" && !adapter.ask? }
       outcome = Engine.explain(actions, target, context)
       @outcome_authority[outcome.object_id] = { "project" => target.project, "policy_digest" => target.digest }
+      Journal.record(outcome, target, context, input.tool_name)
       record(adapter, input, cwd, target, outcome, mode, started)
       outcome
     end
@@ -532,6 +534,7 @@ module Polispec
       context = { ledger: ledger, cwd: cwd, session_id: input.session_id, role: (input.agent_type.to_s.empty? ? nil : input.agent_type), tool: input.tool_name.to_s, issue_allow_once: mode == "enforce" && !adapter.ask? }
       outcome = Engine.explain(actions, target, context)
       @outcome_authority[outcome.object_id] = { "project" => target.project, "policy_digest" => target.digest }
+      Journal.record(outcome, target, context, input.tool_name)
       record(adapter, input, cwd, target, outcome, mode, started)
       outcome
     end

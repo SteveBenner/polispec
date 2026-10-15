@@ -6,7 +6,7 @@ require_relative "validator"
 
 module Polispec
   module Schema
-    KINDS = %w[policy environments roster ledger behavior spec waivers global module profiles control smoke].freeze
+    KINDS = %w[policy environments roster ledger behavior spec waivers global module profiles control smoke package].freeze
     CONTROL_EFFECT_KEYS = {
       "deny" => [],
       "ask" => [],
@@ -54,8 +54,41 @@ module Polispec
         errors.concat(Behavior.semantic_errors(data))
       elsif kind == "control" && errors.empty?
         errors.concat(control_errors(data))
+      elsif kind == "package" && errors.empty?
+        errors.concat(package_errors(data))
       end
       errors
+    end
+
+    def package_errors(data)
+      errors = []
+      variants = data["variants"].is_a?(Hash) ? data["variants"] : {}
+      errors << Error.new("/default_variant", "must name a declared variant") if data.key?("default_variant") && !variants.key?(data["default_variant"])
+      errors << Error.new("/default_variant", "is required when variants are declared") if !variants.empty? && !data.key?("default_variant")
+      maps = [["/files", data["files"]]] + variants.map { |name, body| ["/variants/#{name}/files", body.is_a?(Hash) ? body["files"] : nil] }
+      maps.each do |pointer, map|
+        next unless map.is_a?(Hash)
+
+        map.each do |target, source|
+          errors << Error.new("#{pointer}/#{target}", "target must be a repository-relative path without ..") unless safe_relative?(target)
+          errors << Error.new("#{pointer}/#{target}", "source must be a path inside the package without ..") unless safe_relative?(source)
+        end
+      end
+      params = data["params"].is_a?(Hash) ? data["params"] : {}
+      Array(data["steps"]).each_with_index do |step, index|
+        condition = step.is_a?(Hash) ? step["when"] : nil
+        errors << Error.new("/steps/#{index}/when/param", "must name a declared param") if condition && !params.key?(condition["param"])
+      end
+      params.each do |name, body|
+        errors << Error.new("/params/#{name}", "name must match ^[a-z][a-z0-9_]*$") unless name.match?(/\A[a-z][a-z0-9_]*\z/)
+        errors << Error.new("/params/#{name}/allowed", "is supported for string params only") if body["allowed"] && body["type"] != "string"
+      end
+      errors
+    end
+
+    def safe_relative?(path)
+      text = path.to_s
+      !text.empty? && !text.start_with?("/") && text.split("/").none? { |part| part == ".." || part.empty? }
     end
 
     def control_errors(data)

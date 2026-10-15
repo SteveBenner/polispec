@@ -35,6 +35,7 @@ module Polispec
 
     def describe(ledger, project)
       entry = { "id" => project.id, "status" => project.status, "trust_ref" => project.trust_ref, "repo" => project.repo }
+      entry["packages"] = project.packages.map { |item| item.slice("name", "variant", "version", "applied_at") } unless project.packages.empty?
       return entry if project.status == "retired"
 
       loaded = PolicySource.resolve(project, ledger: ledger)
@@ -80,6 +81,7 @@ module Polispec
       puts "ledger #{report['ledger']}; guard mode #{report['enforce']}"
       report["projects"].each do |entry|
         puts "#{entry['id']}: #{entry['status']} trust_ref=#{entry['trust_ref']}"
+        Array(entry["packages"]).each { |item| puts "  package #{item['name']} #{item['version']}#{item['variant'] ? " (#{item['variant']})" : ''} applied #{item['applied_at']}" }
         next unless entry["policy_source"]
 
         puts "  policy #{entry['policy_source']} #{entry['policy_digest']}"
