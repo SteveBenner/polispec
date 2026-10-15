@@ -5,6 +5,29 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.0] - 2026-10-15
+
+### Added
+
+- `polispec smoke run [--unit PATTERN]... [--scenarios DIR] [--against TREE] [--host-copy] [--live claude-code|codex]... [--out DIR] [--no-record] [--accept-changes] [--json]`: a bundled, deterministic smoke suite. 27 scenarios in `smoke/scenarios/` (`polispec.smoke-scenario/v1`, `schemas/smoke-scenario.v1.yml`) each build a scratch fixture (ledger, global shelf, git projects with test and stable checkouts) and run hook calls and commands against it with isolated state (`POLISPEC_STATE_HOME`, `XDG_STATE_HOME` under the scratch directory), so a run never writes the live guard's state. A passing run records one `suite` entry per scenario in `smoke.yml` (runner kind `suite` added to `schemas/smoke.v1.yml`) (`lib/polispec/smoke/`).
+- `--against TREE` runs every scenario a second time with another tree's `bin/polispec` and reports each step whose verdict, exit code or normalised output differs; paths, timestamps, digests, record ids and durations are normalised, and a diff exits 1 unless `--accept-changes`. `--host-copy` judges the probes in `smoke/host-probes.yml` against a copy of this host's ledger and global shelf and prints the verdict table. `--live claude-code|codex` runs the live scenarios in `smoke/live/` through `claude -p` (Haiku) or `codex exec` with a timeout and turn cap; the setting `polispec.smoke.live` (`on` by default) and `POLISPEC_SMOKE_LIVE=off` stop every live step.
+- `POLISPEC_STATE_HOME` moves polispec's state while no sealed plane is active; events skip the rplugin port while it is set, and `bin/polispec-guard` reads its fast-path files from it when `/etc/polispec/active.json` is absent (`lib/polispec/state.rb`).
+- `fastpath.tools`: the tools `bin/polispec-guard` may skip under a governed baseline. Harness-internal tools are listed; Read, Grep and the other read tools are listed only while no global or module rule governs reads (a `secrets.read` class, a `tool` naming a read tool, or a rule with neither `class` nor `shape`). Any other tool, including every MCP and unknown tool, reaches polispec (`lib/polispec/fastpath.rb`).
+- `harness install --harness claude-code` checks for `bwrap` and `socat` on Linux and refuses with `sandbox_unavailable`, writing nothing; `--dry-run` and `harness plan` report the same finding and succeed.
+
+### Changed
+
+- `harness_controls` is on by default (`config/harness-features.yml`); `sealed_plane` stays off. Under a governed baseline the guard asks about undeclared MCP operations and unknown non-read tools (standard edition). Harness-internal tools (TodoWrite, Skill, ToolSearch, Glob and the like), fully parsed read-only shell lines and read-only `polispec` verbs are classified as benign and stay allowed; WebFetch and WebSearch classify as `web.fetch`, Agent and Task as `agent.spawn` (`lib/polispec/classify/benign.rb`).
+- An MCP operation counts as declared when a rule with an exact `match.server` and `match.operation` sits in any layer the engine composes for the call, including the global shelf and its modules, not only a live project's own policy (`lib/polispec/commands/hook.rb`).
+- Without an active sealed plane, an ask that comes only from environment-policy warnings keeps the 0.21.0 legacy deny with an `alo_` allow-once id; a control ask (undeclared MCP, unknown tool) under Codex is denied because exact operator authorization needs the plane.
+- Project-scope Claude Code, Codex and Antigravity hook callbacks pass `--controls-project`.
+- `polispec code detect` on an empty file reports `unknown` and exits 0.
+
+### Behaviour changes on upgrade
+
+- Every MCP call that no rule declares asks under Claude Code and is denied under Codex. Declare the operations you use in the global shelf (for example a module with one `{ match: { class: [mcp.call], server: S, operation: O }, verdict: allow }` rule per operation) before installing this release.
+- Smoke parity against v0.22.0 differs only in that change, in the control install now working, and in runtime-kind and state-path differences between a clone and a pinned tree.
+
 ## [0.22.0] - 2026-10-15
 
 ### Added
