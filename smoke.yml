@@ -8239,3 +8239,95 @@ entries:
     policy_digest:
   prev: 265326e26878ca2ed1a1f7612a95b94fab262d156e2a47d053fae2f2ace98a09
   digest: c55bba624a2b6345c7b300f975930e5469d4f58865cdaee94785beed7d328727
+- id: smk_e6a27c91db33
+  recorded_at: '2026-10-15T01:56:51Z'
+  proves:
+    spec: specs/app.yml
+    at: stewardship
+    spec_digest: 9580515b715d8b4047624b994db44daf211cff523ec4e92800d5341a64a87df4
+    at_digest: c5da519942da918aa1f6d82d3e8e1ae078a147a43a1d068da1221dbca7bd132d
+  verdict: pass
+  summary: '0.21.0 stewardship: pinned runtime and self-protection, packages with
+    plan and apply replacing onboard, verdict probes and journal, verified in scratch
+    and pinned on this host'
+  steps:
+  - run: '0.20.0 vs 0.21.0: resolve --layers (10 paths), hook pretool (23 calls),
+      status reach, on a copy of the host ledger with reach and teach flipped live'
+    exit: 0
+    expect: byte-identical output
+    observed: resolve, hook and status identical; 16 deny, 3 ask; doctor differs only
+      by the runtime line and branch provenance
+  - run: rplugin 1.14.0 install <clone> --ref vt1 in scratch plugins home; repin;
+      unknown ref; --self; unpin; repin; tampered and version-mismatched releases
+    exit: 0
+    expect: read-only release, doctor runtime pinned, refusals leave the link unchanged
+    observed: 0 writable files; doctor 0 findings; unknown ref, --self, modified release
+      and VERSION mismatch refused with the link unchanged
+  - run: hook pretool Write/rm into a pinned release, write elsewhere, read; Write
+      and git commit in a clone runtime
+    exit: 0
+    expect: pinned deny R-POLISPEC-RUNTIME, clone ask, others unchanged
+    observed: deny, deny, none, none; ask, ask
+  - run: apply environment-control --repo demo --commit --push; second apply; status
+    exit: 0
+    expect: onboard's steps under new names; already_applied; packages record
+    observed: files/manifest/ledger/render/commit/branches done, pushed main test
+      stable; already_applied exit 1; package environment-control 1.0.0 (service)
+  - run: plan/apply ledger status flip; plan/apply project:demo with R-PROD-GIT deny->allow;
+      stale id; confirmed id
+    exit: 0
+    expect: loosening needs confirm; plan_changed on stale id; commit on main
+    observed: confirm_required; 5 probe changes; plan_changed; Apply polispec plan
+      plan_90879d02... committed
+  - run: hook classification of polispec apply --confirm and plan; journal on with
+      a marker in the command
+    exit: 0
+    expect: apply asks via R-POLICY, plan silent; journal holds facts and is replayed
+    observed: ask R-POLICY; no output for plan; journal entries with ref and verdict,
+      plan replayed 2, 1 changed; host journal absent while off
+  - run: Stewardship.ensure! on this host after the 0.21.0 release
+    exit: 0
+    expect: rule ok, protection ok, runtime pinned at v0.21.0
+    observed: stewardship_1 ok, stewardship_2 ok, stewardship_3 installed pinned v0.21.0
+      -> 280ea45a8ae4; doctor runtime pinned; write into release denied, write into
+      clone allowed
+  evidence: []
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.299
+    model: claude-opus-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-38-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.21.0
+      edition: standard
+      commit: 280ea45a8ae44a924b1259353efc631aec9bc0d1
+      dirty: false
+      install: pinned
+    rplugin: 1.14.0
+    enforce: enforce
+  target:
+    commit: 280ea45a8ae44a924b1259353efc631aec9bc0d1
+    branch: main
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: c55bba624a2b6345c7b300f975930e5469d4f58865cdaee94785beed7d328727
+  digest: c71eac2f5c25b52e4324759b54ddda2103197311b5bca22486defccd026a3be9
