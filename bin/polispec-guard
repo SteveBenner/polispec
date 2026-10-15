@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+set -u
+mode="${1:-pretool}"
+[ "$#" -gt 0 ] && shift
+harness="${POLISPEC_HARNESS:-claude}"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --harness) [ "$#" -ge 2 ] && harness="$2"; shift 2 || shift ;;
+    *) shift ;;
+  esac
+done
+[ "$harness" = claude-code ] && harness=claude
+input="$(cat 2>/dev/null || true)"
+self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+state="${XDG_STATE_HOME:-$HOME/.local/state}/polispec"
+if [ "$mode" = pretool ] && [ -f "$state/fastpath.txt" ] && [ -f "$state/fastpath.watch" ]; then
+  fresh=1
+  while IFS= read -r watched; do
+    [ -n "$watched" ] || continue
+    if [ ! -e "$watched" ] || [ "$watched" -nt "$state/fastpath.txt" ]; then fresh=0; break; fi
+  done < "$state/fastpath.watch"
+  if [ "$fresh" = 1 ]; then
+    [ "$(wc -l < "$state/fastpath.txt")" -gt 1 ] || exit 0
+    printf '%s' "$input" | grep -qiF -f <(tail -n +2 "$state/fastpath.txt") || exit 0
+  fi
+fi
+usable() {
+  [ -n "$1" ] && [ -x "$1" ] && [ -f "$1" ] || return 1
+  [ "$(cd "$(dirname "$1")" 2>/dev/null && pwd -P)" != "$self_dir" ]
+}
+bin=""
+if [ -n "${POLISPEC_BIN:-}" ] && usable "$POLISPEC_BIN"; then bin="$POLISPEC_BIN"; fi
+if [ -z "$bin" ]; then
+  while IFS= read -r candidate; do
+    if usable "$candidate"; then bin="$candidate"; break; fi
+  done < <(type -ap polispec 2>/dev/null)
+fi
+if [ -z "$bin" ]; then
+  for candidate in "${RPLUGIN_BIN_HOME:-$HOME/.local/bin}/polispec" "${RPLUGINS_HOME:-$HOME/.rplugins}/polispec/bin/polispec"; do
+    if usable "$candidate"; then bin="$candidate"; break; fi
+  done
+fi
+reason="polispec: the guard is unavailable and this command targets test or stable, a live service, or a release. Ask the user to run it."
+fallback() {
+  [ "$mode" = pretool ] || return 0
+  printf '%s' "$input" | grep -Eq '"tool_name" *: *"(Bash|shell|exec_command)"' || return 0
+  re='git[^|;&]*[[:space:]](push|merge|tag|reset)[^|;&]*[[:space:]]([^[:space:]|;&]*[/:])?(test|stable)([^[:alnum:]_-]|$)|systemctl|gh[[:space:]]+release'
+  if printf '%s' "$input" | grep -Eq "$re"; then
+    echo "polispec-guard: fallback matched a prod-shaped command; denied" >&2
+    if [ "$harness" = claude ]; then
+      printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"$reason\"}}"
+      return 0
+    fi
+    echo "$reason" >&2
+    exit 2
+  fi
+  return 0
+}
+if [ -z "$bin" ]; then
+  echo "polispec-guard: polispec binary not found; inline fallback applied" >&2
+  fallback
+  exit 0
+fi
+case "$mode" in
+  pretool | session) ;;
+  *) exit 0 ;;
+esac
+out="$(printf '%s' "$input" | "$bin" hook "$mode" --harness "$harness" 2>/dev/null)"
+rc=$?
+if [ "$rc" -ne 0 ]; then
+  echo "polispec-guard: polispec exited $rc; inline fallback applied" >&2
+  fallback
+  exit 0
+fi
+[ -n "$out" ] && printf '%s\n' "$out"
+exit 0
