@@ -14,6 +14,7 @@ module Polispec
       CHECKOUT_ENVS = %w[test stable].freeze
       HOOK_EXPECT = %w[decision rule stdout_includes stdout_excludes exit files_exist files_absent git].freeze
       RUN_EXPECT = %w[exit stdout_includes stdout_excludes stderr_includes json files_exist files_absent git].freeze
+      LIVE_EXPECT = %w[hook_log files_exist files_absent git].freeze
 
       attr_reader :path, :stem, :data
 
@@ -98,7 +99,9 @@ module Polispec
       def self.step_errors(step, pointer)
         errors = []
         expect = step["expect"].is_a?(Hash) ? step["expect"] : {}
-        if step.key?("run") && step.key?("hook")
+        if step.key?("live")
+          errors.concat(live_errors(step, expect, pointer))
+        elsif step.key?("run") && step.key?("hook")
           errors << Schema::Error.new(pointer, "must declare run or hook, not both")
         elsif step.key?("hook")
           errors.concat(hook_errors(step, expect, pointer))
@@ -109,6 +112,15 @@ module Polispec
         errors << Schema::Error.new("#{pointer}/tty", "is only allowed on a run step") if step.key?("tty") && step.key?("hook")
         errors << Schema::Error.new("#{pointer}/stdin", "is only allowed on a run step") if step.key?("stdin") && step.key?("hook")
         errors << Schema::Error.new("#{pointer}/tty", "cannot be combined with stdin") if step.key?("tty") && step.key?("stdin")
+        errors
+      end
+
+      def self.live_errors(step, expect, pointer)
+        errors = []
+        errors << Schema::Error.new(pointer, "must declare live alone, without run or hook") if step.key?("run") || step.key?("hook")
+        %w[tty stdin timeout].each { |key| errors << Schema::Error.new("#{pointer}/#{key}", "is not allowed on a live step") if step.key?(key) }
+        (expect.keys - LIVE_EXPECT).each { |key| errors << Schema::Error.new("#{pointer}/expect/#{key}", "is not allowed on a live step") }
+        errors << Schema::Error.new("#{pointer}/expect/hook_log", "is required for a live step") unless expect.key?("hook_log")
         errors
       end
 
