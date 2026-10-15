@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.1] - 2026-10-15
+
+### Fixed
+
+- A shell line the parser fully parses no longer asks `POLISPEC-TOOL-UNKNOWN` just because it is not on the benign list (`sed -n`, `git branch -a`, `cd …; …`, `for` loops, `bin/polispec smoke verify`, `psql -c`): its commands' classes, or none, go to policy as in 0.22.0. The unknown ask stays for unparseable shell lines, lines that use `eval`, `source` or `.`, unknown non-shell tools, and undeclared MCP operations (`Classify.parsed_shell?`, `lib/polispec/classify/benign.rb`). Replaying 1,699 real Bash calls, 0.23.0 asked on 234; 0.23.1 asks on none of them.
+- The fallback write an unrecognised program gets on its working directory no longer counts as a change to protected polispec authority when that directory is only an ancestor of a protected path. `rstack status`, `rswitch` or `persona load` run from the home directory, `~/.ai` or `rstack-uber` were denied with `POLISPEC-CONTROL-PROTECTION` (78 of the 1,699 replayed calls); an explicit recursive change, move or delete of an ancestor, and any program run inside a protected path, are still denied (`lib/polispec/harness_controls/evaluate.rb`).
+
 ## [0.23.0] - 2026-10-15
 
 ### Added
