@@ -353,10 +353,10 @@ Consumers must also match the current remote environment ref and tag, because br
 
 polispec guards every agent on the host, so a broken polispec breaks every agent at once. 0.21.0 adds a pattern for changing polispec and its rulebooks safely:
 
-- **A shipped rule for agents.** `rules/polispec-stewardship.md` ships with the plugin. Antigravity CLI loads it as a rule, and every other harness reaches it through the polispec skill and the `[POLISPEC]` directive. It tells agents that the running polispec is live, that they build changes in a separate worktree and ship them by release, that every rulebook change is planned before it is applied, and which changes need the user's yes.
+- **A shipped rule for agents.** `rules/polispec-stewardship.md` ships with the plugin. Claude Code (with rplugin 1.15.0 or later) and Antigravity CLI load it as an always-on rule; Codex, Hermes, Pi and the DeepSeek TUI have no rules directory and reach it through the polispec skill and the `[POLISPEC]` directive. It tells agents that the running polispec is live, that they build changes in a separate worktree and ship them by release, that every rulebook change is planned before it is applied, and which changes need the user's yes.
 - **A pinned runtime.** `rplugin install <repo> --ref <tag>` installs a read-only copy of one release. polispec knows whether it runs from a pinned release or a working clone (`polispec doctor` prints `runtime:`).
 - **Self-protection.** A built-in protected root covers the runtime: writes into a pinned release are denied, and writes into a clone runtime are warned (`R-POLISPEC-RUNTIME`).
-- **One switch.** `polispec apply --with-stewardship` checks the rule is installed, checks the protection, and pins a clone runtime to the release it is running, before applying anything.
+- **One switch.** `polispec steward` (or `polispec apply --with-stewardship` before an apply) checks the rule is installed, checks the protection, and pins a clone runtime to the release it is running, before applying anything.
 
 The full procedure is in the [operator guide](docs/operator.md#the-runtime-and-stewardship).
 
@@ -387,6 +387,7 @@ Applying the `environment-control` package does the setup in one pass:
 
 | Command | Purpose |
 |---|---|
+| `polispec steward [--check]` | Protect the host: the stewardship rule installed, the runtime protected, the runtime pinned; `--check` only reports |
 | `polispec plan <target>` | Preview a change: files, ledger, composed policy diff, verdicts that would change, and whether it tightens or loosens |
 | `polispec apply <target> [--confirm <plan-id>] [--with-stewardship]` | Carry out a plan; loosening, mixed, and global changes need `--confirm`. Targets: a package such as `environment-control --repo <repo>`, `project:<id>`, `global`, `ledger --from <file>` |
 | `polispec validate <kind\|auto> <file> [--json]` | Check a policy, environments, roster, ledger, global, module, profiles, behavior, control, or smoke file |

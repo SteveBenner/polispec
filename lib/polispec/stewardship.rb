@@ -6,6 +6,7 @@ require_relative "operator/git"
 module Polispec
   module Stewardship
     RULE_ID = "polispec-stewardship"
+    RULES_SURFACE_SINCE = Gem::Version.new("1.15.0")
     PLUGIN_ID = "polispec"
     Step = Struct.new(:number, :status, :detail) do
       def line
@@ -46,6 +47,10 @@ module Polispec
       steps
     end
 
+    def check
+      [rule_step(1, check: true), runtime_step(2), pin_step(3, check: true)]
+    end
+
     def rule_shipped?(root)
       manifest = YAML.safe_load(File.read(File.join(root, "polispec.rplugin.yml")), permitted_classes: [], aliases: false)
       entry = Array(manifest.dig("contents", "rules")).find { |item| item.is_a?(Hash) && item["id"] == RULE_ID }
@@ -61,11 +66,43 @@ module Polispec
       nil
     end
 
-    def rule_step(number)
+    def claude_home
+      value = [ENV["RPLUGIN_CLAUDE_HOME"], ENV["CLAUDE_CONFIG_DIR"]].map(&:to_s).find { |item| !item.empty? }
+      File.expand_path(value || "~/.claude")
+    end
+
+    def claude_rule_link
+      File.join(claude_home, "rules", "rplugin", PLUGIN_ID, "#{RULE_ID}.md")
+    end
+
+    def rules_surface?
+      result = rplugin("version")
+      return false unless result[:ok]
+
+      Gem::Version.new(result[:tail].to_s.strip.split.last.to_s) >= RULES_SURFACE_SINCE
+    rescue ArgumentError
+      false
+    end
+
+    def claude_link_missing?
+      Dir.exist?(claude_home) && rules_surface? && !File.file?(claude_rule_link)
+    end
+
+    def rule_step(number, check: false)
       return Step.new(number, "failed", "the running polispec at #{Runtime.root} does not ship the #{RULE_ID} rule") unless rule_shipped?(Runtime.root)
 
       stored = stored_root
-      return Step.new(number, "ok", "#{RULE_ID} is installed through #{store_link}") if stored && rule_shipped?(stored)
+      if stored && rule_shipped?(stored)
+        return Step.new(number, "ok", "#{RULE_ID} is installed through #{store_link}") unless claude_link_missing?
+        return Step.new(number, "missing", "#{claude_rule_link} is absent; would run rplugin install #{PLUGIN_ID}") if check
+
+        result = rplugin("install", PLUGIN_ID)
+        return Step.new(number, "failed", "rplugin install #{PLUGIN_ID} failed: #{result[:tail]}") unless result[:ok]
+        return Step.new(number, "failed", "rplugin install #{PLUGIN_ID} did not link #{claude_rule_link}") unless File.file?(claude_rule_link)
+
+        return Step.new(number, "installed", "linked #{claude_rule_link}")
+      end
+      return Step.new(number, "missing", "#{store_link} does not ship #{RULE_ID}; would run rplugin install #{Runtime.root}") if check
 
       result = rplugin("install", Runtime.root)
       return Step.new(number, "failed", "rplugin install #{Runtime.root} failed: #{result[:tail]}") unless result[:ok]
@@ -80,7 +117,7 @@ module Polispec
       Step.new(number, "failed", "the runtime protected root is not active for a #{kind} runtime")
     end
 
-    def pin_step(number)
+    def pin_step(number, check: false)
       return Step.new(number, "ok", "runtime is pinned at #{Runtime.commit.to_s[0, 12]}") if Runtime.pinned?
 
       tag = "v#{Polispec.version}"
@@ -95,6 +132,8 @@ module Polispec
       if stored && File.basename(stored) == commit && File.basename(File.dirname(File.dirname(stored))) == ".pinned"
         return Step.new(number, "ok", "#{store_link} is already pinned at #{tag} (#{commit[0, 12]})")
       end
+
+      return Step.new(number, "missing", "#{Runtime.kind} runtime #{Runtime.root} is not pinned; would run rplugin install #{Runtime.root} --ref #{tag}") if check
 
       result = rplugin("install", Runtime.root, "--ref", tag)
       return Step.new(number, "failed", "rplugin install #{Runtime.root} --ref #{tag} failed: #{result[:tail]}") unless result[:ok]
