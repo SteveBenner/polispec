@@ -1,6 +1,7 @@
 require "digest"
 require "json"
 require "pathname"
+require "rbconfig"
 
 require_relative "../backends"
 require_relative "../contracts"
@@ -15,6 +16,7 @@ module Polispec
         MINIMUM_SANDBOX_VERSION = [2, 1, 285].freeze
         SCOPES = %w[project user managed].freeze
         EDITIONS = %w[standard lock].freeze
+        LINUX_SANDBOX_EXECUTABLES = %w[bwrap socat].freeze
 
         module_function
 
@@ -350,6 +352,10 @@ module Polispec
           elsif version_state == "unsupported"
             findings << finding("claude_version_unsupported", "The declared Claude version predates failure-closed onFailure:block support.", nil, "hook.pre_tool", "Upgrade Claude Code to 2.1.295 or later before treating the hook as failure closed.")
           end
+          missing = missing_sandbox_executables
+          if edition != "lock" && !missing.empty?
+            findings << finding("sandbox_unavailable", "Claude Code sandbox prerequisites are missing from PATH: #{missing.join(", ")}. The generated settings set sandbox.enabled and sandbox.failIfUnavailable, so Claude Code would refuse to start in this scope.", nil, "sandbox.prerequisites", "Install #{missing.join(" and ")} with the system package manager, then plan again.")
+          end
           if scope != "managed"
             findings << finding("mutable_settings_scope", "#{scope} settings can be changed by the same user who runs Claude Code.", nil, "config.provenance", "Use managed settings with independently verified ownership for enforcement claims.")
           end
@@ -394,6 +400,18 @@ module Polispec
             findings << finding("schedule_port_required", "Scheduled control #{control.fetch("id")} is retained in the control document but cannot be dispatched by Claude hooks.", control.fetch("id"), "schedule", "Install the corresponding rplugin schedule-port dispatch.")
           end
           findings.sort_by { |item| [item.fetch("control_id").to_s, item.fetch("code")] }
+        end
+
+        def missing_sandbox_executables
+          return [] unless RbConfig::CONFIG["host_os"].to_s.include?("linux")
+
+          directories = ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).reject(&:empty?)
+          LINUX_SANDBOX_EXECUTABLES.reject do |name|
+            directories.any? do |directory|
+              candidate = File.join(directory, name)
+              File.file?(candidate) && File.executable?(candidate)
+            end
+          end
         end
 
         def artifact(path:, content:, format:, ownership:)

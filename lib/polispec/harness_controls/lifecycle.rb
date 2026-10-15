@@ -61,6 +61,10 @@ module Polispec
         context = context_from_plan(proposed)
         trusted = self.plan(document, proposed["harness"], context, port_set: port_set)
         assert_same_plan!(proposed, trusted)
+        unavailable = Array(trusted["findings"]).select { |item| item["code"] == "sandbox_unavailable" }
+        unless unavailable.empty?
+          raise Failure.new("sandbox_unavailable", unavailable.map { |item| item["detail"] }.join(" "), findings: unavailable)
+        end
         blockers = ineffective_controls(trusted, document)
         unless blockers.empty?
           raise Failure.new("unsupported_controls", "one or more requested controls have no effective native implementation", data: { "controls" => blockers }, findings: Array(trusted["findings"]))

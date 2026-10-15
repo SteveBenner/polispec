@@ -17,6 +17,44 @@ module Polispec
       GIT_BRANCH_FLAGS = %w[--list -l -a --all -r --remotes -v -vv --verbose].freeze
       GIT_CONFIG_READ = %w[--get --get-all --get-regexp --list -l].freeze
       GIT_CONFIG_SCOPE = %w[--global --local --system --worktree --show-origin --show-scope --null -z --name-only].freeze
+      JSON_FLAG = { "--json" => false }.freeze
+      POLISPEC_READ = {
+        "version" => [nil, {}],
+        "resolve" => [nil, JSON_FLAG],
+        "status" => [nil, JSON_FLAG],
+        "digest" => [nil, JSON_FLAG.merge("--since" => true)],
+        "doctor" => [nil, JSON_FLAG],
+        "classify" => [nil, JSON_FLAG.merge("--ledger" => true, "--policy" => true, "--cwd" => true)],
+        "validate" => [nil, JSON_FLAG],
+        "plan" => [nil, JSON_FLAG.merge("--repo" => true, "--variant" => true, "--param" => true, "--from" => true)],
+        "steward" => [nil, JSON_FLAG.merge("--check" => false), "--check"],
+        "smoke" => [{
+          "list" => JSON_FLAG.merge("--spec" => true, "--at" => true, "--verdict" => true),
+          "show" => JSON_FLAG,
+          "verify" => JSON_FLAG,
+          "coverage" => JSON_FLAG.merge("--spec" => true, "--at" => true)
+        }],
+        "roster" => [{
+          "resolve" => JSON_FLAG.merge("--role" => true, "--pipeline" => true, "--phase" => true, "--env" => true, "--roster" => true),
+          "check" => JSON_FLAG.merge("--pipeline" => true, "--profile" => true, "--env" => true, "--roster" => true)
+        }],
+        "code" => [{
+          "detect" => JSON_FLAG.merge("--ref" => true, "--repo" => true),
+          "chain" => JSON_FLAG.merge("--ref" => true, "--repo" => true),
+          "show" => JSON_FLAG.merge("--ref" => true, "--repo" => true),
+          "check" => JSON_FLAG.merge("--before" => true, "--ref" => true, "--repo" => true),
+          "validate" => JSON_FLAG.merge("--ref" => true, "--repo" => true)
+        }],
+        "specs" => [{ "status" => JSON_FLAG.merge("--repo" => true) }],
+        "harness" => [{
+          "grammar" => JSON_FLAG,
+          "parse" => JSON_FLAG.merge("--file" => true),
+          "plan" => JSON_FLAG.merge("--harness" => true, "--scope" => true, "--project" => true),
+          "verify" => JSON_FLAG
+        }],
+        "agents" => [{ "render" => JSON_FLAG.merge("--from" => true, "--check" => false) }, "--check"],
+        "behavior" => [{ "compile" => {}, "decide" => {} }]
+      }.freeze
       WRAPPERS = %w[eval exec source env sudo doas nohup timeout xargs command builtin nice ionice stdbuf setsid unbuffer flock time bash sh zsh dash ksh ash].freeze
       SUBSTITUTION = /\$\(|`|<\(|>\(/.freeze
       SHORT_OUTPUT = /\A-[A-Za-z]*o/.freeze
@@ -82,7 +120,50 @@ module Polispec
         return false unless cmd.redirects.all? { |redirect| discarded?(redirect) }
         return false unless lead(cmd) == cmd.name
 
-        cmd.name == "git" ? git?(cmd) : plain?(cmd)
+        return git?(cmd) if cmd.name == "git"
+        return polispec?(cmd) if cmd.name == "polispec"
+
+        plain?(cmd)
+      end
+
+      def polispec?(cmd)
+        args = cmd.args
+        verb = args.first
+        entry = POLISPEC_READ[verb]
+        return false unless entry
+
+        rest = args.drop(1)
+        subs, required = entry[0].is_a?(Hash) ? [entry[0], entry[1]] : [nil, entry[2]]
+        flags = entry[1]
+        if subs
+          sub = rest.first
+          return false unless sub && subs.key?(sub)
+
+          rest = rest.drop(1)
+          flags = subs[sub]
+        end
+        seen = []
+        positional = 0
+        until rest.empty?
+          arg = rest.shift
+          if arg == "--"
+            positional += rest.length
+            break
+          elsif arg.start_with?("-") && arg.length > 1
+            name, inline = arg.split("=", 2)
+            return false unless flags.key?(name)
+
+            seen << name
+            takes_value = flags[name]
+            return false if inline && !takes_value
+            return false if takes_value && inline.nil? && (rest.empty? || rest.first.start_with?("--"))
+
+            rest.shift if takes_value && inline.nil?
+          else
+            positional += 1
+          end
+        end
+        required.nil? || seen.include?(required)
       end
 
       def lead(cmd)

@@ -201,18 +201,44 @@ module Polispec
       def record_all(results)
         ids = []
         path = Smoke.ledger_path(toplevel)
-        results.reject { |item| item["verdict"] == "error" }.group_by { |item| [item["spec"], item["unit"]] }.each do |(spec, unit), group|
+        partitions(results).group_by { |item| [item["spec"], item["unit"], item["runner"]] }.each do |(spec, unit, runner), group|
           verdict = group.map { |item| item["verdict"] }.max_by { |name| SEVERITY.index(name) }
           steps = group.flat_map { |item| item["steps"].map { |step| recorded_step(step) } }
           evidence = group.flat_map { |item| evidence_for(item) }
           entry = Smoke.record(top: toplevel, path: path, spec: spec, at: unit, verdict: verdict, summary: summary_for(group, verdict),
-                               steps: steps, evidence: evidence, runner: SUITE_RUNNER, started: group.map { |item| item["started"] }.min, finished: group.map { |item| item["finished"] }.max)
+                               steps: steps, evidence: evidence, runner: runner, started: group.map { |item| item["started"] }.min, finished: group.map { |item| item["finished"] }.max)
           ids << entry["id"]
-          group.each { |item| item["recorded"] = entry["id"] }
+          group.each { |item| item["origin"]["recorded"] = entry["id"] }
         rescue Polispec::Error => e
-          group.each { |item| item["record_error"] = e.message }
+          group.each { |item| item["origin"]["record_error"] = e.message }
         end
         ids
+      end
+
+      def partitions(results)
+        results.reject { |item| item["verdict"] == "error" }.flat_map do |item|
+          by_runner = item["steps"].group_by { |step| step_runner(step) }
+          if by_runner.length <= 1
+            [item.merge("runner" => by_runner.keys.first || SUITE_RUNNER, "origin" => item)]
+          else
+            by_runner.map { |runner, steps| item.merge("steps" => steps, "verdict" => steps_verdict(steps), "runner" => runner, "origin" => item) }
+          end
+        end
+      end
+
+      def step_runner(step)
+        runner = step["runner"]
+        return SUITE_RUNNER unless runner.is_a?(Hash) && runner["kind"] == "agent"
+        return SUITE_RUNNER if Array(step["checks"]).any? { |entry| entry["detail"].to_s.start_with?("skipped:") }
+
+        { "kind" => "agent", "harness" => runner["harness"], "harness_version" => runner["harness_version"], "model" => runner["model"], "effort" => runner["effort"] }
+      end
+
+      def steps_verdict(steps)
+        if steps.any? { |step| !step["ok"] && !step["blocked"] } then "fail"
+        elsif steps.any? { |step| step["blocked"] } then "blocked"
+        else "pass"
+        end
       end
 
       def recorded_step(step)
