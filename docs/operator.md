@@ -175,7 +175,14 @@ polispec reads these machine settings, each from an environment variable, then t
 | `polispec.logs.count_command` | unset | Argv template (no shell) for the `logs_quiet` gate; takes `{service}`, `{since}` and `{until}` and prints one integer. Unset fails the gate closed. `RPLUGIN_POLISPEC_POLISPEC_LOGS_COUNT_COMMAND` overrides it. |
 | `polispec.verdicts.journal` | `off` | `on` keeps a bounded local journal (the last 5000 judged actions) of canonical verdict facts: project, environment, action class, tool, ref, home-relative path, verdict and rule id, never command text, file contents or environment values. `polispec plan` replays the last 14 days of it against a proposed rulebook. |
 
-The guard is a hook the host wires into each agent harness: it runs `polispec hook pretool --harness <name>` on every tool call and prints the harness's own allow, ask or deny reply. The plugin ships `hooks/polispec.hooks.yml` for harnesses rplugin can render; any other harness calls the same command from its pre-tool event. Two integrations are optional and never required: events may be emitted to an `rlogs` sink (`observability.events: rlogs`, otherwise `local` or `none`), and `polispec apply environment-control` recognises a `*.rstack_component.yml` manifest as well as `*.rplugin.yml` when it adds a `serves:` pointer.
+The guard is a hook in each agent harness. The plugin ships `hooks/polispec.hooks.yml`, which rplugin renders for Claude Code (installed natively since 0.22.0; needs rplugin 1.15.0 for `SubagentStart`), Hermes, Pi, the DeepSeek TUI and Antigravity CLI. Every hook runs `bin/polispec-guard <pretool|session> --harness <name>`, a bash shim that:
+
+- skips starting Ruby when the fast path (`fastpath.txt` and its `fastpath.watch` list in the polispec state directory) shows the call cannot touch a governed path and none of the watched files (ledger, global layer refs, settings, `/etc/polispec/active.json`) changed since;
+- otherwise runs `polispec hook <mode> --harness <name>` and prints the harness's own allow, ask or deny reply;
+- always runs the `polispec` on PATH (the pinned release), never the copy in a harness's plugin cache;
+- when polispec is missing or fails, denies shell calls that push, merge, tag or reset test or stable, control services, or publish releases, and lets everything else through.
+
+Codex is not installed natively: on this host the `~/.ai` Codex bridge calls the same shim, because it also parses `apply_patch` targets and adapts the reply. Any other harness can call the shim from its pre-tool event. Two integrations are optional and never required: events may be emitted to an `rlogs` sink (`observability.events: rlogs`, otherwise `local` or `none`), and `polispec apply environment-control` recognises a `*.rstack_component.yml` manifest as well as `*.rplugin.yml` when it adds a `serves:` pointer.
 
 ## The runtime and stewardship
 

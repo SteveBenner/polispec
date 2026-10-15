@@ -362,7 +362,7 @@ The full procedure is in the [operator guide](docs/operator.md#the-runtime-and-s
 
 ## Install
 
-With the rplugin SDK: `rplugin install polispec`, then `rplugin doctor polispec`. To pin a host to one release, `rplugin install <polispec clone> --ref v<version>`, or let `polispec apply --with-stewardship` do it.
+With the rplugin SDK (1.15.0 or later): `rplugin install polispec`, then `rplugin doctor polispec`. That installs the guard hooks, the skill and the rules into Claude Code natively, and into Hermes, Pi, the DeepSeek TUI and Antigravity CLI. To pin a host to one release, `rplugin install <polispec clone> --ref v<version>`, or run `polispec steward`.
 
 Without it, run `bin/polispec` from a clone. It needs Ruby and no gems beyond the standard library.
 

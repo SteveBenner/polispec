@@ -94,6 +94,7 @@ module Polispec
       stored = stored_root
       if stored && rule_shipped?(stored)
         return Step.new(number, "ok", "#{RULE_ID} is installed through #{store_link}") unless claude_link_missing?
+        return Step.new(number, "ok", "#{claude_rule_link} is absent; step 3 links it when it pins #{pin_tag}") if pin_pending?
         return Step.new(number, "missing", "#{claude_rule_link} is absent; would run rplugin install #{PLUGIN_ID}") if check
 
         result = rplugin("install", PLUGIN_ID)
@@ -117,6 +118,22 @@ module Polispec
       Step.new(number, "failed", "the runtime protected root is not active for a #{kind} runtime")
     end
 
+    def pin_tag
+      "v#{Polispec.version}"
+    end
+
+    def pinned_at?(commit)
+      stored = stored_root
+      stored && File.basename(stored) == commit && File.basename(File.dirname(File.dirname(stored))) == ".pinned"
+    end
+
+    def pin_pending?
+      return false if Runtime.pinned?
+
+      commit = Operator::Git.new(Runtime.root).rev("refs/tags/#{pin_tag}")
+      !(commit && pinned_at?(commit))
+    end
+
     def pin_step(number, check: false)
       return Step.new(number, "ok", "runtime is pinned at #{Runtime.commit.to_s[0, 12]}") if Runtime.pinned?
 
@@ -137,6 +154,7 @@ module Polispec
 
       result = rplugin("install", Runtime.root, "--ref", tag)
       return Step.new(number, "failed", "rplugin install #{Runtime.root} --ref #{tag} failed: #{result[:tail]}") unless result[:ok]
+      return Step.new(number, "failed", "pinned #{tag} but #{claude_rule_link} is still absent") if claude_link_missing?
 
       Step.new(number, "installed", "pinned #{tag} -> #{commit[0, 12]}")
     end
