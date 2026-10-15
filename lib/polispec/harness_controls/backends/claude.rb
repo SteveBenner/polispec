@@ -41,6 +41,7 @@ module Polispec
           version_state = failure_closed_version_state(context["version"], version)
           restrictions = restrictions_for(document, edition)
           callback = runtime_argv + ["hook", "pretool", "--harness", "claude", "--controls-file", controls_path]
+          callback += ["--controls-project", project] if scope == "project"
           settings = settings_fragment(
             scope: scope,
             callback: callback,

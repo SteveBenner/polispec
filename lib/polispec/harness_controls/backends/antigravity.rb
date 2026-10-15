@@ -33,6 +33,7 @@ module Polispec
 
           if runtime
             callback = runtime + ["hook", "pretool", "--harness", "antigravity", "--controls-file", paths["controls"]]
+            callback += ["--controls-project", values["project"]] if scope == "project"
             hook = hook_fragment(callback)
             hook_kind = scope == "managed" ? "exclusive" : "json_entries"
             hook_entries = scope == "managed" ? [""] : ["/polispec"]
