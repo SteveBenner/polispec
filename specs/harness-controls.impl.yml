@@ -352,7 +352,7 @@ concurrency_model:
     - {surface: Version and top-level documentation, pattern: Primary owns final integration and locks shared files.}
   peer_agent_lock: {manifest_path: TMP_AGENT_FILE_LOCKS.yml, rule: Use reaper locks for shared surfaces; never release another agent's entries.}
   feature_flags:
-    - {name: harness_controls, default: false, owner_slice: slice_0_foundation, release_state: disabled_by_explicit_operator_instruction}
+    - {name: harness_controls, default: true, owner_slice: slice_0_foundation, release_state: enabled_by_explicit_operator_instruction_in_0.23.0}
     - {name: sealed_plane, default: false, owner_slice: slice_0_foundation, release_state: disabled_by_explicit_operator_instruction}
 waves:
   - {id: wave_0, execution: single worker on integration branch, slices: [slice_0_foundation], barrier: Foundation committed and green.}

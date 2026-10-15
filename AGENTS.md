@@ -28,8 +28,9 @@ global shelf or the ledger. In short:
   Never edit the running copy; a clone runtime warns on every write into it and
   a pinned one denies (`R-POLISPEC-RUNTIME`).
 - Build every change in a separate git worktree, verify it with that tree's
-  `bin/polispec` against scratch `POLISPEC_LEDGER`, `POLISPEC_HOME` and
-  `POLISPEC_GLOBAL` (never redirect `XDG_STATE_HOME`), then merge, tag and
+  `bin/polispec` against scratch `POLISPEC_LEDGER`, `POLISPEC_HOME`,
+  `POLISPEC_GLOBAL` and `POLISPEC_STATE_HOME` (never redirect `XDG_STATE_HOME`),
+  run `bin/polispec smoke run --against <installed release>`, then merge, tag and
   reinstall with `rplugin install <repo> --ref <tag>`. On a host that is not
   pinned yet, merge only verified code, as one fast-forward.
 - Rulebook changes go through `polispec plan` and `polispec apply`. Loosening,

@@ -8,7 +8,8 @@ The polispec that runs the guard judges every agent tool call on the host. If it
 
 - Find out what the host runs before touching polispec code: `polispec doctor` reports the runtime as `pinned`, `clone`, `sealed` or `unknown`. So does `rplugin doctor polispec`.
 - Never edit the running copy. A pinned runtime refuses writes (`R-POLISPEC-RUNTIME`, deny). A working-clone runtime warns on every write into it. Treat that warning as a stop: the clone is the live guard.
-- Develop polispec in a separate git worktree or clone. Verify with that tree's own `bin/polispec`, against scratch ledgers and repositories (`POLISPEC_LEDGER`, `POLISPEC_HOME`, `POLISPEC_GLOBAL`). Do not redirect `XDG_STATE_HOME`; it hides the rplugin settings.
+- Develop polispec in a separate git worktree or clone. Verify with that tree's own `bin/polispec`, against scratch ledgers and repositories (`POLISPEC_LEDGER`, `POLISPEC_HOME`, `POLISPEC_GLOBAL`, `POLISPEC_STATE_HOME`). Do not redirect `XDG_STATE_HOME`; it hides the rplugin settings. Without `POLISPEC_STATE_HOME`, scratch runs write the live guard's state.
+- Before tagging, run `polispec smoke run --against <installed release>` from the candidate tree and read every verdict it reports as changed; each intended change belongs in the changelog. A failing scenario or an unexplained change stops the release.
 - Ship by release, never by edit: merge the verified change, tag it, and reinstall with `rplugin install <repo> --ref <tag>`. Until a host is pinned, merge into the running clone only verified code, in a single fast-forward.
 - If the guard does break, do not retry your calls in other shapes. Ask the user to restore it from their own prompt, for example `! git -C <polispec clone> stash push -u -- lib schemas`, and only then continue in a worktree.
 

@@ -1,6 +1,6 @@
 # Smoke ledger
 
-A smoke test is a short run, against a real installation, that shows one spec or sub-spec working: the guard denying a push to the production branch, a promotion moving `test`, a code spec blocking a write. polispec does not ship smoke tests. You run your own, on the machines and harnesses you care about, and record each result in a smoke ledger. polispec captures the runtime the test ran in, chains the entries so edits show, and reports which parts of a spec have a current pass.
+A smoke test is a short run, against a real installation, that shows one spec or sub-spec working: the guard denying a push to the production branch, a promotion moving `test`, a code spec blocking a write. polispec ships a suite of smoke tests (`polispec smoke run`, below), and you can run your own beside it, on the machines and harnesses you care about, recording each result in a smoke ledger. polispec captures the runtime the test ran in, chains the entries so edits show, and reports which parts of a spec have a current pass.
 
 ## The file
 
@@ -57,8 +57,25 @@ polispec smoke coverage --spec specs/polispec/policy.yml --at 'rules/*'
 ## Writing good smoke tests
 
 - Prove the behaviour from evidence outside the actor: a hook log, the git state, the files, the exit codes. An agent's own account of what happened is not evidence.
-- Use scratch projects and an isolated ledger and state home (`POLISPEC_LEDGER`, `XDG_STATE_HOME`, `XDG_CONFIG_HOME`) so a test never touches a real project.
+- Use scratch projects, an isolated ledger, global shelf and state home (`POLISPEC_LEDGER`, `POLISPEC_GLOBAL`, `POLISPEC_HOME`, `POLISPEC_STATE_HOME`) so a test never touches a real project or the live guard's state. Do not redirect `XDG_STATE_HOME` or `XDG_CONFIG_HOME`: they also hold rplugin's settings, so redirecting them silently drops `polispec.enforce` and every other setting.
 - Make every dangerous step harmless if the guard wrongly allows it.
 - Record failures and blocked tests too. A ledger of passes only says nothing about what was tried.
 
-A bundled smoke suite is on the roadmap (`ROADMAP.md`).
+## The bundled suite
+
+`polispec smoke run` runs the scenarios shipped in `smoke/scenarios/` against the polispec tree it runs from. Run it from a candidate worktree before tagging a release.
+
+```sh
+polispec smoke run                               # every scenario, recorded
+polispec smoke run --unit commands/resolve --no-record
+polispec smoke run --against ~/.rplugins/polispec # also run the installed release and diff every verdict
+polispec smoke run --host-copy --no-record       # replay host probes on copies of your ledger and global shelf
+polispec smoke run --live claude-code --live codex
+```
+
+- A scenario (`polispec.smoke-scenario/v1`, `polispec validate smoke-scenario FILE`) names the coverage unit it proves, builds a fixture in scratch (projects created by the tree's own `apply environment-control`, a global shelf, files), and lists steps: a command, a canned hook payload, or a live harness session, each with expectations (exit status, output, JSON, files, a git ref left unchanged, the hook's decision and rule).
+- Every step runs with `POLISPEC_LEDGER`, `POLISPEC_GLOBAL`, `POLISPEC_HOME`, `POLISPEC_SMOKE`, `POLISPEC_SPECS_REPO` and `POLISPEC_STATE_HOME` pointing into its scratch directory, which defaults to `$TMPDIR/polispec-smoke/<timestamp>/`. The runner never writes your ledger, shelf, settings or polispec state, and never deletes its output.
+- Each unit is recorded once per run with runner kind `suite` and the worst verdict of its scenarios. A scenario whose `requires` flag is off is recorded `blocked`.
+- `--against TREE` runs every scenario again with another polispec tree (a worktree at the previous tag, or a pinned release) and lists every changed verdict or output; the run fails on any difference unless `--accept-changes`. This is the release gate: review the list, and name every intended change in the changelog.
+- `--host-copy` copies your configured ledger and global shelf, then replays `smoke/host-probes.yml` against every project and prints the decision and rule for each probe. It is never recorded.
+- `--live claude-code` and `--live codex` run `smoke/live/*.yml` in real headless sessions (Claude Code with Haiku, Codex with its smallest model) whose hooks run the tree's `bin/polispec-guard`. They cost money: one session at a time, at most `POLISPEC_SMOKE_LIVE_MAX` (default 6) per run, each with a timeout and a budget, and `polispec.smoke.live off` or `POLISPEC_SMOKE_LIVE=off` stops them. Expectations come from the hook log, the files and git, never from what the agent says.
