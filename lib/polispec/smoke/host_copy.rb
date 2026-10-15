@@ -136,7 +136,7 @@ module Polispec
         mode = Engine::Settings.enforce_mode
         env = {
           "POLISPEC_LEDGER" => File.join(root, "ledger.yml"), "POLISPEC_GLOBAL" => global, "POLISPEC_HOME" => File.join(root, "polispec-home"),
-          "POLISPEC_SMOKE" => File.join(root, "smoke.yml"), "POLISPEC_STATE_HOME" => File.join(root, "state"), Layout::ENFORCE_ENV => mode
+          "POLISPEC_SMOKE" => File.join(root, "smoke.yml"), "POLISPEC_STATE_HOME" => File.join(root, "state"), "XDG_STATE_HOME" => File.join(root, "xdg-state"), Layout::ENFORCE_ENV => mode
         }
         jobs = jobs(probes, projects, Dir.home, Dir.tmpdir)
         rows = run_jobs(jobs, polispec, env, root)

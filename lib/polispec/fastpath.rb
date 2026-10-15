@@ -84,7 +84,21 @@ module Polispec
     def skippable
       return ["*"] unless Layers.baseline?
 
-      (Harness::Base::READ_TOOLS + Classify::Benign::INTERNAL_TOOLS).map(&:downcase).uniq
+      reads = reads_governed? ? [] : Harness::Base::READ_TOOLS
+      (reads + Classify::Benign::INTERNAL_TOOLS).map(&:downcase).uniq
+    end
+
+    def reads_governed?
+      doc = Layers.global || {}
+      rules = Array(doc["rules"]) + (doc["modules"] || {}).values.flat_map { |mod| Array(mod.is_a?(Hash) ? mod["rules"] : nil) }
+      read_tools = Harness::Base::READ_TOOLS.map(&:downcase)
+      rules.any? do |rule|
+        match = rule.is_a?(Hash) ? (rule["match"] || {}) : {}
+        classes = match["class"]
+        (classes.nil? && match["shape"].nil?) || Array(classes).include?("secrets.read") || read_tools.include?(match["tool"].to_s.downcase)
+      end
+    rescue StandardError
+      true
     end
 
     def tool_needles

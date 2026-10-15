@@ -60,3 +60,9 @@ steps:
     stdin: "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Skill\",\"tool_input\":{\"skill\":\"x\"},\"cwd\":\"/\",\"session_id\":\"s\"}"
     expect: { exit: 0, stdout_excludes: [CALLED] }
     parity: ignore
+  - name: warm Read reaches the guard because the baseline governs secret reads
+    run: ["{{tree}}/bin/polispec-guard", pretool, --harness, claude]
+    env: { POLISPEC_BIN: "{{files}}/fake/polispec" }
+    stdin: "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"/etc/hostname\"},\"cwd\":\"/\",\"session_id\":\"s\"}"
+    expect: { exit: 0, stdout_includes: [CALLED] }
+    parity: ignore
