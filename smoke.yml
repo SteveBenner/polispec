@@ -8331,3 +8331,77 @@ entries:
     policy_digest:
   prev: c55bba624a2b6345c7b300f975930e5469d4f58865cdaee94785beed7d328727
   digest: c71eac2f5c25b52e4324759b54ddda2103197311b5bca22486defccd026a3be9
+- id: smk_bfc85bd548ba
+  recorded_at: '2026-10-15T03:23:17Z'
+  proves:
+    spec: specs/app.yml
+    at: stewardship
+    spec_digest: 938f218e69d1d6dfa00399ae316cfc154557f9d22710c9c4e0377f373b08c454
+    at_digest: 9638daf34d376a4651387c3bd1b833d7cbc8ccfa7a75cb4d871c0c021aac3833
+  verdict: pass
+  summary: '0.22.0: polispec steward, Claude Code native install through bin/polispec-guard
+    with rule links, live overlap with the ~/.ai guard'
+  steps:
+  - run: "~/.ai polispec-guard.sh vs bin/polispec-guard on this host, ledger copy
+      with reach and teach live, 66 pretool payloads"
+    exit: 0
+    expect: byte-identical pretool output
+    observed: identical; 18 deny, 3 ask; session mode now always runs polispec
+  - run: 'scratch: pin v0.21.0, then polispec steward --check and steward from a v0.22.0
+      clone with rplugin 1.15.0 and stub claude/codex'
+    exit: 0
+    expect: step 1 deferred to the pin, step 3 pins v0.22.0 and links the rule
+    observed: check exit 1 with step 3 missing; steward installed pinned v0.22.0,
+      four claude plugin commands, both rule links, no codex call; check exit 0; doctor
+      0
+  - run: 'live: polispec steward from the 0.22.0 clone'
+    exit: 0
+    expect: host pinned at v0.22.0, rules linked, plugin enabled in Claude Code
+    observed: stewardship_3 installed pinned v0.22.0 -> b426edcac9bd; ~/.claude/rules/rplugin/polispec/
+      links resolve into the release; claude plugin list polispec 0.22.0 enabled;
+      rplugin doctor 0
+  - run: fresh claude -p session with --debug
+    exit: 0
+    expect: the plugin hook runs from the pinned store beside the ~/.ai shim
+    observed: 'debug log: hooks.json read from ~/.rplugins/polispec; both ~/.rplugins/polispec/bin/polispec-guard
+      and ~/.claude/hooks/polispec-guard.sh invoked'
+  evidence: []
+  runner:
+    kind: agent
+    harness: claude-code
+    harness_version: 2.1.300
+    model: claude-opus-5-5
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-38-generic
+    arch: x86_64
+    platform: x86_64-linux-gnu
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 3.3.8
+      platform: x86_64-linux-gnu
+    polispec:
+      version: 0.22.0
+      edition: standard
+      commit: b426edcac9bdf9ea81ec16ce6e5ec4aef9e6fad7
+      dirty: false
+      install: pinned
+    rplugin: 1.15.0
+    enforce: enforce
+  target:
+    commit: b426edcac9bdf9ea81ec16ce6e5ec4aef9e6fad7
+    branch: main
+    dirty: false
+    project:
+    env:
+    policy_digest:
+  prev: c71eac2f5c25b52e4324759b54ddda2103197311b5bca22486defccd026a3be9
+  digest: c9e10520441d44a39a253469d5e8eabef77d8f8cd7ecca7f4b79665162848c71
