@@ -1,4 +1,4 @@
-# Environments manifest, onboarding, `[ENVS]` and git hooks
+# Environments manifest, applying environment control, `[ENVS]` and git hooks
 
 A live project declares its environments in `specs/polispec/environments.yml`, next to `policy.yml`. The file is read from the project's trust ref (`stable`) exactly like the policy, so an agent cannot widen its own environment by editing `main`: an edit takes effect only after the operator promotes it.
 
@@ -63,27 +63,37 @@ polispec:
   environments: specs/polispec/environments.yml
 ```
 
-`serves:` is `real_users`, `internal` or `none`. Only `real_users` components are scaffolded and ledgered. For `internal` and `none`, `polispec onboard` writes the `serves:` line and nothing else.
+`serves:` is `real_users`, `internal` or `none`. Only `real_users` components are scaffolded and ledgered. For `internal` and `none`, `polispec apply environment-control` writes the `serves:` line and nothing else.
 
-## Onboarding
+## Applying environment control
+
+A project comes under polispec by applying the shipped `environment-control` package ([packages](packages.md)). Plan first, then apply the same arguments:
 
 ```
-polispec onboard <repo-path> --serves <real_users|internal|none> [--archetype service|distributed] [--id <id>] [--trust-ref stable] [--commit] [--push] [--checkouts] [--dry-run] [--json]
+polispec plan  environment-control --repo <repo-path> [--variant service|distributed] [--param serves=real_users|internal|none] [--param id=<id>] [--param trust_ref=stable] [--param envs_root=<dir>] [--json]
+polispec apply environment-control --repo <repo-path> [same arguments] [--commit] [--push] [--checkouts] [--with-stewardship] [--json]
 ```
 
-`--archetype service` (the default) scaffolds a tailnet-exposed test and a public prod. `distributed` scaffolds test and prod with `exposure: none`. The deploy steps in the service templates are the placeholder `true`, and each service environment's `deploy.health.run` is the placeholder command `polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml`, which does not exist, so the scaffolded policy validates and `polispec promote <id> --to test` passes its gates, but `polispec deploy` records a failed health check (`run exited 127:` naming the placeholder command) until you replace both with the real commands. A `health.run` command is split into arguments and run without a shell, and a command that cannot be started is a failed health check that names it, never a crash.
+`polispec onboard` was removed in 0.21.0 with no alias. Its flags map one to one: `--serves X` is `--param serves=X`, `--archetype V` is `--variant V`, `--id` and `--trust-ref` are `--param id=` and `--param trust_ref=`, and `--dry-run` is `polispec plan` (or `apply --dry-run`). Putting a new project in `onboarding` status is a tightening change, so an agent may apply it without a confirmation.
 
-Steps, in order, one output line each (`done`, `kept`, `skipped`, `next`, or `would` under `--dry-run`):
+`--variant service` (the default) scaffolds a tailnet-exposed test and a public prod. `distributed` scaffolds test and prod with `exposure: none`. The deploy steps in the service templates are the placeholder `true`, and each service environment's `deploy.health.run` is the placeholder command `polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml`, which does not exist, so the scaffolded policy validates and `polispec promote <id> --to test` passes its gates, but `polispec deploy` records a failed health check (`run exited 127:` naming the placeholder command) until you replace both with the real commands. A `health.run` command is split into arguments and run without a shell, and a command that cannot be started is a failed health check that names it, never a crash.
 
-1. `1_scaffold`: render `environments.yml`, `policy.yml` and `roster.yml` into `specs/polispec/` from `templates/onboard/`. Existing files are kept. The merged policy, the environments document, the roster and the ledger with the new entry are all validated before anything is written, so a failure leaves no scaffold behind.
-2. `2_manifest`: append the pointer block to the component manifest.
-3. `3_ledger`: insert the project into the ledger with status `onboarding`. The new text is validated, a `ledger.yml.bak-<UTC timestamp>` copy is written beside the ledger, and the replacement is atomic. Existing entries are untouched.
-4. `4_render`: render `AGENTS.md` and `.agents/directives/envs.md` (see below). Under `--dry-run` it previews from the scaffold files already in the repository where they exist, as the real run does, and from the templates otherwise.
-   With `--commit`, a step `4b_commit` follows: it stages by name exactly the files steps 1, 2 and 4 wrote or changed (the scaffold files, the manifest when the pointer was appended, `AGENTS.md` and `.agents/directives/envs.md` when rendered) and commits only those paths on `main` as `Add the polispec scaffold`, through the operator git, with an explicit pathspec so other staged changes stay staged and uncommitted. When `HEAD` is not `main` the commit is skipped with a note and the commit command is printed; when onboard wrote no files the step is `skipped` with nothing to commit. Under `--dry-run` it prints `would` and the paths. `--commit` is opt-in; without it `onboard` never commits.
-5. `5_branches`: when the three `specs/polispec` files are committed on `main`, create local `test` and the trust ref at `main` when absent; with `--push` it pushes both to `origin` without force (and `main` too when `--commit` was given, so the remote branches carry the scaffold), and without it the exact push command is printed. Without `--commit`, `onboard` does not commit, so on a fresh scaffold this step is `skipped` and prints the commit, branch and push commands to run; the branches must be created after the commit so the trust ref carries the policy.
-6. `6_checkouts`: with `--checkouts` and both branches on `origin`, clone the test and stable checkouts under the ledger's `envs_root` and install the git hooks for test and prod. Otherwise the next step is `polispec deploy <id> test`.
+The package's steps run in order, one output line each (`done`, `kept`, `skipped`, `next`, or `would` in a plan). The plan prints the mapping from the former onboard step names:
 
-A repository already in the ledger, by id or by path, is refused with `already_onboarded`; nothing is overwritten.
+| Step | Former name | What it does |
+|---|---|---|
+| `files` | `1_scaffold` | Render `environments.yml`, `policy.yml` and `roster.yml` into `specs/polispec/` from the package's variant. Existing files are kept. The merged policy, the environments document, the roster and the ledger with the new entry are all validated before anything is written, so a failure leaves no scaffold behind. |
+| `manifest` | `2_manifest` | Append the pointer block to the component manifest. |
+| `ledger` | `3_ledger` | Insert the project into the ledger with status `onboarding` and a `packages` record (name, variant, version, date, and the digest of every file written). The new text is validated, a `ledger.yml.bak-<UTC timestamp>` copy is written beside the ledger, and the replacement is atomic. Existing entries are untouched. |
+| `render` | `4_render` | Render `AGENTS.md` and `.agents/directives/envs.md` (see below). A plan previews from the scaffold files already in the repository where they exist, and from the templates otherwise. |
+| `commit` | `4b_commit` | With `--commit`: stage by name exactly the files the earlier steps wrote or changed and commit only those paths on `main` as `Add the polispec scaffold`, through the operator git, with an explicit pathspec so other staged changes stay staged and uncommitted. When `HEAD` is not `main` the commit is skipped with a note and the commit command is printed; when nothing was written the step is `skipped`. Without `--commit`, apply never commits. |
+| `branches` | `5_branches` | When the three `specs/polispec` files are committed on `main`, create local `test` and the trust ref at `main` when absent. Without `--commit` on a fresh scaffold this step is `skipped` and prints the commit, branch and push commands to run; the branches must be created after the commit so the trust ref carries the policy. |
+| `push` | (part of `5_branches`) | With `--push`: push `test` and the trust ref to `origin` without force, and `main` too when `--commit` was given. Without it the exact push command is printed. |
+| `checkouts` | `6_checkouts` | With `--checkouts` and both branches on `origin`: clone the test and stable checkouts under `envs_root` and install the git hooks for test and prod. Otherwise the next step is `polispec deploy <id> test`. |
+
+For `serves` `internal` or `none` only the `manifest` step runs.
+
+Applying the same package version to a project that already records it is refused; nothing is overwritten. A higher version is an upgrade: files whose bytes still match the recorded digest are replaced, edited files are reported as conflicts with a diff and left untouched, and the record is updated. `polispec status <id>` lists the project's packages, and `polispec doctor` reports `package_upgrade_available` and `package_file_drift`.
 
 ## `[ENVS]` and `polispec agents render`
 

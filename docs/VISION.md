@@ -47,6 +47,7 @@ This page describes that direction. It is not a commitment to a release. Every i
 | Conditional includes: include a module only for some environments, profiles, or facts (for example `when: { serves: real_users }`) | **Idea** | Today an include always applies to its layer. |
 | Organisation layers above the host: organisation → team → service → subservice | **Idea** | Today the top layer is one global shelf per host. |
 | Profiles that take parameters | **Idea** | Profiles list module names only. |
+| Packages: named, versioned setups (files, modules, parameters, ordered steps) applied by `polispec apply` and recorded in the ledger | **Built** | Since 0.21.0; `environment-control` is the first. |
 
 ## Specs as a shared library
 
@@ -56,7 +57,7 @@ The step after composition is distribution. A clinic, a school, and a shop all w
 |---|---|---|
 | Versioned imports: `{ module: release-train, from: <repo>@<version> }`, resolved to a digest and recorded in a lock file | **Idea** | Today modules come from the host's global shelf or the project's own shelf. |
 | A catalogue of practice modules: release trains, quiet hours, data residency, de-identification, on-call rotations, regulated-data handling | **Idea** | The clinic example's `release-train`, `soak`, `quiet-hours`, and `patient-data` are the seed. |
-| Upgrade review: when an imported module changes, show which rules tighten or loosen before the project accepts it | **Partial** | Tighten/loosen comparison exists for harness controls; not yet for modules. |
+| Upgrade review: when an imported module changes, show which rules tighten or loosen before the project accepts it | **Partial** | Since 0.21.0 `polispec plan` classifies any project, global or ledger change, and package upgrades keep edited files as conflicts; versioned module imports do not exist yet. |
 | Signed modules, and a sealed host that accepts only signed imports | **Idea** | The sealed plane already pins the global shelf to an exact commit. |
 
 ## Every document composes
@@ -67,7 +68,7 @@ Environment policy composes today. The other documents polispec governs could co
 |---|---|---|
 | Environment policy (`polispec.policy/v1`) | **Built** | Modules, parameters, layers, nested projects. |
 | Code specs (`polispec.spec/v1`) | **Built** | Tree of composite policies, referenced by spec path or policy id. |
-| Environments (`environments.yml`) | **Idea** | Archetype templates exist for `onboard`; composable environment fragments (a standard `test` shape, say) do not. |
+| Environments (`environments.yml`) | **Idea** | The `environment-control` package ships variant templates; composable environment fragments (a standard `test` shape, say) do not. |
 | Roster (`roster.yml`) | **Idea** | Shared role definitions included per project. |
 | Behavioral policy (`polispec.behavior/v1`) | **Idea** | Shared directive sets for applications. |
 | Harness controls (`polispec.control/v1`) | **Partial** | Controls compose as a severity ceiling over policy; they are not yet packaged as modules. |
@@ -81,7 +82,7 @@ A deep rulebook needs equally good tools for reading it.
 | `resolve --layers`: every layer, its source, digest, rule count, and module instances, plus one effective digest | **Built** | |
 | Verdicts name the rule id and the layer that decided | **Built** | |
 | Rule provenance: for any verdict, the include path that brought the rule in (policy → release-train → soak) | **Idea** | |
-| What-if replay: run recorded tool calls against a proposed rulebook before it is promoted, and list every verdict that would change | **Idea** | Verdicts are already logged as events; the replay engine does not exist. |
+| What-if replay: run recorded tool calls against a proposed rulebook before it is promoted, and list every verdict that would change | **Built** | Since 0.21.0: `polispec plan` replays synthetic probes and, when `polispec.verdicts.journal` is on, recent journaled actions. |
 | A rendered map of the composition tree for a project | **Idea** | |
 
 ## Proving the rulebook holds

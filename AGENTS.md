@@ -17,6 +17,28 @@ polispec is a plugin built on rplugin, the SDK for agent-harness plugins.
 - If it owns a corpus, rplugin created it for the plugin. Read and write it
   only through the plugin or `rcorpus`, never by editing its files.
 
+## Stewardship: working on polispec itself
+
+Read `rules/polispec-stewardship.md` before developing, installing, upgrading or
+repairing polispec, applying a package, or changing a project's specs, the
+global shelf or the ledger. In short:
+
+- The running polispec is the live guard for every agent on the host. Check
+  what runs with `polispec doctor` (`runtime: pinned|clone|sealed|unknown`).
+  Never edit the running copy; a clone runtime warns on every write into it and
+  a pinned one denies (`R-POLISPEC-RUNTIME`).
+- Build every change in a separate git worktree, verify it with that tree's
+  `bin/polispec` against scratch `POLISPEC_LEDGER`, `POLISPEC_HOME` and
+  `POLISPEC_GLOBAL` (never redirect `XDG_STATE_HOME`), then merge, tag and
+  reinstall with `rplugin install <repo> --ref <tag>`. On a host that is not
+  pinned yet, merge only verified code, as one fast-forward.
+- Rulebook changes go through `polispec plan` and `polispec apply`. Loosening,
+  mixed and global plans, status flips and enforce-mode changes need the user's
+  yes before `apply --confirm <plan-id>`.
+- `polispec apply --with-stewardship` makes sure the installed polispec ships
+  this rule, checks the runtime protection and pins the runtime before it
+  applies anything.
+
 ## Changing it
 
 - The manifest is `polispec.rplugin.yml` (schema `rplugin/v1`,

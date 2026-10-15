@@ -23,6 +23,7 @@
 - [Composition: specs inside specs](#composition-specs-inside-specs)
 - [Core ideas](#core-ideas)
 - [Feature tour](#feature-tour)
+- [Looking after polispec itself](#looking-after-polispec-itself)
 - [Install](#install)
 - [Quick start](#quick-start)
 - [Commands](#commands)
@@ -188,7 +189,7 @@ bin/polispec validate policy examples/clinic/policy.yml
 bin/polispec validate module examples/clinic/modules/release-train.yml
 ```
 
-On a real project, `polispec onboard <repo> --serves real_users` scaffolds the same three files ([quick start](#quick-start)). `polispec resolve <path> --layers` then shows exactly which layers and modules govern a path.
+On a real project, `polispec apply environment-control --repo <repo>` scaffolds the same three files ([quick start](#quick-start)). `polispec resolve <path> --layers` then shows exactly which layers and modules govern a path.
 
 ## How a verdict is made
 
@@ -323,6 +324,15 @@ polispec harness plan examples/controls.minimal.yml --harness codex --scope proj
 polispec plane status --json
 ```
 
+**Plan and apply.** Every rulebook change, from putting a project under polispec to editing the global shelf, is previewed with `polispec plan` and carried out with `polispec apply`. A plan judges probe actions and, when the journal is on, recent real actions against the current and the proposed rulebook, and classifies the change as tightening, loosening, mixed, or neutral. Loosening needs the plan id as a confirmation, and the guard asks the user before an agent gives it ([packages, plan and apply](docs/packages.md)).
+
+```sh
+polispec plan project:clinic-booking
+polispec apply project:clinic-booking --confirm plan_3f9c0d2e1a7b4c58e6d09a12
+```
+
+**Packages.** A package is a named, versioned setup: templates, modules, parameters, and ordered steps. `environment-control` (variants `service` and `distributed`) is the first. The ledger records each package a project carries, `doctor` reports available upgrades and edited files, and an upgrade never overwrites a file you changed.
+
 **Smoke ledger.** polispec records smoke tests; it does not ship them. Each entry names the spec node it proves, the verdict, the steps, the evidence digests, and the runtime, with no host or user identity. Entries are chained, `verify` detects edits, and `coverage` shows which units have a current pass ([smoke](docs/smoke.md)).
 
 ```sh
@@ -339,34 +349,46 @@ polispec smoke coverage
 
 Consumers must also match the current remote environment ref and tag, because branch promotion alone does not prove deployment. The field exposes no state paths, health output, or secrets. It is evidence from deployment time, not continuous health.
 
+## Looking after polispec itself
+
+polispec guards every agent on the host, so a broken polispec breaks every agent at once. 0.21.0 adds a pattern for changing polispec and its rulebooks safely:
+
+- **A shipped rule for agents.** `rules/polispec-stewardship.md` ships with the plugin. Antigravity CLI loads it as a rule, and every other harness reaches it through the polispec skill and the `[POLISPEC]` directive. It tells agents that the running polispec is live, that they build changes in a separate worktree and ship them by release, that every rulebook change is planned before it is applied, and which changes need the user's yes.
+- **A pinned runtime.** `rplugin install <repo> --ref <tag>` installs a read-only copy of one release. polispec knows whether it runs from a pinned release or a working clone (`polispec doctor` prints `runtime:`).
+- **Self-protection.** A built-in protected root covers the runtime: writes into a pinned release are denied, and writes into a clone runtime are warned (`R-POLISPEC-RUNTIME`).
+- **One switch.** `polispec apply --with-stewardship` checks the rule is installed, checks the protection, and pins a clone runtime to the release it is running, before applying anything.
+
+The full procedure is in the [operator guide](docs/operator.md#the-runtime-and-stewardship).
+
 ## Install
 
-With the rplugin SDK: `rplugin install polispec`, then `rplugin doctor polispec`.
+With the rplugin SDK: `rplugin install polispec`, then `rplugin doctor polispec`. To pin a host to one release, `rplugin install <polispec clone> --ref v<version>`, or let `polispec apply --with-stewardship` do it.
 
 Without it, run `bin/polispec` from a clone. It needs Ruby and no gems beyond the standard library.
 
 ## Quick start
 
 ```sh
-polispec onboard <repo> --serves real_users --dry-run    # preview
-polispec onboard <repo> --serves real_users              # scaffold
-polispec doctor                                          # what is missing or invalid
-polispec resolve .                                       # which project and environment is this?
+polispec plan  environment-control --repo <repo>                       # preview
+polispec apply environment-control --repo <repo> --with-stewardship    # protect the host, then scaffold
+polispec doctor                                                        # what is missing or invalid
+polispec resolve .                                                     # which project and environment is this?
 ```
 
-`onboard` does the setup in one pass:
+Applying the `environment-control` package does the setup in one pass:
 
-- It scaffolds `specs/polispec/environments.yml`, `policy.yml`, and `roster.yml` from a template (`--archetype service` for a hosted service, `distributed` for software users install).
+- It scaffolds `specs/polispec/environments.yml`, `policy.yml`, and `roster.yml` from a template (`--variant service` for a hosted service, `distributed` for software users install).
 - It points the component manifest at them.
-- It adds a ledger entry with status `onboarding` and renders the `[ENVS]` row.
+- It adds a ledger entry with status `onboarding`, records the package and the files it wrote, and renders the `[ENVS]` row.
 
-Add `--commit` to commit exactly those files on main, and add `--push` to publish main, test, and stable as well. Replace the placeholder health check before the first deploy. The operator flips the ledger status to `live` when the rulebook is ready to enforce.
+`--with-stewardship` first makes sure the host is safe to change: the installed plugin carries the stewardship rule, and the polispec runtime is pinned to a read-only release ([stewardship](#looking-after-polispec-itself)). Add `--commit` to commit exactly the scaffold files on main, and add `--push` to publish main, test, and stable as well. Replace the placeholder health check before the first deploy. The operator flips the ledger status to `live` when the rulebook is ready to enforce.
 
 ## Commands
 
 | Command | Purpose |
 |---|---|
-| `polispec onboard <repo> --serves real_users\|internal\|none` | Scaffold the rulebook and ledger entry for a project |
+| `polispec plan <target>` | Preview a change: files, ledger, composed policy diff, verdicts that would change, and whether it tightens or loosens |
+| `polispec apply <target> [--confirm <plan-id>] [--with-stewardship]` | Carry out a plan; loosening, mixed, and global changes need `--confirm`. Targets: a package such as `environment-control --repo <repo>`, `project:<id>`, `global`, `ledger --from <file>` |
 | `polispec validate <kind\|auto> <file> [--json]` | Check a policy, environments, roster, ledger, global, module, profiles, behavior, control, or smoke file |
 | `polispec resolve <path> [--layers] [--json]` | Name the project, environment, and layers that govern a path |
 | `polispec doctor` / `status <project>` / `digest` | Report findings, project state, deployment receipts, and a daily digest |
@@ -394,9 +416,10 @@ For unsealed development, change settings with `rplugin settings`, or with the m
 - `polispec.operator`: how messages name the person who promotes to stable; default `the operator`.
 - `polispec.code.specs_repo`: path of the code specs repository; default `~/polispec-specs`. `POLISPEC_SPECS_REPO` overrides it.
 - `polispec.smoke.path`: path of the smoke ledger. Empty means `smoke.yml` at the git toplevel of the working directory. `POLISPEC_SMOKE` overrides it.
+- `polispec.verdicts.journal`: `off` (default) or `on`. When on, the guard keeps a bounded local journal of verdict facts, never command text, that `polispec plan` replays against a proposed rulebook.
 - `polispec.global.repo`, `polispec.global.ref` (default `main`), and `polispec.global.path` (default `polispec`): where the optional global shelf of shared rules, modules, and profiles is read from. Unset means no global layer. `POLISPEC_GLOBAL` points at a plain directory for scratch runs. See [schema](docs/schema.md).
 
-Optional integrations: none is required. Policy `observability.events` may name an `rlogs` sink, and `polispec onboard` recognises a `*.rstack_component.yml` manifest as well as `*.rplugin.yml`.
+Optional integrations: none is required. Policy `observability.events` may name an `rlogs` sink, and `polispec apply environment-control` recognises a `*.rstack_component.yml` manifest as well as `*.rplugin.yml`.
 
 ## Compared to alternatives
 
@@ -425,7 +448,10 @@ Optional integrations: none is required. Policy `observability.events` may name 
 No. Environment verdicts, gates, freezes, and composition are deterministic. Only some code-spec policies (`agent`, `hybrid`, `contextual`) use a model, and they are labelled as such.
 
 **Can an agent change its own rules?**
-It can edit the files on `main`. That edit is a `policy.edit` (warn), and it has no effect until the operator promotes it to the trust ref. The guard never reads the working tree.
+It can edit the files on `main`. That edit is a `policy.edit` (warn), and it has no effect until the operator promotes it to the trust ref. The guard never reads the working tree. `polispec plan project:<id>` shows whether such a change loosens anything, and applying a loosening plan needs the user's confirmation.
+
+**Can an agent break polispec itself?**
+It is told not to (`rules/polispec-stewardship.md`), and a pinned runtime denies writes into itself. On a host still running from a working clone, writes into the clone are warned, and `polispec apply --with-stewardship` pins it.
 
 **What happens if the rulebook is broken?**
 For a live project whose policy cannot be loaded, the guard falls back to the global layer's `fallback_rules` (or the ledger defaults). With no usable rules at all, it refuses non-read actions. A composition error makes `promote` refuse rather than run with fewer gates.
@@ -449,7 +475,9 @@ Today polispec governs where an agent may act and how code travels to users. Wit
 ## Documentation
 
 - [`docs/schema.md`](docs/schema.md): every key of the policy, roster, ledger, global layer, modules, and profiles, with examples.
-- [`docs/environments.md`](docs/environments.md): the environment manifest, onboarding, `[ENVS]`, and git hooks.
+- [`docs/environments.md`](docs/environments.md): the environment manifest, applying environment control, `[ENVS]`, and git hooks.
+- [`docs/packages.md`](docs/packages.md): packages, `plan`, `apply`, classification, verdict replay, and `--with-stewardship`.
+- [`rules/polispec-stewardship.md`](rules/polispec-stewardship.md): the rule agents follow when they install, change, or repair polispec and its rulebooks.
 - [`docs/operator.md`](docs/operator.md): sealed authority, protected allow-once, promote, deploy, pause, and host wiring.
 - [`docs/harness-controls.md`](docs/harness-controls.md): grammar, native installation, authority ceilings, editions, and verification limits.
 - [`docs/roster.md`](docs/roster.md): the roster resolver.

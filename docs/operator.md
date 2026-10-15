@@ -173,8 +173,22 @@ polispec reads these machine settings, each from an environment variable, then t
 | `polispec.global.ref` | `main` | Ref of that repository the layer is read from with `git show`; the working tree is never read. |
 | `polispec.global.path` | `polispec` | Directory inside the repository that holds `global.yml`, `profiles.yml` and `modules/`. |
 | `polispec.logs.count_command` | unset | Argv template (no shell) for the `logs_quiet` gate; takes `{service}`, `{since}` and `{until}` and prints one integer. Unset fails the gate closed. `RPLUGIN_POLISPEC_POLISPEC_LOGS_COUNT_COMMAND` overrides it. |
+| `polispec.verdicts.journal` | `off` | `on` keeps a bounded local journal (the last 5000 judged actions) of canonical verdict facts: project, environment, action class, tool, ref, home-relative path, verdict and rule id, never command text, file contents or environment values. `polispec plan` replays the last 14 days of it against a proposed rulebook. |
 
-The guard is a hook the host wires into each agent harness: it runs `polispec hook pretool --harness <name>` on every tool call and prints the harness's own allow, ask or deny reply. The plugin ships `hooks/polispec.hooks.yml` for harnesses rplugin can render; any other harness calls the same command from its pre-tool event. Two integrations are optional and never required: events may be emitted to an `rlogs` sink (`observability.events: rlogs`, otherwise `local` or `none`), and `polispec onboard` recognises a `*.rstack_component.yml` manifest as well as `*.rplugin.yml` when it adds a `serves:` pointer.
+The guard is a hook the host wires into each agent harness: it runs `polispec hook pretool --harness <name>` on every tool call and prints the harness's own allow, ask or deny reply. The plugin ships `hooks/polispec.hooks.yml` for harnesses rplugin can render; any other harness calls the same command from its pre-tool event. Two integrations are optional and never required: events may be emitted to an `rlogs` sink (`observability.events: rlogs`, otherwise `local` or `none`), and `polispec apply environment-control` recognises a `*.rstack_component.yml` manifest as well as `*.rplugin.yml` when it adds a `serves:` pointer.
+
+## The runtime and stewardship
+
+The polispec that runs the guard is the polispec judging every agent call on the host, so it is protected from the agents it judges. `polispec doctor` prints which runtime is running (`runtime: <kind> <commit> <root>`):
+
+| Kind | What it is | Writes into it |
+|---|---|---|
+| `pinned` | A read-only release made by `rplugin install <repo> --ref <tag>` under the plugins home's `.pinned/polispec/<commit>/`, with `.rplugin-release.json` recording the commit and a tree digest. | Denied (`R-POLISPEC-RUNTIME`); only rplugin writes there. |
+| `clone` | A working git clone linked as the plugin. | Warned (`R-POLISPEC-RUNTIME`): the clone is the live guard. |
+| `sealed` | The sealed plane's `/usr/local/lib/polispec/releases/<commit>`, described below. | Protected by the sealed plane. |
+| `unknown` | None of the above. | No built-in protection. |
+
+`polispec apply --with-stewardship` arms this for a host: it makes sure the installed plugin ships the stewardship rule (reinstalling from the running tree with `rplugin install <runtime root>` when not), checks the runtime protection, and pins a clone runtime to the tag of the version it is running (`rplugin install <clone> --ref v<VERSION>`), skipping each step that is already in place and stopping before the apply on any failure. A pinned host upgrades by releasing and reinstalling with a newer `--ref`; the earlier release stays under `.pinned/` as the rollback. The rule agents follow for all of this is `rules/polispec-stewardship.md`.
 
 The 0.18.0 release keeps `harness_controls` and `sealed_plane` disabled. The setup procedures below require a separate operator activation decision; publishing or updating the source performs none of them.
 

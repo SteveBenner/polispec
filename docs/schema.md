@@ -163,13 +163,33 @@ Names the live projects of the host. The file is resolved in order from the `POL
 | `schema`, `host` | | Document type and machine name. |
 | `envs_root` | path | Where `test` and `stable` checkouts live. |
 | `defaults.rules[]` | list | The fail-closed policy for a ledgered project whose stable policy is missing or invalid. Each rule has `match` (`env`, `ref`, `class`), `verdict`, optional `id` and `reason`. |
-| `projects[]` | list | `id`, `status` (`live`, `onboarding`, `retired`), `repo`, `remote`, `worktree_globs`, `trust_ref`, `policy`, `roster`, `related`, `onboarded`, `profile` (`personal`, `service` or `live`; default `personal`). |
+| `projects[]` | list | `id`, `status` (`live`, `onboarding`, `retired`), `repo`, `remote`, `worktree_globs`, `trust_ref`, `policy`, `roster`, `related`, `onboarded`, `profile` (`personal`, `service` or `live`; default `personal`), `packages` (see below). |
+| `projects[].packages[]` | list | One record per applied package: `name`, `variant`, `version`, `applied_at` (date) and `files` (repository path to `sha256:<hex>` of the bytes apply wrote). Upgrades compare against these digests. |
 | `pauses_log`, `allow_once_log` | path | Append-only JSONL logs. |
 
 ```yaml
 projects:
   - { id: shop, status: live, repo: ~/src/shop, trust_ref: stable, policy: specs/polispec/policy.yml, roster: specs/polispec/roster.yml }
 ```
+
+## Package: `packages/<name>/package.yml`, `polispec.package/v1`
+
+A package is a named, versioned setup that `polispec plan` and `polispec apply` carry out against a repository. See [packages](packages.md).
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `schema`, `name`, `version` | | `polispec.package/v1`; the name matches `^[a-z0-9][a-z0-9-]{0,40}$` and equals the directory; the version is semver. |
+| `summary` | string | One line shown by plan. |
+| `params` | map | Same shape as module parameters: `type`, `default`, `summary`, plus `allowed` (a list of values, string parameters only). Given with `--param name=value`. |
+| `variants` | map | `<variant>: { summary, files: { <repo target>: <source in the package> } }`. |
+| `default_variant` | string | Used when `--variant` is not given. |
+| `files` | map | Files written for every variant; a variant's file wins on the same target. Sources are templates rendered with `{{project}}`, `{{date}}`, `{{envs_root}}`, `{{repo_name}}` and every parameter. |
+| `modules` | list | Names of files in the package's `modules/` copied to `specs/polispec/modules/<name>.yml`. |
+| `steps` | list | Ordered built-in steps, each `{ kind, when }` or a bare kind: `files`, `manifest`, `ledger`, `render`, `commit`, `branches`, `push`, `checkouts`. `when: { param, equals }` is optional and names a declared parameter. Unknown keys and step kinds, and file paths that are absolute or contain `..`, are errors. |
+
+## Plan: `polispec.plan/v1`
+
+`polispec plan --json` prints `schema`, `target`, `plan_id`, `files[]` (`path`, `action` `add|replace|conflict|unchanged`, `diff`), `ledger` (`before`, `after`) or null, `policy_diff` (per affected project: added, removed and changed rules, gates, freezes and modules, with effective digests before and after), `probes[]` and `journal[]` (`probe`, `before`, `after`, `change` `tighten|loosen|same`), `classification` (`tightening`, `loosening`, `mixed` or `neutral`), `needs_confirm` and `reasons[]`. The `plan_id` is `plan_` plus the first 24 hex digits of the SHA-256 of the target, the proposed and current digests, and the classification, so any change to the proposal changes the id.
 
 ## Smoke ledger: `polispec.smoke/v1`
 
