@@ -68,6 +68,7 @@ module Polispec
           "POLISPEC_HOME" => File.join(scratch, "polispec-home"),
           "POLISPEC_GLOBAL" => global,
           "POLISPEC_STATE_HOME" => state,
+          "XDG_STATE_HOME" => File.join(scratch, "xdg-state"),
           "POLISPEC_SMOKE" => File.join(scratch, "smoke.yml"),
           "POLISPEC_SPECS_REPO" => File.join(scratch, "specs-repo"),
           ENFORCE_ENV => enforce,

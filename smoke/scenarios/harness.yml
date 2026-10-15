@@ -107,7 +107,7 @@ steps:
     expect:
       exit: 0
       json: { schema: polispec.harness.result/v1, ok: true, operation: scan }
-      files_exist: ["{{home}}/.local/state/rplugin/polispec/harness_scans.jsonl"]
+      files_exist: ["{{scratch}}/xdg-state/rplugin/polispec/harness_scans.jsonl"]
   - name: an unknown verb is a usage error
     run: ["{{polispec}}", harness, frobnicate]
     expect:

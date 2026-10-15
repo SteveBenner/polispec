@@ -10,6 +10,10 @@ module Polispec
       GIT_SHA = /\b[0-9a-f]{40}\b/
       DIGEST = /\bsha256:[0-9a-f]{64}\b/
       ENTRY_ID = /\bsmk_[0-9a-f]{12}\b/
+      PLAN_ID = /\bplan_[0-9a-f]{24}\b/
+      HEX64 = /\b[0-9a-f]{64}\b/
+      SHORT_SHA = /\b[0-9a-f]{12}\b/
+      DURATION = /\b\d+ ms\b/
       EXCERPT = 160
 
       module_function
@@ -21,7 +25,8 @@ module Polispec
 
           out = out.gsub(path, token)
         end
-        out.gsub(TIMESTAMP, "<TS>").gsub(DIGEST, "sha256:<DIGEST>").gsub(GIT_SHA, "<SHA>").gsub(ENTRY_ID, "smk_<ID>")
+        out = out.gsub(TIMESTAMP, "<TS>").gsub(DIGEST, "sha256:<DIGEST>").gsub(HEX64, "<HEX>").gsub(GIT_SHA, "<SHA>").gsub(ENTRY_ID, "smk_<ID>")
+        out.gsub(PLAN_ID, "plan_<ID>").gsub(SHORT_SHA, "<SHORT>").gsub(DURATION, "<N> ms")
       end
 
       def excerpt(text)
