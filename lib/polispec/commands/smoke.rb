@@ -7,20 +7,24 @@ module Polispec
   module Commands
     class SmokeCommand
       USAGE = <<~TEXT.chomp.freeze
-        usage: polispec smoke record --spec FILE [--at PATH] --verdict pass|fail|partial|blocked --summary TEXT [--step-file FILE] [--evidence PATH[:KIND]]... [--runner human|agent] [--harness H] [--model M] [--effort E] [--started ISO] [--finished ISO] [--json]
+        usage: polispec smoke record --spec FILE [--at PATH] --verdict pass|fail|partial|blocked --summary TEXT [--step-file FILE] [--evidence PATH[:KIND]]... [--runner human|agent|suite] [--harness H] [--model M] [--effort E] [--started ISO] [--finished ISO] [--json]
                polispec smoke list [--spec FILE] [--at PATH] [--verdict V] [--json]
                polispec smoke show <id> [--json]
                polispec smoke verify [--json]
                polispec smoke coverage [--spec FILE] [--at PATTERN]... [--json]
+               polispec smoke run [--unit PATTERN]... [--scenarios DIR] [--against TREE] [--host-copy] [--live claude-code|codex]... [--out DIR] [--no-record] [--accept-changes] [--json]
       TEXT
       VALUE_FLAGS = {
         "record" => %w[--spec --at --verdict --summary --step-file --evidence --runner --harness --model --effort --started --finished],
         "list" => %w[--spec --at --verdict],
         "show" => [],
         "verify" => [],
-        "coverage" => %w[--spec --at]
+        "coverage" => %w[--spec --at],
+        "run" => %w[--unit --scenarios --against --live --out]
       }.freeze
-      MULTI = %w[--evidence --at].freeze
+      BOOLEAN_FLAGS = { "run" => %w[--host-copy --no-record --accept-changes] }.freeze
+      MULTI = %w[--evidence --at --unit --live].freeze
+      LIVE_HARNESSES = %w[claude-code codex].freeze
 
       class Usage < StandardError; end
 
@@ -42,7 +46,8 @@ module Polispec
 
       def parse(verb, args)
         allowed = VALUE_FLAGS.fetch(verb)
-        opts = { json: false, rest: [], values: Hash.new { |hash, key| hash[key] = [] } }
+        opts = { json: false, rest: [], flags: [], values: Hash.new { |hash, key| hash[key] = [] } }
+        booleans = BOOLEAN_FLAGS.fetch(verb, [])
         queue = args.dup
         until queue.empty?
           arg = queue.shift
@@ -51,6 +56,10 @@ module Polispec
             raise Usage unless inline.nil?
 
             opts[:json] = true
+          elsif booleans.include?(name)
+            raise Usage unless inline.nil?
+
+            opts[:flags] << name
           elsif allowed.include?(name)
             value = inline || queue.shift
             raise Usage if value.nil?
@@ -81,37 +90,18 @@ module Polispec
         raise Usage if summary.strip.empty?
 
         runner_kind = one(opts, "--runner")
-        raise Usage if runner_kind && !%w[human agent].include?(runner_kind)
+        raise Usage if runner_kind && !%w[human agent suite].include?(runner_kind)
 
         started = timestamp(one(opts, "--started"), "--started")
         finished = timestamp(one(opts, "--finished"), "--finished")
         top = Smoke.toplevel
         path = Smoke.ledger_path(top)
         at = (one(opts, "--at") || "").to_s
-        clean, full = Smoke.relative_spec(spec, top)
-        bytes, data = Smoke.load_spec(clean, full)
-        node = Smoke.resolve_node(data, clean, at)
-        raise Polispec::Error, "#{clean}##{at} resolves to an empty node" if node.nil?
-
         steps = load_steps(one(opts, "--step-file"), top)
-        evidence = opts[:values]["--evidence"].map { |item| evidence_for(item, top) }
+        evidence = opts[:values]["--evidence"].map { |item| Smoke.evidence(item, top) }
         runner = Smoke.runner(runner: runner_kind, harness: one(opts, "--harness"), model: one(opts, "--model"), effort: one(opts, "--effort"))
-        runtime = Smoke.runtime
-        target = Smoke.target(top, path)
-        proves = { "spec" => clean, "at" => at, "spec_digest" => Smoke.sha256(bytes), "at_digest" => Smoke.node_digest(node) }
-        recorded = Time.now.utc.iso8601
-
-        entry = Smoke.append(path, top, lambda { |prev|
-          base = { "recorded_at" => recorded }
-          base["started_at"] = started if started
-          base["finished_at"] = finished if finished
-          base.merge(
-            "proves" => proves, "verdict" => verdict, "summary" => Smoke.scrub(summary, top),
-            "steps" => steps, "evidence" => evidence, "runner" => runner, "runtime" => runtime,
-            "target" => target, "prev" => prev
-          )
-        })
-        Events.emit("polispec.smoke", project: target["project"], id: entry["id"], spec: clean, at: at, verdict: verdict)
+        entry = Smoke.record(top: top, path: path, spec: spec, at: at, verdict: verdict, summary: summary, steps: steps,
+                             evidence: evidence, runner: runner, started: started, finished: finished)
         opts[:json] ? puts(JSON.generate(entry)) : puts(entry["id"])
         0
       end
@@ -145,21 +135,6 @@ module Polispec
         end
       rescue Schema::Document::ParseError => e
         raise Polispec::Error, e.message
-      end
-
-      def evidence_for(item, top)
-        path, kind = item, "file"
-        head, sep, tail = item.rpartition(":")
-        if !sep.empty? && !head.empty? && tail.match?(/\A[a-z][a-z0-9_-]*\z/)
-          path = head
-          kind = tail
-        end
-        full = File.expand_path(path)
-        raise Polispec::Error, "evidence #{Smoke.scrub(path, top)} is not a regular file" unless File.file?(full)
-
-        bytes = File.binread(full)
-        shown = Smoke.display_path(full, top)
-        { "path" => Smoke.scrub(shown, top), "sha256" => Smoke.sha256(bytes), "bytes" => bytes.bytesize, "kind" => kind }
       end
 
       def ledger_context
@@ -237,6 +212,20 @@ module Polispec
           puts "coverage: #{report['proven']}/#{report['total']} proven"
         end
         0
+      end
+
+      def run_run(opts)
+        raise Usage unless opts[:rest].empty?
+
+        live = opts[:values]["--live"]
+        raise Usage unless live.all? { |name| LIVE_HARNESSES.include?(name) }
+
+        require_relative "../smoke/run"
+        options = Smoke::Run::Options.new(
+          units: opts[:values]["--unit"], scenarios: one(opts, "--scenarios"), against: one(opts, "--against"), host_copy: opts[:flags].include?("--host-copy"),
+          live: live.uniq, out: one(opts, "--out"), record: !opts[:flags].include?("--no-record"), accept: opts[:flags].include?("--accept-changes"), json: opts[:json]
+        )
+        Smoke::Run.new(options).call
       end
 
       def usage

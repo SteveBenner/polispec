@@ -1,0 +1,55 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/classify
+summary: classify turns a harness tool call into action classes with the owning project and environment
+fixture:
+  projects:
+    - id: shop
+      variant: service
+      status: live
+steps:
+  - name: git push to stable is git.push on prod
+    run: ["{{polispec}}", classify, --json, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name":"Bash","tool_input":{"command":"git push origin main:stable"}}'
+    expect:
+      exit: 0
+      json:
+        tool_name: Bash
+        actions:
+          - { class: git.push, env_hint: { remote: origin, ref: stable }, raw: "git push origin main:stable", target: { project: shop, env: prod } }
+  - name: git push as text
+    run: ["{{polispec}}", classify, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name":"Bash","tool_input":{"command":"git push origin main:stable"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["git.push", "shop@prod", "git push origin main:stable"]
+  - name: rm -rf is fs.write and fs.delete in dev
+    run: ["{{polispec}}", classify, --json, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name":"Bash","tool_input":{"command":"rm -rf build"}}'
+    expect:
+      exit: 0
+      json:
+        actions:
+          - { class: fs.write, target: { project: shop, env: dev } }
+          - { class: fs.delete, target: { project: shop, env: dev } }
+  - name: write outside every project has no target
+    run: ["{{polispec}}", classify, --json, "--cwd", "{{files}}"]
+    stdin: '{"tool_name":"Write","tool_input":{"file_path":"/tmp/smoke-nowhere/a.rb","content":"x"}}'
+    expect:
+      exit: 0
+      json:
+        actions:
+          - { class: fs.write, env_hint: { path: /tmp/smoke-nowhere/a.rb }, target: null }
+  - name: write inside the project is fs.write in dev
+    run: ["{{polispec}}", classify, --json, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name":"Write","tool_input":{"file_path":"{{project.shop}}/lib/a.rb","content":"x"}}'
+    expect:
+      exit: 0
+      json:
+        actions:
+          - { class: fs.write, target: { project: shop, env: dev } }
+  - name: input that is not JSON exits 2
+    run: ["{{polispec}}", classify]
+    stdin: "not json"
+    expect:
+      exit: 2
+      stderr_includes: ["invalid hook JSON"]

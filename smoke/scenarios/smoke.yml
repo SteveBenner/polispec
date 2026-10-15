@@ -1,0 +1,75 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/smoke
+summary: smoke record appends a chained entry to the scratch ledger, verify passes, coverage reports the proof, and a hand edit makes verify fail
+fixture:
+  projects:
+    - id: demo
+      variant: service
+      serves: none
+      files:
+        "specs/demo.yml": "items:\n  - name: alpha\n    note: first\n  - name: beta\n    note: second\n"
+steps:
+  - name: record a pass for alpha
+    run: ["{{polispec}}", smoke, record, --spec, specs/demo.yml, --at, items/alpha, --verdict, pass, --summary, "alpha works", --runner, human, --json]
+    cwd: "{{project.demo}}"
+    parity: ignore
+    expect:
+      exit: 0
+      json: { verdict: pass, proves: { spec: specs/demo.yml, at: items/alpha }, prev: null, runner: { kind: human } }
+      files_exist: ["{{scratch}}/smoke.yml"]
+  - name: an unresolved reference is refused
+    run: ["{{polispec}}", smoke, record, --spec, specs/demo.yml, --at, items/gamma, --verdict, pass, --summary, "gamma works"]
+    cwd: "{{project.demo}}"
+    expect:
+      exit: 1
+      stderr_includes: ["does not resolve"]
+  - name: verify is clean
+    run: ["{{polispec}}", smoke, verify, --json]
+    cwd: "{{project.demo}}"
+    expect:
+      exit: 0
+      json: { entries: 1, findings: [] }
+  - name: list shows the entry
+    run: ["{{polispec}}", smoke, list, --verdict, pass]
+    cwd: "{{project.demo}}"
+    expect:
+      exit: 0
+      stdout_includes: ["pass specs/demo.yml#items/alpha", "alpha works"]
+  - name: coverage proves alpha and not beta
+    run: ["{{polispec}}", smoke, coverage, --spec, specs/demo.yml, --at, "items/*", --json]
+    cwd: "{{project.demo}}"
+    expect:
+      exit: 0
+      json:
+        proven: 1
+        total: 2
+        units:
+          - { unit: items/alpha, status: proven }
+          - { unit: items/beta, status: none }
+  - name: record a second entry chained to the first
+    run: ["{{polispec}}", smoke, record, --spec, specs/demo.yml, --at, items/beta, --verdict, fail, --summary, "beta broke", --runner, human, --json]
+    cwd: "{{project.demo}}"
+    parity: ignore
+    expect:
+      exit: 0
+      json: { verdict: fail, proves: { at: items/beta } }
+  - name: coverage reports beta failing
+    run: ["{{polispec}}", smoke, coverage, --spec, specs/demo.yml, --at, "items/*", --json]
+    cwd: "{{project.demo}}"
+    expect:
+      exit: 0
+      json:
+        proven: 1
+        units:
+          - { unit: items/alpha, status: proven }
+          - { unit: items/beta, status: failing }
+  - name: hand edit one summary in the ledger
+    run: [sed, -i, "s/alpha works/alpha was edited/", "{{scratch}}/smoke.yml"]
+    expect:
+      exit: 0
+  - name: verify now fails on the digest
+    run: ["{{polispec}}", smoke, verify]
+    cwd: "{{project.demo}}"
+    expect:
+      exit: 1
+      stdout_includes: ["digest_mismatch"]

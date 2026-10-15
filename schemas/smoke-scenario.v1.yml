@@ -1,0 +1,105 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.smoke-scenario/v1
+title: Polispec smoke scenario
+type: object
+additionalProperties: false
+required: [schema, unit, summary, steps]
+properties:
+  schema: { const: polispec.smoke-scenario/v1 }
+  unit: { type: string, minLength: 1 }
+  spec: { type: string, minLength: 1 }
+  summary: { type: string, minLength: 1 }
+  requires:
+    type: array
+    items: { type: string, pattern: "^[a-z][a-z0-9_]*$" }
+  fixture: { $ref: "#/$defs/fixture" }
+  steps:
+    type: array
+    minItems: 1
+    items: { $ref: "#/$defs/step" }
+$defs:
+  string_map:
+    type: object
+    additionalProperties: { type: string }
+  string_list:
+    type: array
+    items: { type: string }
+  fixture:
+    type: object
+    additionalProperties: false
+    properties:
+      enforce: { enum: [advise, enforce] }
+      global: { enum: [none, example, files] }
+      global_files: { $ref: "#/$defs/string_map" }
+      projects:
+        type: array
+        items: { $ref: "#/$defs/project" }
+      files: { $ref: "#/$defs/string_map" }
+  project:
+    type: object
+    additionalProperties: false
+    required: [id]
+    properties:
+      id: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }
+      variant: { enum: [service, distributed] }
+      serves: { enum: [real_users, internal, none] }
+      status: { enum: [live, onboarding] }
+      checkouts: { type: boolean }
+      files: { $ref: "#/$defs/string_map" }
+  step:
+    type: object
+    additionalProperties: false
+    required: [name, expect]
+    anyOf:
+      - { required: [run] }
+      - { required: [hook] }
+    properties:
+      name: { type: string, minLength: 1 }
+      run:
+        type: array
+        minItems: 1
+        items: { type: string }
+      hook: { $ref: "#/$defs/hook" }
+      cwd: { type: string, minLength: 1 }
+      env: { $ref: "#/$defs/string_map" }
+      stdin: { type: string }
+      tty: { $ref: "#/$defs/string_list" }
+      timeout: { type: integer, minimum: 1, maximum: 120 }
+      home: { type: boolean }
+      stop: { type: boolean }
+      parity: { enum: [compare, ignore] }
+      expect: { $ref: "#/$defs/expect" }
+  hook:
+    type: object
+    additionalProperties: false
+    required: [harness, event]
+    properties:
+      harness: { enum: [claude, codex] }
+      event: { enum: [pretool, session] }
+      tool: { type: string, minLength: 1 }
+      input: { type: object }
+      cwd: { type: string, minLength: 1 }
+  expect:
+    type: object
+    additionalProperties: false
+    properties:
+      exit:
+        anyOf:
+          - { type: integer }
+          - { type: array, minItems: 1, items: { type: integer } }
+      stdout_includes: { $ref: "#/$defs/string_list" }
+      stdout_excludes: { $ref: "#/$defs/string_list" }
+      stderr_includes: { $ref: "#/$defs/string_list" }
+      json: { type: object }
+      files_exist: { $ref: "#/$defs/string_list" }
+      files_absent: { $ref: "#/$defs/string_list" }
+      git:
+        type: object
+        additionalProperties: false
+        required: [repo, ref, unchanged]
+        properties:
+          repo: { type: string, minLength: 1 }
+          ref: { type: string, minLength: 1 }
+          unchanged: { type: boolean }
+      decision: { enum: [allow, ask, deny, context] }
+      rule: { type: string, minLength: 1 }

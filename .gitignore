@@ -11,3 +11,4 @@ TOKENS.jsonl
 DECISIONS.md
 TMP_AGENT_FILE_LOCKS.yml
 TMP_AGENT_REPO_LOCK.yml
+.polispec-smoke/

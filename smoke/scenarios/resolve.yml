@@ -1,0 +1,54 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/resolve
+summary: resolve names the project, environment, branch and policy digest for a dev path, a test checkout and a prod checkout, and lists the layer chain
+fixture:
+  global: example
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+      files:
+        "lib/app.rb": "puts 1\n"
+steps:
+  - name: dev path as json
+    run: ["{{polispec}}", resolve, "{{project.shop}}/lib/app.rb", --json]
+    expect:
+      exit: 0
+      json: { project: shop, env: dev, branch: main }
+  - name: dev path as text
+    run: ["{{polispec}}", resolve, "{{project.shop}}/lib/app.rb"]
+    expect:
+      exit: 0
+      stdout_includes: ["shop dev branch=main policy=stable:"]
+  - name: test checkout
+    run: ["{{polispec}}", resolve, "{{checkout.shop.test}}/lib/app.rb", --json]
+    expect:
+      exit: 0
+      json: { project: shop, env: test, branch: test }
+  - name: stable checkout
+    run: ["{{polispec}}", resolve, "{{checkout.shop.stable}}/lib/app.rb", --json]
+    expect:
+      exit: 0
+      json: { project: shop, env: prod, branch: stable }
+  - name: layers chain
+    run: ["{{polispec}}", resolve, "{{project.shop}}/lib/app.rb", --layers]
+    expect:
+      exit: 0
+      stdout_includes: ["  global  dir:", "rules=1", "  repo  stable:", "  effective sha256:"]
+      stdout_excludes: ["error:"]
+  - name: a shared bundle under the checkout root resolves to prod
+    run: ["{{polispec}}", resolve, "{{scratch}}/envs/shop/shared/bundle", --json]
+    expect:
+      exit: 0
+      json: { project: shop, env: prod, branch: stable }
+  - name: a release directory under the checkout root resolves to prod
+    run: ["{{polispec}}", resolve, "{{scratch}}/envs/shop/releases/r1/lib/app.rb", --json]
+    expect:
+      exit: 0
+      json: { project: shop, env: prod, branch: stable }
+  - name: a path no project owns is not ledgered
+    run: ["{{polispec}}", resolve, "{{files}}/elsewhere"]
+    expect:
+      exit: 0
+      stdout_includes: ["not ledgered"]

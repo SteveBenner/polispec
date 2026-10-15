@@ -7,7 +7,20 @@ module Polispec
 
     module_function
 
+    def redirected
+      dir = ENV["POLISPEC_STATE_HOME"].to_s
+      return nil if dir.empty?
+
+      require_relative "harness_controls/plane"
+      HarnessControls::Plane.path("ledger") ? nil : File.expand_path(dir)
+    rescue StandardError
+      nil
+    end
+
     def home
+      forced = redirected
+      return forced if forced
+
       base = ENV["XDG_STATE_HOME"]
       base = File.join(Dir.home, ".local", "state") if base.nil? || base.empty?
       File.join(base, "polispec")

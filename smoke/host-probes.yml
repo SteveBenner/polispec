@@ -1,0 +1,24 @@
+schema: polispec.smoke-host-probes/v1
+probes:
+  - { name: Read a project file, harness: claude, tool: Read, input: { file_path: "{{project}}/README.md" }, cwd: "{{project}}" }
+  - { name: Edit a project file, harness: claude, tool: Edit, input: { file_path: "{{project}}/README.md", old_string: a, new_string: b }, cwd: "{{project}}" }
+  - { name: Write in /tmp, harness: claude, tool: Write, input: { file_path: /tmp/polispec-smoke-probe.txt, content: probe }, cwd: "{{tmp}}" }
+  - { name: Bash ls, harness: claude, tool: Bash, input: { command: ls }, cwd: "{{project}}" }
+  - { name: Bash echo, harness: claude, tool: Bash, input: { command: echo hi }, cwd: "{{project}}" }
+  - { name: Bash git status, harness: claude, tool: Bash, input: { command: git status }, cwd: "{{project}}" }
+  - { name: Bash git log -1, harness: claude, tool: Bash, input: { command: git log -1 }, cwd: "{{project}}" }
+  - { name: Bash cat README.md, harness: claude, tool: Bash, input: { command: cat README.md }, cwd: "{{project}}" }
+  - { name: Bash grep -rn x ., harness: claude, tool: Bash, input: { command: grep -rn x . }, cwd: "{{project}}" }
+  - { name: Bash rm -rf build, harness: claude, tool: Bash, input: { command: rm -rf build }, cwd: "{{project}}" }
+  - { name: Bash git push origin main:stable, harness: claude, tool: Bash, input: { command: "git push origin main:stable" }, cwd: "{{project}}" }
+  - { name: Bash git push --force, harness: claude, tool: Bash, input: { command: git push --force }, cwd: "{{project}}" }
+  - { name: Bash bundle exec rake test, harness: claude, tool: Bash, input: { command: bundle exec rake test }, cwd: "{{project}}" }
+  - { name: Bash unknown script, harness: claude, tool: Bash, input: { command: ./scripts/unknown-thing }, cwd: "{{project}}" }
+  - { name: MCP call, harness: claude, tool: mcp__srv__op, input: {}, cwd: "{{project}}" }
+  - { name: WebFetch, harness: claude, tool: WebFetch, input: { url: "https://example.com", prompt: summarise }, cwd: "{{project}}" }
+  - { name: WebSearch, harness: claude, tool: WebSearch, input: { query: ruby }, cwd: "{{project}}" }
+  - { name: Agent, harness: claude, tool: Agent, input: { description: probe, prompt: noop, subagent_type: general-purpose }, cwd: "{{project}}" }
+  - { name: Skill, harness: claude, tool: Skill, input: { skill: update-config }, cwd: "{{project}}" }
+  - { name: TodoWrite, harness: claude, tool: TodoWrite, input: { todos: [] }, cwd: "{{project}}" }
+  - { name: Bash ls from home, harness: claude, tool: Bash, input: { command: ls }, cwd: "{{home}}" }
+  - { name: Bash ls from tmp, harness: claude, tool: Bash, input: { command: ls }, cwd: "{{tmp}}" }
