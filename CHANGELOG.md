@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.26.0] - 2026-10-16
+
+### Added
+
+- `polispec explain --harness HARNESS [--json] < hook-json` judges one PreToolUse hook call through the same path as `hook pretool` (classification, environment outcomes, the harness-control ceiling with the undeclared MCP default) and prints the verdict the harness would get under enforce, whatever `polispec.enforce` is: `verdict`, `rule_id`, `reason`, `governed`, the control verdict and `ask_ids`, and per action its class, server, operation and whether a protected or committed rule declares it. It writes nothing: no judgment record, no event, no fast-path refresh, no policy cache, no allow-once issue or consumption and no protected authorization (the explain adapter answers `ask?` true, so ask composition returns before the authorization branch; `Engine::Passes.consume!`, `PolicySource.remember_environments` and `write_cache` are no-ops while it runs, so a held allow-once pass is reported as not held). Exit 0 with a verdict, 2 on invalid input, 1 on an internal error, never a fabricated allow. For callers that must know before an unattended session runs whether its tools pass, such as Teach's doctor (`lib/polispec/commands/explain.rb`, `lib/polispec/commands/hook.rb`; blueprint `specs/explain.impl.yml`). `hook pretool` output and records are unchanged.
+
 ## [0.25.1] - 2026-10-15
 
 ### Fixed
