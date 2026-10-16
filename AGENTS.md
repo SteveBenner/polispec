@@ -1,17 +1,21 @@
 # AGENTS.md: polispec
 
-polispec is a plugin built on rplugin, the SDK for agent-harness plugins.
+polispec is a plugin built on rplugin, the SDK for agent-harness plugins, and
+installs and runs without it.
 `CLAUDE.md` links to this file, so every harness reads the same text.
 
 ## Using it for someone
 
-- It is installed with `~/.rplugin/bin/rplugin install polispec` and checked with
-  `~/.rplugin/bin/rplugin doctor polispec`, which must report zero findings. Read
-  rplugin's own `~/.rplugin/AGENTS.md` for installing, configuring and
-  troubleshooting any plugin.
+- Install it without rplugin with `install.sh`, or from a clone with
+  `bin/polispec pin` then `polispec install --harness claude|codex`, or as a
+  Claude Code or Codex plugin; `README.md` lists every path. On a host that has
+  rplugin, it is installed with `~/.rplugin/bin/rplugin install polispec` and
+  checked with `~/.rplugin/bin/rplugin doctor polispec`, which must report zero
+  findings; read rplugin's own `~/.rplugin/AGENTS.md` for that path.
 - What polispec does and its settings (`polispec.enforce`, `polispec.ledger`,
-  `polispec.operator` and `polispec.code.specs_repo`, changed with `rplugin settings`) are described in `README.md`; the contract is
-  `specs/app.yml`.
+  `polispec.operator` and `polispec.code.specs_repo`, changed with
+  `polispec settings set`, or `rplugin settings` on an rplugin host) are
+  described in `README.md`; the contract is `specs/app.yml`.
 - Its skill is `skills/polispec/SKILL.md`; its command, when installed, is `polispec`
   on the user's `PATH`.
 - If it owns a corpus, rplugin created it for the plugin. Read and write it
@@ -31,7 +35,8 @@ global shelf or the ledger. In short:
   `bin/polispec` against scratch `POLISPEC_LEDGER`, `POLISPEC_HOME`,
   `POLISPEC_GLOBAL` and `POLISPEC_STATE_HOME` (never redirect `XDG_STATE_HOME`),
   run `bin/polispec smoke run --against <installed release>`, then merge, tag and
-  reinstall with `rplugin install <repo> --ref <tag>`. On a host that is not
+  reinstall with `rplugin install <repo> --ref <tag>`, or `polispec pin --ref
+  <tag>` on a host without rplugin. On a host that is not
   pinned yet, merge only verified code, as one fast-forward.
 - Rulebook changes go through `polispec plan` and `polispec apply`. Loosening,
   mixed and global plans, status flips and enforce-mode changes need the user's

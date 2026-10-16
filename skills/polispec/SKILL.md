@@ -45,7 +45,8 @@ Moving `stable`, deploying production, pausing the guard, redeeming an allow-onc
 
 - Ruby; no gems beyond the standard library.
 - The ledger of governed projects. Unsealed resolution uses `POLISPEC_LEDGER`, then `polispec.ledger`, then `~/.config/polispec/ledger.yml`; sealed resolution uses the verified fixed authority plane and ignores those redirects.
-- Settings, changed with `rplugin settings`: `polispec.enforce` (`advise` or `enforce`, default `advise`), `polispec.ledger`, `polispec.operator` (how messages name the person who promotes to stable) and `polispec.code.specs_repo`.
+- An install. Without rplugin: `polispec pin` (a read-only release under `~/.local/share/polispec`, with `~/.local/bin/polispec`), then `polispec install --harness claude|codex`. As a Claude Code or Codex plugin, the hooks and this skill come from the plugin cache; when asked to "set up polispec stewardship" there, run `<plugin root>/bin/polispec steward`, which pins a release and links the rules. With rplugin: `rplugin install polispec`. `polispec doctor` reports what is missing.
+- Settings, changed with `polispec settings set <key> <value>` (or `rplugin settings` on an rplugin host): `polispec.enforce` (`advise` or `enforce`, default `advise`), `polispec.ledger`, `polispec.operator` (how messages name the person who promotes to stable) and `polispec.code.specs_repo`.
 
 ## Harness controls
 

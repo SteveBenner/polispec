@@ -3,6 +3,7 @@
 
 require "fileutils"
 require_relative "layers"
+require_relative "native_settings"
 require_relative "harness/base"
 require_relative "classify/tool"
 require_relative "classify/benign"
@@ -48,6 +49,7 @@ module Polispec
       config = ENV["XDG_CONFIG_HOME"].to_s
       config = File.join(Dir.home, ".config") if config.empty?
       list << File.join(config, "rplugin", "polispec", "settings.yml")
+      list << NativeSettings.path
       list << "/etc/polispec/active.json"
       list.reject(&:empty?).map { |file| File.expand_path(file) }.select { |file| File.file?(file) }.uniq
     end

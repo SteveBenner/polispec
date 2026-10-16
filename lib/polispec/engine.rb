@@ -5,6 +5,7 @@ require "securerandom"
 require_relative "classify/shell"
 require_relative "layers"
 require_relative "predicates"
+require_relative "native_settings"
 
 module Polispec
   module Engine
@@ -36,10 +37,7 @@ module Polispec
           return machine.map(&:to_s) if machine.is_a?(Array)
           return machine.is_a?(String) && !machine.strip.empty? ? Shellwords.split(machine) : []
         end
-        forced = ENV[env_name(key)].to_s.strip
-        return Shellwords.split(forced) unless forced.empty?
-
-        machine = snapshot.dig("machine", key)
+        machine = lookup(key) { |value| value.is_a?(Array) || (value.is_a?(String) && !value.strip.empty?) }
         return machine.map(&:to_s) if machine.is_a?(Array)
 
         machine.is_a?(String) && !machine.strip.empty? ? Shellwords.split(machine) : []
@@ -53,10 +51,7 @@ module Polispec
           machine = plane[key.to_s]
           return machine.is_a?(String) && !machine.strip.empty? ? machine.strip : default
         end
-        forced = ENV[env_name(key)].to_s.strip
-        return forced unless forced.empty?
-
-        machine = snapshot.dig("machine", key)
+        machine = lookup(key) { |value| value.is_a?(String) && !value.strip.empty? }
         machine.is_a?(String) && !machine.strip.empty? ? machine.strip : default
       end
 
@@ -75,11 +70,30 @@ module Polispec
       def enforce_mode
         plane = plane_settings
         return MODES.include?(plane[KEY]) ? plane[KEY] : "enforce" if plane
-        forced = ENV[env_name(KEY)].to_s.strip.downcase
-        return forced if MODES.include?(forced)
-
-        machine = snapshot.dig("machine", KEY)
+        machine = lookup(KEY) { |value| MODES.include?(value.is_a?(String) ? value.downcase : value) }
+        machine = machine.downcase if machine.is_a?(String)
         MODES.include?(machine) ? machine : "advise"
+      end
+
+      def lookup(key)
+        key = key.to_s
+        candidates = []
+        forced = ENV[env_name(key)].to_s.strip
+        candidates << forced unless forced.empty?
+        alias_name = NativeSettings.env_alias(key)
+        if alias_name
+          short = ENV[alias_name].to_s.strip
+          candidates << short unless short.empty?
+        end
+        candidates << snapshot.dig("machine", key)
+        candidates << NativeSettings.read[key]
+        candidates.each do |value|
+          next if value.nil?
+          next if block_given? && !yield(value)
+
+          return value
+        end
+        nil
       end
 
       def env_name(key)
@@ -99,11 +113,7 @@ module Polispec
 
       def root_guard
         plane = plane_settings
-        value = plane ? plane[ROOT_GUARD_KEY] : snapshot.dig("machine", ROOT_GUARD_KEY)
-        if plane.nil?
-          forced = ENV[env_name(ROOT_GUARD_KEY)].to_s.strip.downcase
-          value = forced unless forced.empty?
-        end
+        value = plane ? plane[ROOT_GUARD_KEY] : lookup(ROOT_GUARD_KEY)
         value == true || value.to_s.downcase == "true"
       end
 

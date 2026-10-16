@@ -23,11 +23,9 @@ module Polispec
             return options.include?(protected_value) ? protected_value : options.first
           end
         end
-        forced = ENV[Engine::Settings.env_name(key)].to_s.strip.downcase
-        return forced if options.include?(forced)
-
-        machine = Engine::Settings.snapshot.dig("machine", key)
-        options.include?(machine) ? machine : options.first
+        found = Engine::Settings.lookup(key) { |raw| options.include?(raw.is_a?(String) ? raw.downcase : raw) }
+        found = found.downcase if found.is_a?(String)
+        options.include?(found) ? found : options.first
       end
 
       def enforce
