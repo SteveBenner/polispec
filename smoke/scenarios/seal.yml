@@ -1,6 +1,6 @@
 schema: polispec.smoke-scenario/v1
 unit: commands/seal
-summary: seal --dry-run against a committed scratch source never activates anything and reports a blocked structured result with exit 1, a real seal is blocked as well, an unresolvable commit and a bad option set are refused, and no plane state is written
+summary: seal --dry-run against a committed scratch source never activates anything and reports a blocked structured result with exit 3, a real seal is blocked as well, an unresolvable commit and a bad option set are refused, and no plane state is written
 fixture:
   global: example
 steps:
@@ -12,18 +12,24 @@ steps:
   - name: seal --dry-run returns a structured blocked result
     run: [sh, -c, '"$0" seal --from "$1@$(git -C "$1" rev-parse HEAD)" --dry-run --json', "{{polispec}}", "{{scratch}}/seal-src"]
     expect:
-      exit: 1
+      exit: 3
       json: { schema: polispec.harness.result/v1, ok: false, operation: seal }
       stdout_includes: ['"findings":[{"code":']
+  - name: seal --dry-run does not stop on the oversized logo images of the runtime tree
+    run: [sh, -c, '"$0" seal --from "$1@$(git -C "$1" rev-parse HEAD)" --dry-run --json', "{{polispec}}", "{{scratch}}/seal-src"]
+    expect:
+      exit: 3
+      json: { operation: seal }
+      stdout_excludes: ["oversized_bundle", "polispec-logo-frost.png"]
   - name: seal --dry-run as text says blocked and lists each finding
     run: [sh, -c, '"$0" seal --from "$1@$(git -C "$1" rev-parse HEAD)" --dry-run', "{{polispec}}", "{{scratch}}/seal-src"]
     expect:
-      exit: 1
+      exit: 3
       stdout_includes: ["polispec seal: blocked"]
   - name: a real seal does not activate anything either
     run: [sh, -c, '"$0" seal --from "$1@$(git -C "$1" rev-parse HEAD)" --json', "{{polispec}}", "{{scratch}}/seal-src"]
     expect:
-      exit: 1
+      exit: 3
       json: { ok: false, operation: seal }
   - name: the plane is still unsealed
     run: ["{{polispec}}", plane, status, --json]

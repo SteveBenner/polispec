@@ -47,7 +47,7 @@ Each gate is `{id, run}` or `{id, builtin}`. A `run` command is split with Shell
 
 | Builtin | Passes when |
 | --- | --- |
-| `clean_tree` | the project repo has no uncommitted changes to tracked files |
+| `clean_tree` | the project repo has no uncommitted changes to tracked files and no untracked files that are not ignored |
 | `version_homes_agree` | `VERSION`, every top-level `*.rplugin.yml`, `.codex-plugin/plugin.json` and `.claude-plugin/plugin.json` at the promoted sha carry the same version |
 | `sha_ran_on_test` | `deploys.jsonl` holds a `test` deploy of that project and sha with `health: ok` (a `url` or `run` health check passed) |
 | `not_frozen` | `Polispec::Freeze.active(policy, "promote.to_<target>")` is empty |
@@ -157,7 +157,7 @@ A freeze with `source: command` runs its `command` argv in the prod checkout of 
 
 ## Scratch use
 
-Point `POLISPEC_LEDGER`, `XDG_STATE_HOME` and `POLISPEC_ENVS_ROOT` at scratch directories and a bare remote; nothing else is read or written.
+Point `POLISPEC_LEDGER`, `POLISPEC_HOME`, `POLISPEC_GLOBAL`, `POLISPEC_STATE_HOME` and `POLISPEC_ENVS_ROOT` at scratch directories and a bare remote; nothing else is read or written. Do not redirect `XDG_STATE_HOME`: it hides the rplugin settings and, without `POLISPEC_STATE_HOME`, scratch runs write the live guard's state.
 
 ## Settings and host wiring
 

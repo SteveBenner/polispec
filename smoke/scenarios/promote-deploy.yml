@@ -170,3 +170,21 @@ steps:
     expect:
       exit: 1
       json: { ok: false, error: { code: gate_failed, payload: { gate_id: G-CLEAN } } }
+  - name: the tracked change is reverted and an untracked file is added
+    run: [sh, -c, 'git checkout -q -- lib/app.rb && echo scratch > untracked-note.txt && git status --porcelain']
+    cwd: "{{project.shop}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+      stdout_includes: ["?? untracked-note.txt"]
+  - name: promote refuses on an untracked non-ignored file
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run, --json]
+    expect:
+      exit: 1
+      json: { ok: false, error: { code: gate_failed, payload: { gate_id: G-CLEAN } } }
+      stdout_includes: ["untracked-note.txt"]
+  - name: the untracked file is removed
+    run: [sh, -c, 'rm untracked-note.txt && git status --porcelain']
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
