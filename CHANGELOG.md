@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.1] - 2026-10-15
+
+### Fixed
+
+- `seal` no longer dies `oversized_bundle` on the smoke ledger: `smoke.yml` grows with every recorded run and passed the seal's 1 MiB per-file limit in 0.24.0, so `seal --dry-run` from a clone exited 1 and the `seal.yml` scenario failed. The runtime manifest of the committed release now leaves the smoke ledger out, as it has left the logo images out since 0.24.0; `MAX_FILE` and `MAX_BUNDLE` are unchanged (`lib/polispec/harness_controls/authority.rb`).
+- `seal` from a polispec installed as an rplugin release enumerated the wrong tree: the pinned directory has no `.git`, so the runtime plan ran `git ls-tree` against whatever repository encloses the plugin store and died on that repository's files. The runtime manifest now comes from the source repository and commit the release descriptor records (`.rplugin-release.json`), the resolved commit must equal the pinned one, and a missing or incomplete source fails `runtime_source_unavailable` instead of inspecting an unrelated repository. A clone runtime still uses its own working tree and fails the same way when it is not one.
+
 ## [0.25.0] - 2026-10-15
 
 ### Added

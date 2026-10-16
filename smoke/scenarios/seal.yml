@@ -15,12 +15,12 @@ steps:
       exit: 3
       json: { schema: polispec.harness.result/v1, ok: false, operation: seal }
       stdout_includes: ['"findings":[{"code":']
-  - name: seal --dry-run does not stop on the oversized logo images of the runtime tree
+  - name: seal --dry-run does not stop on the oversized logo images or the smoke ledger of the runtime tree
     run: [sh, -c, '"$0" seal --from "$1@$(git -C "$1" rev-parse HEAD)" --dry-run --json', "{{polispec}}", "{{scratch}}/seal-src"]
     expect:
       exit: 3
       json: { operation: seal }
-      stdout_excludes: ["oversized_bundle", "polispec-logo-frost.png"]
+      stdout_excludes: ["oversized_bundle", "polispec-logo-frost.png", '"path":"smoke.yml"']
   - name: seal --dry-run as text says blocked and lists each finding
     run: [sh, -c, '"$0" seal --from "$1@$(git -C "$1" rev-parse HEAD)" --dry-run', "{{polispec}}", "{{scratch}}/seal-src"]
     expect:
