@@ -315,6 +315,10 @@ module Polispec
         @kinds
       end
 
+      def ledger_created?
+        @ledger_created == true
+      end
+
       def ledger_before
         @ledger
       end
@@ -643,9 +647,15 @@ module Polispec
 
       def ledger_text(digests)
         path = @ledger.path
-        raise Operator::Failure.new("ledger_missing", "no ledger at #{path}; create it before onboarding") unless File.file?(path)
+        @ledger_created = false
+        if File.file?(path)
+          original = File.read(path)
+        else
+          raise Operator::Failure.new("ledger_missing", "the sealed plane names #{path} and it is missing; ask the operator") if Ledger.sealed_ledger?
 
-        original = File.read(path)
+          original = Ledger.starter_text
+          @ledger_created = true
+        end
         updated = @upgrade ? replace_record(original, record_lines(digests)) : insert_entry(original, entry_for_ledger + ["    packages:"] + record_lines(digests))
         data = Schema::Document.parse(updated, path)
         errors = Schema.validate("ledger", data)
@@ -659,7 +669,13 @@ module Polispec
       def step_ledger
         path = @ledger.path
         updated = ledger_text(record_digests)
-        unless @options.dry
+        if @ledger_created
+          unless @options.dry
+            FileUtils.mkdir_p(File.dirname(path), mode: 0o700)
+            atomic_write(path, updated, 0o600)
+          end
+          note("ledger", would("done"), @options.dry ? "create #{path} (starter ledger, no projects yet)" : "created #{path} (starter ledger)")
+        elsif !@options.dry
           backup = File.join(File.dirname(path), "#{File.basename(path)}.bak-#{Time.now.utc.strftime('%Y%m%d%H%M%S')}")
           FileUtils.cp(path, backup, preserve: true)
           atomic_write(path, updated, File.stat(path).mode & 0o777)

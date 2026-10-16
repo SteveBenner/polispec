@@ -42,7 +42,8 @@ module Polispec
     def load_ledger(findings)
       path = Ledger.default_path
       unless File.file?(path)
-        findings << finding(nil, "ledger_missing", "no ledger at #{path}")
+        detail = Ledger.sealed_ledger? ? "no ledger at #{path}; the sealed plane names it; ask the operator" : "no ledger at #{path}; create one with polispec ledger init"
+        findings << finding(nil, "ledger_missing", detail)
         return nil
       end
       result = Schema.validate_file("ledger", path)

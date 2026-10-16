@@ -81,6 +81,7 @@ IFS="$old_ifs"
 echo
 echo "pinned path: $data/current"
 echo "hooks wired for: ${wired:-none}"
+echo "ledger: run polispec doctor to see it; add a project with polispec apply environment-control --repo <repo>"
 echo "polispec starts in advise mode: it logs verdicts and blocks nothing. Turn enforcement on with: polispec settings set polispec.enforce enforce"
 case ":${PATH:-}:" in
   *":$HOME/.local/bin:"*) ;;

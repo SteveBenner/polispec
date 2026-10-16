@@ -30,9 +30,10 @@ Every change to a rulebook is planned first and applied through polispec:
 | A project's own specs | `polispec plan project:<id>` | `polispec apply project:<id>` (commits on main; takes effect when the operator promotes) |
 | The global shelf | `polispec plan global` | `polispec apply global --confirm <plan-id>` |
 | The ledger | `polispec plan ledger --from <file>` | `polispec apply ledger --from <file> [--confirm <plan-id>]` |
+| A host with no ledger | `polispec ledger init --dry-run` | `polispec ledger init`, or let `polispec install` or a package apply create it |
 
 - Read the whole plan: files, ledger effect, composed policy diff, every probe whose verdict changes, and the classification.
-- A **tightening** or **neutral** plan, other than one targeting the global shelf, may be applied directly. Adding a new project in `onboarding` status counts as tightening.
+- A **tightening** or **neutral** plan, other than one targeting the global shelf, may be applied directly. Adding a new project in `onboarding` status counts as tightening, and so does creating the starter ledger on a host that has none (it lists no project and never overwrites a ledger).
 - Anything else — **loosening**, **mixed**, any global-shelf change, a status flip (`onboarding` → `live`, retirement), a profile, trust-ref or repo change — needs the user's explicit yes first. Ask with the question tool, show the plan id and the reasons, and only then run `apply … --confirm <plan-id>`. The guard also asks the user when it sees `--confirm`. Never confirm a plan yourself, and never reshape a change so that it classifies differently.
 - A plan id binds the exact proposal. If anything changes, plan again; a stale id is refused.
 

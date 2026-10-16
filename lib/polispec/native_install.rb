@@ -6,6 +6,7 @@ require "digest"
 require "fileutils"
 require "time"
 require_relative "native_pin"
+require_relative "operator/git"
 require_relative "stewardship"
 
 module Polispec
@@ -26,7 +27,7 @@ module Polispec
 
     class Plan
       attr_reader :harness, :scope, :target, :wired_root, :changes, :messages, :backups, :links, :files_written, :preview
-      attr_accessor :ok
+      attr_accessor :ok, :ledger_created
 
       def initialize(harness, scope, target, wired_root, dry_run)
         @harness = harness
@@ -228,8 +229,24 @@ module Polispec
       plan = Plan.new(harness, scope, target_file(harness, scope, project), root, dry_run)
       plan.say("note: polispec is not pinned; run polispec pin so the hooks point at a read-only release") if pinned_note?
       harness == "claude" ? install_claude(plan, project, force) : install_codex(plan, project, force)
+      ensure_ledger(plan) if scope == "user"
       write_receipt(plan) unless dry_run
       plan
+    end
+
+    def ensure_ledger(plan)
+      result = Ledger.create_starter!(Ledger.default_path, dry: plan.dry_run?)
+      path = result["path"]
+      if !result["created"]
+        plan.say("ledger: kept #{path}")
+      elsif plan.dry_run?
+        plan.say("ledger: would create #{path}")
+      else
+        plan.ledger_created = path
+        plan.say("ledger: created #{path} (no projects yet)")
+      end
+    rescue Operator::Failure => e
+      plan.say("ledger: #{e.message}")
     end
 
     def install_claude(plan, project, force)
@@ -309,6 +326,8 @@ module Polispec
         "backups" => Array(previous["backups"]) | plan.backups,
         "installed_at" => Time.now.utc.iso8601
       }
+      created = plan.ledger_created || previous["ledger_created"]
+      record["ledger_created"] = created if created
       File.write(receipt, "#{JSON.pretty_generate(record)}\n")
       File.chmod(0o600, receipt)
     end
