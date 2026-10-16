@@ -101,7 +101,7 @@ steps:
     run: ["{{polispec}}", plan, "project:shop"]
     expect:
       exit: 0
-      stdout_includes: ["classification: tightening; needs_confirm: false", "tighten: shop adds rule repo/R-NEW", "policy shop: rules +1", "-> deny R-NEW", "journal: 0 replayed, 0 changed"]
+      stdout_includes: ["classification: tightening; needs_confirm: false", "tighten: shop adds rule repo/R-NEW", "policy shop: rules +1", "-> deny R-NEW", "journal: 1 replayed, 0 changed"]
   - name: a plan that does not validate is refused
     run: [sh, -c, 'cp specs/polispec/policy.yml "$1" && sed -i "s/class: \[fs.delete\]/class: [fs.nothing]/" specs/polispec/policy.yml && "$0" plan project:shop; code=$?; cp "$1" specs/polispec/policy.yml; exit $code', "{{polispec}}", "{{scratch}}/policy.backup.yml"]
     cwd: "{{project.shop}}"
@@ -145,24 +145,22 @@ steps:
     expect:
       exit: 0
       stdout_includes: ["Apply polispec plan plan_"]
-  - name: with the journal on the guard keeps canonical facts of judged actions
+  - name: the guard keeps the canonical facts of every judged action
     hook:
       harness: claude
       event: pretool
       tool: Bash
       input: { command: "git push origin main:stable" }
       cwd: "{{project.shop}}"
-    env: { RPLUGIN_POLISPEC_POLISPEC_VERDICTS_JOURNAL: "on" }
     expect:
       decision: deny
       rule: R-PROD-GIT
   - name: a plan replays the journaled push and shows it loosening
     run: [sh, -c, 'sed -i "s/verdict: deny, reason: \"the production branch moves/verdict: allow, reason: \"the production branch moves/" specs/polispec/policy.yml && "$0" plan project:shop', "{{polispec}}"]
     cwd: "{{project.shop}}"
-    env: { RPLUGIN_POLISPEC_POLISPEC_VERDICTS_JOURNAL: "on" }
     expect:
       exit: 0
-      stdout_includes: ["classification: mixed; needs_confirm: true", "loosen: shop probe journal git.push stable", "journal: 1 replayed, 1 changed"]
+      stdout_includes: ["classification: mixed; needs_confirm: true", "loosen: shop probe journal git.push stable", "journal: 2 replayed, 1 changed"]
   - name: a copy of the runtime placed inside the production checkout
     run: [sh, -c, 'mkdir -p "$2/rt" && tar --exclude=.git -C "$1" -cf - . | tar -C "$2/rt" -xf - && touch "$2/rt/.git" && test -x "$2/rt/bin/polispec"', sh, "{{tree}}", "{{checkout.shop.stable}}"]
     expect: { exit: 0 }

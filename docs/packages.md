@@ -112,7 +112,7 @@ Planning a newer version of a recorded package is an upgrade. Files still identi
 A plan judges a set of actions twice, once against the current composed rulebook and once against the proposed one, through the same engine the guard uses and without emitting events.
 
 - **Probes** are generated from each affected project's environments: git operations on every environment branch, writes and deletes in every checkout, secret reads, data writes, service control, deploy and promote per environment, data copies between every pair of environments, an edit of the policy file, and a write into the polispec runtime.
-- **Journal** entries are replayed too when `polispec.verdicts.journal` is `on`. The journal keeps the canonical facts of the last 5000 judged actions (project, environment, action class, tool, ref, home-relative path, verdict and rule id) and never command text, file contents or environment values. A plan replays the last 14 days. It is off by default.
+- **Journal** rows are replayed too: every call the guard judges leaves a judgment record (`docs/operator.md`, judgment records), and a plan replays the per-action rows of the last 14 days (project, environment, action class, tool, ref, home-relative path, verdict and rule id) as actions against the current and the proposed rulebook. The rows never hold command text, file contents or environment values, and no setting is needed.
 
 ## Stewardship: polispec steward and apply --with-stewardship
 

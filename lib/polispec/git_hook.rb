@@ -66,12 +66,15 @@ module Polispec
       actions = actions_for(hook, args, lines, cwd, loaded.policy)
       return 0 if actions.empty?
 
-      enforce = Engine::Settings.enforce_mode == "enforce"
+      mode = Engine::Settings.enforce_mode
+      enforce = mode == "enforce"
       target = Target.new(project: project.id, env: @env, policy: loaded.policy, roster: nil, policy_source: loaded.source, digest: loaded.digest)
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      outcome = Engine.explain(actions, target, { ledger: ledger, cwd: cwd, session_id: "git-#{hook}", role: nil, issue_allow_once: enforce })
-      record(hook, cwd, target, outcome, enforce, started)
-      respond(outcome.verdict, enforce)
+      context = { ledger: ledger, cwd: cwd, session_id: "git-#{hook}", role: nil, issue_allow_once: enforce }
+      outcome = Engine.explain(actions, target, context)
+      status = respond(outcome.verdict, enforce)
+      record(hook, args, lines, cwd, target, outcome, context, mode, started, status)
+      status
     end
 
     def toplevel
@@ -99,22 +102,16 @@ module Polispec
       1
     end
 
-    def record(hook, cwd, target, outcome, enforce, started)
-      verdict = outcome.verdict
-      Events.emit(
-        "polispec.verdict", project: target.project, env: outcome.env, action_class: outcome.action_class, verdict: verdict.level,
-        rule_id: verdict.rule_id, tool: "git #{hook}", harness: "git", session_id: "git-#{hook}", cwd: cwd,
-        policy_digest: target.digest, policy_source: target.policy_source,
-        duration_ms: ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round(2)
-      )
-      return if verdict.allow?
-
-      State.append_jsonl("verdicts", {
-        "ts" => Time.now.utc.iso8601, "project" => target.project, "env" => outcome.env, "action_class" => outcome.action_class,
-        "verdict" => verdict.level, "rule_id" => verdict.rule_id, "tool" => "git #{hook}", "harness" => "git",
-        "session_id" => "git-#{hook}", "enforced" => enforce, "allow_once_id" => verdict.allow_once_id,
-        "raw" => outcome.rows.map { |row| row.action.raw.to_s }.first.to_s[0, 300]
-      })
+    def record(hook, args, lines, cwd, target, outcome, context, mode, started, status)
+      Judgments.record do
+        raw = Array(outcome.rows).map { |row| row.action.raw.to_s }.find { |text| !text.empty? }
+        {
+          "action" => Judgments.action(tool: "git #{hook}", harness: "git", event: hook, session_id: "git-#{hook}", agent_type: nil, cwd: cwd, arguments: { "args" => args, "lines" => lines }, raw: raw),
+          "targets" => [Judgments.target(target, outcome, context)], "control" => nil,
+          "engine" => Judgments.engine(mode),
+          "outcome" => Judgments.outcome(outcome.verdict, enforced: mode == "enforce", rendered: status == 1 ? "deny" : "none", governed: true, duration_ms: ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round(2))
+        }
+      end
     end
 
     def actions_for(hook, args, lines, cwd, policy)

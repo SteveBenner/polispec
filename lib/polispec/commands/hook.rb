@@ -8,7 +8,7 @@ require_relative "../harness_controls/plane"
 require_relative "../harness_controls/lifecycle"
 require_relative "../harness_controls/evaluate"
 require_relative "../harness_controls/authorizations"
-require_relative "../journal"
+require_relative "../judgments"
 
 module Polispec
   module DeferredEvents
@@ -158,8 +158,10 @@ module Polispec
     def pretool(adapter, options)
       within_budget do
         started = clock
+        @started = started
         raw = bounded_input
         input = adapter.parse(raw)
+        @input = input
         @diagnostic_read = diagnostic_input?(adapter, input)
         output = decide(adapter, input, started, options)
         $stdout.write(output) if output
@@ -168,6 +170,13 @@ module Polispec
     end
 
     def decide(adapter, input, started, options)
+      @judged = { "targets" => [], "raw" => nil, "control" => nil, "fastpath_key" => nil, "governed" => false, "mode" => nil, "verdict" => nil, "error" => nil }
+      output = judge(adapter, input, options)
+      record_judgment(adapter, input, started, output)
+      output
+    end
+
+    def judge(adapter, input, options)
       cwd = input.cwd.to_s.empty? ? Dir.pwd : input.cwd.to_s
       calls = adapter.calls(input)
       begin
@@ -190,32 +199,42 @@ module Polispec
         end
         groups = group(actions, ledger, cwd, baseline)
         mode = enforce_mode
+        @judged["mode"] = mode
         @policy_digests = []
         @outcome_authority = {}
         outcomes = groups.map do |kind, project, list|
           if kind == :live
-            evaluate(adapter, input, ledger, cwd, project, list, mode, started)
+            evaluate(adapter, input, ledger, cwd, project, list, mode)
           else
-            evaluate_baseline(adapter, input, ledger, cwd, project, list, mode, started)
+            evaluate_baseline(adapter, input, ledger, cwd, project, list, mode)
           end
         end
-      rescue StandardError, ScriptError
-        return nil if @diagnostic_read
-        raise
+      rescue StandardError, ScriptError => error
+        raise unless @diagnostic_read
+
+        @judged["error"] = error.class.name
+        return nil
       end
       legacy = outcomes.max_by { |outcome| outcome.verdict.severity }
-      return mode == "enforce" && legacy ? adapter.render(legacy.verdict) : nil unless control_gate
+      unless control_gate
+        @judged["governed"] = governed || !legacy.nil?
+        @judged["verdict"] = legacy && legacy.verdict
+        return mode == "enforce" && legacy ? adapter.render(legacy.verdict) : nil
+      end
       documents = control_documents(adapter, input, cwd, actions, options)
       governed ||= !documents.empty?
+      @judged["governed"] = governed
       return nil unless governed
 
       edition = HarnessControls::Plane.requested_edition
       scan = HarnessControls::Environment.guard_state(plane: @plane)
       explicit_root_guard = Engine::Settings.root_guard
       effective_digest = HarnessControls::Evaluate.effective_digest(documents)
-      Fastpath.refresh(ledger, "plane" => @plane, "control_digest" => effective_digest, "edition" => edition,
+      fast_context = { "plane" => @plane, "control_digest" => effective_digest, "edition" => edition,
                        "fail_mode" => "closed_mutations", "root_guard" => scan["root_guard"] == true || explicit_root_guard,
-                       "mcp_default" => edition == "lock" ? "deny" : "ask")
+                       "mcp_default" => edition == "lock" ? "deny" : "ask" }
+      Fastpath.refresh(ledger, fast_context)
+      @judged["fastpath_key"] = fastpath_key(ledger, fast_context)
       protected_paths = HarnessControls::Evaluate.protected_paths(@plane, documents, ledger)
       target_for = control_target_resolver(ledger, cwd, baseline)
       control = Controls.evaluate(input, {
@@ -227,6 +246,8 @@ module Polispec
         "trusted_declaration" => trusted_declaration(ledger, cwd, baseline, input)
       })
       worst = compose_ask_authority(control, adapter, input, actions, documents, edition, outcomes, ledger, cwd)
+      @judged["control"] = { "control_digest" => effective_digest, "edition" => edition, "verdict" => control["verdict"] ? control["verdict"].level.to_s : "allow", "ask_ids" => Array(control["ask_ids"]).map(&:to_s) }
+      @judged["verdict"] = worst
       emit_control_events(control, adapter, input, cwd)
       output = mode == "enforce" ? adapter.render(worst) : nil
       if output.nil? && worst.allow? && !control["injections"].empty?
@@ -247,10 +268,11 @@ module Polispec
       bytes
     end
 
-    def hard_deny(harness, _error)
+    def hard_deny(harness, error)
       return usage unless @subcommand == "pretool" && HARNESSES.include?(harness)
       bytes, status = FIXED_DENIALS.fetch(harness)
       $stdout.write(bytes)
+      record_failure(harness, error, bytes)
       status
     rescue Errno::EPIPE, IOError
       1
@@ -422,11 +444,6 @@ module Polispec
     end
 
     def emit_control_events(control, adapter, input, cwd)
-      verdict = control["verdict"]
-      if verdict && verdict.warn?
-        Events.emit("polispec.verdict", project: nil, env: nil, action_class: nil, verdict: verdict.level, rule_id: verdict.rule_id,
-                    tool: input.tool_name, harness: adapter.name, session_id: input.session_id, cwd: cwd, policy_digest: nil, policy_source: nil)
-      end
       Array(control["observations"]).each do |entry|
         metadata = entry.dig("effect_params", "metadata")
         Events.emit("polispec.control.observed", { "control_id" => entry["id"], "harness" => adapter.name, "event" => "control.observed", "metadata" => metadata })
@@ -526,7 +543,7 @@ module Polispec
 
     GLOBAL_ID = "global"
 
-    def evaluate_baseline(adapter, input, ledger, cwd, id, actions, mode, started)
+    def evaluate_baseline(adapter, input, ledger, cwd, id, actions, mode)
       env = id == GLOBAL_ID ? "dev" : Engine::Envs.cwd_env({}, ledger, id, cwd)
       digest = Layers.fingerprint
       @policy_digests << digest unless digest.to_s.empty?
@@ -534,12 +551,11 @@ module Polispec
       context = { ledger: ledger, cwd: cwd, session_id: input.session_id, role: (input.agent_type.to_s.empty? ? nil : input.agent_type), tool: input.tool_name.to_s, issue_allow_once: mode == "enforce" && !adapter.ask? }
       outcome = Engine.explain(actions, target, context)
       @outcome_authority[outcome.object_id] = { "project" => target.project, "policy_digest" => target.digest }
-      Journal.record(outcome, target, context, input.tool_name)
-      record(adapter, input, cwd, target, outcome, mode, started)
+      note_target(target, outcome, context)
       outcome
     end
 
-    def evaluate(adapter, input, ledger, cwd, project, actions, mode, started)
+    def evaluate(adapter, input, ledger, cwd, project, actions, mode)
       loaded = PolicySource.resolve(project, ledger: ledger)
       @policy_digests << loaded.digest unless loaded.digest.to_s.empty?
       target = Target.new(
@@ -549,26 +565,49 @@ module Polispec
       context = { ledger: ledger, cwd: cwd, session_id: input.session_id, role: (input.agent_type.to_s.empty? ? nil : input.agent_type), tool: input.tool_name.to_s, issue_allow_once: mode == "enforce" && !adapter.ask? }
       outcome = Engine.explain(actions, target, context)
       @outcome_authority[outcome.object_id] = { "project" => target.project, "policy_digest" => target.digest }
-      Journal.record(outcome, target, context, input.tool_name)
-      record(adapter, input, cwd, target, outcome, mode, started)
+      note_target(target, outcome, context)
       outcome
     end
 
-    def record(adapter, input, cwd, target, outcome, mode, started)
-      verdict = outcome.verdict
-      Events.emit(
-        "polispec.verdict", project: target.project, env: outcome.env, action_class: outcome.action_class, verdict: verdict.level,
-        rule_id: verdict.rule_id, tool: input.tool_name, harness: adapter.name, session_id: input.session_id, cwd: cwd,
-        policy_digest: target.digest, policy_source: target.policy_source, duration_ms: ((clock - started) * 1000).round(2)
-      )
-      return if verdict.allow?
+    def note_target(target, outcome, context)
+      @judged["targets"] << Judgments.target(target, outcome, context)
+      @judged["raw"] ||= Array(outcome.rows).map { |row| row.action.raw.to_s }.find { |text| !text.empty? }
+    rescue StandardError
+      nil
+    end
 
-      State.append_jsonl("verdicts", {
-        "ts" => Time.now.utc.iso8601, "project" => target.project, "env" => outcome.env, "action_class" => outcome.action_class,
-        "verdict" => verdict.level, "rule_id" => verdict.rule_id, "tool" => input.tool_name, "harness" => adapter.name,
-        "session_id" => input.session_id, "enforced" => mode == "enforce", "allow_once_id" => verdict.allow_once_id,
-        "raw" => outcome.rows.map { |row| row.action.raw.to_s }.first.to_s[0, 300]
-      })
+    def fastpath_key(ledger, context)
+      Fastpath.key(ledger, context)
+    rescue StandardError
+      nil
+    end
+
+    def record_judgment(adapter, input, started, output)
+      judged = @judged || {}
+      Judgments.record do
+        cwd = input.cwd.to_s.empty? ? Dir.pwd : input.cwd.to_s
+        {
+          "action" => Judgments.action(tool: input.tool_name, harness: adapter.name, event: input.event, session_id: input.session_id, agent_type: input.agent_type, cwd: cwd, arguments: input.tool_input, raw: judged["raw"]),
+          "targets" => Array(judged["targets"]), "control" => judged["control"],
+          "engine" => Judgments.engine(judged["mode"], plane: @plane, fastpath_key: judged["fastpath_key"]),
+          "outcome" => Judgments.outcome(judged["verdict"], enforced: judged["mode"] == "enforce", rendered: Judgments.rendered(output), governed: judged["governed"], error: judged["error"], duration_ms: ((clock - started) * 1000).round(2))
+        }
+      end
+    end
+
+    def record_failure(harness, error, bytes)
+      input = @input || Harness::Input.new(tool_name: nil, tool_input: nil, cwd: nil, session_id: nil, agent_type: nil, event: nil)
+      judged = @judged || {}
+      Judgments.record do
+        cwd = input.cwd.to_s.empty? ? Dir.pwd : input.cwd.to_s
+        verdict = Verdict.new(level: "deny", rule_id: Judgments::INTERNAL_RULE, reason: "#{error.class}: #{error.message.to_s[0, 200]}")
+        {
+          "action" => Judgments.action(tool: input.tool_name, harness: harness, event: input.event, session_id: input.session_id, agent_type: input.agent_type, cwd: cwd, arguments: input.tool_input, raw: judged["raw"]),
+          "targets" => Array(judged["targets"]), "control" => judged["control"],
+          "engine" => Judgments.engine(judged["mode"], plane: @plane, fastpath_key: judged["fastpath_key"]),
+          "outcome" => Judgments.outcome(verdict, enforced: true, rendered: Judgments.rendered(bytes), governed: true, error: error.class.name, duration_ms: @started ? ((clock - @started) * 1000).round(2) : nil)
+        }
+      end
     end
 
     def internal(adapter, input, error)

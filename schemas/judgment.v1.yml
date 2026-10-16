@@ -1,0 +1,116 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.judgment/v1
+title: Polispec judgment record
+type: object
+additionalProperties: false
+required: [schema, id, ts, action, targets, control, engine, outcome, prev, digest]
+properties:
+  schema: { const: polispec.judgment/v1 }
+  id: { type: string, pattern: "^jdg_[0-9a-f]{12}$" }
+  ts: { type: string, minLength: 1 }
+  action: { $ref: "#/$defs/action" }
+  targets:
+    type: array
+    items: { $ref: "#/$defs/target" }
+  control:
+    anyOf:
+      - { type: "null" }
+      - { $ref: "#/$defs/control" }
+  engine: { $ref: "#/$defs/engine" }
+  outcome: { $ref: "#/$defs/outcome" }
+  prev:
+    anyOf:
+      - { type: "null" }
+      - { $ref: "#/$defs/sha256" }
+  digest: { $ref: "#/$defs/sha256" }
+$defs:
+  sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+  nullable_string:
+    type: [string, "null"]
+  verdict: { enum: [allow, warn, deny] }
+  action:
+    type: object
+    additionalProperties: false
+    required: [tool, harness, event, session_id, agent_type, cwd, call_digest]
+    properties:
+      tool: { $ref: "#/$defs/nullable_string" }
+      harness: { type: string, minLength: 1 }
+      event: { $ref: "#/$defs/nullable_string" }
+      session_id: { $ref: "#/$defs/nullable_string" }
+      agent_type: { $ref: "#/$defs/nullable_string" }
+      cwd: { $ref: "#/$defs/nullable_string" }
+      call_digest: { $ref: "#/$defs/sha256" }
+      raw: { type: string, maxLength: 2048 }
+  target:
+    type: object
+    additionalProperties: false
+    required: [project, env, policy_source, policy_digest, verdict, rule_id, rows]
+    properties:
+      project: { $ref: "#/$defs/nullable_string" }
+      env: { $ref: "#/$defs/nullable_string" }
+      policy_source: { $ref: "#/$defs/nullable_string" }
+      policy_digest: { $ref: "#/$defs/nullable_string" }
+      verdict: { $ref: "#/$defs/verdict" }
+      rule_id: { $ref: "#/$defs/nullable_string" }
+      rows:
+        type: array
+        items: { $ref: "#/$defs/row" }
+  row:
+    type: object
+    additionalProperties: false
+    required: [action_class, env, ref, path, crosses, destructive, shape, verdict, rule_id]
+    properties:
+      action_class: { $ref: "#/$defs/nullable_string" }
+      env: { $ref: "#/$defs/nullable_string" }
+      ref: { $ref: "#/$defs/nullable_string" }
+      path: { $ref: "#/$defs/nullable_string" }
+      crosses: { $ref: "#/$defs/nullable_string" }
+      destructive: { type: boolean }
+      shape:
+        type: array
+        items: { type: string }
+      verdict: { $ref: "#/$defs/verdict" }
+      rule_id: { $ref: "#/$defs/nullable_string" }
+  control:
+    type: object
+    additionalProperties: false
+    required: [control_digest, edition, verdict, ask_ids]
+    properties:
+      control_digest: { $ref: "#/$defs/nullable_string" }
+      edition: { $ref: "#/$defs/nullable_string" }
+      verdict: { $ref: "#/$defs/verdict" }
+      ask_ids:
+        type: array
+        items: { type: string }
+  engine:
+    type: object
+    additionalProperties: false
+    required: [version, runtime, commit, tree_digest, edition, enforce, plane, fastpath_key]
+    properties:
+      version: { type: string, minLength: 1 }
+      runtime: { enum: [pinned, sealed, clone, unknown] }
+      commit: { $ref: "#/$defs/nullable_string" }
+      tree_digest: { $ref: "#/$defs/nullable_string" }
+      edition: { $ref: "#/$defs/nullable_string" }
+      enforce: { $ref: "#/$defs/nullable_string" }
+      plane:
+        type: object
+        additionalProperties: false
+        required: [status, generation]
+        properties:
+          status: { type: string, minLength: 1 }
+          generation: { type: [string, integer, "null"] }
+      fastpath_key: { $ref: "#/$defs/nullable_string" }
+  outcome:
+    type: object
+    additionalProperties: false
+    required: [verdict, rule_id, enforced, allow_once_id, rendered, governed, error, duration_ms]
+    properties:
+      verdict: { $ref: "#/$defs/verdict" }
+      rule_id: { $ref: "#/$defs/nullable_string" }
+      enforced: { type: boolean }
+      allow_once_id: { $ref: "#/$defs/nullable_string" }
+      rendered: { enum: [allow, ask, deny, context, none] }
+      governed: { type: boolean }
+      error: { $ref: "#/$defs/nullable_string" }
+      duration_ms: { type: [number, "null"] }

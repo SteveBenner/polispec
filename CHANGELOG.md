@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.0] - 2026-10-15
+
+### Added
+
+- Judgment records. Every call the guard judges leaves one chained `polispec.judgment/v1` record in `judgments.jsonl` under the polispec state home: what was judged (tool, harness, event, session, home-relative cwd, and a `call_digest` over tool, arguments and cwd), against which rulebook (one target per governed project or baseline with its policy source and digest, the matched rule and the per-action rows), by which polispec (version, runtime kind, commit, tree digest when pinned, edition, enforce mode, plane status, fast-path key), and what the harness was told (the composed verdict, rule, rendered decision, duration). Allows are recorded. The record is written after the control ceiling composes and before the reply, chained with `prev` and `digest` under `judgments.lock`, anchored in `judgments.head.json`, and rotated at 16 MiB. A fail-closed internal denial records `POLISPEC-INTERNAL` and the error class. Git hooks record with harness `git`. Recording never changes a verdict; a failed append emits a `judgment_unrecorded` finding (`lib/polispec/judgments.rb`, `lib/polispec/canonical.rb`, `schemas/judgment.v1.yml`, `lib/polispec/commands/hook.rb`, `lib/polispec/git_hook.rb`).
+- `polispec judgments list [--since 24h] [--session ID] [--project ID] [--json] | show <id> [--json] | verify [--json]`, `polispec validate judgment`, the `doctor` findings `judgments_chain_broken` and `judgments_truncated`, and `polispec digest` built from warn and deny judgments (`lib/polispec/commands/judgments.rb`, `doctor.rb`, `digest.rb`).
+- Setting `polispec.records.raw` (`off` by default): `on` adds the classifier's raw view of the judged command or target, at most 2048 bytes, to the local record only. It never goes through the events port.
+- `bin/polispec-guard` appends one line to `skips.jsonl` for every call its fast path skips (tool, session, fast-path key, `no_needles` or `no_match`) with bash builtins only, and `judgments verify` counts them per key. The shim extracts the tool name with a bash regex instead of grep, head, sed and tr, and reads the first line of its files instead of running head and wc.
+- Smoke scenario `judgments.yml` (unit `judgments`): 31 scenarios.
+
+### Changed
+
+- The `polispec.judgment` event replaces `polispec.verdict`: the events port receives a copy of each record without its raw field, and the local record is the system of record. The control-ask `polispec.verdict` event added in 0.24.0 is folded into the record's `control` block (verdict and ask ids). `verdicts.jsonl` and the opt-in journal (`polispec.verdicts.journal`, `journal.jsonl`) are no longer written; existing files are left in place. `polispec plan` replays the per-action rows of the last 14 days of judgments without a setting (`lib/polispec/journal.rb`, `lib/polispec/plan.rb`, `lib/polispec/events.rb`).
+
 ## [0.24.0] - 2026-10-15
 
 ### Changed

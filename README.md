@@ -336,6 +336,8 @@ polispec apply project:clinic-booking --confirm plan_3f9c0d2e1a7b4c58e6d09a12
 
 **Smoke ledger and suite.** polispec ships a smoke suite and records smoke tests. `polispec smoke run` runs the bundled scenarios against the tree it runs from, in scratch fixtures, compares every verdict with another release (`--against`), replays probes on copies of your ledger (`--host-copy`), and drives real Claude Code and Codex sessions (`--live`). Each entry names the spec node it proves, the verdict, the steps, the evidence digests, and the runtime, with no host or user identity. Entries are chained, `verify` detects edits, and `coverage` shows which units have a current pass ([smoke](docs/smoke.md)).
 
+**Judgment records.** Every call the guard judges leaves one chained record: what was judged (tool, harness, session, a digest of the call), against which rulebook (each project's policy digest, the matched rule, one row per classified action), by which polispec (version, runtime, commit, edition, enforce mode), and what the harness was told. Allows are recorded too. The record holds no command text unless `polispec.records.raw` is on. `polispec judgments list|show|verify` reads the stream, `doctor` reports a broken or truncated chain, `digest` and `plan` are built from it, and a copy without raw text goes through the events port. The shim counts the calls its fast path skipped beside it ([operator guide](docs/operator.md), [schema](docs/schema.md)).
+
 ```sh
 polispec smoke record --spec specs/app.yml --at commands/resolve --verdict pass --summary "resolve named the stable checkout prod"
 polispec smoke verify
@@ -392,7 +394,7 @@ Applying the `environment-control` package does the setup in one pass:
 | `polispec steward [--check]` | Protect the host: the stewardship rule installed, the runtime protected, the runtime pinned; `--check` only reports |
 | `polispec plan <target>` | Preview a change: files, ledger, composed policy diff, verdicts that would change, and whether it tightens or loosens |
 | `polispec apply <target> [--confirm <plan-id>] [--with-stewardship]` | Carry out a plan; loosening, mixed, and global changes need `--confirm`. Targets: a package such as `environment-control --repo <repo>`, `project:<id>`, `global`, `ledger --from <file>` |
-| `polispec validate <kind\|auto> <file> [--json]` | Check a policy, environments, roster, ledger, global, module, profiles, behavior, control, or smoke file |
+| `polispec validate <kind\|auto> <file> [--json]` | Check a policy, environments, roster, ledger, global, module, profiles, behavior, control, smoke, or judgment file |
 | `polispec resolve <path> [--layers] [--json]` | Name the project, environment, and layers that govern a path |
 | `polispec doctor` / `status <project>` / `digest` | Report findings, project state, deployment receipts, and a daily digest |
 | `polispec promote <project> --to <env> [--dry-run]` | Move code one hop through the gates |
@@ -405,6 +407,7 @@ Applying the `environment-control` package does the setup in one pass:
 | `polispec code …` / `polispec specs …` | Code specs: detect, chain, check, baseline, controls; link and promote the specs repository |
 | `polispec harness …` / `seal` / `plane` / `authorizations` | Harness controls and the sealed authority plane |
 | `polispec smoke record\|list\|show\|verify\|coverage\|run` | The smoke ledger and the bundled suite |
+| `polispec judgments list\|show\|verify` | The chained record of every judged call, and a count of the calls the fast path skipped |
 
 `specs/app.yml` is the full contract for every command.
 
@@ -420,7 +423,7 @@ For unsealed development, change settings with `rplugin settings`, or with the m
 - `polispec.code.specs_repo`: path of the code specs repository; default `~/polispec-specs`. `POLISPEC_SPECS_REPO` overrides it.
 - `polispec.smoke.path`: path of the smoke ledger. Empty means `smoke.yml` at the git toplevel of the working directory. `POLISPEC_SMOKE` overrides it.
 - `polispec.smoke.live`: `on` (default) or `off`. Off stops `polispec smoke run --live` from launching any harness session; `POLISPEC_SMOKE_LIVE=off` does the same for one run.
-- `polispec.verdicts.journal`: `off` (default) or `on`. When on, the guard keeps a bounded local journal of verdict facts, never command text, that `polispec plan` replays against a proposed rulebook.
+- `polispec.records.raw`: `off` (default) or `on`. When on, each judgment record also keeps the classifier's raw view of the command or target, at most 2048 bytes, in local state only; it never goes through the events port.
 - `polispec.global.repo`, `polispec.global.ref` (default `main`), and `polispec.global.path` (default `polispec`): where the optional global shelf of shared rules, modules, and profiles is read from. Unset means no global layer. `POLISPEC_GLOBAL` points at a plain directory for scratch runs. See [schema](docs/schema.md).
 
 Optional integrations: none is required. Policy `observability.events` may name an `rlogs` sink, and `polispec apply environment-control` recognises a `*.rstack_component.yml` manifest as well as `*.rplugin.yml`.
@@ -478,7 +481,7 @@ Yes. Shared rules go on the global shelf as modules, profiles bundle them by how
 Environment names and hops are free: `main → test → canary → stable` works, each hop with its own gates, actor, and phrase.
 
 **How do I see why a verdict happened?**
-The verdict names the rule id and the layer. `polispec resolve <path> --layers` shows the whole stack, and every verdict is logged as an event.
+The verdict names the rule id and the layer. `polispec resolve <path> --layers` shows the whole stack, and every judged call leaves a chained record (`polispec judgments list`, `show <id>`) naming the rulebook digest, the rule, the polispec that judged it, and the reply the harness received.
 
 ## Where polispec is going
 

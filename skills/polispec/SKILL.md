@@ -31,6 +31,7 @@ Moving `stable`, deploying production, pausing the guard, redeeming an allow-onc
 
 - After showing that a spec or sub-spec works for real, record it: `polispec smoke record --spec FILE --at PATH --verdict pass|fail|partial|blocked|inconclusive --summary TEXT` with `--step-file` and `--evidence`. Judge the verdict from evidence outside yourself (hook logs, git state, exit codes), never from your own account.
 - `polispec smoke verify` checks the chain; `polispec smoke coverage` lists units without a current pass. Never edit `smoke.yml` by hand. `docs/smoke.md` documents it.
+- Every call the guard judges leaves a chained record: `polispec judgments list [--since 24h] [--session ID] [--project ID]` shows them, `show <id>` prints one, and `verify` exits 1 on a digest mismatch, a broken chain or truncation. The record names the rulebook digest, the rule, the polispec that judged and the reply the harness received, with no command text unless `polispec.records.raw` is on. Never edit `judgments.jsonl` by hand.
 
 ## Environments
 
