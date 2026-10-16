@@ -262,7 +262,7 @@ Recovery authenticates the operator even for a dry run. Actual recovery requires
 
 ## Removing another user's tightening overlay
 
-Without `--owner`, uninstall selects protected operator records only. To remove a mutable overlay, the operator explicitly selects its passwd owner and original scope:
+Without `--owner`, uninstall selects protected operator records only, except that on a host with no active sealed plane a non-root user can remove their own user-scope or project-scope overlay (receipt `owner_uid` equal to the caller's uid) from a TTY by typing `uninstall INSTALLATION_ID`; see `docs/harness-controls.md`. To remove a mutable overlay, the operator explicitly selects its passwd owner and original scope:
 
 ```sh
 /absolute/pinned/launcher harness uninstall INSTALLATION_ID --owner USER --scope user --dry-run --json

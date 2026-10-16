@@ -1,0 +1,110 @@
+schema: polispec.smoke-scenario/v1
+unit: harness_controls
+summary: with no sealed plane a non-root user uninstalls their own user-scope overlay from a TTY by typing the phrase, the changed settings are restored from backup and foreign contributions kept, and a missing TTY, a wrong phrase and a receipt owned by another uid are all refused with operator_required
+requires: [harness_controls]
+fixture:
+  enforce: enforce
+  files:
+    "home-seed/.claude/settings.json": "{\"permissions\":{\"allow\":[\"Read\"]}}\n"
+    "lc.sh": |
+      #!/bin/sh
+      home="$1"
+      polispec="$2"
+      shift 2
+      dir=$(dirname "$0")
+      count=$#
+      while [ "$count" -gt 0 ]; do
+        word="$1"
+        shift
+        if [ "$word" = "@ID@" ]; then word=$(cat "$dir/installation-id"); fi
+        set -- "$@" "$word"
+        count=$((count - 1))
+      done
+      RPLUGIN_HOME="$HOME/.rplugin"
+      export RPLUGIN_HOME
+      HOME="$home"
+      export HOME
+      if [ "$1" = "harness" ] && [ "$2" = "install" ]; then
+        "$polispec" "$@" > "$dir/install.out"
+        status=$?
+        cat "$dir/install.out"
+        sed -n 's/.*"installation_id":"\([^"]*\)".*/\1/p' "$dir/install.out" | head -n 1 > "$dir/installation-id"
+        exit $status
+      fi
+      exec "$polispec" "$@"
+steps:
+  - name: build a scratch PATH directory with a fake socat, bwrap and claude
+    run: [sh, -c, 'd="$1/fakebin"; mkdir -p "$d"; for tool in ruby sh cat sed head dirname env git ls; do ln -sf "$(command -v $tool)" "$d/$tool"; done; printf "#!/bin/sh\nexit 0\n" > "$d/bwrap"; printf "#!/bin/sh\nexit 0\n" > "$d/socat"; printf "#!/bin/sh\necho 2.1.300\n" > "$d/claude"; chmod +x "$d/bwrap" "$d/socat" "$d/claude"; mkdir -p "$2/.claude"; cp "$1/home-seed/.claude/settings.json" "$2/.claude/settings.json"', sh, "{{files}}", "{{home}}"]
+    expect:
+      exit: 0
+      files_exist: ["{{files}}/fakebin/socat", "{{home}}/.claude/settings.json"]
+  - name: install the minimal control at user scope into the scratch home
+    run: [sh, "{{files}}/lc.sh", "{{home}}", "{{polispec}}", harness, install, "{{tree}}/examples/controls.minimal.yml", --harness, claude-code, --scope, user, --json]
+    env: { PATH: "{{files}}/fakebin" }
+    expect:
+      exit: 0
+      stdout_includes: ['"ok":true', '"installation_id":"install_', '"owner_uid":']
+      files_exist: ["{{home}}/.claude/settings.json"]
+  - name: uninstall without a TTY is refused with operator_required
+    run: [sh, "{{files}}/lc.sh", "{{home}}", "{{polispec}}", harness, uninstall, "@ID@", --json]
+    expect:
+      exit: 3
+      json:
+        ok: false
+        operation: uninstall
+        findings:
+          - { code: operator_required }
+      stdout_includes: ["interactive terminal"]
+  - name: the refused uninstall left the hook in the scratch user settings
+    run: [cat, "{{home}}/.claude/settings.json"]
+    expect:
+      exit: 0
+      stdout_includes: ['"PreToolUse"', '"Read"']
+  - name: a wrong phrase on a TTY is refused with operator_required
+    run: [sh, "{{files}}/lc.sh", "{{home}}", "{{polispec}}", harness, uninstall, "@ID@", --json]
+    tty: ["uninstall something-else"]
+    expect:
+      exit: 3
+      stdout_includes: ['"code":"operator_required"', "did not match"]
+  - name: the wrong phrase changed nothing
+    run: [cat, "{{home}}/.claude/settings.json"]
+    expect:
+      exit: 0
+      stdout_includes: ['"PreToolUse"']
+  - name: the receipt is rewritten to belong to another uid
+    run: [sh, -c, 'cp "$1" "$1.orig" && sed -i "s/\"owner_uid\":[0-9]*/\"owner_uid\":4242424/g" "$1" && grep -q "\"owner_uid\":4242424" "$1" && echo rewritten', sh, "{{scratch}}/xdg-state/rplugin/polispec/harness_installations.jsonl"]
+    expect:
+      exit: 0
+      stdout_includes: [rewritten]
+  - name: a receipt owned by another uid is refused even with the right phrase
+    run: [sh, -c, 'id=$(cat "$1/installation-id"); printf "uninstall %s\n" "$id" | script -qec "sh $1/lc.sh $2 $3 harness uninstall $id --json" /dev/null', sh, "{{files}}", "{{home}}", "{{polispec}}"]
+    expect:
+      exit: 3
+      stdout_includes: ['"code":"operator_required"', "requires effective uid 0"]
+  - name: the other-owner refusal changed nothing
+    run: [cat, "{{home}}/.claude/settings.json"]
+    expect:
+      exit: 0
+      stdout_includes: ['"PreToolUse"']
+  - name: the receipt is restored to the caller's own uid
+    run: [sh, -c, 'cp "$1.orig" "$1" && grep -q "\"owner_uid\":$(id -u)" "$1" && echo restored', sh, "{{scratch}}/xdg-state/rplugin/polispec/harness_installations.jsonl"]
+    expect:
+      exit: 0
+      stdout_includes: [restored]
+  - name: the right phrase on a TTY uninstalls the overlay
+    run: [sh, -c, 'id=$(cat "$1/installation-id"); printf "uninstall %s\n" "$id" | script -qec "sh $1/lc.sh $2 $3 harness uninstall $id --json" /dev/null', sh, "{{files}}", "{{home}}", "{{polispec}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['"status":"uninstalled"']
+  - name: the user settings are restored to the original and the controls file is gone
+    run: [cat, "{{home}}/.claude/settings.json"]
+    expect:
+      exit: 0
+      stdout_includes: ['"Read"']
+      stdout_excludes: ['"PreToolUse"']
+      files_absent: ["{{home}}/.config/polispec/harness/claude-code/controls.json"]
+  - name: backups of the changed settings are present
+    run: [sh, -c, 'ls "$1"/.claude/', sh, "{{home}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["settings.json.polispec-backup-", "settings.json.polispec-backup-uninstall-"]
