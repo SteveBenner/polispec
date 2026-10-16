@@ -1005,8 +1005,16 @@ module Polispec
 
       def judge(action, target, ctx)
         env = Envs.for_action(action, target, ctx)
-        verdict = frozen(action, env, target, ctx) || runtime_guard(action, env, ctx) || by_rule(action, env, target, ctx)
+        verdict = frozen(action, env, target, ctx) || stricter_runtime(action, env, target, ctx)
         Row.new(action, env, cleared(verdict, action, env, target, ctx))
+      end
+
+      def stricter_runtime(action, env, target, ctx)
+        guard = runtime_guard(action, env, ctx)
+        rule = by_rule(action, env, target, ctx)
+        return rule unless guard
+
+        rule.severity > guard.severity ? rule : guard
       end
 
       def frozen(action, env, target, ctx)

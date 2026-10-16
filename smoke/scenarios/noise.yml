@@ -85,3 +85,54 @@ steps:
   - name: an explicit recursive change above the protected runtime is denied
     hook: { harness: claude, event: pretool, tool: Bash, input: { command: "chmod -R 700 {{tree}}/.." }, cwd: "{{scratch}}" }
     expect: { decision: deny }
+  - name: eval of a dynamic string asks as an unknown tool
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "eval \"$X\"" }, cwd: "{{project.shop}}" }
+    expect: { decision: ask, rule: POLISPEC-TOOL-UNKNOWN }
+  - name: source of a file asks as an unknown tool
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "source ~/.bashrc" }, cwd: "{{project.shop}}" }
+    expect: { decision: ask, rule: POLISPEC-TOOL-UNKNOWN }
+  - name: dot of a file asks as an unknown tool
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: ". ./env.sh" }, cwd: "{{project.shop}}" }
+    expect: { decision: ask, rule: POLISPEC-TOOL-UNKNOWN }
+  - name: source inside a chained line asks as an unknown tool
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "cd lib && source .venv/bin/activate && ls" }, cwd: "{{project.shop}}" }
+    expect: { decision: ask, rule: POLISPEC-TOOL-UNKNOWN }
+  - name: sed with a range is not an unknown tool
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "sed -n 1,5p README.md" }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: a for loop echoing a glob is not an unknown tool
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "for f in *; do echo $f; done" }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: git log with the patch flag is a benign read
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "git log -p -3" }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: git show with the patch flag is a benign read
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "git show -p HEAD" }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: git diff with the patch flag is a benign read
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "git diff -p" }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: git log with stat is a benign read
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "git log --stat" }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: a shell redirect into the ledger is denied by control protection
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "echo x > {{ledger}}" }, cwd: "{{project.shop}}" }
+    expect: { decision: deny, rule: POLISPEC-CONTROL-PROTECTION }
+  - name: a Write of the ledger is denied by control protection
+    hook: { harness: claude, event: pretool, tool: Write, input: { file_path: "{{ledger}}", content: "x" }, cwd: "{{project.shop}}" }
+    expect: { decision: deny, rule: POLISPEC-CONTROL-PROTECTION }
+  - name: an Edit of the ledger is denied by control protection
+    hook: { harness: claude, event: pretool, tool: Edit, input: { file_path: "{{ledger}}", old_string: a, new_string: b }, cwd: "{{project.shop}}" }
+    expect: { decision: deny, rule: POLISPEC-CONTROL-PROTECTION }
+  - name: apply global with confirm from the home directory is not denied by control protection
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "polispec apply global --confirm x" }, cwd: "{{home}}" }
+    expect: { decision: allow }
+  - name: apply global with confirm from the ledger directory is not denied by control protection
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "polispec apply global --confirm x" }, cwd: "{{scratch}}" }
+    expect: { decision: allow }
+  - name: apply global with confirm from the runtime root is not denied by control protection
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "polispec apply global --confirm x" }, cwd: "{{tree}}" }
+    expect: { decision: allow }
+  - name: a control ask is written to the event log with its rule id and level
+    run: [sh, -c, 'grep POLISPEC-TOOL-UNKNOWN "$1/events.jsonl" | grep warn', sh, "{{scratch}}/state"]
+    expect: { exit: 0, stdout_includes: ["POLISPEC-TOOL-UNKNOWN", "warn"] }

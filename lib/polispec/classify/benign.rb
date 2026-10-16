@@ -121,6 +121,22 @@ module Polispec
         false
       end
 
+      def opaque_shell?(tool_name, tool_input, cwd)
+        return false unless Support::BASH_TOOLS.include?(tool_name.to_s.downcase)
+
+        script = Support.script_for(tool_name, tool_input, cwd)
+        return false if script.nil? || script.commands.empty?
+
+        return true if script.commands.any? { |cmd| OPAQUE.include?(cmd.name.to_s) }
+
+        Support.command_text(tool_name, tool_input).to_s.split(/&&|\|\||[;|&\n(){}]/).any? do |segment|
+          word = segment.split(/\s+/).find { |item| !item.empty? && !item.match?(Shell::ASSIGNMENT) && !Shell::KEYWORDS.include?(item) }
+          OPAQUE.include?(word.to_s.delete("'\""))
+        end
+      rescue StandardError
+        false
+      end
+
       def words(text)
         text.split(/[\s;|&()<>{}]+/).map { |word| word.delete("'\"\\") }
       end
@@ -209,9 +225,10 @@ module Polispec
       def git?(cmd)
         inv = Registry.family("git").invocation(cmd)
         return false unless inv
-        return false if cmd.args.any? { |arg| arg == "-c" || arg.start_with?("--config-env", "--exec-path", "--paginate", "-p") }
-
         args = inv.args
+        globals = cmd.args.first(cmd.args.length - args.length - 1)
+        return false if globals.any? { |arg| arg == "-c" || arg.start_with?("--config-env", "--exec-path", "--paginate", "-p") }
+
         case inv.sub
         when *(GIT_READ & Registry.family("git")::READ_ONLY) then args.none? { |arg| arg.match?(GIT_OUTPUT_FLAGS) }
         when "branch" then args.all? { |arg| GIT_BRANCH_FLAGS.include?(arg) }

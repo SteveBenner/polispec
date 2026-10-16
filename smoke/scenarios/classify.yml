@@ -2,6 +2,8 @@ schema: polispec.smoke-scenario/v1
 unit: commands/classify
 summary: classify turns a harness tool call into action classes with the owning project and environment
 fixture:
+  files:
+    "agents/AGENTS.md": "# Agents\n[ENVS] read the environments first\nbody\n"
   projects:
     - id: shop
       variant: service
@@ -53,3 +55,35 @@ steps:
     expect:
       exit: 2
       stderr_includes: ["invalid hook JSON"]
+  - name: a whole-file AGENTS.md write that keeps the environments row is fs.write
+    run: ["{{polispec}}", classify, --json, --cwd, "{{files}}/agents"]
+    stdin: '{"tool_name":"Write","tool_input":{"file_path":"{{files}}/agents/AGENTS.md","content":"# Agents\n[ENVS] read the environments first\nbody\nmore\n"}}'
+    expect:
+      exit: 0
+      json:
+        actions:
+          - { class: fs.write }
+  - name: an AGENTS.md edit that leaves the environments row alone is fs.write
+    run: ["{{polispec}}", classify, --json, --cwd, "{{files}}/agents"]
+    stdin: '{"tool_name":"Edit","tool_input":{"file_path":"{{files}}/agents/AGENTS.md","old_string":"body","new_string":"body two"}}'
+    expect:
+      exit: 0
+      json:
+        actions:
+          - { class: fs.write }
+  - name: a whole-file AGENTS.md write that changes the environments row is policy.edit
+    run: ["{{polispec}}", classify, --json, --cwd, "{{files}}/agents"]
+    stdin: '{"tool_name":"Write","tool_input":{"file_path":"{{files}}/agents/AGENTS.md","content":"# Agents\n[ENVS] skip the environments\nbody\n"}}'
+    expect:
+      exit: 0
+      json:
+        actions:
+          - { class: policy.edit }
+  - name: an AGENTS.md edit that changes the environments row is policy.edit
+    run: ["{{polispec}}", classify, --json, --cwd, "{{files}}/agents"]
+    stdin: '{"tool_name":"Edit","tool_input":{"file_path":"{{files}}/agents/AGENTS.md","old_string":"[ENVS] read the environments first","new_string":"[ENVS] skip"}}'
+    expect:
+      exit: 0
+      json:
+        actions:
+          - { class: policy.edit }
