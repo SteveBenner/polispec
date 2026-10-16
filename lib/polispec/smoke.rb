@@ -6,7 +6,7 @@ require "pathname"
 module Polispec
   module Smoke
     SCHEMA = "polispec.smoke/v1"
-    VERDICTS = %w[pass fail partial blocked].freeze
+    VERDICTS = %w[pass fail partial blocked inconclusive].freeze
     BLOCKING = %w[schema digest_mismatch chain_broken duplicate_id truncated].freeze
     DEFAULT_SPEC = "specs/app.yml"
     DEFAULT_UNITS = ["commands/*"].freeze
@@ -462,7 +462,7 @@ module Polispec
         rescue Polispec::Error
           nil
         end
-        matching = entries.each_with_index.select { |entry, _| entry.dig("proves", "spec") == spec && entry.dig("proves", "at") == unit }
+        matching = entries.each_with_index.select { |entry, _| entry.dig("proves", "spec") == spec && entry.dig("proves", "at") == unit && entry["verdict"] != "inconclusive" }
         latest = matching.max_by { |entry, index| [entry["recorded_at"].to_s, index] }&.first
         status = if latest.nil? then "none"
                  elsif latest["verdict"] == "pass" then current && latest.dig("proves", "at_digest") == current ? "proven" : "stale"

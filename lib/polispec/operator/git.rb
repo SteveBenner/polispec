@@ -159,7 +159,7 @@ module Polispec
       end
 
       def dirty?
-        !run!("status", "--porcelain", "--untracked-files=no").out.strip.empty?
+        !run!("status", "--porcelain").out.strip.empty?
       end
 
       def current_branch

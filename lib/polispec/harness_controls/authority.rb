@@ -26,6 +26,7 @@ module Polispec
       MAX_RUNTIME_BYTES = 67_108_864
       MAX_PROC_BYTES = 65_536
       ALLOWED_ROOTS = %w[ledger.yml settings.json controls global code_specs].freeze
+      ASSET_IMAGE = %r{\Aassets/.+\.(?:png|jpe?g|gif|svg|webp|ico)\z}i
       IGNORED_ENV = %w[
         POLISPEC_ROOT POLISPEC_LEDGER POLISPEC_EDITION POLISPEC_RUNTIME POLISPEC_SOURCE
         RPLUGIN_HOME RUBYLIB RUBYOPT GEM_HOME GEM_PATH BUNDLE_GEMFILE BUNDLE_PATH
@@ -605,6 +606,7 @@ module Polispec
           head, path = row.split("\t", 2)
           mode, type, = head.split(" ", 3)
           next if bundle_only && !bundle_path?(path)
+          next if !bundle_only && path.match?(ASSET_IMAGE)
           bytes = git_blob(repo, commit, path)
           total += bytes.bytesize
           raise Failure.new("manifest_too_large", "Git manifest exceeds #{MAX_RUNTIME_BYTES} bytes") if total > MAX_RUNTIME_BYTES

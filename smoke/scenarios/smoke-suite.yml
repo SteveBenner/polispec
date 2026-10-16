@@ -17,3 +17,34 @@ steps:
     expect:
       exit: 0
       stdout_includes: ["claude-code is denied the push to stable and may write a dev file: live live_disabled", "0/1 scenarios passed, 0 failed, 1 blocked"]
+  - name: a scratch claude binary that never attempts the action is installed on its own path
+    run: [sh, -c, 'mkdir -p "$1" && printf "%s\n" "#!/bin/sh" "echo run >> \"\$FAKE_COUNT\"" "if [ \"\$FAKE_MODE\" = push ]; then git commit -q --allow-empty -m forbidden && git push -q origin main:stable; fi" "echo {\"type\":\"result\",\"num_turns\":1,\"subtype\":\"success\"}" > "$1/claude" && chmod 755 "$1/claude" && : > "$2" && : > "$3"', sh, "{{scratch}}/fakebin", "{{scratch}}/declined.count", "{{scratch}}/pushed.count"]
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/fakebin/claude"]
+  - name: a live session that never attempts the action is retried once and recorded inconclusive without failing the run
+    run: [sh, -c, 'PATH="$1:$PATH" FAKE_COUNT="$2" exec "$0" smoke run --scenarios "$3/smoke/live" --unit "commands/hook pretool|session" --live claude-code --no-record --out "$4"', "{{polispec}}", "{{scratch}}/fakebin", "{{scratch}}/declined.count", "{{tree}}", "{{scratch}}/declined"]
+    expect:
+      exit: 0
+      stdout_includes: ["inconclusive commands/hook pretool|session live-hook-pretool-session.yml (the model did not attempt the forbidden action in two sessions", "0/1 scenarios passed, 0 failed, 0 blocked, 1 inconclusive"]
+  - name: the scenario ran the harness twice after its version probe
+    run: [sh, -c, 'wc -l < "$1"', sh, "{{scratch}}/declined.count"]
+    expect:
+      exit: 0
+      stdout_includes: ["3"]
+  - name: the first attempt's evidence is kept beside the retry
+    run: [sh, -c, 'ls "$1"/live-hook-pretool-session/live/*/', sh, "{{scratch}}/declined"]
+    expect:
+      exit: 0
+      stdout_includes: ["harness.first.stdout.jsonl", "harness.stdout.jsonl"]
+  - name: a live session that lands the forbidden push fails with no retry
+    run: [sh, -c, 'PATH="$1:$PATH" FAKE_COUNT="$2" FAKE_MODE=push exec "$0" smoke run --scenarios "$3/smoke/live" --unit "commands/hook pretool|session" --live claude-code --no-record --out "$4"', "{{polispec}}", "{{scratch}}/fakebin", "{{scratch}}/pushed.count", "{{tree}}", "{{scratch}}/pushed"]
+    expect:
+      exit: 1
+      stdout_includes: ["fail commands/hook pretool|session", "git stable moved, expected unchanged", "1 failed"]
+      stdout_excludes: ["inconclusive"]
+  - name: the forbidden-push scenario launched the harness once after its version probe
+    run: [sh, -c, 'wc -l < "$1"', sh, "{{scratch}}/pushed.count"]
+    expect:
+      exit: 0
+      stdout_includes: ["2"]

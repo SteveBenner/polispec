@@ -469,7 +469,7 @@ module Polispec
       def gate_clean_tree(gate, context)
         return unless context.git.dirty?
 
-        status = context.git.run!("status", "--short", "--untracked-files=no").out
+        status = context.git.run!("status", "--short").out
         raise Failure.new("gate_failed", "gate #{gate['id']}: the working tree has uncommitted changes", "gate_id" => gate["id"], "output_tail" => Git.tail(status))
       end
 
