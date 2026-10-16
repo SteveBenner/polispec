@@ -61,6 +61,11 @@ if [ -z "$bin" ]; then
     if usable "$candidate"; then bin="$candidate"; break; fi
   done
 fi
+if [ -z "$bin" ]; then
+  data_home="${POLISPEC_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/polispec}"
+  if usable "$data_home/current/bin/polispec"; then bin="$data_home/current/bin/polispec"; fi
+fi
+if [ -z "$bin" ] && [ -f "$self_dir/polispec" ] && [ -x "$self_dir/polispec" ]; then bin="$self_dir/polispec"; fi
 reason="polispec: the guard is unavailable and this command targets test or stable, a live service, or a release. Ask the user to run it."
 fallback() {
   [ "$mode" = pretool ] || return 0

@@ -5,6 +5,29 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.27.0] - 2026-10-16
+
+### Added
+
+- polispec installs and runs without rplugin. `install.sh` (`curl -fsSL …/install.sh | sh`) checks for git and Ruby 2.6, clones the newest `vX.Y.Z` tag (or `POLISPEC_REF`), pins it, and runs `polispec install` for each harness it finds (`POLISPEC_HARNESS=claude,codex|none`, `POLISPEC_DRY_RUN=1`).
+- `polispec pin [--ref TAG] [--source PATH|URL] [--dry-run] [--json]`. It archives a tag whose `VERSION` matches into `<data home>/releases/<commit>/` (`POLISPEC_DATA_HOME`, else `$XDG_DATA_HOME/polispec`, else `~/.local/share/polispec`). It makes the copy read-only, records `.polispec-release.json` (`polispec.release/v1`: ref, commit, version, source, tree digest, previous target), swaps `current` atomically, and links `~/.local/bin/polispec` unless that path belongs to something else. The source is the clone runtime, the source a pinned release records, or a bare fetch of the public repository into `<data home>/source.git`. Pinning is idempotent and never deletes an older release (`lib/polispec/native_pin.rb`, `lib/polispec/commands/pin.rb`).
+- `polispec install` / `uninstall --harness claude|codex|all [--scope user|project] [--project DIR] [--force] [--dry-run] [--json]`:
+  - Claude Code: the `PreToolUse`, `SessionStart` and `SubagentStart` guard hooks go into `settings.json`, with the skill link and, at user scope, the two rule links under `~/.claude/rules/polispec/`.
+  - Codex: one marked `# >>> polispec hooks >>>` block in `config.toml` and the skill link under `~/.codex/skills/`. No trust hash is written, so Codex asks the user to trust the hooks.
+  - Every changed file is backed up beside itself, and hooks polispec did not write are kept.
+  - It refuses without `--force` when the polispec Claude Code or Codex plugin is already enabled.
+  - Receipts go to `<state home>/installs/` (`polispec.install/v1`). `uninstall` removes only the marked hooks and the links that still match the receipt (`lib/polispec/native_install.rb`, `lib/polispec/commands/install.rb`, `uninstall.rb`).
+- `polispec settings list|get|set|unset [--json]` and the settings file `~/.config/polispec/settings.yml` (`POLISPEC_SETTINGS`). Values are validated against the settings in `polispec.rplugin.yml`, `list` names where each value came from, and the verb refuses while the sealed plane is active. Every setting gains a short environment variable (`POLISPEC_ENFORCE`, `POLISPEC_CODE_CHECK_AT`, …; `polispec.operator` is `POLISPEC_OPERATOR_NAME`; `polispec.edition` has none) (`lib/polispec/native_settings.rb`, `lib/polispec/commands/settings.rb`).
+- `polispec.gemspec`: `gem build` gives a gem with the `polispec` and `polispec-guard` executables. Not published.
+
+### Changed
+
+- Unsealed settings resolve from the `RPLUGIN_POLISPEC_*` variable, then the short `POLISPEC_*` variable, then rplugin's settings snapshot, then the settings file, then the default. A value that fails validation falls through to the next source. The fast path watches the settings file (`lib/polispec/engine.rb`, `lib/polispec/code/settings.rb`, `lib/polispec/fastpath.rb`). Hosts with rplugin resolve exactly as before unless they set a short variable or the file.
+- `bin/polispec-guard` also tries `<data home>/current/bin/polispec` and, last, the `polispec` beside the shim. A Claude Code or Codex plugin install now runs the real guard instead of the inline fallback, and a pinned release still wins over the cached copy.
+- The runtime recognises a native release (`.polispec-release.json`) as `pinned`. `doctor` prints `pinned (native)`, verifies its tree digest, and checks provenance against `<data home>/source.git` when the recorded source is a URL (`lib/polispec/runtime.rb`, `lib/polispec/commands/doctor.rb`).
+- `polispec steward` and `apply --with-stewardship` work without rplugin. When `rplugin` is not executable, step 1 links the rules into `<claude home>/rules/polispec/` (or reports that there is no Claude Code home) and step 3 runs `polispec pin --ref v<VERSION>`. With rplugin, every step is unchanged (`lib/polispec/stewardship.rb`).
+- The README leads its Install section with the one-line installer, then a clone, then the Claude Code and Codex plugin marketplaces, then the gem, and lists rplugin last. `AGENTS.md`, `rules/polispec-stewardship.md`, the skill, `docs/operator.md` and `specs/app.yml` describe the paths that do not need rplugin.
+
 ## [0.26.0] - 2026-10-16
 
 ### Added

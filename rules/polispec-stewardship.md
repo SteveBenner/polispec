@@ -10,14 +10,14 @@ The polispec that runs the guard judges every agent tool call on the host. If it
 - Never edit the running copy. A pinned runtime refuses writes (`R-POLISPEC-RUNTIME`, deny). A working-clone runtime warns on every write into it. Treat that warning as a stop: the clone is the live guard.
 - Develop polispec in a separate git worktree or clone. Verify with that tree's own `bin/polispec`, against scratch ledgers and repositories (`POLISPEC_LEDGER`, `POLISPEC_HOME`, `POLISPEC_GLOBAL`, `POLISPEC_STATE_HOME`). Do not redirect `XDG_STATE_HOME`; it hides the rplugin settings. Without `POLISPEC_STATE_HOME`, scratch runs write the live guard's state.
 - Before tagging, run `polispec smoke run --against <installed release>` from the candidate tree and read every verdict it reports as changed; each intended change belongs in the changelog. A failing scenario or an unexplained change stops the release.
-- Ship by release, never by edit: merge the verified change, tag it, and reinstall with `rplugin install <repo> --ref <tag>`. Until a host is pinned, merge into the running clone only verified code, in a single fast-forward.
+- Ship by release, never by edit: merge the verified change, tag it, and reinstall with `rplugin install <repo> --ref <tag>`, or `polispec pin --ref <tag>` on a host without rplugin. Until a host is pinned, merge into the running clone only verified code, in a single fast-forward.
 - If the guard does break, do not retry your calls in other shapes. Ask the user to restore it from their own prompt, for example `! git -C <polispec clone> stash push -u -- lib schemas`, and only then continue in a worktree.
 
 ## Install, upgrade, repair
 
-- Install and upgrade through rplugin only: `rplugin install polispec`, pinned with `--ref <tag>`, then `rplugin doctor polispec` at zero findings. Never copy files into the plugin store or edit generated harness artifacts by hand.
+- Install and upgrade through polispec's own installers only. On an rplugin host that is `rplugin install polispec`, pinned with `--ref <tag>`, then `rplugin doctor polispec` at zero findings. Without rplugin it is `polispec pin --ref <tag>`, then `polispec install --harness <name>` (or the harness's plugin marketplace), then `polispec doctor`. Never copy files into a plugin store, a release directory or a harness's settings by hand, and never edit generated harness artifacts by hand.
 - `polispec steward --check` reports whether the host is protected, and `polispec steward` (or `polispec apply --with-stewardship`) checks, and where missing sets up, the installed copy of this rule, the runtime protection, and a pinned runtime at the running version's tag before doing anything else. Use it the first time polispec meets a host or a project.
-- Settings change only through `rplugin settings`. Switching `polispec.enforce` between `advise` and `enforce`, or changing the ledger or global source, needs the user's explicit yes through the question tool.
+- Settings change only through `rplugin settings` on an rplugin host, or `polispec settings set` without it. Switching `polispec.enforce` between `advise` and `enforce`, or changing the ledger or global source, needs the user's explicit yes through the question tool.
 - Sealing, plane activation, rollback and harness-control loosening belong to the authenticated operator. Give them the command; do not run it.
 
 ## Plan before every apply

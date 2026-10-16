@@ -3,6 +3,7 @@
 
 require_relative "../validate_profiles"
 require_relative "../packages"
+require_relative "../native_pin"
 
 module Polispec
   class DoctorCommand
@@ -187,7 +188,13 @@ module Polispec
     end
 
     def git_dir
-      Runtime.pinned? ? Runtime.release["source"].to_s : ROOT
+      return ROOT unless Runtime.pinned?
+
+      source = Runtime.release["source"].to_s
+      return source if File.directory?(source)
+
+      cache = File.join(NativePin.data_home, "source.git")
+      Runtime.release_kind == "native" && File.directory?(cache) ? cache : source
     end
 
     def check_pinned_digest(findings)
@@ -411,7 +418,7 @@ module Polispec
     end
 
     def print_text(findings)
-      puts "runtime: #{Runtime.kind} #{Runtime.commit ? Runtime.commit[0, 12] : '-'} #{Runtime.root}"
+      puts "runtime: #{Runtime.kind}#{Runtime.release_kind == 'native' ? ' (native)' : ''} #{Runtime.commit ? Runtime.commit[0, 12] : '-'} #{Runtime.root}"
       blocking = findings.reject { |item| item["severity"] == "info" }
       if findings.empty?
         puts "polispec doctor: 0 findings"

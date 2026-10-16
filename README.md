@@ -357,8 +357,8 @@ Consumers must also match the current remote environment ref and tag, because br
 
 polispec guards every agent on the host, so a broken polispec breaks every agent at once. 0.21.0 adds a pattern for changing polispec and its rulebooks safely:
 
-- **A shipped rule for agents.** `rules/polispec-stewardship.md` ships with the plugin. Claude Code (with rplugin 1.15.0 or later) and Antigravity CLI load it as an always-on rule; Codex, Hermes, Pi and the DeepSeek TUI have no rules directory and reach it through the polispec skill and the `[POLISPEC]` directive. It tells agents that the running polispec is live, that they build changes in a separate worktree and ship them by release, that every rulebook change is planned before it is applied, and which changes need the user's yes.
-- **A pinned runtime.** `rplugin install <repo> --ref <tag>` installs a read-only copy of one release. polispec knows whether it runs from a pinned release or a working clone (`polispec doctor` prints `runtime:`).
+- **A shipped rule for agents.** `rules/polispec-stewardship.md` ships with the plugin. Claude Code (through `polispec install`, `polispec steward`, or rplugin 1.15.0 or later) and Antigravity CLI load it as an always-on rule; Codex, Hermes, Pi and the DeepSeek TUI have no rules directory and reach it through the polispec skill and the `[POLISPEC]` directive. It tells agents that the running polispec is live, that they build changes in a separate worktree and ship them by release, that every rulebook change is planned before it is applied, and which changes need the user's yes.
+- **A pinned runtime.** `polispec pin --ref <tag>` (or `rplugin install <repo> --ref <tag>` on an rplugin host) installs a read-only copy of one release. polispec knows whether it runs from a pinned release or a working clone (`polispec doctor` prints `runtime:`).
 - **Self-protection.** A built-in protected root covers the runtime: writes into a pinned release are denied, and writes into a clone runtime are warned (`R-POLISPEC-RUNTIME`).
 - **One switch.** `polispec steward` (or `polispec apply --with-stewardship` before an apply) checks the rule is installed, checks the protection, and pins a clone runtime to the release it is running, before applying anything.
 
@@ -366,9 +366,40 @@ The full procedure is in the [operator guide](docs/operator.md#the-runtime-and-s
 
 ## Install
 
-With the rplugin SDK (1.15.0 or later): `rplugin install polispec`, then `rplugin doctor polispec`. That installs the guard hooks, the skill and the rules into Claude Code natively, and into Hermes, Pi, the DeepSeek TUI and Antigravity CLI. To pin a host to one release, `rplugin install <polispec clone> --ref v<version>`, or run `polispec steward`.
+polispec needs Ruby 2.6 or later and git, and no gems beyond the standard library. It works with Claude Code and Codex out of the box. Pick one way in:
 
-Without it, run `bin/polispec` from a clone. It needs Ruby and no gems beyond the standard library.
+**One line.** Fetches the latest release, pins it read-only under `~/.local/share/polispec`, puts `polispec` in `~/.local/bin`, and wires the guard into every harness it finds (Claude Code, Codex):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/SteveBenner/polispec/main/install.sh | sh
+```
+
+`POLISPEC_REF=v0.27.0` picks a release, `POLISPEC_HARNESS=claude` (or `codex`, or `claude,codex`) picks the harnesses, and `POLISPEC_DRY_RUN=1` shows every step without changing anything. Read [`install.sh`](install.sh) first if you prefer; it is short.
+
+**From a clone.** The same steps by hand:
+
+```sh
+git clone https://github.com/SteveBenner/polispec.git && cd polispec
+bin/polispec pin                        # read-only copy of this release; links ~/.local/bin/polispec
+polispec install --harness claude       # or codex, or all; --scope project for one repository; --dry-run to preview
+```
+
+`polispec install` adds three hooks (before every tool call, at session start, at subagent start) to `~/.claude/settings.json` or `~/.codex/config.toml`, links the skill and the rules, backs up every file it changes beside the original, and keeps every hook that is not its own. `polispec uninstall --harness <name>` takes out exactly what it added. Codex asks you to trust new hooks the next time it starts.
+
+**As a Claude Code or Codex plugin.**
+
+```sh
+claude plugin marketplace add SteveBenner/polispec && claude plugin install polispec@polispec
+codex plugin marketplace add SteveBenner/polispec && codex plugin add polispec@polispec
+```
+
+The plugin brings the hooks and the skill. It runs from the harness's plugin cache, which polispec cannot protect, and it puts no `polispec` on your `PATH`. Ask your agent to "set up polispec stewardship", or run `bin/polispec steward` from the plugin's directory, to pin a read-only release and link the rules. Use the plugin or `polispec install`, not both: the guard would run twice, and `polispec install` refuses when it sees the plugin.
+
+**As a gem.** `gem build polispec.gemspec && gem install polispec-*.gem` from a clone gives you `polispec`; then `polispec pin` and `polispec install` as above.
+
+**With rplugin.** If you already use the rplugin SDK for agent-harness plugins (1.15.0 or later): `rplugin install polispec`, then `rplugin doctor polispec`. This is the path for Hermes, Pi, the DeepSeek TUI and Antigravity CLI as well. `rplugin install <polispec clone> --ref v<version>` pins a release. On an rplugin host, `polispec steward` pins and links through rplugin as before.
+
+polispec starts in `advise` mode: it logs every verdict and blocks nothing. When the rulebook is ready, `polispec settings set polispec.enforce enforce`. Check the result any time with `polispec doctor`.
 
 ## Quick start
 
@@ -391,6 +422,9 @@ Applying the `environment-control` package does the setup in one pass:
 
 | Command | Purpose |
 |---|---|
+| `polispec pin [--ref <tag>] [--source <repo>] [--dry-run]` | Install a read-only copy of one release under `~/.local/share/polispec/releases/` and point `current` and `~/.local/bin/polispec` at it; older releases stay as the rollback |
+| `polispec install` / `uninstall --harness claude\|codex\|all [--scope user\|project] [--dry-run]` | Wire the guard hooks, the skill and the rules into Claude Code or Codex without rplugin, with in-place backups and a receipt; uninstall removes only what install added |
+| `polispec settings list\|get\|set\|unset` | Show and change settings without rplugin, in `~/.config/polispec/settings.yml`; rplugin's settings and environment variables still win where present |
 | `polispec steward [--check]` | Protect the host: the stewardship rule installed, the runtime protected, the runtime pinned; `--check` only reports |
 | `polispec plan <target>` | Preview a change: files, ledger, composed policy diff, verdicts that would change, and whether it tightens or loosens |
 | `polispec apply <target> [--confirm <plan-id>] [--with-stewardship]` | Carry out a plan; loosening, mixed, and global changes need `--confirm`. Targets: a package such as `environment-control --repo <repo>`, `project:<id>`, `global`, `ledger --from <file>` |
@@ -413,7 +447,7 @@ Applying the `environment-control` package does the setup in one pass:
 
 ## Settings
 
-For unsealed development, change settings with `rplugin settings`, or with the matching environment variable below. A sealed installation resolves protected settings first and ignores authority redirects from the calling process.
+Change settings with `polispec settings set <key> <value>`, which writes `~/.config/polispec/settings.yml` (`POLISPEC_SETTINGS` names another file), or on an rplugin host with `rplugin settings`. Each setting also has a short environment variable for one run: `polispec.enforce` is `POLISPEC_ENFORCE`, `polispec.code.check_at` is `POLISPEC_CODE_CHECK_AT`, and so on (`polispec.operator` is `POLISPEC_OPERATOR_NAME`; `polispec.edition` has none). Unsealed, a value is taken from the first of: the `RPLUGIN_POLISPEC_*` variable, the short variable, rplugin's settings, the settings file, the default. `polispec settings list` shows each value and where it came from. A sealed installation resolves protected settings first and ignores the settings file, the short variables, and authority redirects from the calling process.
 
 - `polispec.enforce`: `advise` (log verdicts, never block) or `enforce`; default `advise`. It governs environment and enabled harness-control verdicts. Code specs have their own settings: `polispec.code.enforce` (`advise` or `tiered`), `polispec.code.check_at` (`pre_write` or `post_write`), and `polispec.code.inject` (`once` or `every_write`).
 - `polispec.ledger`: path of the ledger of governed projects; default `~/.config/polispec/ledger.yml`. `POLISPEC_LEDGER` overrides it.

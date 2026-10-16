@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 require_relative "operator/git"
+require_relative "native_pin"
 
 module Polispec
   module Stewardship
@@ -32,6 +33,10 @@ module Polispec
 
     def store_link
       File.join(plugins_home, PLUGIN_ID)
+    end
+
+    def rplugin?
+      File.executable?(rplugin_bin)
     end
 
     def ensure!(out: $stdout, quiet: false)
@@ -88,7 +93,70 @@ module Polispec
       Dir.exist?(claude_home) && rules_surface? && !File.file?(claude_rule_link)
     end
 
+    def native_root
+      current = NativePin.current_link
+      File.exist?(current) ? current : Runtime.root
+    end
+
+    def native_rule_links
+      %w[polispec.md polispec-stewardship.md].map do |name|
+        [File.join(claude_home, "rules", "polispec", name), File.join(native_root, "rules", name)]
+      end
+    end
+
+    def native_rule_step(number, check)
+      unless Dir.exist?(claude_home)
+        return Step.new(number, "ok", "no Claude Code home; the rule reaches other harnesses through the polispec skill")
+      end
+
+      links = native_rule_links
+      return Step.new(number, "ok", "#{RULE_ID} is linked under #{File.join(claude_home, 'rules', 'polispec')}") if links.all? { |link, _| File.file?(link) }
+
+      paths = links.map(&:first).join(", ")
+      return Step.new(number, "missing", "would link #{paths}") if check
+
+      stamp = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
+      links.each do |link, target|
+        FileUtils.mkdir_p(File.dirname(link))
+        FileUtils.mv(link, "#{link}.polispec-backup-#{stamp}") if File.exist?(link) && !File.symlink?(link)
+        File.delete(link) if File.symlink?(link)
+        File.symlink(target, link)
+      end
+      return Step.new(number, "failed", "could not link #{paths}") unless links.all? { |link, _| File.file?(link) }
+
+      Step.new(number, "installed", "linked #{paths}")
+    end
+
+    def native_pinned_at_tag?
+      current = NativePin.current_link
+      return false unless File.symlink?(current)
+
+      commit = Operator::Git.new(Runtime.root).rev("refs/tags/#{pin_tag}")
+      commit && File.basename(File.readlink(current)) == commit && NativePin.release_valid?(File.join(NativePin.releases_dir, commit))
+    rescue SystemCallError
+      false
+    end
+
+    def native_pin_step(number, check)
+      return Step.new(number, "ok", "runtime is pinned at #{Runtime.commit.to_s[0, 12]}") if Runtime.pinned?
+      return Step.new(number, "ok", "#{NativePin.current_link} is already pinned at #{pin_tag}") if native_pinned_at_tag?
+      return Step.new(number, "missing", "#{Runtime.kind} runtime #{Runtime.root} is not pinned; would run polispec pin --ref #{pin_tag}") if check
+
+      result = NativePin.pin!(ref: pin_tag)
+      native_rule_links.each do |link, target|
+        next unless File.symlink?(link) && File.readlink(link) != target && File.readlink(link).start_with?("#{Runtime.root}/")
+
+        File.delete(link)
+        File.symlink(target, link)
+      end
+      Step.new(number, "installed", "pinned #{pin_tag} -> #{result['commit'][0, 12]} at #{NativePin.current_link}")
+    rescue Polispec::Error => e
+      Step.new(number, "failed", e.message)
+    end
+
     def rule_step(number, check: false)
+      return native_rule_step(number, check) unless rplugin?
+
       return Step.new(number, "failed", "the running polispec at #{Runtime.root} does not ship the #{RULE_ID} rule") unless rule_shipped?(Runtime.root)
 
       stored = stored_root
@@ -135,6 +203,8 @@ module Polispec
     end
 
     def pin_step(number, check: false)
+      return native_pin_step(number, check) unless rplugin?
+
       return Step.new(number, "ok", "runtime is pinned at #{Runtime.commit.to_s[0, 12]}") if Runtime.pinned?
 
       tag = "v#{Polispec.version}"
