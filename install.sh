@@ -54,7 +54,7 @@ fi
 tmp="$(mktemp -d)"
 trap 'rm -rf -- "$tmp"' EXIT
 
-git clone --quiet --depth 1 --branch "$ref" "$source_url" "$tmp/src"
+git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$ref" "$source_url" "$tmp/src"
 
 if [ "$dry_run" = "1" ]; then
   ruby "$tmp/src/bin/polispec" pin --source "$source_url" --ref "$ref" --dry-run
