@@ -4,7 +4,7 @@
 module Polispec
   module Events
     FIELDS = {
-      "polispec.verdict" => %w[project env action_class verdict rule_id tool harness session_id cwd policy_digest policy_source duration_ms],
+      "polispec.judgment" => %w[schema id ts action targets control engine outcome prev digest],
       "polispec.promote" => %w[project to from_sha to_sha tag actor gates waived result duration_ms],
       "polispec.deploy" => %w[project env sha tag steps health pinned_behind actor result],
       "polispec.pause" => %w[project minutes reason expires_at actor],

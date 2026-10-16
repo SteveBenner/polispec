@@ -14,7 +14,7 @@ module Polispec
     @all_loaded = false
 
     class Validate
-      USAGE = "usage: polispec validate <policy|environments|roster|ledger|behavior|global|module|profiles|control|smoke|auto> <file> [--json]"
+      USAGE = "usage: polispec validate <policy|environments|roster|ledger|behavior|global|module|profiles|control|smoke|judgment|auto> <file> [--json]"
 
       def run(args)
         json = args.delete("--json")

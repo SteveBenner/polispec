@@ -15,19 +15,15 @@ module Polispec
     module_function
 
     def canonical(value)
-      case value
-      when Hash then value.keys.sort_by(&:to_s).to_h { |key| [key.to_s, canonical(value[key])] }
-      when Array then value.map { |item| canonical(item) }
-      else value
-      end
+      Canonical.value(value)
     end
 
     def canonical_json(value)
-      JSON.generate(canonical(value))
+      Canonical.json(value)
     end
 
     def sha256(text)
-      Digest::SHA256.hexdigest(text)
+      Canonical.sha256(text)
     end
 
     def command(argv, chdir: nil)

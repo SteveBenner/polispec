@@ -30,6 +30,7 @@ module Polispec
       check_runtime(findings)
       check_release(findings)
       check_plane(findings)
+      check_judgments(findings)
       blocking = findings.reject { |item| item["severity"] == "info" }
       json ? puts(JSON.generate("ok" => blocking.empty?, "runtime" => runtime_info, "findings" => findings)) : print_text(findings)
       blocking.empty? ? 0 : 1
@@ -390,6 +391,15 @@ module Polispec
       File.writable?(dir)
     rescue SystemCallError
       false
+    end
+
+    def check_judgments(findings)
+      Judgments.verify(schema: false)["findings"].each do |item|
+        kind = item["kind"] == "truncated" ? "judgments_truncated" : "judgments_chain_broken"
+        findings << finding(nil, kind, "#{item['kind']} #{item['id'] || '-'}: #{item['detail']}")
+      end
+    rescue StandardError => error
+      findings << finding(nil, "judgments_unreadable", "#{error.class}: #{error.message}")
     end
 
     def finding(project, kind, detail)

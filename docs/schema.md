@@ -218,6 +218,24 @@ entries:
   - { id: smk_4980154c744d, proves: { spec: specs/app.yml, at: "commands/promote, deploy", spec_digest: "…", at_digest: "…" }, verdict: pass, summary: "promote --to test moved test and deploy recorded a verified receipt", steps: [], evidence: [], runner: { kind: agent, harness: claude-code, harness_version: 2.1.296, model: claude-haiku-5-5, effort: null }, runtime: {}, target: {}, recorded_at: "2026-10-13T23:59:00Z", prev: null, digest: "…" }
 ```
 
+## Judgment record: `polispec.judgment/v1`
+
+One record per call the guard judged (`docs/operator.md`, judgment records). The stream is `judgments.jsonl` under the polispec state home, one JSON record per line, rotated at 16 MiB to `judgments.<utc timestamp>.jsonl`; `judgments.head.json` beside it anchors the head. Written by the pretool hook and the git hooks; read by `polispec judgments`, `digest`, `plan` and `doctor`. `polispec validate judgment FILE` checks one record.
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `schema` | `polispec.judgment/v1` | Document type. |
+| `id` | `jdg_` + 12 hex | sha256 prefix of the record without `id` and `digest`. |
+| `ts` | ISO 8601 | When the record was sealed. |
+| `action` | object | `tool`, `harness`, `event`, `session_id`, `agent_type`, home-relative `cwd`, `call_digest` (sha256 of the canonical JSON of `tool`, `arguments` and `cwd`), and `raw` only while `polispec.records.raw` is on (at most 2048 bytes). |
+| `targets[]` | list | One per governed project or global baseline the call touched: `project`, `env`, `policy_source`, `policy_digest`, `verdict`, `rule_id`, and `rows[]` with `action_class`, `env`, `ref`, home-relative `path`, `crosses`, `destructive`, `shape`, `verdict`, `rule_id`. Empty for an ungoverned call. |
+| `control` | object or null | `control_digest`, `edition`, `verdict`, `ask_ids` when the control ceiling ran. |
+| `engine` | object | `version`, `runtime` (`pinned`, `sealed`, `clone`, `unknown`), `commit`, `tree_digest` (pinned only), `edition`, `enforce`, `plane` (`status`, `generation`), `fastpath_key`. |
+| `outcome` | object | `verdict`, `rule_id`, `enforced`, `allow_once_id`, `rendered` (`allow`, `ask`, `deny`, `context`, `none`), `governed`, `error` (the exception class of a fail-closed denial), `duration_ms`. |
+| `prev`, `digest` | sha256 or null | `prev` is the previous record's `digest` across rotations (null first); `digest` covers the canonical JSON of the record without `digest`. |
+| (anchor) | | Not in the stream: `judgments.head.json` holds `{digest, count, file}` and `verify` reports `truncated` against it. |
+| (skips) | | Not in the stream: `skips.jsonl` holds one `{ts, tool, session, key, skip}` line per call `bin/polispec-guard` skipped; counted, never chained. |
+
 ## Layers: `polispec.global/v1`, `polispec.module/v1`, `polispec.profiles/v1`
 
 A policy is composed from layers: the global layer, the repo policy, then every ledgered child project nested under the repo that contains the path, nearest last, to any depth. The outermost ledgered repo or worktree root containing a path owns it, whatever the ledger order. The global layer is `global.yml`, `profiles.yml` and `modules/<name>.yml` read from the `polispec.global.*` settings (see `docs/operator.md`). With no global source configured and no includes, verdicts are exactly those of the repo policy alone.

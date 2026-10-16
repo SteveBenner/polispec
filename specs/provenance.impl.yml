@@ -1,0 +1,154 @@
+schema: is.v1
+metadata:
+  name: Polispec provenance spine, the chained judgment record and the fast-path skip trace
+  slug: provenance
+  version: 0.1.0
+  created: '2026-10-15'
+  status: implemented
+  base_commit: 188e543
+  base_version: 0.24.0
+  intended_release: 0.25.0
+  contract: specs/app.yml#judgments
+  worker: {harness: claude-code, model: fable, effort: inherit, note: "Fable session: the primary implements itself (AGENTS.md Part T.4); the blueprint still comes first."}
+vision:
+  problem: >-
+    A verdict is recorded in two shapes in two places and neither is complete. The port event carries the policy
+    digest but no runtime commit, harness or call identity; the local verdicts.jsonl drops allows, carries no policy
+    or runtime identity, and keeps 300 bytes of raw command text, which the opt-in journal was designed to refuse.
+    When the events port accepts an event no local copy is written at all, so the host's own audit trail depends on
+    rStack being present. Both records are written per project group before the control ceiling runs, so neither
+    carries the verdict the harness received. A call the fast path skips leaves no trace anywhere, so the question
+    "was this call judged?" has no answer after the fact. The independent review of 0.19.1 asked for exactly the
+    fields these records are missing.
+  outcome: >-
+    Every call the guard judges leaves one chained polispec.judgment/v1 record in local state carrying what was judged
+    (call digest, tool, harness, session, home-relative cwd), against which rulebook (per-target policy source and
+    digest, matched rule, per-action rows), by which polispec (version, runtime kind, commit, tree digest when
+    pinned, edition, enforce mode, plane, fast-path key), and what the harness was told (composed verdict, rule,
+    rendered decision). The same record without raw text goes through the events port as a copy. The shim writes one
+    fork-free line per skipped call. polispec judgments list|show|verify reads and checks the chain, doctor reports
+    a broken or truncated chain, digest and plan read the new stream. Raw command text is kept only under
+    polispec.records.raw, default off.
+  non_goals:
+    - Chaining or signing the skip trace (bash cannot hash without a fork); skips are counted.
+    - Signatures, external anchoring, an evidence store, plan persistence, operator identity: later items of the advised provenance direction.
+    - Recording the harness version per call: no hook payload carries it.
+    - Migrating or deleting existing verdicts.jsonl and journal.jsonl files; they are left in place and no longer written.
+    - Changing the hook's verdicts, its fast-path decisions or its rendered output in any way.
+constraints:
+  - Ruby standard library only; Ruby 2.7 compatible (no endless methods, no rightward assignment).
+  - AGENTS.md Part Q, no comments or docstrings; keep the two-line shebang and SPDX header of every lib file and the shim.
+  - AGENTS.md Part S, no tests beyond the one bundled smoke scenario Sven approved on 2026-10-15; the two obsolete env lines in smoke/scenarios/stewardship.yml are removed so the existing scenario keeps working.
+  - AGENTS.md Part F, no authorship attribution. Part E, no deletion without an in-place backup. Part J, codebase memory before grep.
+  - Work only in the worktree ../.polispec-wt/provenance on branch provenance. The clone at ~/github/foss/polispec is shared with another session releasing 0.24.0; the host guard runs a pinned release, not this tree.
+  - Recording never changes a verdict. Every append is rescued; a failed append emits polispec.finding kind judgment_unrecorded.
+  - The record is written synchronously before the hook reply is written; the port copy is deferred like every other hook event.
+  - bin/polispec-guard stays fork-free on the skip path: bash regex matching, read, printf with %(...)T under TZ=UTC, and an O_APPEND redirect only.
+surfaces:
+  code:
+    - lib/polispec/canonical.rb (new; Smoke.canonical, canonical_json and sha256 delegate to it)
+    - lib/polispec/judgments.rb (new; record, seal, append under lock, head anchor, rotation, files, records, recent, rows, verify, skip counts, action, target, row_for, engine, outcome, rendered)
+    - lib/polispec/journal.rb (rewritten as the reader plan and probes use; recent reads judgment rows; enabled?, record, entry and trim are gone)
+    - lib/polispec/commands/judgments.rb (new; list, show, verify)
+    - lib/polispec/commands/hook.rb (one record per call after composition; fail-closed record; no polispec.verdict, no verdicts.jsonl, no Journal.record)
+    - lib/polispec/git_hook.rb (same record with harness git)
+    - lib/polispec/commands/digest.rb (reads warn and deny judgments)
+    - lib/polispec/commands/doctor.rb (check_judgments)
+    - lib/polispec/plan.rb (replay no longer gated on a setting)
+    - lib/polispec/events.rb (FIELDS: polispec.judgment added, polispec.verdict removed)
+    - lib/polispec/schema/core.rb and lib/polispec/cli.rb (kind judgment)
+    - lib/polispec.rb (autoload Canonical and Judgments)
+    - bin/polispec-guard (skip trace; tool and session extracted with bash regex; head and wc replaced by read)
+  contract:
+    - specs/app.yml (judgments section, schema entry, setting polispec.records.raw, commands row, stewardship.journal, harness_controls.events, smoke.coverage_units)
+    - schemas/judgment.v1.yml (new)
+    - polispec.rplugin.yml (setting polispec.records.raw replaces polispec.verdicts.journal)
+    - smoke/scenarios/judgments.yml (new), smoke/scenarios/stewardship.yml (two env lines removed)
+  doc:
+    - README.md (feature tour, commands table, settings, FAQ), docs/operator.md (settings table, judgment records), docs/packages.md (replay), docs/schema.md (judgment record), docs/VISION.md (replay row), docs/CURRENT-STATE.md (provenance line), CHANGELOG.md, FEATURES.md, VERSION
+  fleet: []
+record:
+  shape: >-
+    { schema, id, ts, action: { tool, harness, event, session_id, agent_type, cwd, call_digest, raw? }, targets: [ { project, env,
+    policy_source, policy_digest, verdict, rule_id, rows: [ { action_class, env, ref, path, crosses, destructive, shape, verdict,
+    rule_id } ] } ], control: null | { control_digest, edition, verdict, ask_ids }, engine: { version, runtime, commit, tree_digest,
+    edition, enforce, plane: { status, generation }, fastpath_key }, outcome: { verdict, rule_id, enforced, allow_once_id, rendered,
+    governed, error, duration_ms }, prev, digest }
+  id: jdg_ plus the first 12 hex of sha256(canonical JSON of the record without id and digest)
+  digest: sha256(canonical JSON of the record without digest); prev is the previous record's digest across rotations, null for the first
+  call_digest: sha256(canonical JSON of { tool, arguments, cwd }) where arguments is the hook's tool_input, or { args, lines } for a git hook
+  cwd_and_paths: home-relative (the home prefix becomes ~), as the journal did
+  raw: present only while polispec.records.raw is on; the first judged action's classifier raw view, UTF-8 scrubbed, at most 2048 bytes; never in the port copy
+  rendered: deny | ask | allow | context | none, parsed from the reply the hook wrote (claude and codex permissionDecision, hermes action block, antigravity and pi decision)
+  governed: false when the guard found nothing governed and wrote no reply
+  error: the exception class name for a fail-closed denial (rule POLISPEC-INTERNAL), else null
+files:
+  stream: <state home>/judgments.jsonl, 0600, one record per line
+  lock: <state home>/judgments.lock, exclusive flock around read head, rotate, append, write head
+  head: <state home>/judgments.head.json { digest, count, file }, written atomically after every append; the truncation anchor
+  rotation: when judgments.jsonl exceeds 16 MiB before an append it is renamed judgments.<%Y%m%dT%H%M%S%LZ>.jsonl and the chain continues in a new judgments.jsonl
+  skips: <state home>/skips.jsonl written by the shim: { ts, tool, session, key, skip } with skip no_needles or no_match; rotated by Judgments.append to skips.<stamp>.jsonl at 16 MiB
+  reading_order: rotated files sorted by name, then the current file
+slices:
+  - id: A_record
+    owns_paths: [lib/polispec/canonical.rb, lib/polispec/judgments.rb, lib/polispec/journal.rb, lib/polispec/events.rb, lib/polispec.rb, lib/polispec/smoke.rb, schemas/judgment.v1.yml, lib/polispec/schema/core.rb, lib/polispec/cli.rb]
+    depends_on: []
+    deliverable: Judgments.record writes a sealed, chained, schema-valid record under lock and emits the copy; Journal.recent returns journal-shaped rows from it; validate judgment works.
+    detail: >-
+      Canonical.value sorts hash keys by to_s and recurses; Canonical.json and Canonical.sha256 as in Smoke. Judgments.append:
+      State.ensure_dirs; open the lock RDWR|CREAT 0600, flock LOCK_EX; read_head (the head file, else the digest of the last line
+      of the stream read backwards in 256 KiB and a count over every file, else nil); rotate when the stream exceeds 16 MiB; seal
+      body.merge(prev); append with syswrite; write the head to a temp file and rename; rotate skips; return the entry. record wraps
+      append and emit in rescue StandardError and emits judgment_unrecorded. Events.FIELDS gains polispec.judgment with the ten
+      top-level keys and loses polispec.verdict. Journal keeps action_for, label and expand; recent(now) = Judgments.rows(Judgments.recent(now)).
+    acceptance: >-
+      ruby -e with POLISPEC_STATE_HOME in scratch: two records chain (second prev equals first digest), head.json matches, validate
+      judgment on a line passes, verify reports ok, editing one byte makes verify report digest_mismatch, deleting head.json makes it
+      report truncated, forcing ROTATE_BYTES small produces a rotated file and verify still passes across both.
+  - id: B_hook
+    owns_paths: [lib/polispec/commands/hook.rb, lib/polispec/git_hook.rb]
+    depends_on: [A_record]
+    deliverable: One judgment per hook call and per git hook judgement, carrying the composed verdict; no verdicts.jsonl, no polispec.verdict, no Journal.record.
+    detail: >-
+      decide resets per-call state, calls judge (the former body, returning [output, verdict] at every exit), records, returns
+      output. evaluate and evaluate_baseline push Judgments.target(target, outcome, context) and remember the first non-empty raw.
+      The control path stores control_digest, edition, verdict and ask_ids and the fast-path key computed from the same context
+      Fastpath.refresh receives. hard_deny records a deny with rule POLISPEC-INTERNAL and the error class, best effort, after writing
+      the fixed denial. GitHook.record builds the same record with harness git, tool git <hook>, session git-<hook>, arguments
+      { args, lines }, rendered deny when it exits 1.
+    acceptance: >-
+      In a scratch fixture (polispec smoke run --unit judgments and --unit hook) every judged call appends exactly one record; a
+      denied stable push records verdict deny R-PROD-GIT with a target whose policy_digest starts sha256:; an allowed write records
+      verdict allow; the hook's stdout is byte-identical to 0.24.0 for every scenario (smoke run --against the pinned tree).
+  - id: C_readers
+    owns_paths: [lib/polispec/commands/judgments.rb, lib/polispec/commands/digest.rb, lib/polispec/commands/doctor.rb, lib/polispec/plan.rb]
+    depends_on: [A_record]
+    deliverable: polispec judgments list|show|verify; doctor findings judgments_chain_broken and judgments_truncated; digest and plan read the stream.
+    detail: >-
+      list defaults to the last 24h, filters --session and --project, prints ts id verdict rule harness:tool projects rendered, or
+      JSON records. show prints one record as pretty JSON, exit 1 when unknown. verify prints records, files, chain result, findings,
+      skip totals per key, exit 1 on any finding. doctor maps truncated to judgments_truncated and every other finding to
+      judgments_chain_broken. digest builds its report from records whose outcome verdict is warn or deny, one row per target.
+      plan.journal_rows_for drops the enabled? gate.
+    acceptance: judgments list shows the scenario's records, show finds one by id, verify exits 0 then 1 after tampering, doctor reports the tampered chain, plan replays a judged push as before.
+  - id: D_shim
+    owns_paths: [bin/polispec-guard]
+    depends_on: []
+    deliverable: Every fast-path skip appends one JSON line to skips.jsonl without forking; every other behaviour of the shim is unchanged.
+    detail: >-
+      Define skip() before the fast-path block: read the key from the first line of fastpath.txt, extract session_id with [[ =~ ]],
+      umask 077, TZ=UTC printf '{"ts":"%(%Y-%m-%dT%H:%M:%SZ)T","tool":"%s","session":"%s","key":"%s","skip":"%s"}\n' -1 ... >>
+      "$state/skips.jsonl", exit 0. Extract the tool once with [[ $input =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]
+      and ${BASH_REMATCH[1],,}; read the first line of fastpath.tools with read -r; test for a second line of fastpath.txt with two
+      reads instead of wc. The two exit 0 skip points become skip no_needles and skip no_match.
+    acceptance: strace -f -e trace=execve on a skipped call shows no exec added by the trace (cat, dirname, the two grep and the tail of the existing fast-path match remain; head, wc, sed and tr are gone); the trace line parses as JSON with the lowercase tool, the session and a 64-hex key; a non-skipped call writes nothing to skips.jsonl; fastpath.yml still passes.
+  - id: E_scenario_and_docs
+    owns_paths: [smoke/scenarios/judgments.yml, smoke/scenarios/stewardship.yml, specs/app.yml, polispec.rplugin.yml, README.md, docs/operator.md, docs/packages.md, docs/schema.md, docs/VISION.md, docs/CURRENT-STATE.md, CHANGELOG.md, FEATURES.md, VERSION]
+    depends_on: [A_record, B_hook, C_readers, D_shim]
+    deliverable: The approved scenario, the contract, the manifest and the docs describe exactly what ships; 0.25.0.
+    detail: Spelled out in the contract section judgments of specs/app.yml and in the doc list above.
+    acceptance: polispec smoke run passes every scenario; smoke coverage lists judgments as proven; rplugin check, install and doctor at zero findings.
+shared_surfaces: [specs/app.yml, CHANGELOG.md, FEATURES.md, VERSION, README.md, polispec.rplugin.yml]
+out_of_scope:
+  - Exemptions (ROADMAP), signatures, anchors, evidence store, plan persistence, `polispec provenance <id>`.
+  - Any change to verdict semantics, classification or the fast-path decision itself.

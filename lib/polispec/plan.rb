@@ -343,8 +343,6 @@ module Polispec
     end
 
     def journal_rows_for(id)
-      return [] unless Journal.enabled?
-
       Journal.recent.select { |row| row["project"] == id }
     end
 

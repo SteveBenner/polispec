@@ -1,0 +1,102 @@
+schema: polispec.smoke-scenario/v1
+unit: judgments
+summary: every judged hook call lands one chained judgment record carrying the verdict the harness received, the target's rulebook digest and the engine identity without command text; raw text appears only with polispec.records.raw on; verify passes, fails on a tampered record, and counts the fast-path skips the shim traces
+requires: [harness_controls]
+fixture:
+  enforce: enforce
+  global: files
+  global_files:
+    "global.yml": "schema: polispec.global/v1\nsummary: Smoke baseline with one rule so every path is governed.\nrules:\n  - { id: SMOKE-NOSECRETS, match: { class: [secrets.read], env: prod }, verdict: deny, reason: \"smoke baseline: no production secrets\" }\n"
+  projects:
+    - id: shop
+      variant: service
+      status: live
+steps:
+  - name: link the candidate binary outside the shim directory
+    run: [ln, -sfn, "{{polispec}}", "{{files}}/polispec"]
+    expect: { exit: 0 }
+  - name: a push to stable is denied and judged
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: an allowed dev write is judged too
+    hook:
+      harness: claude
+      event: pretool
+      tool: Write
+      input: { file_path: "{{project.shop}}/lib/new.rb", content: "puts 1\n" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: the stream holds two records with the rule, the rulebook digest and the engine identity, and no command text
+    run: [sh, -c, 'test "$(wc -l < "$1")" -eq 2 && ! grep -q "main:stable" "$1" && grep -q "\"rule_id\":\"R-PROD-GIT\"" "$1" && grep -q "\"policy_digest\":\"sha256:" "$1" && grep -q "\"call_digest\":\"" "$1" && grep -q "\"runtime\":\"" "$1" && grep -q "\"rendered\":\"deny\"" "$1" && grep -q "\"verdict\":\"allow\"" "$1"', sh, "{{scratch}}/state/judgments.jsonl"]
+    expect:
+      exit: 0
+  - name: each record validates against the judgment schema
+    run: [sh, -c, 'head -n 1 "$1" > "$2/one.json" && "$3" validate judgment "$2/one.json" && tail -n 1 "$1" > "$2/two.json" && "$3" validate judgment "$2/two.json"', sh, "{{scratch}}/state/judgments.jsonl", "{{files}}", "{{polispec}}"]
+    expect:
+      exit: 0
+  - name: list shows both judgments
+    run: ["{{polispec}}", judgments, list]
+    expect:
+      exit: 0
+      stdout_includes: ["last 24h: 2", "deny R-PROD-GIT claude:Bash shop/prod rendered=deny", "allow R-DEV claude:Write shop/dev rendered=none"]
+  - name: verify passes against the head anchor
+    run: ["{{polispec}}", judgments, verify]
+    expect:
+      exit: 0
+      stdout_includes: ["2 records in 1 file; chain ok", "skips: 0"]
+  - name: the verdicts.jsonl and journal.jsonl of earlier releases are not written
+    run: [sh, -c, 'test ! -e "$1/verdicts.jsonl" && test ! -e "$1/journal.jsonl"', sh, "{{scratch}}/state"]
+    expect:
+      exit: 0
+  - name: with the raw setting on the record carries the command
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    env: { RPLUGIN_POLISPEC_POLISPEC_RECORDS_RAW: "on" }
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: only the third record holds raw text
+    run: [sh, -c, 'test "$(grep -c "\"raw\":" "$1")" -eq 1 && tail -n 1 "$1" | grep -q "\"raw\":\"git push origin main:stable\""', sh, "{{scratch}}/state/judgments.jsonl"]
+    expect:
+      exit: 0
+  - name: a fast-path skip through the shim leaves a trace line and no judgment
+    run: ["{{tree}}/bin/polispec-guard", pretool, --harness, claude]
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    stdin: "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Skill\",\"tool_input\":{\"skill\":\"x\"},\"cwd\":\"/\",\"session_id\":\"skip-session\"}"
+    expect:
+      exit: 0
+      stdout_excludes: ["permissionDecision"]
+    parity: ignore
+  - name: the trace names the tool, the session, the fast-path key and the reason
+    run: [sh, -c, 'test "$(wc -l < "$1")" -eq 1 && grep -q "\"tool\":\"skill\"" "$1" && grep -q "\"session\":\"skip-session\"" "$1" && grep -Eq "\"key\":\"[0-9a-f]{64}\"" "$1" && grep -q "\"skip\":\"no_match\"" "$1" && test "$(wc -l < "$2")" -eq 3', sh, "{{scratch}}/state/skips.jsonl", "{{scratch}}/state/judgments.jsonl"]
+    expect:
+      exit: 0
+    parity: ignore
+  - name: verify counts the skip
+    run: ["{{polispec}}", judgments, verify]
+    expect:
+      exit: 0
+      stdout_includes: ["3 records in 1 file; chain ok", "skips: 1 across 1 fast-path key"]
+    parity: ignore
+  - name: a tampered record fails verify and doctor reports the chain
+    run: [sh, -c, 'sed -i "1s/\"rendered\":\"deny\"/\"rendered\":\"none\"/" "$1" && "$2" judgments verify; code=$?; "$2" doctor | grep -q judgments_chain_broken && test "$code" -eq 1', sh, "{{scratch}}/state/judgments.jsonl", "{{polispec}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["digest_mismatch"]
+  - name: a missing head anchor reports truncation
+    run: [sh, -c, 'rm -f "$1/judgments.head.json" && "$2" judgments verify; test $? -eq 1', sh, "{{scratch}}/state", "{{polispec}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["truncated"]

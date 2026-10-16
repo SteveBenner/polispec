@@ -1,10 +1,10 @@
 # Current State of Polispec
 
-As of **0.23.2** (15 October 2026).
+As of **0.25.0** (15 October 2026).
 
 ## In one paragraph
 
-polispec is pre-1.0 software that its maintainer uses every day on their own host. The guard is deterministic, judges every tool call against a rulebook read from a trusted branch, and is backed by a bundled smoke suite: 28 deterministic scenarios, plus 3 live scenarios that run real headless Claude Code and Codex sessions. Code specs deny a violating write before it lands by default (`pre_write`). Harness controls are on by default. Three things limit what it can claim today. The sealed authority plane ships disabled, so unsealed polispec is a guardrail, not a security boundary. The default enforcement mode is `advise`, which blocks nothing. Native enforcement has been observed for some harnesses and versions only. Nobody outside the project has yet reproduced any of its enforcement results.
+polispec is pre-1.0 software that its maintainer uses every day on their own host. The guard is deterministic, judges every tool call against a rulebook read from a trusted branch, and is backed by a bundled smoke suite: 31 deterministic scenarios, plus 3 live scenarios that run real headless Claude Code and Codex sessions. Since 0.25.0 every call the guard judges leaves a chained record of the call digest, the rulebook digests and matched rule, the polispec that judged it, and the verdict the harness received (`polispec judgments`). Code specs deny a violating write before it lands by default (`pre_write`). Harness controls are on by default. Three things limit what it can claim today. The sealed authority plane ships disabled, so unsealed polispec is a guardrail, not a security boundary. The default enforcement mode is `advise`, which blocks nothing. Native enforcement has been observed for some harnesses and versions only. Nobody outside the project has yet reproduced any of its enforcement results.
 
 ## Independent review of 0.19.1
 
@@ -14,7 +14,7 @@ The reviewer's overall conclusion: *promising architecture and unusually candid 
 
 ### Findings and where they stand now
 
-| Finding | In 0.19.1 | Now (0.23.2) | Next |
+| Finding | In 0.19.1 | Now (0.25.0) | Next |
 |---|---|---|---|
 | **F-01** Post-write failure path (high) | REPORTED in `smoke.yml`: with `polispec.code.check_at: post_write`, a private-key literal landed on disk, the PostToolUse hook returned nothing (fail open), and a direct `polispec code check` flagged the file. | `pre_write` is the default and denies before anything lands; the recorded case used the opt-in `post_write` mode, which by design lets the write land and then blocks. Since 0.23.0, a bundled scenario asserts that the post hook returns a block under `post_write`. Live runs recorded Claude Code 2.1.300 denying a violating write by rule `code`, with the file absent. Codex 0.162.1 also denied with the file absent, but its recorded reason is `POLISPEC-INTERNAL`, not the code rule, so that result counts as inconclusive. | P0 below |
 | **F-02** Enforcement defaults to advisory (medium) | DOCUMENTED: `polispec.enforce` defaults to `advise`. | Unchanged. `polispec status` prints the guard mode, and the README's honest limits say advise blocks nothing. `doctor`, session start, and onboarding do not yet call advise mode out. | Make the active mode unmistakable everywhere it is reported |
@@ -29,7 +29,7 @@ The reviewer's overall conclusion: *promising architecture and unusually candid 
 1. **Reproduce the failure and prove prevention.** Pin the exact commit and harness versions, run in `enforce` mode, reproduce the post-write secret case alongside a pre-write control, and inspect the resulting filesystem, exit codes, and event traces. A pass means prohibited content never persists, or a documented corrective action prevents its use. The Codex `POLISPEC-INTERNAL` denial gets explained as part of this work.
 2. **Test the authority boundary's failure modes:** malformed events, hook timeouts, callback process death, a missing or modified trusted policy, a corrupt installed receipt, renamed protected paths, symlink traversal, direct shell equivalents, and stale approval replay. Each test asserts the side effects it observes, not only the verdict returned.
 
-The P0 work follows the review's acceptance standard. Each case records its scenario id, policy and trust-ref hashes, implementation commit, runtime and harness versions, environment, exact tool event, expected and observed decisions, the resulting side effect, a raw-log checksum, and the cleanup outcome. Results are reported as PASS, FAIL, NOT TESTED, or INCONCLUSIVE. A reported block with the forbidden file already written counts as a FAIL for preventive enforcement.
+The P0 work follows the review's acceptance standard. Each case records its scenario id, policy and trust-ref hashes, implementation commit, runtime and harness versions, environment, exact tool event, expected and observed decisions, the resulting side effect, a raw-log checksum, and the cleanup outcome. Results are reported as PASS, FAIL, NOT TESTED, or INCONCLUSIVE. A reported block with the forbidden file already written counts as a FAIL for preventive enforcement. Since 0.25.0 the guard records the policy digest, the implementation commit and runtime, the exact tool event as a digest, and the expected and rendered decision itself, per call, in the judgment stream; the harness version, the side effect and the cleanup still come from the smoke entry.
 
 **Intended**, in the review's order of priority:
 

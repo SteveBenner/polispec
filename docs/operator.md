@@ -173,16 +173,24 @@ polispec reads these machine settings, each from an environment variable, then t
 | `polispec.global.ref` | `main` | Ref of that repository the layer is read from with `git show`; the working tree is never read. |
 | `polispec.global.path` | `polispec` | Directory inside the repository that holds `global.yml`, `profiles.yml` and `modules/`. |
 | `polispec.logs.count_command` | unset | Argv template (no shell) for the `logs_quiet` gate; takes `{service}`, `{since}` and `{until}` and prints one integer. Unset fails the gate closed. `RPLUGIN_POLISPEC_POLISPEC_LOGS_COUNT_COMMAND` overrides it. |
-| `polispec.verdicts.journal` | `off` | `on` keeps a bounded local journal (the last 5000 judged actions) of canonical verdict facts: project, environment, action class, tool, ref, home-relative path, verdict and rule id, never command text, file contents or environment values. `polispec plan` replays the last 14 days of it against a proposed rulebook. |
+| `polispec.records.raw` | `off` | `on` adds the classifier's raw view of the judged command or target, at most 2048 bytes, to each judgment record in local state; `off` keeps only the call digest. Raw text never goes through the events port. |
 
 The guard is a hook in each agent harness. The plugin ships `hooks/polispec.hooks.yml`, which rplugin renders for Claude Code (installed natively since 0.22.0; needs rplugin 1.15.0 for `SubagentStart`), Hermes, Pi, the DeepSeek TUI and Antigravity CLI. Every hook runs `bin/polispec-guard <pretool|session> --harness <name>`, a bash shim that:
 
-- skips starting Ruby when the fast path (`fastpath.txt` and its `fastpath.watch` list in the polispec state directory) shows the call cannot touch a governed path and none of the watched files (ledger, global layer refs, settings, `/etc/polispec/active.json`) changed since;
+- skips starting Ruby when the fast path (`fastpath.txt` and its `fastpath.watch` list in the polispec state directory) shows the call cannot touch a governed path and none of the watched files (ledger, global layer refs, settings, `/etc/polispec/active.json`) changed since, and appends one line for the skipped call to `skips.jsonl` in that directory (tool, session, fast-path key, `no_needles` or `no_match`) with bash builtins only;
 - otherwise runs `polispec hook <mode> --harness <name>` and prints the harness's own allow, ask or deny reply;
 - always runs the `polispec` on PATH (the pinned release), never the copy in a harness's plugin cache;
 - when polispec is missing or fails, denies shell calls that push, merge, tag or reset test or stable, control services, or publish releases, and lets everything else through.
 
 Codex is not installed natively: on this host the `~/.ai` Codex bridge calls the same shim, because it also parses `apply_patch` targets and adapts the reply. Any other harness can call the shim from its pre-tool event. Two integrations are optional and never required: events may be emitted to an `rlogs` sink (`observability.events: rlogs`, otherwise `local` or `none`), and `polispec apply environment-control` recognises a `*.rstack_component.yml` manifest as well as `*.rplugin.yml` when it adds a `serves:` pointer.
+
+## Judgment records
+
+Every call that reaches the guard leaves one record in `judgments.jsonl` under the polispec state directory (`polispec.judgment/v1`, `docs/schema.md`): what was judged (tool, harness, event, session, home-relative working directory, and a `call_digest` over the tool, its arguments and the working directory), against which rulebook (one target per governed project or global baseline the call touched, with the policy source and digest, the matched rule and one row per classified action), by which polispec (version, runtime kind, commit, tree digest when pinned, edition, enforce mode, plane status, fast-path key), and what the harness was told (the composed verdict, rule, rendered decision and duration). Allows are recorded as well as warns and denies. A guard that fails closed records `POLISPEC-INTERNAL` and the error class. Git hooks record with harness `git`; the session hook records nothing.
+
+Records are chained (`prev`, `digest`), appended under `judgments.lock`, anchored in `judgments.head.json`, and rotated at 16 MiB to `judgments.<timestamp>.jsonl`. `polispec judgments list [--since 24h] [--session ID] [--project ID]` shows them, `show <id>` prints one, and `verify` walks every file against the anchor and exits 1 on a digest mismatch, a broken chain or truncation; `doctor` reports the same as `judgments_chain_broken` and `judgments_truncated`. `polispec digest` and `polispec plan` read the stream. A copy of each record without raw text goes through the events port as `polispec.judgment`; the local file is the system of record.
+
+A default record holds no command text, file contents or environment values. `polispec.records.raw` on adds the classifier's raw view, bounded to 2048 bytes, to the local record only. Recording never changes a verdict: a failed append emits a `judgment_unrecorded` finding. The shim's skipped calls are counted in `skips.jsonl` beside the stream and reported by `judgments verify`; they are not chained. A record proves what polispec judged and replied, not that the harness obeyed the reply, and it carries no harness version.
 
 ## The runtime and stewardship
 

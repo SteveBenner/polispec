@@ -28,10 +28,20 @@ module Polispec
 
     def build(ledger, cutoff)
       report = Hash.new { |hash, key| hash[key] = { "deny" => [], "warn" => [], "pauses" => [], "allow_once" => [] } }
-      State.read_jsonl("verdicts").each do |record|
-        next unless recent?(record["ts"], cutoff)
+      Judgments.records.each do |record|
+        outcome = record["outcome"] || {}
+        next unless recent?(record["ts"], cutoff) && %w[deny warn].include?(outcome["verdict"])
 
-        report[record["project"].to_s][record["verdict"]] << record.slice("ts", "env", "action_class", "rule_id", "harness", "enforced", "raw", "verdict") if %w[deny warn].include?(record["verdict"])
+        action = record["action"] || {}
+        Array(record["targets"]).each do |target|
+          next unless %w[deny warn].include?(target["verdict"])
+
+          report[target["project"].to_s][target["verdict"]] << {
+            "ts" => record["ts"], "id" => record["id"], "env" => target["env"], "action_class" => Array(target["rows"]).map { |row| row["action_class"] }.compact.uniq.join(","),
+            "rule_id" => target["rule_id"], "harness" => action["harness"], "tool" => action["tool"], "call_digest" => action["call_digest"],
+            "enforced" => outcome["enforced"], "verdict" => target["verdict"]
+          }
+        end
       end
       Engine::Logs.read(ledger.pauses_log).each do |record|
         report[record["project"].to_s]["pauses"] << record if recent?(record["started_at"], cutoff)

@@ -82,7 +82,7 @@ A deep rulebook needs equally good tools for reading it.
 | `resolve --layers`: every layer, its source, digest, rule count, and module instances, plus one effective digest | **Built** | |
 | Verdicts name the rule id and the layer that decided | **Built** | |
 | Rule provenance: for any verdict, the include path that brought the rule in (policy → release-train → soak) | **Idea** | |
-| What-if replay: run recorded tool calls against a proposed rulebook before it is promoted, and list every verdict that would change | **Built** | Since 0.21.0: `polispec plan` replays synthetic probes and, when `polispec.verdicts.journal` is on, recent journaled actions. |
+| What-if replay: run recorded tool calls against a proposed rulebook before it is promoted, and list every verdict that would change | **Built** | Since 0.21.0: `polispec plan` replays synthetic probes and recent judged actions; since 0.25.0 every judged call is recorded (`polispec judgments`), so the replay needs no setting. |
 | A rendered map of the composition tree for a project | **Idea** | |
 
 ## Proving the rulebook holds

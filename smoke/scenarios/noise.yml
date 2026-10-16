@@ -133,6 +133,6 @@ steps:
   - name: apply global with confirm from the runtime root is not denied by control protection
     hook: { harness: claude, event: pretool, tool: Bash, input: { command: "polispec apply global --confirm x" }, cwd: "{{tree}}" }
     expect: { decision: allow }
-  - name: a control ask is written to the event log with its rule id and level
-    run: [sh, -c, 'grep POLISPEC-TOOL-UNKNOWN "$1/events.jsonl" | grep warn', sh, "{{scratch}}/state"]
-    expect: { exit: 0, stdout_includes: ["POLISPEC-TOOL-UNKNOWN", "warn"] }
+  - name: a control ask is carried by the judgment record and its event copy with the rule id and level warn
+    run: [sh, -c, 'grep "\"polispec.judgment\"" "$1/events.jsonl" | grep POLISPEC-TOOL-UNKNOWN | grep -q "\"verdict\":\"warn\"" && grep POLISPEC-TOOL-UNKNOWN "$1/judgments.jsonl" | grep -c "\"verdict\":\"warn\"" && ! grep -q "\"kind\":\"polispec.verdict\"" "$1/events.jsonl"', sh, "{{scratch}}/state"]
+    expect: { exit: 0 }
