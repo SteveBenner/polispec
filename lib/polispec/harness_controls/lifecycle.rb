@@ -157,10 +157,40 @@ module Polispec
           end
         end
         raise Failure.new("owner_required", "scope, project, and state_home require an explicit owner", exit_status: 3) if selectors.any?
+        own = uninstall_own_overlay(installation_id, port_set, schedule_port_set, dry_run)
+        return own if own
         identity = dry_run ? nil : operator_identity!("harness.uninstall")
         state = state_adapter(true, identity, nil, read_only: dry_run)
         uninstall_from_state(installation_id, state, schedule_port_set, identity, dry_run, nil, {})
       end
+
+      def uninstall_own_overlay(installation_id, port_set, schedule_port_set, dry_run)
+        return nil if dry_run || Process.euid.zero?
+        plane = resolve_plane
+        return nil if plane["status"] == "active"
+        state = state_adapter(false, nil, port_set || schedule_port_set)
+        committed = active_installation(read_records(state, nil), installation_id)
+        return nil unless committed
+        receipt = stringify(committed["receipt"])
+        owned = receipt["protected"] == false && %w[user project].include?(receipt["scope"]) && receipt["owner_uid"].is_a?(Integer) && receipt["owner_uid"] == Process.euid
+        return nil unless owned
+        home = canonical_path(File.realpath(Dir.home))
+        entry = validate_effective_receipt(committed, Dir.pwd, home, protected_paths_for(plane))
+        profile = {
+          "owner" => Etc.getpwuid(Process.uid).name, "uid" => Process.uid, "home" => home, "scope" => receipt["scope"],
+          "project" => receipt["scope"] == "project" ? entry["boundary"] : nil, "protected_paths" => protected_paths_for(plane)
+        }
+        confirm_own_uninstall!(installation_id, receipt)
+        uninstall_from_state(installation_id, state, schedule_port_set, nil, false, profile, plane)
+      end
+      private_class_method :uninstall_own_overlay
+
+      def confirm_own_uninstall!(installation_id, receipt)
+        Operator::Tty.confirm!("uninstall #{installation_id}", prompt: "Remove your own #{receipt['scope']}-scope #{receipt['harness']} controls overlay #{installation_id}. Every changed file is backed up first and foreign contributions are kept.")
+      rescue Operator::Tty::NotTty, Operator::Tty::PhraseMismatch => error
+        raise Failure.new("operator_required", error.message, exit_status: 3)
+      end
+      private_class_method :confirm_own_uninstall!
 
       def preview_owner_uninstall(installation_id, owner, scope)
         name = owner.to_s
@@ -708,7 +738,7 @@ module Polispec
           "file_access" => prepared.first && prepared.first["access"],
           "protected" => privileged == true,
           "certified" => false
-        }
+        }.merge(privileged ? {} : { "owner_uid" => Process.euid })
       end
       private_class_method :build_receipt
 
