@@ -1,0 +1,51 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/steward
+summary: steward --check reports the stewardship steps against a scratch host without changing it, and steward sets up the rule through a scratch rplugin binary and store link, logging every rplugin call and touching nothing outside scratch
+fixture:
+  global: example
+steps:
+  - name: a scratch rplugin binary records its calls and links the plugin store
+    run: [sh, -c, 'mkdir -p "$1/bin" "$1/store" && printf "%s\n" "#!/bin/sh" "echo \"\$@\" >> \"$1/calls.log\"" "if [ \"\$1\" = install ]; then mkdir -p \"$1/store\" && ln -sfn \"\$2\" \"$1/store/polispec\"; fi" "exit 0" > "$1/bin/rplugin" && chmod 755 "$1/bin/rplugin" && : > "$1/calls.log"', sh, "{{scratch}}/steward-host"]
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/steward-host/bin/rplugin", "{{scratch}}/steward-host/calls.log"]
+  - name: steward --check on the empty scratch host reports the rule as missing and installs nothing
+    run: ["{{polispec}}", steward, --check]
+    env: { RPLUGIN_BIN: "{{scratch}}/steward-host/bin/rplugin", RPLUGINS_HOME: "{{scratch}}/steward-host/store", RPLUGIN_CLAUDE_HOME: "{{scratch}}/steward-host/claude", CLAUDE_CONFIG_DIR: "{{scratch}}/steward-host/claude" }
+    home: true
+    expect:
+      exit: 1
+      stdout_includes: ["stewardship_1: missing ", "would run rplugin install ", "stewardship_2: ok R-POLISPEC-RUNTIME protects ", "stewardship_3: "]
+      files_absent: ["{{scratch}}/steward-host/store/polispec"]
+  - name: steward --check as json lists the three steps and is not ok
+    run: ["{{polispec}}", steward, --check, --json]
+    env: { RPLUGIN_BIN: "{{scratch}}/steward-host/bin/rplugin", RPLUGINS_HOME: "{{scratch}}/steward-host/store", RPLUGIN_CLAUDE_HOME: "{{scratch}}/steward-host/claude", CLAUDE_CONFIG_DIR: "{{scratch}}/steward-host/claude" }
+    home: true
+    expect:
+      exit: 1
+      json: { ok: false, steps: [{ step: stewardship_1, status: missing }, { step: stewardship_2, status: ok }, { step: stewardship_3 }] }
+  - name: an unknown argument is a usage error
+    run: ["{{polispec}}", steward, --bogus]
+    expect:
+      exit: 2
+      stderr_includes: ["polispec: unknown argument --bogus", "usage: polispec steward [--check] [--json]"]
+  - name: steward sets up the rule through the scratch rplugin and stops at the pin if the release tag is absent
+    run: ["{{polispec}}", steward]
+    env: { RPLUGIN_BIN: "{{scratch}}/steward-host/bin/rplugin", RPLUGINS_HOME: "{{scratch}}/steward-host/store", RPLUGIN_CLAUDE_HOME: "{{scratch}}/steward-host/claude", CLAUDE_CONFIG_DIR: "{{scratch}}/steward-host/claude" }
+    home: true
+    expect:
+      exit: [0, 1]
+      stdout_includes: ["stewardship_1: installed rplugin install ", "stewardship_2: ok R-POLISPEC-RUNTIME protects "]
+      files_exist: ["{{scratch}}/steward-host/store/polispec"]
+  - name: the scratch rplugin was called to install the running tree and nothing else
+    run: [sh, -c, 'head -1 "$1/calls.log" | cut -d" " -f1 && ! grep -v "^install \|^version" "$1/calls.log"', sh, "{{scratch}}/steward-host"]
+    expect:
+      exit: 0
+      stdout_includes: [install]
+  - name: steward --check now finds the rule installed through the scratch store link
+    run: ["{{polispec}}", steward, --check]
+    env: { RPLUGIN_BIN: "{{scratch}}/steward-host/bin/rplugin", RPLUGINS_HOME: "{{scratch}}/steward-host/store", RPLUGIN_CLAUDE_HOME: "{{scratch}}/steward-host/claude", CLAUDE_CONFIG_DIR: "{{scratch}}/steward-host/claude" }
+    home: true
+    expect:
+      exit: [0, 1]
+      stdout_includes: ["stewardship_1: ok polispec-stewardship is installed through "]

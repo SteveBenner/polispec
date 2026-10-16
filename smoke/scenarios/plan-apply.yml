@@ -134,3 +134,13 @@ steps:
     expect:
       exit: 1
       stderr_includes: ["global_not_repo: apply global needs polispec.global.repo"]
+  - name: a second repository with an origin is created for the checkouts step
+    run: [sh, -c, 'git init -q --bare -b main "$2" && mkdir "$1" && cd "$1" && git init -q -b main && echo hi > README.md && git add README.md && git commit -q -m init && git remote add origin "$2"', sh, "{{scratch}}/hooked", "{{scratch}}/hooked.git"]
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/hooked/README.md"]
+  - name: apply --checkouts names each hook it installs and the checkout it went into
+    run: ["{{polispec}}", apply, environment-control, --repo, "{{scratch}}/hooked", --variant, service, --param, id=hooked, --commit, --push, --checkouts]
+    expect:
+      exit: 0
+      stdout_includes: ["checkouts: hook pre-commit, pre-push, reference-transaction: installed test: ", "checkouts: hook pre-commit, pre-push, reference-transaction: installed prod: ", "checkouts: done cloned "]

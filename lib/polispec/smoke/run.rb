@@ -15,7 +15,7 @@ module Polispec
     class Run
       SCHEMA = "polispec.smoke.run/v1"
       REPORT_SCHEMA = "polispec.smoke.report/v1"
-      SEVERITY = %w[pass partial blocked fail].freeze
+      SEVERITY = %w[pass inconclusive partial blocked fail].freeze
       SUITE_RUNNER = { "kind" => "suite", "harness" => nil, "harness_version" => nil, "model" => nil, "effort" => nil }.freeze
 
       Options = Struct.new(:units, :scenarios, :against, :host_copy, :live, :out, :record, :accept, :json, keyword_init: true)
@@ -129,11 +129,10 @@ module Polispec
         end
         result["layout"] = layout
         run_steps(scenario, layout, result)
-        verdict = if result["steps"].any? { |item| !item["ok"] && !item["blocked"] } then "fail"
-                  elsif result["steps"].any? { |item| item["blocked"] } then "blocked"
-                  else "pass"
-                  end
-        finish(result, scratch, verdict, result["steps"].find { |item| item["blocked"] }&.fetch("blocked", nil))
+        verdict = steps_verdict(result["steps"])
+        reason = result["steps"].find { |item| item["blocked"] }&.fetch("blocked", nil)
+        reason ||= result["steps"].find { |item| item["inconclusive"] }&.fetch("inconclusive", nil) if verdict == "inconclusive"
+        finish(result, scratch, verdict, reason)
       end
 
       def precheck(scenario)
@@ -238,15 +237,19 @@ module Polispec
       end
 
       def steps_verdict(steps)
-        if steps.any? { |step| !step["ok"] && !step["blocked"] } then "fail"
+        if steps.any? { |step| !step["ok"] && !step["blocked"] && !step["inconclusive"] } then "fail"
         elsif steps.any? { |step| step["blocked"] } then "blocked"
+        elsif steps.any? { |step| step["inconclusive"] } then "inconclusive"
         else "pass"
         end
       end
 
       def recorded_step(step)
         expect = step["expect"]
-        observed = step["blocked"] ? "blocked: #{step['blocked']}" : Step.observed(step)
+        observed = if step["blocked"] then "blocked: #{step['blocked']}"
+                   elsif step["inconclusive"] then "inconclusive: #{step['inconclusive']}"
+                   else Step.observed(step)
+                   end
         { "run" => Smoke.scrub(step["run"], toplevel), "exit" => step["exit"], "expect" => expect ? Smoke.scrub(JSON.generate(expect), toplevel) : nil,
           "observed" => Smoke.scrub(observed, toplevel) }
       end
@@ -267,12 +270,12 @@ module Polispec
       end
 
       def finish_ok?(results, diffs)
-        scenarios_ok = results.all? { |item| %w[pass blocked].include?(item["verdict"]) && !item["record_error"] }
+        scenarios_ok = results.all? { |item| %w[pass blocked inconclusive].include?(item["verdict"]) && !item["record_error"] }
         scenarios_ok && (diffs.empty? || options.accept)
       end
 
       def public_result(item)
-        failing = item["steps"].reject { |step| step["ok"] }.map { |step| step["name"] }
+        failing = item["steps"].reject { |step| step["ok"] || step["inconclusive"] }.map { |step| step["name"] }
         {
           "file" => item["file"], "unit" => item["unit"], "verdict" => item["verdict"], "reason" => item["reason"], "failing" => failing,
           "recorded" => item["recorded"], "record_error" => item["record_error"], "report" => item["report"],
@@ -282,7 +285,7 @@ module Polispec
 
       def render(payload, results, host)
         results.each do |item|
-          failing = item["steps"].reject { |step| step["ok"] }.map { |step| step["name"] }
+          failing = item["steps"].reject { |step| step["ok"] || step["inconclusive"] }.map { |step| step["name"] }
           line = "#{item['verdict']} #{item['unit'] || '-'} #{item['file']}"
           line += " failing: #{failing.join(', ')}" if item["verdict"] == "fail"
           line += " (#{item['reason']})" if item["reason"] && item["verdict"] != "pass"
@@ -298,6 +301,7 @@ module Polispec
 
         counts = results.group_by { |item| item["verdict"] }.transform_values(&:length)
         puts "suite: #{counts.fetch('pass', 0)}/#{results.length} scenarios passed, #{counts.fetch('fail', 0) + counts.fetch('error', 0)} failed, #{counts.fetch('blocked', 0)} blocked" \
+             "#{counts.key?('inconclusive') ? ", #{counts['inconclusive']} inconclusive" : ''}" \
              "#{payload['against'] ? ", #{payload['diffs'].length} diff(s)" : ''}#{payload['recorded'].empty? ? '' : ", #{payload['recorded'].length} recorded"}"
       end
 

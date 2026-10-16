@@ -147,7 +147,7 @@ Which harness, model and effort each agent role gets, with bounds an edit may no
 | `environments.<env>` | object | `roles` and `pipelines` allowed to act there; `*` matches all. Required for all three. |
 | `budgets` | object | `per_run_usd_max` and `per_day_usd.<scope>`. |
 
-A slot is `{ default: <assignment>, bounds: <bounds> }`. An assignment holds `harness`, `model` (required), `effort` (string or null), `agent`, `run` (`merge`, `script`, `model`), `on_failure` (`stop`, `model`) and `budget_usd`. Bounds hold `harnesses`, `models`, `effort` and `budget_usd`, the last two as `{ min, max }`.
+A slot is `{ default: <assignment>, bounds: <bounds> }`. An assignment holds `harness`, `model` (required), `effort` (string or null), `agent`, `run` (exactly one of `merge`, `script`, `model`; a worker profile checked against the slot uses `merge` or `own` for diagnose and spec and `script` or `model` for ship), `on_failure` (`stop`, `model`) and `budget_usd`. Bounds hold `harnesses`, `models`, `effort` and `budget_usd`, the last two as `{ min, max }`.
 
 ```yaml
 roles:
