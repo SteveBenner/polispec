@@ -72,6 +72,7 @@ module Polispec
           "POLISPEC_SMOKE" => File.join(scratch, "smoke.yml"),
           "POLISPEC_SPECS_REPO" => File.join(scratch, "specs-repo"),
           ENFORCE_ENV => enforce,
+          "POLISPEC_CODE_DECIDE" => "off",
           "GIT_CONFIG_GLOBAL" => gitconfig,
           "GIT_CONFIG_NOSYSTEM" => "1",
           "GIT_TERMINAL_PROMPT" => "0",

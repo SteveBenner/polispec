@@ -320,6 +320,12 @@ steps:
       exit: 0
       stdout_includes: ["OK   code.shell.no-eval", "1 ok, 0 failed, 0 skipped"]
       stdout_excludes: [code.ruby]
+  - name: controls refuses an unknown policy id
+    run: ["{{polispec}}", code, controls, --policy, nope]
+    expect:
+      exit: 1
+      stderr_includes: ["unknown policy id nope"]
+      stdout_excludes: ["0 ok, 0 failed"]
   - name: controls --spec runs the policies of one spec
     run: ["{{polispec}}", code, controls, --spec, code/ruby]
     expect:
@@ -351,6 +357,11 @@ steps:
     expect:
       exit: 1
       stderr_includes: ["defines no policy rules in this pack"]
+  - name: classify never reaches a model while the decide port is off
+    run: ["{{polispec}}", code, classify, code.shell.no-eval]
+    expect:
+      exit: 1
+      stderr_includes: ["the decide port is unavailable"]
   - name: baseline refuses a directory that is not a git repository
     run: ["{{polispec}}", code, baseline, "{{files}}/samples"]
     expect:

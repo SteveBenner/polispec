@@ -6,7 +6,13 @@ module Polispec
     module Decide
       module_function
 
+      def off?
+        ENV["POLISPEC_CODE_DECIDE"].to_s == "off"
+      end
+
       def ask(question:, options:, context:, criteria: nil)
+        return nil if off?
+
         ports = Events.port_set
         return nil unless ports
 
@@ -23,6 +29,8 @@ module Polispec
       end
 
       def available?
+        return false if off?
+
         ports = Events.port_set
         !ports.nil? && ports != false && ports.respond_to?(:decide)
       rescue StandardError

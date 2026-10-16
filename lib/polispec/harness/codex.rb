@@ -27,8 +27,8 @@ module Polispec
         output["stdout"]
       end
 
-      def render_deny(text)
-        render(Verdict.new(level: "deny", rule_id: "POLISPEC-INTERNAL", reason: text))
+      def render_deny(text, rule_id = nil)
+        render(Verdict.new(level: "deny", rule_id: rule_id || "POLISPEC-INTERNAL", reason: text))
       end
     end
   end

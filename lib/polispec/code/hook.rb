@@ -124,7 +124,7 @@ module Polispec
           reason = ["[POLISPEC code] blocked: the edit adds MUST violations on changed lines. Fix them and retry."]
           reason += blockers.first(MAX_FINDINGS).map { |change, finding| finding_line(change.path, finding) }
           reason += injections
-          return @adapter.render_deny(cap(reason.join("\n")))
+          return @adapter.render_deny(cap(reason.join("\n")), blockers.first.last.policy)
         end
         return nil if injections.empty? && advise.empty?
 
@@ -137,7 +137,7 @@ module Polispec
 
         session.remember_retry(key)
         session.save
-        @adapter.render_deny(cap("[POLISPEC code] the code specs for this language are below. Read them, then retry the same call unchanged or adjusted.\n#{injections.join("\n")}"))
+        @adapter.render_deny(cap("[POLISPEC code] the code specs for this language are below. Read them, then retry the same call unchanged or adjusted.\n#{injections.join("\n")}"), "POLISPEC-CODE")
       end
 
       def handle_post
@@ -232,9 +232,10 @@ module Polispec
           lines << "[POLISPEC code] files changed this session still carry MUST violations on changed lines:"
           lines += blockers.first(MAX_FINDINGS).map { |path, finding| finding_line(path, finding) }
         end
-        unless review.empty?
-          files = review.values.flat_map { |entry| entry[:files] }.uniq
-          lines << "[POLISPEC code] before finishing, run the polispec-reviewer subagent on these files against the policies below, then fix every violation it reports. It reads each lens with `polispec code show <spec>`."
+        unless blockers.empty? && review.empty?
+          files = (blockers.map(&:first) + review.values.flat_map { |entry| entry[:files] }).uniq
+          scope = review.empty? ? "the code specs" : "the policies below"
+          lines << "[POLISPEC code] before finishing, run the polispec-reviewer subagent on these files against #{scope}, then fix every violation it reports. It reads each lens with `polispec code show <spec>`."
           lines << "Files: #{files.first(MAX_STOP_FILES).join(', ')}"
           review.values.each { |entry| lines << "- #{entry[:rule].id} (#{entry[:rule].level}) #{Code.squash(entry[:rule].title)}" }
         end
