@@ -1,6 +1,6 @@
 # Current State of Polispec
 
-As of **0.25.0** (15 October 2026).
+As of **0.25.1** (15 October 2026).
 
 ## In one paragraph
 

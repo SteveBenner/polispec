@@ -10,6 +10,7 @@ require "timeout"
 require "rbconfig"
 require "shellwords"
 require "find"
+require_relative "../runtime"
 
 module Polispec
   module HarnessControls
@@ -27,6 +28,7 @@ module Polispec
       MAX_PROC_BYTES = 65_536
       ALLOWED_ROOTS = %w[ledger.yml settings.json controls global code_specs].freeze
       ASSET_IMAGE = %r{\Aassets/.+\.(?:png|jpe?g|gif|svg|webp|ico)\z}i
+      SMOKE_LEDGER = "smoke.yml"
       IGNORED_ENV = %w[
         POLISPEC_ROOT POLISPEC_LEDGER POLISPEC_EDITION POLISPEC_RUNTIME POLISPEC_SOURCE
         RPLUGIN_HOME RUBYLIB RUBYOPT GEM_HOME GEM_PATH BUNDLE_GEMFILE BUNDLE_PATH
@@ -138,8 +140,8 @@ module Polispec
           manifest = manifest_record.fetch("files")
           source_digest = manifest_record.fetch("source_digest")
         else
-          commit = git(ROOT, "rev-parse", "--verify", "#{revision}^{commit}").strip
-          files = git_entries(ROOT, commit, bundle_only: false)
+          repo, commit = committed_runtime(revision)
+          files = git_entries(repo, commit, bundle_only: false)
           manifest = files.map { |entry| entry.slice("path", "mode", "type", "digest", "size") }
           source_digest = digest_manifest(manifest)
           manifest_record = {
@@ -250,14 +252,14 @@ module Polispec
           entries = pinned["manifest"].fetch("files")
           source_root = pinned["release"]
         else
-          commit = git(ROOT, "rev-parse", "--verify", "#{revision}^{commit}").strip
-          entries = git_entries(ROOT, commit, bundle_only: false)
+          repo, commit = committed_runtime(revision)
+          entries = git_entries(repo, commit, bundle_only: false)
           source_root = nil
         end
         release = File.join(root, "releases", commit)
         entries.each do |entry|
           target = File.join(release, entry["path"])
-          bytes = source_root ? runtime_release_blob(source_root, entry) : git_blob(ROOT, commit, entry["path"])
+          bytes = source_root ? runtime_release_blob(source_root, entry) : git_blob(repo, commit, entry["path"])
           if entry["type"] == "symlink"
             link_target = bytes.to_s
             invalid = link_target.start_with?("/") || link_target.split("/").include?("..") || link_target.include?("\0")
@@ -606,7 +608,7 @@ module Polispec
           head, path = row.split("\t", 2)
           mode, type, = head.split(" ", 3)
           next if bundle_only && !bundle_path?(path)
-          next if !bundle_only && path.match?(ASSET_IMAGE)
+          next if !bundle_only && !runtime_path?(path)
           bytes = git_blob(repo, commit, path)
           total += bytes.bytesize
           raise Failure.new("manifest_too_large", "Git manifest exceeds #{MAX_RUNTIME_BYTES} bytes") if total > MAX_RUNTIME_BYTES
@@ -635,6 +637,38 @@ module Polispec
         ALLOWED_ROOTS.include?(path.split("/", 2).first)
       end
       private_class_method :bundle_path?
+
+      def runtime_path?(path)
+        !path.match?(ASSET_IMAGE) && path != SMOKE_LEDGER
+      end
+      private_class_method :runtime_path?
+
+      def committed_runtime(revision)
+        release = Runtime.release
+        requested = revision.to_s
+        if release
+          commit = release["commit"].to_s
+          unless requested.empty? || requested == "HEAD" || requested == commit
+            raise Failure.new("runtime_revision_unavailable", "pinned release #{commit} cannot derive requested revision #{requested} without a Git object database")
+          end
+          repo = release["source"].to_s
+          raise Failure.new("runtime_source_unavailable", "pinned release #{commit} records no source repository") if repo.empty?
+          raise Failure.new("runtime_source_unavailable", "pinned release source repository is missing at #{repo}") unless File.exist?(File.join(repo, ".git"))
+        else
+          repo = ROOT
+          raise Failure.new("runtime_source_unavailable", "#{ROOT} is not a Git working tree") unless File.exist?(File.join(ROOT, ".git"))
+          commit = requested.empty? ? "HEAD" : requested
+        end
+        resolved = git(repo, "rev-parse", "--verify", "#{commit}^{commit}").strip
+        unless resolved.match?(/\A[0-9a-f]{40,64}\z/) && (release.nil? || resolved == commit)
+          raise Failure.new("runtime_source_unavailable", "#{repo} does not hold the committed release #{commit}")
+        end
+        [File.realpath(repo), resolved]
+      rescue Failure => error
+        raise if error.code.start_with?("runtime_")
+        raise Failure.new("runtime_source_unavailable", error.message)
+      end
+      private_class_method :committed_runtime
 
       def validate_relative!(path)
         invalid = path.nil? || path.empty? || path.start_with?("/") || path.include?("\0") || path.split("/").any? { |part| part == ".." || part.empty? }
