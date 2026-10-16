@@ -406,7 +406,8 @@ module Polispec
       if findings.empty?
         puts "polispec doctor: 0 findings"
       else
-        puts "polispec doctor: #{blocking.length} finding#{'s' unless blocking.length == 1}"
+        notes = findings.length - blocking.length
+        puts "polispec doctor: #{findings.length} finding#{'s' unless findings.length == 1}#{" (#{blocking.length} blocking, #{notes} info)" if notes.positive?}"
         findings.each { |item| puts "  #{item['project'] || '-'}  #{item['kind']}#{item['severity'] == 'info' ? ' (info)' : ''}  #{item['detail']}" }
       end
     end

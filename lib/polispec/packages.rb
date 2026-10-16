@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require "stringio"
 require "tempfile"
 require_relative "operator/git"
 
@@ -798,7 +799,12 @@ module Polispec
           Operator::Git.new(dir).checkout_tracking(branch)
           dir
         end
-        File.open(File::NULL, "w") { |sink| %w[test prod].each { |env| GitHook::Installer.new(@id, env, out: sink).install } }
+        installed = %w[test prod].map do |env|
+          report = StringIO.new
+          GitHook::Installer.new(@id, env, out: report).install
+          report.string.lines.map(&:strip).reject(&:empty?)
+        end.flatten
+        installed.each { |line| note("checkouts", "hook", "#{GitHook::HOOKS.join(', ')}: #{line}") }
         note("checkouts", cloned.empty? ? "kept" : "done", cloned.empty? ? "checkouts already present; hooks installed" : "cloned #{cloned.join(' and ')}; hooks installed for test and prod")
       end
     end

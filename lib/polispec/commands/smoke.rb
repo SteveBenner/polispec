@@ -7,7 +7,7 @@ module Polispec
   module Commands
     class SmokeCommand
       USAGE = <<~TEXT.chomp.freeze
-        usage: polispec smoke record --spec FILE [--at PATH] --verdict pass|fail|partial|blocked --summary TEXT [--step-file FILE] [--evidence PATH[:KIND]]... [--runner human|agent|suite] [--harness H] [--model M] [--effort E] [--started ISO] [--finished ISO] [--json]
+        usage: polispec smoke record --spec FILE [--at PATH] --verdict pass|fail|partial|blocked|inconclusive --summary TEXT [--step-file FILE] [--evidence PATH[:KIND]]... [--runner human|agent|suite] [--harness H] [--model M] [--effort E] [--started ISO] [--finished ISO] [--json]
                polispec smoke list [--spec FILE] [--at PATH] [--verdict V] [--json]
                polispec smoke show <id> [--json]
                polispec smoke verify [--json]

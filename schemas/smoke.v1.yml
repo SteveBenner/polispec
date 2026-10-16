@@ -31,7 +31,7 @@ $defs:
           at: { type: string }
           spec_digest: { $ref: "#/$defs/sha256" }
           at_digest: { $ref: "#/$defs/sha256" }
-      verdict: { enum: [pass, fail, partial, blocked] }
+      verdict: { enum: [pass, fail, partial, blocked, inconclusive] }
       summary: { type: string, minLength: 1 }
       steps:
         type: array
