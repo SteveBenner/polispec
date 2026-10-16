@@ -81,7 +81,57 @@ module Polispec
       1
     end
 
+    public
+
+    def explain(harness, raw, options = {})
+      raise Polispec::Error, "unknown harness #{harness}" unless HARNESSES.include?(harness)
+      @explain = true
+      @subcommand = "pretool"
+      @deadline = clock + HOOK_BUDGET
+      DeferredEvents.active = true
+      klass = Harness.const_get(ADAPTERS.fetch(harness, :Generic))
+      adapter = Class.new(klass) { def ask?; true; end }.new(harness)
+      within_budget do
+        input = adapter.parse(raw)
+        @input = input
+        @diagnostic_read = diagnostic_input?(adapter, input)
+        @judged = { "targets" => [], "raw" => nil, "control" => nil, "fastpath_key" => nil, "governed" => false, "mode" => nil, "verdict" => nil, "error" => nil }
+        @explain_state = nil
+        judge(adapter, input, { "controls_file" => options["controls_file"], "controls_project" => options["controls_project"] })
+        raise Polispec::Error, "judgment failed: #{@judged['error']}" if @judged["error"]
+        explained(input)
+      end
+    ensure
+      DeferredEvents.queue.clear
+      DeferredEvents.active = false
+      @explain = false
+    end
+
+    private
+
+    def explained(input)
+      verdict = @judged["verdict"]
+      state = @explain_state || { "actions" => [], "documents" => [] }
+      trusted = state["ledger"] ? trusted_declaration(state["ledger"], state["cwd"], state["baseline"], input) : nil
+      {
+        "verdict" => verdict ? verdict.level.to_s : "allow",
+        "rule_id" => verdict ? verdict.rule_id : nil,
+        "reason" => verdict ? verdict.reason : nil,
+        "governed" => @judged["governed"] == true,
+        "control" => @judged["control"] && { "verdict" => @judged["control"]["verdict"], "ask_ids" => @judged["control"]["ask_ids"] },
+        "actions" => Array(state["actions"]).map do |action|
+          declared = nil
+          if action.action_class == "mcp.call"
+            declared = HarnessControls::Evaluate.declared_action?(state["documents"], action, input, state["control_context"] || { "actions" => state["actions"] }, protected_only: true)
+            declared ||= trusted ? trusted.call(action) == true : false
+          end
+          { "class" => action.action_class, "server" => action.env_hint["server"], "operation" => action.env_hint["operation"], "declared" => declared }
+        end
+      }
+    end
+
     def flush_events
+      return DeferredEvents.queue.clear if @explain
       queue = DeferredEvents.queue.dup
       DeferredEvents.queue.clear
       DeferredEvents.active = false
@@ -198,6 +248,7 @@ module Polispec
           actions << unknown_action(input, cwd) unless actions.any? { |action| action.raw.is_a?(Hash) && action.raw["unknown_tool"] }
         end
         groups = group(actions, ledger, cwd, baseline)
+        @explain_state = { "actions" => actions, "ledger" => ledger, "cwd" => cwd, "baseline" => baseline, "documents" => [] } if @explain
         mode = enforce_mode
         @judged["mode"] = mode
         @policy_digests = []
@@ -222,6 +273,7 @@ module Polispec
         return mode == "enforce" && legacy ? adapter.render(legacy.verdict) : nil
       end
       documents = control_documents(adapter, input, cwd, actions, options)
+      @explain_state["documents"] = documents if @explain
       governed ||= !documents.empty?
       @judged["governed"] = governed
       return nil unless governed
@@ -233,18 +285,20 @@ module Polispec
       fast_context = { "plane" => @plane, "control_digest" => effective_digest, "edition" => edition,
                        "fail_mode" => "closed_mutations", "root_guard" => scan["root_guard"] == true || explicit_root_guard,
                        "mcp_default" => edition == "lock" ? "deny" : "ask" }
-      Fastpath.refresh(ledger, fast_context)
+      Fastpath.refresh(ledger, fast_context) unless @explain
       @judged["fastpath_key"] = fastpath_key(ledger, fast_context)
       protected_paths = HarnessControls::Evaluate.protected_paths(@plane, documents, ledger)
       target_for = control_target_resolver(ledger, cwd, baseline)
-      control = Controls.evaluate(input, {
+      control_context = {
         "actions" => actions, "documents" => documents, "edition" => edition,
         "root_guard" => edition == "lock" || explicit_root_guard || scan["root_guard"] == true,
         "protected_paths" => protected_paths, "role" => input.agent_type,
         "env" => legacy && legacy.env, "target" => nil, "target_for" => target_for,
         "engine_context" => { cwd: cwd, ledger: ledger, predicate_memo: {}, findings: [] },
         "trusted_declaration" => trusted_declaration(ledger, cwd, baseline, input)
-      })
+      }
+      @explain_state["control_context"] = control_context if @explain
+      control = Controls.evaluate(input, control_context)
       worst = compose_ask_authority(control, adapter, input, actions, documents, edition, outcomes, ledger, cwd)
       @judged["control"] = { "control_digest" => effective_digest, "edition" => edition, "verdict" => control["verdict"] ? control["verdict"].level.to_s : "allow", "ask_ids" => Array(control["ask_ids"]).map(&:to_s) }
       @judged["verdict"] = worst
@@ -444,6 +498,7 @@ module Polispec
     end
 
     def emit_control_events(control, adapter, input, cwd)
+      return if @explain
       Array(control["observations"]).each do |entry|
         metadata = entry.dig("effect_params", "metadata")
         Events.emit("polispec.control.observed", { "control_id" => entry["id"], "harness" => adapter.name, "event" => "control.observed", "metadata" => metadata })
