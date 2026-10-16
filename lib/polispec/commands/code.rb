@@ -178,6 +178,8 @@ module Polispec
 
       def verb_controls(opts)
         loaded = pack(opts)
+        raise Code::Error, "unknown policy id #{opts.policy}" if opts.policy && !loaded.nodes.key?(opts.policy)
+
         outcomes = Code::Controls.new(loaded).run(spec: opts.spec, policy: opts.policy)
         Code::Controls.record(loaded, outcomes) unless opts.spec || opts.policy
         failed = outcomes.select { |outcome| outcome.status == :fail }

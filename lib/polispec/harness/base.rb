@@ -81,7 +81,7 @@ module Polispec
         end
       end
 
-      def render_deny(text)
+      def render_deny(text, _rule_id = nil)
         @exit_status = 0
         decision("deny", text)
       end
