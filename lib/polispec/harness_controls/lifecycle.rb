@@ -167,7 +167,7 @@ module Polispec
       def uninstall_own_overlay(installation_id, port_set, schedule_port_set, dry_run)
         return nil if dry_run || Process.euid.zero?
         plane = resolve_plane
-        return nil if plane["status"] == "active"
+        return nil unless plane["status"] == "unsealed"
         state = state_adapter(false, nil, port_set || schedule_port_set)
         committed = active_installation(read_records(state, nil), installation_id)
         return nil unless committed
