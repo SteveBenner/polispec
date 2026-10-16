@@ -66,7 +66,7 @@ module Polispec
         end
       end
 
-      Script = Struct.new(:commands, :text)
+      Script = Struct.new(:commands, :text, :opaque)
 
       module_function
 
@@ -74,18 +74,19 @@ module Polispec
         vars ||= default_vars(cwd)
         parser = Parser.new(text.to_s, cwd, vars, depth)
         commands = parser.run
-        Script.new(commands + embedded(commands, depth), text.to_s)
+        nested = embedded_scripts(commands, depth)
+        Script.new(commands + nested.flat_map(&:commands), text.to_s, parser.opaque || nested.any?(&:opaque))
       end
 
       def default_vars(cwd)
         { "HOME" => Dir.home, "PWD" => cwd.to_s }
       end
 
-      def embedded(commands, depth)
+      def embedded_scripts(commands, depth)
         return [] if depth >= MAX_DEPTH
 
         commands.flat_map do |cmd|
-          embedded_sources(cmd).flat_map { |source| parse(source, cmd.cwd, depth + 1).commands }
+          embedded_sources(cmd).map { |source| parse(source, cmd.cwd, depth + 1) }
         end
       end
 
@@ -172,7 +173,7 @@ module Polispec
       class Parser
         Segment = Struct.new(:words, :redirects, :pending, :start)
 
-        attr_reader :commands
+        attr_reader :commands, :opaque
 
         def initialize(text, cwd, vars, depth)
           @s = text
@@ -185,6 +186,7 @@ module Polispec
           @heredocs = []
           @tok_start = 0
           @quoted = false
+          @opaque = false
         end
 
         def run
@@ -195,7 +197,13 @@ module Polispec
         def parse_nested(source)
           return if @depth >= MAX_DEPTH
 
-          @commands.concat(Parser.new(source.to_s, @cwd, @vars.dup, @depth + 1).run)
+          child = Parser.new(source.to_s, @cwd, @vars.dup, @depth + 1)
+          @commands.concat(child.run)
+          @opaque ||= child.opaque
+        end
+
+        def mark_opaque!
+          @opaque = true
         end
 
         def set_cwd(dir)
@@ -596,6 +604,7 @@ module Polispec
         end
 
         def eval_command(words, parser, _env)
+          parser.mark_opaque!
           parser.parse_nested(words.drop(1).join(" "))
           nil
         end

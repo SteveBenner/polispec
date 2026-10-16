@@ -127,12 +127,7 @@ module Polispec
         script = Support.script_for(tool_name, tool_input, cwd)
         return false if script.nil? || script.commands.empty?
 
-        return true if script.commands.any? { |cmd| OPAQUE.include?(cmd.name.to_s) }
-
-        Support.command_text(tool_name, tool_input).to_s.split(/&&|\|\||[;|&\n(){}]/).any? do |segment|
-          word = segment.split(/\s+/).find { |item| !item.empty? && !item.match?(Shell::ASSIGNMENT) && !Shell::KEYWORDS.include?(item) }
-          OPAQUE.include?(word.to_s.delete("'\""))
-        end
+        script.opaque == true || script.commands.any? { |cmd| OPAQUE.include?(cmd.name.to_s) }
       rescue StandardError
         false
       end
