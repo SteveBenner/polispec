@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.27.1] - 2026-10-16
+
+### Fixed
+
+- A fresh install could not follow the quick start. `polispec apply environment-control --repo <repo>` failed with `ledger_missing: … create it before onboarding`, and nothing created a ledger. polispec now creates a starter ledger from one template, `config/ledger.starter.yml` (the schema, the short hostname, `envs_root ~/.polispec/envs`, the example default rules, `projects: []`):
+  - `polispec install` creates it at user scope, and so does `install.sh` through it. The receipt records `ledger_created`, and `uninstall` leaves the ledger in place.
+  - A package `plan` on a host without a ledger shows `before: none` and the tighten change "creates the starter ledger … with no projects". `apply` creates it (no `.bak-` file, since there was none) and adds the project as `onboarding` without `--confirm`.
+  - `doctor`'s `ledger_missing` says "create one with polispec ledger init".
+- An existing ledger is never overwritten. A sealed host never gets one created (`ledger_sealed`; `ledger_missing` names the operator). The starter changes no verdict, because its default rules apply only to the projects it lists, and it lists none (`lib/polispec/ledger.rb`, `lib/polispec/packages.rb`, `lib/polispec/plan.rb`, `lib/polispec/native_install.rb`, `lib/polispec/commands/doctor.rb`, `install.sh`).
+
+### Added
+
+- `polispec ledger init [--dry-run] [--json]` writes the starter ledger to the resolved ledger path, mode 0600 in a 0700 directory, after validating it against the schema. It prints `kept` when a ledger is already there (`lib/polispec/commands/ledger.rb`).
+
+### Changed
+
+- `rules/polispec-stewardship.md` lists `polispec ledger init` for a host with no ledger and counts creating the starter ledger as tightening. The README quick start and command table describe the starter ledger.
+
 ## [0.27.0] - 2026-10-16
 
 ### Added

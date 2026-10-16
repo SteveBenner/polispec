@@ -1,0 +1,11 @@
+schema: polispec.ledger/v1
+host: "{{host}}"
+envs_root: ~/.polispec/envs
+defaults:
+  rules:
+    - { match: { ref: [stable, test] }, verdict: deny }
+    - { match: { class: [service.control, service.config, deploy, promote] }, verdict: deny }
+    - { match: { class: [secrets.read, fs.write], env: prod }, verdict: deny }
+    - { match: { class: [data.write, policy.edit] }, verdict: warn }
+    - { match: {}, verdict: allow }
+projects: []

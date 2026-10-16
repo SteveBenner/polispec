@@ -368,7 +368,7 @@ The full procedure is in the [operator guide](docs/operator.md#the-runtime-and-s
 
 polispec needs Ruby 2.6 or later and git, and no gems beyond the standard library. It works with Claude Code and Codex out of the box. Pick one way in:
 
-**One line.** Fetches the latest release, pins it read-only under `~/.local/share/polispec`, puts `polispec` in `~/.local/bin`, and wires the guard into every harness it finds (Claude Code, Codex):
+**One line.** Fetches the latest release, pins it read-only under `~/.local/share/polispec`, puts `polispec` in `~/.local/bin`, wires the guard into every harness it finds (Claude Code, Codex), and creates an empty starter ledger when the host has none:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/SteveBenner/polispec/main/install.sh | sh
@@ -414,7 +414,9 @@ Applying the `environment-control` package does the setup in one pass:
 
 - It scaffolds `specs/polispec/environments.yml`, `policy.yml`, and `roster.yml` from a template (`--variant service` for a hosted service, `distributed` for software users install).
 - It points the component manifest at them.
-- It adds a ledger entry with status `onboarding`, records the package and the files it wrote, and renders the `[ENVS]` row.
+- It adds a ledger entry with status `onboarding`, records the package and the files it wrote, and renders the `[ENVS]` row. On a host with no ledger yet, it first creates a starter ledger at `~/.config/polispec/ledger.yml` (no projects, default rules only), and the plan shows that as a tightening change.
+
+The ledger is the list of projects polispec governs on this host. `polispec install` (and so `install.sh`) creates the starter ledger when there is none, and `polispec ledger init` creates it on its own. Neither ever overwrites an existing ledger. A starter ledger changes no verdict: its default rules apply only to projects listed in it, and it lists none.
 
 `--with-stewardship` first makes sure the host is safe to change: the installed plugin carries the stewardship rule, and the polispec runtime is pinned to a read-only release ([stewardship](#looking-after-polispec-itself)). Add `--commit` to commit exactly the scaffold files on main, and add `--push` to publish main, test, and stable as well. Replace the placeholder health check before the first deploy. The operator flips the ledger status to `live` when the rulebook is ready to enforce.
 
@@ -424,6 +426,7 @@ Applying the `environment-control` package does the setup in one pass:
 |---|---|
 | `polispec pin [--ref <tag>] [--source <repo>] [--dry-run]` | Install a read-only copy of one release under `~/.local/share/polispec/releases/` and point `current` and `~/.local/bin/polispec` at it; older releases stay as the rollback |
 | `polispec install` / `uninstall --harness claude\|codex\|all [--scope user\|project] [--dry-run]` | Wire the guard hooks, the skill and the rules into Claude Code or Codex without rplugin, with in-place backups and a receipt; uninstall removes only what install added |
+| `polispec ledger init [--dry-run]` | Create a starter ledger (no projects, default rules) at the resolved ledger path when the host has none; never overwrites one, and refuses on a sealed host |
 | `polispec settings list\|get\|set\|unset` | Show and change settings without rplugin, in `~/.config/polispec/settings.yml`; rplugin's settings and environment variables still win where present |
 | `polispec steward [--check]` | Protect the host: the stewardship rule installed, the runtime protected, the runtime pinned; `--check` only reports |
 | `polispec plan <target>` | Preview a change: files, ledger, composed policy diff, verdicts that would change, and whether it tightens or loosens |

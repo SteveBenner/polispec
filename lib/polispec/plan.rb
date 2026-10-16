@@ -363,6 +363,7 @@ module Polispec
       ledger = runner.ledger_effect
       existing = runner.ledger_before.project(runner.id)
       @changes << Change.new("tighten", "adds project #{runner.id} with status onboarding") if runner.kinds.include?("ledger") && !existing
+      @changes << Change.new("tighten", "creates the starter ledger #{runner.ledger_before.path} with no projects") if runner.ledger_created?
       subject_for_package(runner, existing)
       @artifacts[:runner] = runner
       {

@@ -31,6 +31,47 @@ module Polispec
       config.empty? ? File.expand_path(DEFAULT_PATH) : File.join(File.expand_path(config), "polispec", "ledger.yml")
     end
 
+    STARTER = File.join(Polispec::ROOT, "config", "ledger.starter.yml")
+
+    def self.starter_text
+      require "socket"
+      host = begin
+        Socket.gethostname.to_s.split(".").first.to_s
+      rescue StandardError
+        ""
+      end
+      host = "workstation" if host.empty?
+      File.read(STARTER).gsub("{{host}}", host)
+    end
+
+    def self.sealed_ledger?
+      require_relative "harness_controls/plane"
+      defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:path) && !HarnessControls::Plane.path("ledger").nil?
+    end
+
+    def self.create_starter!(path = default_path, dry: false)
+      require_relative "operator/git"
+      raise Operator::Failure.new("ledger_sealed", "the sealed plane owns the ledger at #{path}; ask the operator") if sealed_ledger?
+      return { "path" => path, "created" => false } if File.exist?(path)
+
+      text = starter_text
+      data = Schema::Document.parse(text, path)
+      errors = Schema.validate("ledger", data)
+      raise Operator::Failure.new("ledger_invalid", "the starter ledger template does not validate", "problems" => errors.map { |error| "#{error.pointer} #{error.message}".strip }) unless errors.empty?
+      return { "path" => path, "created" => true } if dry
+
+      FileUtils.mkdir_p(File.dirname(path), mode: 0o700)
+      temp = "#{path}.#{Process.pid}.tmp"
+      File.write(temp, text)
+      File.chmod(0o600, temp)
+      if File.exist?(path)
+        File.rename(temp, "#{path}.starter-#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}")
+        return { "path" => path, "created" => false }
+      end
+      File.rename(temp, path)
+      { "path" => path, "created" => true }
+    end
+
     def self.load(path = nil)
       path = File.expand_path(path || default_path)
       return new({}, path: path, digest: nil) unless File.file?(path)
