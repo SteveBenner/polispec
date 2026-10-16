@@ -190,7 +190,8 @@ steps:
     stdin: '{"hook_event_name":"PreToolUse","session_id":"x2","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/a.rb","content":"binding.pry\n"}}'
     expect:
       exit: 0
-      stdout_includes: ["\"permissionDecision\":\"deny\"", "blocked: the edit adds MUST violations on changed lines", "[code.ruby.no-binding-pry] MUST_NOT"]
+      stdout_includes: ["\"permissionDecision\":\"deny\"", "blocked: the edit adds MUST violations on changed lines", "[code.ruby.no-binding-pry] MUST_NOT", "[POLISPEC code.ruby.no-binding-pry] DENIED"]
+      stdout_excludes: ["POLISPEC-INTERNAL"]
   - name: POLISPEC_CODE_PRE_CONTEXT=deny gives claude deny-once
     run: ["{{polispec}}", code-hook, pre, --harness, claude]
     cwd: "{{files}}/work"
@@ -283,7 +284,15 @@ steps:
     stdin: '{"hook_event_name":"Stop","session_id":"p2","cwd":"{{files}}/work"}'
     expect:
       exit: 0
-      stdout_includes: ["\"decision\":\"block\"", "files changed this session still carry MUST violations", "landed.rb:1 [code.ruby.no-binding-pry] MUST_NOT"]
+      stdout_includes: ["\"decision\":\"block\"", "files changed this session still carry MUST violations", "landed.rb:1 [code.ruby.no-binding-pry] MUST_NOT", "run the polispec-reviewer subagent on these files"]
+  - name: stop carries the reviewer instruction for codex as well
+    run: ["{{polispec}}", code-hook, stop, --harness, codex]
+    cwd: "{{files}}/work"
+    env: { RPLUGIN_POLISPEC_POLISPEC_CODE_CHECK_AT: post_write }
+    stdin: '{"hook_event_name":"Stop","session_id":"p4","cwd":"{{files}}/work"}'
+    expect:
+      exit: 0
+      stdout_includes: ["\"decision\":\"block\"", "run the polispec-reviewer subagent on these files", "landed.rb"]
   - name: stop does not block twice
     run: ["{{polispec}}", code-hook, stop, --harness, claude]
     cwd: "{{files}}/work"

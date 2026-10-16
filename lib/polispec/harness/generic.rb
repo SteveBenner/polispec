@@ -20,8 +20,8 @@ module Polispec
         JSON.generate(data)
       end
 
-      def render_deny(text)
-        data = JSON.parse(super)
+      def render_deny(text, _rule_id = nil)
+        data = JSON.parse(super(text))
         data["decision"] = "block"
         data["reason"] = text
         JSON.generate(data)
