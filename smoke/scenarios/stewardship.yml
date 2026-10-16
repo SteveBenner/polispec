@@ -163,3 +163,13 @@ steps:
     expect:
       exit: 0
       stdout_includes: ["classification: mixed; needs_confirm: true", "loosen: shop probe journal git.push stable", "journal: 1 replayed, 1 changed"]
+  - name: a copy of the runtime placed inside the production checkout
+    run: [sh, -c, 'mkdir -p "$2/rt" && tar --exclude=.git -C "$1" -cf - . | tar -C "$2/rt" -xf - && touch "$2/rt/.git" && test -x "$2/rt/bin/polispec"', sh, "{{tree}}", "{{checkout.shop.stable}}"]
+    expect: { exit: 0 }
+  - name: a write inside a clone runtime that is also a production checkout is denied by R-PROD-FS not warned by R-POLISPEC-RUNTIME
+    run: ["{{checkout.shop.stable}}/rt/bin/polispec", hook, pretool, --harness, claude]
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"smoke","cwd":"{{checkout.shop.stable}}","tool_name":"Write","tool_input":{"file_path":"{{checkout.shop.stable}}/rt/lib/scratch_marker.rb","content":"x"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["R-PROD-FS", "deny"]
+      stdout_excludes: [R-POLISPEC-RUNTIME]

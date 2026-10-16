@@ -145,11 +145,13 @@ module Polispec
       private_class_method :restriction_violated?
 
       def protected_action?(action, paths)
-        return false unless %w[fs.write fs.delete control.edit].include?(action.action_class)
+        return false unless %w[fs.write fs.delete control.edit policy.edit].include?(action.action_class)
         target = action.env_hint["path"].to_s
         return false if target.empty?
         absolute = canonical_path(target)
-        fallback = action.env_hint["unknown"] == true
+        policy = action.action_class == "policy.edit"
+        return false if policy && File.directory?(absolute)
+        fallback = policy || action.env_hint["unknown"] == true
         paths.any? do |path|
           protected = canonical_path(path)
           absolute == protected || absolute.start_with?("#{protected}/") || (!fallback && protected.start_with?("#{absolute}/"))

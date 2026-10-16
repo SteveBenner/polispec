@@ -185,6 +185,9 @@ module Polispec
           actions.concat(known)
           actions << unknown_action(input, cwd) if known.empty? && !(calls.any? && calls.all? { |tool, data| Classify.benign?(tool, data, cwd) || Classify.parsed_shell?(tool, data, cwd) })
         end
+        if control_gate && governed && !diagnostic_read?(input.tool_name) && calls.any? { |tool, data| Classify.opaque_shell?(tool, data, cwd) }
+          actions << unknown_action(input, cwd) unless actions.any? { |action| action.raw.is_a?(Hash) && action.raw["unknown_tool"] }
+        end
         groups = group(actions, ledger, cwd, baseline)
         mode = enforce_mode
         @policy_digests = []
@@ -419,6 +422,11 @@ module Polispec
     end
 
     def emit_control_events(control, adapter, input, cwd)
+      verdict = control["verdict"]
+      if verdict && verdict.warn?
+        Events.emit("polispec.verdict", project: nil, env: nil, action_class: nil, verdict: verdict.level, rule_id: verdict.rule_id,
+                    tool: input.tool_name, harness: adapter.name, session_id: input.session_id, cwd: cwd, policy_digest: nil, policy_source: nil)
+      end
       Array(control["observations"]).each do |entry|
         metadata = entry.dig("effect_params", "metadata")
         Events.emit("polispec.control.observed", { "control_id" => entry["id"], "harness" => adapter.name, "event" => "control.observed", "metadata" => metadata })
