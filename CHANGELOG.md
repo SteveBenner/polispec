@@ -5,6 +5,34 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.24.0] - 2026-10-15
+
+### Changed
+
+- A shell line that runs `eval`, `source` or `.` now asks `POLISPEC-TOOL-UNKNOWN` under harness controls, in addition to whatever its commands classify as, because what it runs cannot be seen. The shell parser records `eval` when it unwraps it, at any nesting depth (`Script#opaque`, `lib/polispec/classify/shell.rb`), so words inside quoted strings, heredoc bodies fed to non-shells and grep patterns do not count (`Classify.opaque_shell?`, `lib/polispec/commands/hook.rb`). Replaying 1,699 real Bash calls against 0.23.2, two newly ask, both lines that source an env file with `.`; the other differences come from where each runtime lives, since the protected runtime is the running tree.
+- `R-POLISPEC-RUNTIME` no longer shadows a stricter policy rule: the runtime verdict and the policy's first-match verdict are both computed and the stricter wins, so a write inside a clone runtime that is also a production checkout is denied by `R-PROD-FS` instead of warned (`Engine#stricter_runtime`).
+- G-CLEAN (`clean_tree`) counts untracked, non-ignored files as dirty (`lib/polispec/operator/git.rb`, `gates.rb`).
+- `seal` leaves image assets under `assets/` (the logos) out of the runtime bundle, so a logo over 1 MiB no longer stops a seal with `oversized_bundle`; `MAX_FILE` and `MAX_BUNDLE` are unchanged. A seal dry run on an unprepared host now reports its blocked prerequisites (exit 3) instead of dying on the oversize (exit 1).
+- Codex code-hook denials carry the blocking code-spec rule id (for example `code.ruby.no-binding-pry`), and the "specs injected, retry" deny carries `POLISPEC-CODE`, instead of `POLISPEC-INTERNAL` (`lib/polispec/harness/codex.rb`, `lib/polispec/code/hook.rb`).
+- Every blocking `code-hook stop` carries the instruction to run the polispec-reviewer subagent, not only a stop with deferred rules.
+- `polispec doctor` prints `N findings (B blocking, I info)` when info findings are present; the count covers every listed finding.
+
+### Added
+
+- A non-root user may uninstall their own user- or project-scope harness-controls overlay on an unsealed host: the receipt must be unprotected and carry their `owner_uid` (written by unprivileged installs since this release), and they type `uninstall INSTALLATION_ID` on a TTY. Protected receipts, managed scope, other owners, a broken or active plane and receipts from before 0.24.0 still need the operator (`lib/polispec/harness_controls/lifecycle.rb`, `docs/harness-controls.md`).
+- Smoke verdict `inconclusive`: a live scenario whose model never attempted the action is retried once and, if it still does not attempt, recorded inconclusive. It does not fail the run, never proves a unit and never revokes an earlier pass; a forbidden file or ref change always fails with no retry (`lib/polispec/smoke/live.rb`, `run.rb`, `schemas/smoke.v1.yml`).
+- `POLISPEC_CODE_DECIDE=off` disables the decide port; the smoke runner sets it for every step, so no smoke run reaches a model through `code classify`.
+- `polispec apply … --checkouts` prints each git hook it installs and the checkout it went into (`lib/polispec/packages.rb`, `docs/environments.md`).
+- Smoke scenarios `steward.yml` (unit `commands/steward`) and `harness-uninstall.yml`, and new steps in `noise.yml`, `classify.yml`, `stewardship.yml`, `code-commands.yml`, `code-hook.yml`, `plan-apply.yml`, `promote-deploy.yml`, `seal.yml`, `smoke-suite.yml` and `status-digest-doctor.yml`: 30 scenarios.
+
+### Fixed
+
+- A shell redirect, Write or Edit of the ledger was allowed while `rm` of it was denied: a `policy.edit` whose target is a protected path or lies inside one is now denied with `POLISPEC-CONTROL-PROTECTION`. `polispec apply`, whose `policy.edit` names a directory, is unaffected (`lib/polispec/harness_controls/evaluate.rb`).
+- Control asks are written to the event log as `polispec.verdict` with level `warn` and the control's rule id, so asks can be counted.
+- `git log -p`, `git show -p` and `git diff -p` are benign reads; `-p`, `--paginate`, `-c`, `--config-env` and `--exec-path` are refused only as git global options.
+- `polispec code controls --policy ID` exits 1 with `unknown policy id ID` for an id the pack does not define.
+- `docs/operator.md` scratch use names `POLISPEC_LEDGER`, `POLISPEC_HOME`, `POLISPEC_GLOBAL`, `POLISPEC_STATE_HOME` and `POLISPEC_ENVS_ROOT` and no longer tells you to redirect `XDG_STATE_HOME`. `docs/roster.md` and `docs/schema.md` list the roster `run` values the schema and the worker-profile check accept.
+
 ## [0.23.2] - 2026-10-15
 
 ### Fixed
