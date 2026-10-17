@@ -241,7 +241,7 @@ steps:
     run: ["{{polispec}}", code, show, code/ruby]
     expect:
       exit: 0
-      stdout_includes: ["code/ruby 1.0.0", "[code.ruby.no-binding-pry] MUST_NOT high harness active", "[code.ruby.prefer-logger] SHOULD low harness active"]
+      stdout_includes: ["code/ruby 1.0.0", "[code.ruby.no-binding-pry] MUST_NOT high harness lint - active", "[code.ruby.prefer-logger] SHOULD low harness lint - active"]
   - name: show refuses an unknown spec
     run: ["{{polispec}}", code, show, code/cobol]
     expect:

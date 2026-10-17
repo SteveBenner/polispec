@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The `code-commands` smoke scenario expects the new `show` line format, `<level> <severity> <class> <type> <domain> <lifecycle>`. Pre-release smoke against the pinned 0.27.1: 31/31, with diffs limited to the new type and domain columns, the version, commit ids, and the clone-versus-pinned runtime kind of the candidate tree.
 - `polispec code validate` rule 9: an active rule whose declared or spec-level type disagrees with its `execution.class` is a problem. Packs that declare no types are unaffected (`lib/polispec/code/validator.rb`).
 
 ## [0.27.1] - 2026-10-16
