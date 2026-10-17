@@ -461,6 +461,7 @@ Change settings with `polispec settings set <key> <value>`, which writes `~/.con
 - `polispec.code.specs_repo`: path of the code specs repository; default `~/polispec-specs`. `POLISPEC_SPECS_REPO` overrides it.
 - `polispec.smoke.path`: path of the smoke ledger. Empty means `smoke.yml` at the git toplevel of the working directory. `POLISPEC_SMOKE` overrides it.
 - `polispec.smoke.live`: `on` (default) or `off`. Off stops `polispec smoke run --live` from launching any harness session; `POLISPEC_SMOKE_LIVE=off` does the same for one run.
+- `polispec.relax.dev`: `on` (default) or `off`. On, a governed `eval`, `source` or `.` line does not ask `POLISPEC-TOOL-UNKNOWN` when its directory lies only in ledger projects with status `onboarding` (projects in development); off restores the ask. `POLISPEC_RELAX_DEV=off` does the same for one run.
 - `polispec.exceptions`: `on` (default) or `off`. Off honors no entry of the global shelf's `exceptions.yml`, records no proposal and adds no promote hint to asks.
 - `polispec.records.raw`: `off` (default) or `on`. When on, each judgment record also keeps the classifier's raw view of the command or target, at most 2048 bytes, in local state only; it never goes through the events port.
 - `polispec.global.repo`, `polispec.global.ref` (default `main`), and `polispec.global.path` (default `polispec`): where the optional global shelf of shared rules, modules, and profiles is read from. Unset means no global layer. `POLISPEC_GLOBAL` points at a plain directory for scratch runs. See [schema](docs/schema.md).

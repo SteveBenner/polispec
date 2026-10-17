@@ -140,6 +140,19 @@ module Polispec
       candidates.min_by { |length, index, _| [length, index] }&.last
     end
 
+    def development(path)
+      real = canonical(path)
+      return nil if real.nil?
+
+      live = projects.reject { |entry| entry.status == "retired" }
+      return nil if live.any? { |entry| env_checkout(entry, real) }
+
+      owners = live.select { |entry| roots(entry.repo).any? { |root| under?(real, root) } || worktree_root(entry, real) }
+      return nil if owners.empty? || !owners.all? { |entry| entry.status == "onboarding" }
+
+      owners.map(&:id)
+    end
+
     private
 
     def build_project(entry)

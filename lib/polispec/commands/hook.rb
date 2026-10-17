@@ -233,11 +233,13 @@ module Polispec
       begin
         @plane = HarnessControls::Plane.resolve
         raise Polispec::Error, "sealed authority is broken" if @plane["status"] == "broken"
+        @dev_projects = nil
         @exceptions_active = exceptions_active?
         @exceptions_used = []
         @exception_asks = []
         @exception_entries = nil
         ledger = Ledger.load
+        @dev_projects = dev_projects(ledger, cwd, calls)
         actions = calls.flat_map { |tool, data| Array(Classify.call(tool, data, cwd)) }
         baseline = Layers.baseline?
         option_applies = options["controls_file"] && (!options["controls_project"] || project_applies?(options["controls_project"], cwd, actions))
@@ -247,11 +249,13 @@ module Polispec
         if control_gate && actions.empty? && governed && !diagnostic_read?(input.tool_name)
           known = calls.flat_map { |tool, data| Classify.positive(tool, data, cwd) }
           actions.concat(known)
-          actions << unknown_action(input, cwd, calls, false) if known.empty? && !(calls.any? && calls.all? { |tool, data| Classify.benign?(tool, data, cwd) || Classify.parsed_shell?(tool, data, cwd) })
+          actions << unknown_action(input, cwd, calls, false) if known.empty? && !(calls.any? && calls.all? { |tool, data| Classify.benign?(tool, data, cwd) || Classify.parsed_shell?(tool, data, cwd) || (@dev_projects && Classify.opaque_shell?(tool, data, cwd)) })
         end
-        if control_gate && governed && !diagnostic_read?(input.tool_name) && calls.any? { |tool, data| Classify.opaque_shell?(tool, data, cwd) }
+        if control_gate && governed && !diagnostic_read?(input.tool_name) && !@dev_projects && calls.any? { |tool, data| Classify.opaque_shell?(tool, data, cwd) }
           actions << unknown_action(input, cwd, calls, true) unless actions.any? { |action| action.raw.is_a?(Hash) && action.raw["unknown_tool"] }
         end
+        opaque_relaxed = @dev_projects && control_gate && governed && !diagnostic_read?(input.tool_name) && calls.any? { |tool, data| Classify.opaque_shell?(tool, data, cwd) }
+        @judged["relaxed"] = [{ "rule" => "POLISPEC-TOOL-UNKNOWN", "reason" => "development", "projects" => @dev_projects }] if opaque_relaxed
         groups = group(actions, ledger, cwd, baseline)
         @explain_state = { "actions" => actions, "ledger" => ledger, "cwd" => cwd, "baseline" => baseline, "documents" => [] } if @explain
         mode = enforce_mode
@@ -541,6 +545,25 @@ module Polispec
       false
     end
 
+    def dev_projects(ledger, cwd, calls)
+      return nil unless calls.any? { |tool, data| Classify.opaque_shell?(tool, data, cwd) }
+      return nil unless Engine::Settings.relax_dev?
+      return nil if HarnessControls::Plane.requested_edition == "lock"
+
+      ids = ledger.development(cwd)
+      return nil unless ids
+
+      calls.flat_map { |tool, data| Classify.command_cwds(tool, data, cwd) }.uniq.each do |dir|
+        more = ledger.development(dir)
+        return nil unless more
+
+        ids |= more
+      end
+      ids
+    rescue StandardError
+      nil
+    end
+
     def exceptions_active?
       Exceptions.active?(HarnessControls::Plane.requested_edition, @plane["status"])
     rescue StandardError
@@ -756,7 +779,7 @@ module Polispec
           "targets" => Array(judged["targets"]), "control" => judged["control"],
           "engine" => Judgments.engine(judged["mode"], plane: @plane, fastpath_key: judged["fastpath_key"]),
           "outcome" => Judgments.outcome(judged["verdict"], enforced: judged["mode"] == "enforce", rendered: Judgments.rendered(output), governed: judged["governed"], error: judged["error"], duration_ms: ((clock - started) * 1000).round(2))
-        }.tap { |record| record["exceptions"] = judged["exceptions"] if judged["exceptions"].is_a?(Array) && !judged["exceptions"].empty? }
+        }.tap { |record| record["exceptions"] = judged["exceptions"] if judged["exceptions"].is_a?(Array) && !judged["exceptions"].empty? }.tap { |record| record["relaxed"] = judged["relaxed"] if judged["relaxed"].is_a?(Array) && !judged["relaxed"].empty? }
       end
     end
 

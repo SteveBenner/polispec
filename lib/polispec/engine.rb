@@ -29,6 +29,7 @@ module Polispec
       SUPERVISOR_KEY = "polispec.supervisor.status_command"
       ROOT_GUARD_KEY = "polispec.root_guard"
       EXCEPTIONS_KEY = "polispec.exceptions"
+      RELAX_DEV_KEY = "polispec.relax.dev"
       module_function
 
       def argv(key)
@@ -62,6 +63,12 @@ module Polispec
 
       def exceptions?
         text(EXCEPTIONS_KEY, "on").downcase != "off"
+      rescue StandardError
+        false
+      end
+
+      def relax_dev?
+        text(RELAX_DEV_KEY, "on").downcase != "off"
       rescue StandardError
         false
       end

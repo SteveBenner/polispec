@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.30.0] - 2026-10-17
+
+### Changed
+
+- A governed line that runs `eval`, `source` or `.` no longer asks `POLISPEC-TOOL-UNKNOWN` in a project in development. `Ledger#development(path)` (`lib/polispec/ledger.rb`) returns the project ids when at least one non-retired ledger project contains the directory, every such project has status `onboarding`, and the directory is not inside an env checkout; `HookCommand#judge` (`lib/polispec/commands/hook.rb`) then skips the opaque unknown in both of its branches. Agents source env files they wrote themselves on nearly every task, and 82 of the 86 asks left in `rllm`, `teach`, `reach` and `rdemo` since 0.28.3 were such lines, in projects the guard lists as not enforced. The directory of every command in the line must be in development too, so `cd <live project> && source env.sh` still asks. A live project, a live project containing an onboarding one, a test or stable checkout, an unowned path and the lock edition keep the ask, and so does everything that is not an opaque line: an unrecognised tool, a line the parser extracts no command from, an undeclared MCP operation, every deny and every rule warn. The visible commands of a relaxed line are judged as before, so `source env.sh; git push origin main:stable` is still denied; what the relaxation gives up is sight of the commands inside the sourced file.
+- Each relaxed call carries an optional `relaxed` field in its judgment record (rule, reason `development`, project ids; `schemas/judgment.v1.yml`). Records without it are unchanged.
+- The new setting `polispec.relax.dev` (`on` by default, `POLISPEC_RELAX_DEV=off`) restores the 0.29.0 ask in every project without a release.
+
 ## [0.29.0] - 2026-10-17
 
 ### Added
