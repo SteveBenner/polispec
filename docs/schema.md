@@ -233,7 +233,7 @@ One record per call the guard judged (`docs/operator.md`, judgment records). The
 | `engine` | object | `version`, `runtime` (`pinned`, `sealed`, `clone`, `unknown`), `commit`, `tree_digest` (pinned only), `edition`, `enforce`, `plane` (`status`, `generation`), `fastpath_key`. |
 | `outcome` | object | `verdict`, `rule_id`, `enforced`, `allow_once_id`, `rendered` (`allow`, `ask`, `deny`, `context`, `none`), `governed`, `error` (the exception class of a fail-closed denial), `duration_ms`. |
 | `prev`, `digest` | sha256 or null | `prev` is the previous record's `digest` across rotations (null first); `digest` covers the canonical JSON of the record without `digest`. |
-| (anchor) | | Not in the stream: `judgments.head.json` holds `{digest, count, file}` and `verify` reports `truncated` against it. |
+| (anchor) | | Not in the stream: `judgments.head.json` holds `{digest, count, file}` and `verify` reports `truncated` against it, expecting a count that leaves out the records it lists as `interrupted_append`. |
 | (skips) | | Not in the stream: `skips.jsonl` holds one `{ts, tool, session, key, skip}` line per call `bin/polispec-guard` skipped; counted, never chained. |
 
 ## Layers: `polispec.global/v1`, `polispec.module/v1`, `polispec.profiles/v1`

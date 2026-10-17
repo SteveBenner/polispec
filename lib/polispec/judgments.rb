@@ -204,12 +204,31 @@ module Polispec
 
     def read_head
       stored = head_file
-      return stored if stored
+      tail = tail_digest
+      return stored if stored && (tail.nil? || tail == stored["digest"])
+      return nil unless tail
+      return { "digest" => tail, "count" => count_records, "file" => File.basename(path) } unless stored
 
-      digest = tail_digest
-      return nil unless digest
+      ahead = ahead_of(stored["digest"])
+      return stored if ahead.empty?
 
-      { "digest" => digest, "count" => count_records, "file" => File.basename(path) }
+      { "digest" => ahead.last["digest"], "count" => stored["count"].to_i + ahead.length, "file" => File.basename(path) }
+    end
+
+    def ahead_of(digest)
+      window = tail_records
+      by_digest = window.to_h { |entry| [entry["digest"], entry] }
+      ahead = []
+      entry = window.last
+      window.length.times do
+        break unless entry && entry["digest"] != digest
+
+        ahead.unshift(entry)
+        return ahead if entry["prev"] == digest
+
+        entry = by_digest[entry["prev"]]
+      end
+      []
     end
 
     def head_file
@@ -228,21 +247,33 @@ module Polispec
     end
 
     def tail_digest
+      parsed = State.parse_line(tail_lines.last.to_s)
+      parsed && parsed["digest"].is_a?(String) ? parsed["digest"] : nil
+    rescue SystemCallError
+      nil
+    end
+
+    def tail_records
+      tail_lines.filter_map do |line|
+        parsed = State.parse_line(line)
+        parsed if parsed && parsed["digest"].is_a?(String)
+      end
+    rescue SystemCallError
+      []
+    end
+
+    def tail_lines
       file = files.last
-      return nil unless file
+      return [] unless file
 
       size = File.size(file)
-      return nil if size.zero?
+      return [] if size.zero?
 
       chunk = File.open(file, "rb") do |handle|
         handle.seek([size - TAIL_BYTES, 0].max)
         handle.read
       end
-      line = chunk.split("\n").reverse.find { |text| !text.strip.empty? }
-      parsed = line && JSON.parse(line)
-      parsed.is_a?(Hash) && parsed["digest"].is_a?(String) ? parsed["digest"] : nil
-    rescue JSON::ParserError, SystemCallError
-      nil
+      chunk.split("\n").reject { |text| text.strip.empty? }
     end
 
     def count_records
@@ -320,7 +351,9 @@ module Polispec
 
     def verify(schema: true)
       findings = []
+      interrupted = []
       previous = nil
+      parent = nil
       seen = {}
       count = 0
       last = nil
@@ -329,21 +362,29 @@ module Polispec
         id = entry["id"]
         Schema.validate("judgment", entry).each { |error| findings << finding("schema", id, "#{error.pointer.empty? ? '/' : error.pointer} #{error.message}") } if schema
         findings << finding("digest_mismatch", id, "stored digest does not match the record") if entry["digest"] != Canonical.sha256(Canonical.json(entry.reject { |key, _| key == "digest" }))
-        findings << finding("chain_broken", id, "prev #{entry['prev'].to_json} does not match #{previous.to_json}") if entry["prev"] != previous
+        if entry["prev"] != previous
+          if entry["prev"] && entry["prev"] == parent
+            interrupted << finding("interrupted_append", id, "chains from #{entry['prev'].to_s[0, 12]} like the record before it: an append was cut off before the head anchor moved")
+          else
+            findings << finding("chain_broken", id, "prev #{entry['prev'].to_json} does not match #{previous.to_json}")
+          end
+        end
         findings << finding("duplicate_id", id, "id appears more than once") if seen[id]
         seen[id] = true
         previous = entry["digest"]
+        parent = entry["prev"]
         last = entry
       end
       head = head_file
+      anchored = count - interrupted.length
       if last && head.nil?
         findings << finding("truncated", last["id"], "the head anchor #{HEAD} is missing")
-      elsif last && (head["digest"] != last["digest"] || head["count"].to_i != count)
-        findings << finding("truncated", last["id"], "the head anchor records #{head['count']} records ending #{head['digest'].to_s[0, 12]}; the stream has #{count} ending #{last['digest'].to_s[0, 12]}")
+      elsif last && (head["digest"] != last["digest"] || head["count"].to_i != anchored)
+        findings << finding("truncated", last["id"], "the head anchor records #{head['count']} records ending #{head['digest'].to_s[0, 12]}; the stream has #{anchored} ending #{last['digest'].to_s[0, 12]}")
       elsif last.nil? && head
         findings << finding("truncated", nil, "the head anchor records #{head['count']} records but the stream is empty")
       end
-      { "ok" => findings.empty?, "records" => count, "files" => files.map { |file| File.basename(file) }, "findings" => findings, "skips" => skip_counts }
+      { "ok" => findings.empty?, "records" => count, "files" => files.map { |file| File.basename(file) }, "findings" => findings, "interrupted" => interrupted, "skips" => skip_counts }
     end
 
     def finding(kind, id, detail)
