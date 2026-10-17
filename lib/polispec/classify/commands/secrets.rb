@@ -8,8 +8,8 @@ module Polispec
     module Secrets
       extend Support::Family
 
-      NAMES = %w[cat head tail less more bat tac nl od xxd hexdump strings base64 grep egrep fgrep rg ag awk cut sort uniq wc diff cmp comm jq yq file stat source . openssl gpg sqlite3 zip].freeze
-      PATTERN_FIRST = %w[grep egrep fgrep rg ag awk].freeze
+      NAMES = %w[cat head tail less more bat tac nl od xxd hexdump strings base64 grep egrep fgrep rg ag awk cut sort uniq wc diff cmp comm jq yq file stat source . openssl gpg sqlite3 zip zcat zgrep zegrep zfgrep zless zmore bzcat xzcat zstdcat].freeze
+      PATTERN_FIRST = %w[grep egrep fgrep rg ag awk zgrep zegrep zfgrep].freeze
       PATTERN_FLAGS = %w[-e -f --regexp --file].freeze
       VALUE_OPTS = %w[-e -f -m -A -B -C -d -k -t -T -o --regexp --file --max-count --context --include --exclude --glob -g].freeze
       ALSO_READS = %w[cp mv scp rsync].freeze
@@ -24,6 +24,7 @@ module Polispec
         end
 
         def candidates(cmd)
+          return Support.split_args(cmd.args, Fs::COMPRESSOR_VALUE).first.reject { |arg| arg == "-" } if Fs.to_stdout?(cmd)
           return [] unless NAMES.include?(cmd.name) || ALSO_READS.include?(cmd.name)
 
           pos, flags = Support.split_args(cmd.args, VALUE_OPTS)
