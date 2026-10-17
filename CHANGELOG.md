@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.28.2] - 2026-10-17
+
+### Fixed
+
+- Every Claude Code `Monitor` call asked `POLISPEC-TOOL-UNKNOWN`, whatever its command was, because `Monitor` was not a recognised shell tool: its command was never parsed, so a loop of read-only commands such as `until grep -q … ; do sleep 5; done; echo finished` was judged as an unknown tool. `Monitor` now joins the shell tools, so its command is classified and judged by policy like the same Bash line, and a line the parser fully parses and policy allows no longer asks (`Harness::Base::SHELL_TOOLS` in `lib/polispec/harness/base.rb`). The container root guard covers it as well, so a privileged `docker run` in a `Monitor` is caught as in Bash (`HarnessControls::RootGuard::SHELL_TOOLS`); without that, the call would have stopped asking and stopped being guarded at once. A `Monitor` line that runs `eval`, `source` or `.` still asks, and a push to `stable` in one is now denied by `R-PROD-GIT` as in Bash rather than only asked. Over the last two days of host judgments, 59 of the 381 `POLISPEC-TOOL-UNKNOWN` asks were `Monitor` calls.
+
 ## [0.28.1] - 2026-10-16
 
 ### Fixed

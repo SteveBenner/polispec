@@ -5,7 +5,7 @@ module Polispec
   module HarnessControls
     module RootGuard
       CONTAINER_COMMANDS = %w[docker podman nerdctl lxc incus].freeze
-      SHELL_TOOLS = %w[Bash shell shell.exec exec_command terminal].freeze
+      SHELL_TOOLS = %w[Bash shell shell.exec exec_command terminal Monitor].freeze
       SOCKET_NAMES = %w[docker.sock podman.sock containerd.sock].freeze
 
       module_function

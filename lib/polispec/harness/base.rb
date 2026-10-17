@@ -6,7 +6,7 @@ module Polispec
     Input = Struct.new(:tool_name, :tool_input, :cwd, :session_id, :agent_type, :event, keyword_init: true)
 
     class Base
-      SHELL_TOOLS = %w[Bash bash shell exec_command terminal local_shell run_command execute_command].freeze
+      SHELL_TOOLS = %w[Bash bash shell exec_command terminal local_shell run_command execute_command Monitor].freeze
       EDIT_TOOLS = %w[Edit MultiEdit NotebookEdit patch edit_file str_replace_editor str_replace_based_edit_tool].freeze
       WRITE_TOOLS = %w[Write write_file create_file].freeze
       PATCH_TOOLS = %w[apply_patch].freeze
