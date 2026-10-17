@@ -5,6 +5,7 @@ module Polispec
   module Code
     class Node
       INACTIVE = %w[draft deprecated rejected].freeze
+      TYPE_BY_CLASS = { "agent" => "directive", "harness" => "lint", "hybrid" => "review", "contextual" => "contextual" }.freeze
       attr_reader :id, :spec, :data, :parent, :items
 
       def initialize(spec, data, parent)
@@ -222,6 +223,44 @@ module Polispec
           merged = deep_merge(merged, spec.defaults)
         end
         merged
+      end
+
+      def labels_for(path)
+        parts = path.split("/")
+        labels = { "type" => nil, "domain" => nil }
+        parts.each_index do |index|
+          spec = specs[parts[0..index].join("/")]
+          next unless spec
+
+          %w[type domain].each { |key| labels[key] = spec.data[key] if spec.data[key].is_a?(String) }
+        end
+        labels
+      end
+
+      def type_of(node)
+        walker = node
+        while walker
+          return [walker.data["type"], "declared"] if walker.data["type"].is_a?(String)
+
+          walker = walker.parent
+        end
+        inherited = labels_for(node.spec)["type"]
+        return [inherited, "spec"] if inherited
+
+        mapped = Node::TYPE_BY_CLASS[node.klass]
+        return [mapped, "class"] if node.rule? && mapped
+
+        [nil, nil]
+      end
+
+      def domain_of(node)
+        walker = node
+        while walker
+          return walker.data["domain"] if walker.data["domain"].is_a?(String)
+
+          walker = walker.parent
+        end
+        labels_for(node.spec)["domain"]
       end
 
       def budget_lines(path)

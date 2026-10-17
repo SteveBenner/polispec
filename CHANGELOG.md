@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.28.0] - 2026-10-16
+
+### Added
+
+- Code specs gain two classification axes on `polispec.spec/v1`: `type` (`directive`, `lint`, `review`, `contextual`) says how a policy binds, and `domain` (`design`, `accessibility`, `performance`, `code-quality`, `code-meta`, `security`, `operations`) says what it governs. Both may be declared at spec level, as a default for the spec and its child specs, and on any composite or rule, overriding for its subtree. An undeclared type is derived from `execution.class` (`lib/polispec/code/pack.rb`, `schemas/spec.v1.yml`).
+- `polispec code list [--type T] [--domain D] [--spec PATH] [--json]` prints every active policy with its type and domain and the count (`lib/polispec/commands/code.rb`).
+- `--type` and `--domain` filter `polispec code show`, and the output of `show` and `chain` carries each rule's type and domain. The guard classifies `code list` and the new flags as read-only (`lib/polispec/classify/benign.rb`).
+
+### Changed
+
+- `polispec code validate` rule 9: an active rule whose declared or spec-level type disagrees with its `execution.class` is a problem. Packs that declare no types are unaffected (`lib/polispec/code/validator.rb`).
+
 ## [0.27.1] - 2026-10-16
 
 ### Fixed

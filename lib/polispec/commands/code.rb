@@ -10,7 +10,8 @@ module Polispec
         usage: polispec code <verb> [options]
           detect <file>                          language of a file
           chain <file|language>                  the spec chain and rules for a language
-          show <spec>                            every policy of a spec
+          show <spec> [--type T] [--domain D]    every policy of a spec
+          list [--type T] [--domain D] [--spec PATH]  policies with their type and domain
           check <file> [--before FILE] [--json]  check a file; exit 1 when MUST rules block
           validate                               semantic validation of the pack
           baseline <repo> [--force]              record the per-repo violation baseline
@@ -19,8 +20,10 @@ module Polispec
           classify <policy-id|file>              propose execution.classified blocks
         options: --ref stable|main|worktree|<git ref>  --repo DIR  --json
       TEXT
-      AUTHORING = %w[validate controls baseline generate classify show].freeze
-      Options = Struct.new(:ref, :repo, :json, :before, :policy, :spec, :force, :stdout, :rest, keyword_init: true)
+      AUTHORING = %w[validate controls baseline generate classify show list].freeze
+      TYPES = %w[directive lint review contextual].freeze
+      DOMAINS = %w[design accessibility performance code-quality code-meta security operations].freeze
+      Options = Struct.new(:ref, :repo, :json, :before, :policy, :spec, :force, :stdout, :type, :domain, :rest, keyword_init: true)
 
       def self.run(args)
         new.run(args)
@@ -45,7 +48,7 @@ module Polispec
       end
 
       def parse(args, verb)
-        opts = Options.new(ref: nil, repo: nil, json: false, before: nil, policy: nil, spec: nil, force: false, stdout: false, rest: [])
+        opts = Options.new(ref: nil, repo: nil, json: false, before: nil, policy: nil, spec: nil, force: false, stdout: false, type: nil, domain: nil, rest: [])
         list = args.dup
         until list.empty?
           arg = list.shift
@@ -58,9 +61,13 @@ module Polispec
           when "--spec" then opts.spec = list.shift
           when "--force" then opts.force = true
           when "--stdout" then opts.stdout = true
+          when "--type" then opts.type = list.shift
+          when "--domain" then opts.domain = list.shift
           else opts.rest << arg
           end
         end
+        raise Code::Error, "unknown type #{opts.type}; one of #{TYPES.join(', ')}" if opts.type && !TYPES.include?(opts.type)
+        raise Code::Error, "unknown domain #{opts.domain}; one of #{DOMAINS.join(', ')}" if opts.domain && !DOMAINS.include?(opts.domain)
         require_relative "../harness_controls/plane"
         plane = defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:resolve) ? HarnessControls::Plane.resolve : { "status" => "unsealed" }
         raise Polispec::Error, "sealed authority is broken" if plane["status"] == "broken"
@@ -96,7 +103,10 @@ module Polispec
         chain.specs.each do |spec|
           rules = chain.rules_of(spec)
           puts "#{spec.path} (#{spec.version}, #{rules.length} rules)"
-          rules.each { |rule| puts "  [#{rule.id}] #{rule.level} #{rule.severity} #{rule.klass}  #{rule.title}" }
+          rules.each do |rule|
+            type, = loaded.type_of(rule)
+            puts "  [#{rule.id}] #{rule.level} #{rule.severity} #{rule.klass} #{type || '-'} #{loaded.domain_of(rule) || '-'}  #{rule.title}"
+          end
         end
         0
       end
@@ -111,7 +121,12 @@ module Polispec
         puts "#{spec.path} #{spec.version}  #{spec.data['summary']}"
         (spec.root ? spec.root.each_node.to_a : []).each do |node|
           if node.rule?
-            puts "[#{node.id}] #{node.level} #{node.severity} #{node.klass} #{node.lifecycle}"
+            type, = loaded.type_of(node)
+            domain = loaded.domain_of(node)
+            next if opts.type && opts.type != type
+            next if opts.domain && opts.domain != domain
+
+            puts "[#{node.id}] #{node.level} #{node.severity} #{node.klass} #{type || '-'} #{domain || '-'} #{node.lifecycle}"
             puts "  #{Code.squash(node.statement)}"
             puts "  look for: #{Code.squash(node.lens['look_for'])}" if node.lens
             puts "  violation: #{Code.squash(node.lens['violation'])}" if node.lens
@@ -119,6 +134,39 @@ module Polispec
             puts "== #{node.id}  #{node.title}"
           end
         end
+        0
+      end
+
+      def verb_list(opts)
+        return usage unless opts.rest.empty?
+
+        loaded = pack(opts)
+        rows = []
+        loaded.specs.values.sort_by { |spec| [spec.depth, spec.path] }.each do |spec|
+          next if opts.spec && !spec.path.start_with?(opts.spec)
+
+          (spec.root ? spec.root.each_rule.to_a : []).each do |rule|
+            next unless rule.lifecycle == "active" && rule.active?
+
+            type, source = loaded.type_of(rule)
+            domain = loaded.domain_of(rule)
+            next if opts.type && opts.type != type
+            next if opts.domain && opts.domain != domain
+
+            rows << [rule, type, source, domain]
+          end
+        end
+        if opts.json
+          policies = rows.map do |rule, type, source, domain|
+            { "id" => rule.id, "spec" => rule.spec, "type" => type, "type_source" => source, "domain" => domain, "class" => rule.klass, "level" => rule.level, "severity" => rule.severity, "title" => rule.title }
+          end
+          puts JSON.generate("pack" => loaded.source.label, "count" => rows.length, "policies" => policies)
+          return 0
+        end
+        rows.each do |rule, type, _source, domain|
+          puts "#{type.to_s.ljust(10)} #{(domain || '-').ljust(13)} #{rule.level} #{rule.severity} [#{rule.id}] #{rule.title}"
+        end
+        puts "#{rows.length} policies"
         0
       end
 
