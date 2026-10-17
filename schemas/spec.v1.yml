@@ -12,6 +12,8 @@ properties:
   version: { $ref: "#/$defs/semver" }
   recorded: { $ref: "#/$defs/date" }
   summary: { type: string, minLength: 1 }
+  type: { $ref: "#/$defs/spec_type" }
+  domain: { $ref: "#/$defs/domain" }
   activation:
     type: object
     additionalProperties: false
@@ -32,6 +34,12 @@ properties:
   defaults: { $ref: "#/$defs/defaults" }
   policy: { $ref: "#/$defs/policy" }
 $defs:
+  spec_type:
+    description: "Semantic type: how a policy binds. directive: a model judges it against a lens (execution class agent). lint: a deterministic enforcer decides with no model call (harness). review: an enforcer flags candidates and a model judges them (hybrid). contextual: a classifier decides per event whether it applies (contextual)."
+    enum: [directive, lint, review, contextual]
+  domain:
+    description: "Semantic domain: what a policy governs. design: layout, density, spacing, sizing, typography, color, interaction. accessibility: perceivable, operable, understandable, robust interfaces. performance: speed and resource use. code-quality: patterns in the code itself. code-meta: how code is made, kept and shipped. security: secrets, data, trust boundaries. operations: running services, releases, recovery."
+    enum: [design, accessibility, performance, code-quality, code-meta, security, operations]
   spec_path: { type: string, pattern: "^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$" }
   policy_id: { type: string, pattern: "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_-]*)+$" }
   language: { type: string, pattern: "^(\\*|[a-z][a-z0-9_+-]*)$" }
@@ -213,6 +221,8 @@ $defs:
       title: { type: string, minLength: 1, maxLength: 80 }
       summary: { type: string, minLength: 1 }
       lifecycle: { enum: [draft, active, deprecated, rejected] }
+      type: { $ref: "#/$defs/spec_type" }
+      domain: { $ref: "#/$defs/domain" }
       scope: { $ref: "#/$defs/scope" }
       models: { $ref: "#/$defs/model_ref" }
       subpolicies:
@@ -234,6 +244,8 @@ $defs:
       level: { $ref: "#/$defs/level" }
       severity: { $ref: "#/$defs/severity" }
       lifecycle: { enum: [draft, active, deprecated, rejected] }
+      type: { $ref: "#/$defs/spec_type" }
+      domain: { $ref: "#/$defs/domain" }
       scope: { $ref: "#/$defs/scope" }
       execution: { $ref: "#/$defs/execution" }
       ratchet: { type: boolean }

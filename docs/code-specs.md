@@ -9,6 +9,18 @@ polispec applies a tree of composable policies, kept in the code specs repositor
 - Hooks read the `stable` ref with `git ls-tree` and `git cat-file --batch`, never the working tree. `--ref main`, `--ref worktree` or any git ref is for authoring; `POLISPEC_CODE_REF` sets the default ref for every command and the hook.
 - The parsed pack is cached under the state directory, keyed by tree sha and polispec version.
 
+## Types and domains
+
+Two optional labels classify every policy. They change nothing about injection, checking or enforcement; they are read by `validate`, `show`, `chain` and `list`.
+
+- `type` says how a policy binds: `directive` (a model judges it against a lens, execution class `agent`), `lint` (a deterministic enforcer decides with no model call, `harness`), `review` (an enforcer flags candidates and a model judges them, `hybrid`), `contextual` (a classifier decides per event whether it applies, `contextual`).
+- `domain` says what a policy governs: `design`, `accessibility`, `performance`, `code-quality`, `code-meta`, `security`, `operations`.
+- Either label may be declared at spec level, where it is the default for every policy in that spec and in its child specs, and on any composite or rule, where it overrides for that subtree.
+- Inheritance order: the rule, then its composite ancestors, then the deepest spec in the path chain that declares it. A type with no declaration falls back to the mapping from `execution.class`; a domain with no declaration stays empty.
+- `validate` rule 9: an active rule whose declared or spec-level type disagrees with its `execution.class` is a problem. A type taken from the class mapping never is.
+- `code show <spec>` and `code chain` print each rule's type and domain. `code list` prints every active policy in the pack with its type and domain, ends with the count, and with `--json` adds the type source.
+- `--type T` and `--domain D` narrow `show` and `list`; `--spec PATH` narrows `list` to a spec path prefix. An unknown value exits 1 and names the vocabulary.
+
 ## Language and chain
 
 A file's language comes from the `detection` blocks of the specs: extension (longest suffix first), exact filename, shebang on line 1, modeline in the first 5 lines, within the first 4 KiB. No match gives `unknown`, which receives only the `*` specs.
@@ -60,7 +72,8 @@ A hybrid rule's findings are candidates (`candidate: true`) and never block. A c
 ```
 polispec code detect <file>
 polispec code chain <file|language>
-polispec code show <spec>
+polispec code show <spec> [--type T] [--domain D]
+polispec code list [--type T] [--domain D] [--spec PATH] [--json]
 polispec code check <file> [--before <file>] [--json]
 polispec code validate [--ref main|worktree]
 polispec code baseline <repo> [--force]
@@ -71,7 +84,7 @@ polispec specs link [--dry-run] | status | promote
 polispec code-hook pre|post|stop|session --harness <claude|codex|hermes|...>
 ```
 
-`validate` enforces the semantic rules of the contract: policy ids start with the spec path (slashes to dots), active harness and hybrid rules have an enforcer and a control, agent, hybrid and contextual rules have a lens (contextual also `applies_if`), rejected rules carry `rejected:`, refs resolve without a cycle, ids and directive opcodes are unique, and control, compliant and exemplar files exist. `controls` requires each `.bad` fixture to violate exactly its policy and each `.good` fixture to be clean; it exits 1 on any survivor.
+`validate` enforces the semantic rules of the contract: policy ids start with the spec path (slashes to dots), active harness and hybrid rules have an enforcer and a control, agent, hybrid and contextual rules have a lens (contextual also `applies_if`), rejected rules carry `rejected:`, refs resolve without a cycle, ids and directive opcodes are unique, declared or spec-level types agree with execution.class, and control, compliant and exemplar files exist. `controls` requires each `.bad` fixture to violate exactly its policy and each `.good` fixture to be clean; it exits 1 on any survivor.
 
 `specs link` creates a missing `~/.polispec/specs` link, or confirms one that already points at `<repo>/specs`, without asking. Repointing an existing link at a different target needs an interactive terminal and the typed phrase `relink <full target path>`, where the target is the absolute `<repo>/specs` path the prompt shows; an agent shell is refused with exit 1 and the link is untouched. `specs link --dry-run` previews the change (`replaces`, `needs_terminal` in `--json`) and writes nothing.
 

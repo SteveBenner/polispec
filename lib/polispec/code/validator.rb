@@ -25,6 +25,7 @@ module Polispec
         layout
         id_prefix
         execution
+        types
         rejected
         refs
         unique_ids
@@ -82,6 +83,18 @@ module Polispec
           end
           add("3", rule.spec, rule.id, "#{klass} rule requires execution.lens") if %w[agent hybrid contextual].include?(klass) && !rule.lens
           add("3", rule.spec, rule.id, "contextual rule requires execution.applies_if") if klass == "contextual" && !rule.applies_if
+        end
+      end
+
+      def types
+        @pack.rules.each do |rule|
+          next unless rule.lifecycle == "active"
+
+          value, source = @pack.type_of(rule)
+          expected = Node::TYPE_BY_CLASS[rule.klass]
+          next unless %w[declared spec].include?(source) && expected && value != expected
+
+          add("9", rule.spec, rule.id, "type #{value} (#{source == 'spec' ? 'from spec' : 'declared'}) disagrees with execution.class #{rule.klass}, which is type #{expected}")
         end
       end
 

@@ -41,7 +41,8 @@ module Polispec
         "code" => [{
           "detect" => JSON_FLAG.merge("--ref" => true, "--repo" => true),
           "chain" => JSON_FLAG.merge("--ref" => true, "--repo" => true),
-          "show" => JSON_FLAG.merge("--ref" => true, "--repo" => true),
+          "show" => JSON_FLAG.merge("--ref" => true, "--repo" => true, "--type" => true, "--domain" => true),
+          "list" => JSON_FLAG.merge("--ref" => true, "--repo" => true, "--type" => true, "--domain" => true, "--spec" => true),
           "check" => JSON_FLAG.merge("--before" => true, "--ref" => true, "--repo" => true),
           "validate" => JSON_FLAG.merge("--ref" => true, "--repo" => true)
         }],
