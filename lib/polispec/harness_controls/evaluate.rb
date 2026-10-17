@@ -1,4 +1,5 @@
 require_relative "root_guard"
+require_relative "../exceptions"
 
 module Polispec
   module HarnessControls
@@ -68,12 +69,19 @@ module Polispec
         paths.concat(Array(values["runtime_argv"]).select { |item| item.to_s.start_with?("/") })
         paths.concat(Array(documents).flat_map { |entry| Array(stringify(entry)["owned_paths"]) })
         paths << ledger.path if ledger && ledger.respond_to?(:path)
+        paths << exceptions_path
         program = File.expand_path($PROGRAM_NAME.to_s)
         paths << program if File.file?(program)
         paths.concat($LOADED_FEATURES.select { |path| path.include?("/rplugin/") && path.start_with?("/") })
         paths.concat(%w[/etc/polispec /usr/local/lib/polispec /var/lib/polispec /run/polispec])
         paths << Authorizations::DISABLED_PATH if defined?(Authorizations::DISABLED_PATH)
         paths.compact.map { |path| canonical_path(path) }.uniq.sort
+      end
+
+      def exceptions_path
+        Exceptions.path
+      rescue StandardError
+        nil
       end
 
       def document_controls(entry)
@@ -211,6 +219,14 @@ module Polispec
         end
         unknown = actions.select { |action| action.raw.is_a?(Hash) && action.raw["unknown_tool"] == true }
         return result if undeclared.empty? && unknown.empty?
+        lifter = values["excepted"]
+        if lifter.respond_to?(:call)
+          covered = (unknown + undeclared).map { |action| lifter.call(action) }
+          unless covered.any?(&:nil?)
+            result["exceptions"] = covered.uniq
+            return result
+          end
+        end
         code = undeclared.empty? ? "POLISPEC-TOOL-UNKNOWN" : "POLISPEC-MCP-UNDECLARED"
         reason = undeclared.empty? ? "the non-read-only tool could not be positively classified" : "one or more MCP operations are not declared by protected controls or committed policy"
         level = values["edition"] == "lock" ? "deny" : "warn"

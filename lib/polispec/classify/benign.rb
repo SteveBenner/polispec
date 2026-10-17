@@ -54,7 +54,8 @@ module Polispec
           "verify" => JSON_FLAG
         }],
         "agents" => [{ "render" => JSON_FLAG.merge("--from" => true, "--check" => false) }, "--check"],
-        "behavior" => [{ "compile" => {}, "decide" => {} }]
+        "behavior" => [{ "compile" => {}, "decide" => {} }],
+        "exceptions" => [{ "list" => JSON_FLAG }]
       }.freeze
       WRAPPERS = %w[eval exec source env sudo doas nohup timeout xargs command builtin nice ionice stdbuf setsid unbuffer flock time bash sh zsh dash ksh ash].freeze
       OPAQUE = %w[eval source .].freeze
@@ -131,6 +132,18 @@ module Polispec
         script.opaque == true || script.commands.any? { |cmd| OPAQUE.include?(cmd.name.to_s) }
       rescue StandardError
         false
+      end
+
+      def opaque_commands(tool_name, tool_input, cwd)
+        return [] unless Support::BASH_TOOLS.include?(tool_name.to_s.downcase)
+
+        script = Support.script_for(tool_name, tool_input, cwd)
+        return [] if script.nil? || script.commands.empty?
+
+        named = script.commands.select { |cmd| OPAQUE.include?(cmd.name.to_s) }.map { |cmd| cmd.text.to_s }
+        named.empty? ? [script.text.to_s] : named
+      rescue StandardError
+        []
       end
 
       def words(text)

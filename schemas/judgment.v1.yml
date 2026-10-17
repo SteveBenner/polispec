@@ -22,6 +22,9 @@ properties:
     anyOf:
       - { type: "null" }
       - { $ref: "#/$defs/sha256" }
+  exceptions:
+    type: array
+    items: { type: string, pattern: "^aex_[0-9a-f]{12}$" }
   digest: { $ref: "#/$defs/sha256" }
 $defs:
   sha256: { type: string, pattern: "^[0-9a-f]{64}$" }

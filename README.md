@@ -437,6 +437,7 @@ The ledger is the list of projects polispec governs on this host. `polispec inst
 | `polispec promote <project> --to <env> [--dry-run]` | Move code one hop through the gates |
 | `polispec deploy <project> <env> [--tag vX.Y.Z]` | Deploy an environment with a health check and rollback |
 | `polispec pause` / `allow-once` | Operator-only: pause a project, or redeem a single warned action |
+| `polispec exceptions list\|add\|promote\|remove` | Persistent exceptions to guard asks, kept in the global shelf; changes are operator-only |
 | `polispec agents render <project\|repo>` | Write the `[ENVS]` directive from the trusted rulebook |
 | `polispec hook git install <project> <env>` | Install git hooks that apply the same rules outside a harness |
 | `polispec roster resolve\|check` | Resolve and check role assignments |
@@ -460,6 +461,7 @@ Change settings with `polispec settings set <key> <value>`, which writes `~/.con
 - `polispec.code.specs_repo`: path of the code specs repository; default `~/polispec-specs`. `POLISPEC_SPECS_REPO` overrides it.
 - `polispec.smoke.path`: path of the smoke ledger. Empty means `smoke.yml` at the git toplevel of the working directory. `POLISPEC_SMOKE` overrides it.
 - `polispec.smoke.live`: `on` (default) or `off`. Off stops `polispec smoke run --live` from launching any harness session; `POLISPEC_SMOKE_LIVE=off` does the same for one run.
+- `polispec.exceptions`: `on` (default) or `off`. Off honors no entry of the global shelf's `exceptions.yml`, records no proposal and adds no promote hint to asks.
 - `polispec.records.raw`: `off` (default) or `on`. When on, each judgment record also keeps the classifier's raw view of the command or target, at most 2048 bytes, in local state only; it never goes through the events port.
 - `polispec.global.repo`, `polispec.global.ref` (default `main`), and `polispec.global.path` (default `polispec`): where the optional global shelf of shared rules, modules, and profiles is read from. Unset means no global layer. `POLISPEC_GLOBAL` points at a plain directory for scratch runs. See [schema](docs/schema.md).
 

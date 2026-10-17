@@ -4,6 +4,7 @@
 require_relative "../validate_profiles"
 require_relative "../packages"
 require_relative "../native_pin"
+require_relative "../exceptions"
 
 module Polispec
   class DoctorCommand
@@ -32,6 +33,7 @@ module Polispec
       check_release(findings)
       check_plane(findings)
       check_judgments(findings)
+      check_exceptions(findings)
       blocking = findings.reject { |item| item["severity"] == "info" }
       json ? puts(JSON.generate("ok" => blocking.empty?, "runtime" => runtime_info, "findings" => findings)) : print_text(findings)
       blocking.empty? ? 0 : 1
@@ -408,6 +410,13 @@ module Polispec
       end
     rescue StandardError => error
       findings << finding(nil, "judgments_unreadable", "#{error.class}: #{error.message}")
+    end
+
+    def check_exceptions(findings)
+      problem = Exceptions.load.problems.first
+      findings << finding(nil, "exceptions_invalid", problem) if problem
+    rescue StandardError => error
+      findings << finding(nil, "exceptions_invalid", "#{error.class}: #{error.message}")
     end
 
     def finding(project, kind, detail)

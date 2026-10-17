@@ -28,6 +28,7 @@ module Polispec
       SMOKE_KEY = "polispec.smoke.path"
       SUPERVISOR_KEY = "polispec.supervisor.status_command"
       ROOT_GUARD_KEY = "polispec.root_guard"
+      EXCEPTIONS_KEY = "polispec.exceptions"
       module_function
 
       def argv(key)
@@ -57,6 +58,12 @@ module Polispec
 
       def operator
         text(OPERATOR_KEY, OPERATOR_DEFAULT)
+      end
+
+      def exceptions?
+        text(EXCEPTIONS_KEY, "on").downcase != "off"
+      rescue StandardError
+        false
       end
 
       def ledger_path
@@ -1099,7 +1106,21 @@ module Polispec
         ctx[:ledger] ? ctx[:ledger].project(target.project) : nil
       end
 
+      def lift_excepted(rows, ctx)
+        lifter = ctx[:excepted]
+        return rows unless lifter.respond_to?(:call)
+
+        rows.map do |row|
+          id = row.verdict.warn? ? lifter.call(row) : nil
+          next row unless id
+
+          ctx[:exceptions_used] << id if ctx[:exceptions_used].is_a?(Array)
+          Row.new(row.action, row.env, Verdict.new(level: "allow", rule_id: row.verdict.rule_id, reason: "exception #{id}: #{row.verdict.reason}"))
+        end
+      end
+
       def settle(rows, target, ctx)
+        rows = lift_excepted(rows, ctx)
         worst = Verdict.worst(rows.map(&:verdict))
         lead = rows.find { |row| row.verdict.equal?(worst) }
         worst = settle_warn(rows, worst, target, ctx) if worst.warn?

@@ -16,7 +16,7 @@ description: >
 - The user asks how code moves from `main` to `test` to `stable`.
 - The user wants deterministic harness controls, a native installation preview, or an explanation of sealed authority and lock prerequisites.
 
-Moving `stable`, deploying production, pausing the guard, redeeming an allow-once ID, sealing, activating projects, and removing or loosening controls are operator actions. Give the operator the exact command. Sealed actions require authenticated privilege through the protected launcher; an interactive terminal and typed phrase alone do not establish that authority.
+Moving `stable`, deploying production, pausing the guard, redeeming an allow-once ID, recording an exception to an ask (`polispec exceptions promote|add|remove`; the ask text names the proposal id), sealing, activating projects, and removing or loosening controls are operator actions. Give the operator the exact command. Sealed actions require authenticated privilege through the protected launcher; an interactive terminal and typed phrase alone do not establish that authority.
 
 ## How to use it
 
