@@ -6,7 +6,7 @@ require_relative "commands/support"
 module Polispec
   module Classify
     module Benign
-      INTERNAL_TOOLS = %w[todowrite todoread skill toolsearch askuserquestion enterplanmode exitplanmode taskoutput tasklist taskget listagents update_plan view_image glob ls taskcreate taskupdate taskstop sendmessage].freeze
+      INTERNAL_TOOLS = %w[todowrite todoread skill toolsearch askuserquestion enterplanmode exitplanmode taskoutput tasklist taskget listagents update_plan view_image glob ls taskcreate taskupdate taskstop sendmessage subagenthandback structuredoutput schedulewakeup].freeze
       WEB_TOOLS = %w[webfetch web_fetch websearch web_search].freeze
       SEARCH_TOOLS = %w[websearch web_search].freeze
       AGENT_TOOLS = %w[agent task].freeze

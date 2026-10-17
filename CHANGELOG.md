@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.28.3] - 2026-10-17
+
+### Fixed
+
+- `SubagentHandback`, `StructuredOutput` and `ScheduleWakeup` asked `POLISPEC-TOOL-UNKNOWN` on every call. They are harness-internal tools like `TaskStop` and `SendMessage` (a subagent returning its result, a headless run emitting its structured answer, a loop resuming itself), so they are now in `Classify::Benign::INTERNAL_TOOLS` (`lib/polispec/classify/benign.rb`) and are not unknown. Over the two days of host judgments before this change they made 177 of the 381 `POLISPEC-TOOL-UNKNOWN` asks. `CronCreate` and the other scheduling tools, `Artifact` and every unrecognised tool keep asking.
+
 ## [0.28.2] - 2026-10-17
 
 ### Fixed
