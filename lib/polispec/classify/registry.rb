@@ -77,6 +77,10 @@ module Polispec
       Benign.opaque_commands(tool_name, tool_input, cwd)
     end
 
+    def self.command_cwds(tool_name, tool_input, cwd)
+      Benign.command_cwds(tool_name, tool_input, cwd)
+    end
+
     def self.positive(tool_name, tool_input, cwd)
       Benign.positive(tool_name, tool_input, cwd)
     end

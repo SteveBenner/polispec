@@ -25,6 +25,16 @@ properties:
   exceptions:
     type: array
     items: { type: string, pattern: "^aex_[0-9a-f]{12}$" }
+  relaxed:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [rule, reason, projects]
+      properties:
+        rule: { const: POLISPEC-TOOL-UNKNOWN }
+        reason: { const: development }
+        projects: { type: array, minItems: 1, items: { type: string, minLength: 1 } }
   digest: { $ref: "#/$defs/sha256" }
 $defs:
   sha256: { type: string, pattern: "^[0-9a-f]{64}$" }

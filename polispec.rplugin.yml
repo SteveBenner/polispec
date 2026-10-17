@@ -1,7 +1,7 @@
 schema: rplugin/v1
 id: polispec
 name: Polispec
-version: 0.29.0
+version: 0.30.0
 rplugin: ">= 1.15.0"
 native: true
 description: "Spec-based policy guardrails for agentic development and operations: committed environment policies and deterministic harness controls, with explicit backend capabilities and enforcement limits."
@@ -31,6 +31,7 @@ settings:
   - { key: polispec.logs.count_command, type: string, default: "", scopes: [machine], description: "Argv template (no shell) the logs_quiet gate runs to count log lines. It takes {service}, {since} and {until} (UTC ISO 8601) and prints one integer. RPLUGIN_POLISPEC_POLISPEC_LOGS_COUNT_COMMAND overrides it. Unset fails the gate closed." }
   - { key: polispec.records.raw, type: enum, options: ["off", "on"], default: "off", scopes: [machine], description: "on adds the classifier's raw view of the judged command or target (at most 2048 bytes) to each judgment record in local state; off keeps only the call digest. Raw text never goes through the events port." }
   - { key: polispec.exceptions, type: enum, options: ["off", "on"], default: "on", scopes: [machine], description: "on lets the operator's recorded exceptions (exceptions.yml in the global layer) lift the asks and rule warns they name; off ignores the file and restores the unexcepted behavior. POLISPEC_EXCEPTIONS overrides it only while unsealed." }
+  - { key: polispec.relax.dev, type: enum, options: ["off", "on"], default: "on", scopes: [machine], description: "on lets a governed eval, source or . line pass without POLISPEC-TOOL-UNKNOWN when its working directory lies only in ledger projects with status onboarding (projects in development); off restores the ask. POLISPEC_RELAX_DEV overrides it only while unsealed." }
 contents:
   skills:
     - { id: polispec, path: skills/polispec/SKILL.md }

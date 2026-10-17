@@ -146,6 +146,17 @@ module Polispec
         []
       end
 
+      def command_cwds(tool_name, tool_input, cwd)
+        return [] unless Support::BASH_TOOLS.include?(tool_name.to_s.downcase)
+
+        script = Support.script_for(tool_name, tool_input, cwd)
+        return [] if script.nil?
+
+        script.commands.map { |cmd| cmd.cwd.to_s }.reject(&:empty?).uniq
+      rescue StandardError
+        []
+      end
+
       def words(text)
         text.split(/[\s;|&()<>{}]+/).map { |word| word.delete("'\"\\") }
       end
