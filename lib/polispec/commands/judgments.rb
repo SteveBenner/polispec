@@ -112,8 +112,10 @@ module Polispec
       else
         skips = result["skips"]
         chain = result["ok"] ? "chain ok" : "#{result['findings'].length} finding#{result['findings'].length == 1 ? '' : 's'}"
+        cut = result["interrupted"].length
+        chain += "; #{cut} interrupted append#{cut == 1 ? '' : 's'}" if cut.positive?
         puts "judgments: #{result['records']} record#{result['records'] == 1 ? '' : 's'} in #{result['files'].length} file#{result['files'].length == 1 ? '' : 's'}; #{chain}"
-        result["findings"].each { |item| puts "  #{item['kind']} #{item['id'] || '-'}: #{item['detail']}" }
+        (result["findings"] + result["interrupted"]).each { |item| puts "  #{item['kind']} #{item['id'] || '-'}: #{item['detail']}" }
         puts "skips: #{skips['total']} across #{skips['by_key'].length} fast-path key#{skips['by_key'].length == 1 ? '' : 's'}#{skips['malformed'].positive? ? " (#{skips['malformed']} malformed)" : ''}"
       end
       result["ok"] ? 0 : 1

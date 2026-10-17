@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.30.1] - 2026-10-17
+
+### Fixed
+
+- A hook process killed after it appended a judgment record and before it moved `judgments.head.json` no longer forks the chain. `Judgments.read_head` (`lib/polispec/judgments.rb`) compares the anchor with the last record of the stream; when the records after the anchored digest chain unbroken from it within the last 256 KiB, the next append chains to the last record and counts the ones the anchor missed. An anchor the stream does not chain from is still not adopted, so a truncated stream or a foreign head forks and is reported as before. Before the fix the next append chained to the stale digest, and the anchored count stayed short for good: this host had three such forks (01:53, 05:48 and 07:40 UTC on 2026-10-17, two of them with a zero-byte `judgments.head.json.<pid>.tmp` left behind) and `doctor` reported `judgments_chain_broken` and `judgments_truncated` for them.
+- `polispec judgments verify` recognises that signature, a record whose `prev` equals the `prev` of the record before it, as an `interrupted_append`. It lists those in a new `interrupted` array beside `findings` (also in `--json`), prints `chain ok; N interrupted appends`, exits 0, and expects the anchor's count to leave them out. `doctor` reports nothing for them.
+- Append latency on a stream of this host's size rose from 0.37 ms to 0.55 ms.
+
 ## [0.30.0] - 2026-10-17
 
 ### Changed
