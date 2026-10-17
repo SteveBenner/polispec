@@ -18,11 +18,28 @@ module Polispec
       IN_PLACE = /\A--in-place|\A-[a-zA-Z]*i/.freeze
       DELETERS = %w[rm rmdir unlink shred].freeze
       LOCKFILES = %w[Cargo.lock Gemfile.lock package-lock.json pnpm-lock.yaml yarn.lock uv.lock poetry.lock].freeze
+      COMPRESSORS = %w[gzip gunzip bzip2 xz].freeze
+      COMPRESSOR_VALUE = %w[-S --suffix -T --threads -M --memlimit --format -F].freeze
+      STDOUT_LONG = %w[--stdout --to-stdout --test --list].freeze
+      STDOUT_SHORT = /\A-[A-Za-z0-9]*[ctl][A-Za-z0-9]*\z/.freeze
 
       class << self
         def classify(cmd)
           writes = write_paths(cmd).map { |path| Support.write_action(path, cmd.text) }
-          writes + redirect_writes(cmd) + deletes(cmd)
+          writes + unresolved_mkdirs(cmd) + redirect_writes(cmd) + deletes(cmd)
+        end
+
+        def to_stdout?(cmd)
+          return false unless COMPRESSORS.include?(cmd.name)
+
+          flags = Support.split_args(cmd.args, COMPRESSOR_VALUE).last
+          flags.any? { |flag| STDOUT_LONG.include?(flag) || (!flag.start_with?("--") && flag.match?(STDOUT_SHORT)) }
+        end
+
+        def unresolved_mkdirs(cmd)
+          return [] unless cmd.name == "mkdir" && Array(targets(cmd)).any? { |path| Support.dynamic?(path) }
+
+          [Support.act("fs.write", cmd.text, "path" => cmd.cwd, "unknown" => true, "command" => cmd.name)]
         end
 
         def shapes(cmd)
@@ -124,9 +141,11 @@ module Polispec
 
         def write_paths(cmd)
           return [] unless NAMES.include?(cmd.name)
+          return [] if to_stdout?(cmd)
 
           paths = targets(cmd)
           paths = [cmd.cwd] if paths.nil?
+          paths = paths.reject { |path| Support.dynamic?(path) } if cmd.name == "mkdir"
           paths.map { |path| Support.abs(path, cmd.cwd) }
         end
 

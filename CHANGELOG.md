@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.28.1] - 2026-10-16
+
+### Fixed
+
+- Reading compressed files counted as writing them. `zcat`, `zgrep`, `zegrep`, `zfgrep`, `zless`, `zmore`, `bzcat`, `xzcat` and `zstdcat` were unrecognised programs, so each got the fallback write on its working directory, and a protected-root rule such as a location bound denied a plain read. They now classify as reads of their file operands, like `cat` and `grep` (`lib/polispec/classify/commands/secrets.rb`).
+- `gzip`, `gunzip`, `bzip2` and `xz` always counted as writing their first operand. With `-c`, `-t` or `-l` (alone or in a short-option cluster such as `-dc`), `--stdout`, `--to-stdout`, `--test` or `--list` they write nothing and now read their operands. Compressing or decompressing in place still writes, and a redirect such as `gzip -c a > b.gz` still writes `b.gz` (`lib/polispec/classify/commands/fs.rb`).
+- `mkdir -p "$DIR"` with an operand the parser cannot resolve counted as a write of the working directory. From the home directory, that write is an ancestor of polispec's protected roots, so POLISPEC-CONTROL-PROTECTION denied creating a scratch directory. Such an operand is now the fallback write with `unknown`, which the ancestor match skips (as for unrecognised programs since 0.23.1). A static `mkdir` target, and an unresolved operand of any other command (`chmod -R "$X"`, `rm -r "$X"`), keep the ancestor match (`lib/polispec/classify/commands/fs.rb`).
+- Pre-release smoke against the pinned 0.28.0: 31/31. The 29 diffs are the same set an unmodified tree at 0.28.0 produces against it: the clone-versus-pinned runtime kind of the candidate tree, installation and operation ids, backup timestamps, scratch paths and commit ids.
+
 ## [0.28.0] - 2026-10-16
 
 ### Added
