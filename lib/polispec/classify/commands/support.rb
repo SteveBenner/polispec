@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 require_relative "../shell"
+require_relative "../../exceptions"
 
 module Polispec
   module Classify
@@ -75,7 +76,15 @@ module Polispec
         File.expand_path(path) == Ledger.default_path
       end
 
+      def exceptions_file?(path)
+        target = Exceptions.path
+        !target.nil? && File.expand_path(path) == File.expand_path(target)
+      rescue StandardError
+        false
+      end
+
       def write_class(path, input = nil)
+        return "policy.edit" if exceptions_file?(path)
         return "policy.edit" if POLICY_PATH.match?(path) || ledger_file?(path) || ENVS_BODY.match?(path)
         return "fs.write" unless File.basename(path) == "AGENTS.md"
 

@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.29.0] - 2026-10-17
+
+### Added
+
+- Persistent exceptions to guard asks: an always-allow list for `POLISPEC-TOOL-UNKNOWN`, `POLISPEC-MCP-UNDECLARED` and environment rule warns. Claude Code's own prompt for a hook ask offers only Yes or No, so a line the guard cannot classify (an `eval`, `source` or `.` line, an unrecognised tool, an undeclared MCP operation) asked again in every session. The operator now records an exception once, in `exceptions.yml` (schema `polispec.exceptions/v1`, `schemas/exceptions.v1.yml`) at the root of the global shelf. It lifts exactly the ask it names, for the commands it matches, in the project or on the host it is scoped to.
+- `polispec exceptions list|add|promote|remove`. When a call asks, the hook records a proposal (`apr_` id, `exception_proposals.jsonl` in the state home, kept seven days) and ends the ask text with `To stop asking for [<command>], the operator can run in a separate terminal: polispec exceptions promote <id>`. `promote`, `add` and `remove` need a TTY and a typed phrase, refuse while the sealed plane is active, and write nothing but `exceptions.yml`: they require the shelf to be a git repository on its ref with no other uncommitted change under the shelf path, then plan and apply the global target with the plan's own id as the confirmation, which commits the file as `Apply polispec plan <id>`. A failed apply restores the previous bytes, or moves a new file to `<state home>/exceptions.yml.failed-<UTC>`. An agent shell cannot run them (`not_tty`).
+- An entry has a kind (`control` for the unknown-tool and undeclared-MCP asks, `rule` for a Bash rule warn), the exact tool, a glob over the whitespace-normalised, unexpanded command text (`*` crosses slashes; the first word may not contain a glob character), and a scope of one project (the git toplevel of the working directory, of the proposal's directory for `promote`) or the whole host. `promote` escapes the glob characters of the proposed text, so a promoted entry matches that command exactly. A shell line with several `eval`, `source` or `.` commands is lifted only when every one is covered, and the rest of the line is judged as before.
+- Every call an exception lifted carries the `aex_` ids in an optional `exceptions` field of its judgment record (`schemas/judgment.v1.yml`); records without one are unchanged. `polispec doctor` reports `exceptions_invalid`. The setting `polispec.exceptions` (`on` by default, `POLISPEC_EXCEPTIONS=off`) honors no entry, records no proposal and adds no hint, which restores the 0.28.3 output.
+
+### Security
+
+- Exceptions never lift a deny, `POLISPEC-CONTROL-PROTECTION`, the container root guard, a broken seal or any lock-edition verdict, and `plan`, `apply`, probes and the journal replay never apply them. The file is a protected path like the ledger: a Write, Edit or shell redirect into it classifies as `policy.edit` and is denied.
+- An exception matches the text of a command, not what it expands to or runs. An entry for `. $B/env.sh` stays in force whatever `$B/env.sh` contains, so scope it as narrowly as the work allows. The `sealed_authority` refusal was exercised only against a stubbed `Plane.resolve`, because no plane is active on this host.
+
 ## [0.28.3] - 2026-10-17
 
 ### Fixed

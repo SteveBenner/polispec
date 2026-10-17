@@ -1,0 +1,41 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.exceptions/v1
+title: Polispec persistent exceptions
+description: "Operator-recorded exceptions that lift exactly the ask or rule warn they name. Lives at exceptions.yml in the root of the global layer."
+type: object
+additionalProperties: false
+required: [schema, exceptions]
+properties:
+  schema: { const: polispec.exceptions/v1 }
+  exceptions:
+    type: array
+    items: { $ref: "#/$defs/entry" }
+$defs:
+  entry:
+    type: object
+    additionalProperties: false
+    required: [id, kind, tool, scope, added]
+    properties:
+      id: { type: string, pattern: "^aex_[0-9a-f]{12}$" }
+      kind: { enum: [control, rule] }
+      tool: { type: string, minLength: 1, maxLength: 128, pattern: "^[^*?\\[{]+$" }
+      command: { type: string, minLength: 1, maxLength: 1024 }
+      rule: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+      scope:
+        oneOf:
+          - { $ref: "#/$defs/project_scope" }
+          - { $ref: "#/$defs/global_scope" }
+      note: { type: string, maxLength: 200 }
+      added: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" }
+  project_scope:
+    type: object
+    additionalProperties: false
+    required: [project]
+    properties:
+      project: { type: string, minLength: 1, pattern: "^/" }
+  global_scope:
+    type: object
+    additionalProperties: false
+    required: [global]
+    properties:
+      global: { const: true }

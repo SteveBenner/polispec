@@ -9,6 +9,7 @@ require_relative "../harness_controls/lifecycle"
 require_relative "../harness_controls/evaluate"
 require_relative "../harness_controls/authorizations"
 require_relative "../judgments"
+require_relative "../exceptions"
 
 module Polispec
   module DeferredEvents
@@ -232,6 +233,10 @@ module Polispec
       begin
         @plane = HarnessControls::Plane.resolve
         raise Polispec::Error, "sealed authority is broken" if @plane["status"] == "broken"
+        @exceptions_active = exceptions_active?
+        @exceptions_used = []
+        @exception_asks = []
+        @exception_entries = nil
         ledger = Ledger.load
         actions = calls.flat_map { |tool, data| Array(Classify.call(tool, data, cwd)) }
         baseline = Layers.baseline?
@@ -242,10 +247,10 @@ module Polispec
         if control_gate && actions.empty? && governed && !diagnostic_read?(input.tool_name)
           known = calls.flat_map { |tool, data| Classify.positive(tool, data, cwd) }
           actions.concat(known)
-          actions << unknown_action(input, cwd) if known.empty? && !(calls.any? && calls.all? { |tool, data| Classify.benign?(tool, data, cwd) || Classify.parsed_shell?(tool, data, cwd) })
+          actions << unknown_action(input, cwd, calls, false) if known.empty? && !(calls.any? && calls.all? { |tool, data| Classify.benign?(tool, data, cwd) || Classify.parsed_shell?(tool, data, cwd) })
         end
         if control_gate && governed && !diagnostic_read?(input.tool_name) && calls.any? { |tool, data| Classify.opaque_shell?(tool, data, cwd) }
-          actions << unknown_action(input, cwd) unless actions.any? { |action| action.raw.is_a?(Hash) && action.raw["unknown_tool"] }
+          actions << unknown_action(input, cwd, calls, true) unless actions.any? { |action| action.raw.is_a?(Hash) && action.raw["unknown_tool"] }
         end
         groups = group(actions, ledger, cwd, baseline)
         @explain_state = { "actions" => actions, "ledger" => ledger, "cwd" => cwd, "baseline" => baseline, "documents" => [] } if @explain
@@ -270,6 +275,7 @@ module Polispec
       unless control_gate
         @judged["governed"] = governed || !legacy.nil?
         @judged["verdict"] = legacy && legacy.verdict
+        stamp_exceptions({})
         return mode == "enforce" && legacy ? adapter.render(legacy.verdict) : nil
       end
       documents = control_documents(adapter, input, cwd, actions, options)
@@ -295,12 +301,15 @@ module Polispec
         "protected_paths" => protected_paths, "role" => input.agent_type,
         "env" => legacy && legacy.env, "target" => nil, "target_for" => target_for,
         "engine_context" => { cwd: cwd, ledger: ledger, predicate_memo: {}, findings: [] },
-        "trusted_declaration" => trusted_declaration(ledger, cwd, baseline, input)
+        "trusted_declaration" => trusted_declaration(ledger, cwd, baseline, input),
+        "excepted" => control_lifter(input, cwd)
       }
       @explain_state["control_context"] = control_context if @explain
       control = Controls.evaluate(input, control_context)
       worst = compose_ask_authority(control, adapter, input, actions, documents, edition, outcomes, ledger, cwd)
       @judged["control"] = { "control_digest" => effective_digest, "edition" => edition, "verdict" => control["verdict"] ? control["verdict"].level.to_s : "allow", "ask_ids" => Array(control["ask_ids"]).map(&:to_s) }
+      stamp_exceptions(control)
+      propose_exceptions(worst, outcomes, input, cwd)
       @judged["verdict"] = worst
       emit_control_events(control, adapter, input, cwd)
       output = mode == "enforce" ? adapter.render(worst) : nil
@@ -532,7 +541,104 @@ module Polispec
       false
     end
 
-    def unknown_action(input, cwd)
+    def exceptions_active?
+      Exceptions.active?(HarnessControls::Plane.requested_edition, @plane["status"])
+    rescue StandardError
+      false
+    end
+
+    def exception_entries
+      @exception_entries ||= Exceptions.load.entries
+    end
+
+    def shell_tool?(name)
+      Harness::Base::SHELL_TOOLS.include?(name.to_s)
+    end
+
+    def exception_triggers(input, cwd, calls, opaque)
+      return [] unless shell_tool?(input.tool_name)
+
+      list = calls.flat_map do |tool, data|
+        if opaque
+          Classify.opaque_shell?(tool, data, cwd) ? Classify.opaque_commands(tool, data, cwd) : []
+        else
+          [Classify::Support.command_text(tool, data)]
+        end
+      end
+      list.compact.map { |text| Exceptions.normalize(text) }.reject(&:empty?).uniq
+    end
+
+    def control_lifter(input, cwd)
+      return nil unless @exceptions_active
+
+      lambda do |action|
+        found = []
+        asks = []
+        if action.raw.is_a?(Hash) && action.raw["unknown_tool"] == true
+          name = action.raw["tool"].to_s
+          tool = Exceptions.canonical_tool(name)
+          if shell_tool?(name)
+            Array(action.raw["triggers"]).each do |trigger|
+              id = Exceptions.covers(exception_entries, kind: "control", tool: tool, command: trigger, cwd: cwd)
+              id ? found << id : asks << { "tool" => tool, "command" => trigger }
+            end
+            asks << nil if Array(action.raw["triggers"]).empty?
+          else
+            id = Exceptions.covers(exception_entries, kind: "control", tool: tool, cwd: cwd)
+            id ? found << id : asks << { "tool" => tool, "command" => nil }
+          end
+        else
+          id = Exceptions.covers(exception_entries, kind: "control", tool: input.tool_name.to_s, cwd: cwd)
+          id ? found << id : asks << { "tool" => input.tool_name.to_s, "command" => nil }
+        end
+        @exceptions_used.concat(found)
+        @exception_asks.concat(asks.compact)
+        asks.empty? ? found.first : nil
+      end
+    end
+
+    def rule_lifter(input, cwd)
+      return nil unless @exceptions_active
+
+      lambda do |row|
+        raw = row.action.raw
+        next nil unless row.verdict.warn? && raw.is_a?(String) && Exceptions.canonical_tool(input.tool_name) == "Bash"
+
+        Exceptions.covers(exception_entries, kind: "rule", tool: "Bash", command: raw, rule: row.verdict.rule_id, cwd: cwd)
+      end
+    end
+
+    def stamp_exceptions(control)
+      used = (Array(control["exceptions"]) + Array(@exceptions_used)).flatten.compact.uniq
+      @judged["exceptions"] = used unless used.empty?
+    end
+
+    def propose_exceptions(worst, outcomes, input, cwd)
+      return unless @exceptions_active && !@explain && @plane["status"] != "active" && worst.warn?
+
+      proposed = {}
+      @exception_asks.uniq.each do |ask|
+        id = Exceptions.propose(kind: "control", tool: ask["tool"], command: ask["command"], cwd: cwd)
+        proposed[id] ||= ask["command"] || ask["tool"] if id
+      end
+      if Exceptions.canonical_tool(input.tool_name) == "Bash"
+        Array(outcomes).flat_map { |outcome| Array(outcome.rows) }.select { |row| row.verdict.warn? && row.action.raw.is_a?(String) }.uniq { |row| [row.action.raw, row.verdict.rule_id] }.each do |row|
+          id = Exceptions.propose(kind: "rule", tool: "Bash", command: row.action.raw, rule: row.verdict.rule_id, cwd: cwd)
+          proposed[id] ||= "#{row.verdict.rule_id}: #{Exceptions.normalize(row.action.raw)}" if id
+        end
+      end
+      return if proposed.empty?
+
+      shown = proposed.first(5)
+      more = proposed.length - shown.length
+      labels = shown.map { |_, label| label.to_s.length > 80 ? "#{label.to_s[0, 77]}..." : label.to_s }.join("; ")
+      hint = "To stop asking for [#{labels}]#{more.positive? ? " and #{more} more" : ''}, the operator can run in a separate terminal: polispec exceptions promote #{shown.map(&:first).join(' ')}"
+      worst.next_step = [worst.next_step, hint].compact.join(" ")
+    rescue StandardError
+      nil
+    end
+
+    def unknown_action(input, cwd, calls = [], opaque = false)
       name = input.tool_name.to_s
       klass = if name.match?(/agent|task|spawn/i)
                 "agent.spawn"
@@ -541,7 +647,9 @@ module Polispec
               else
                 "shell.exec"
               end
-      Action.new(class: klass, env_hint: { "path" => cwd, "tool" => name }, raw: { "unknown_tool" => true, "tool" => name })
+      raw = { "unknown_tool" => true, "tool" => name }
+      raw["triggers"] = exception_triggers(input, cwd, calls, opaque) if @exceptions_active
+      Action.new(class: klass, env_hint: { "path" => cwd, "tool" => name }, raw: raw)
     end
 
     def canonical_value(value)
@@ -604,6 +712,7 @@ module Polispec
       @policy_digests << digest unless digest.to_s.empty?
       target = Target.new(project: id, env: env, policy: { "rules" => [] }, roster: nil, policy_source: "global", digest: digest)
       context = { ledger: ledger, cwd: cwd, session_id: input.session_id, role: (input.agent_type.to_s.empty? ? nil : input.agent_type), tool: input.tool_name.to_s, issue_allow_once: mode == "enforce" && !adapter.ask? }
+      context.merge!(excepted: rule_lifter(input, cwd), exceptions_used: @exceptions_used) if @exceptions_active
       outcome = Engine.explain(actions, target, context)
       @outcome_authority[outcome.object_id] = { "project" => target.project, "policy_digest" => target.digest }
       note_target(target, outcome, context)
@@ -618,6 +727,7 @@ module Polispec
         roster: nil, policy_source: loaded.source, digest: loaded.digest
       )
       context = { ledger: ledger, cwd: cwd, session_id: input.session_id, role: (input.agent_type.to_s.empty? ? nil : input.agent_type), tool: input.tool_name.to_s, issue_allow_once: mode == "enforce" && !adapter.ask? }
+      context.merge!(excepted: rule_lifter(input, cwd), exceptions_used: @exceptions_used) if @exceptions_active
       outcome = Engine.explain(actions, target, context)
       @outcome_authority[outcome.object_id] = { "project" => target.project, "policy_digest" => target.digest }
       note_target(target, outcome, context)
@@ -646,7 +756,7 @@ module Polispec
           "targets" => Array(judged["targets"]), "control" => judged["control"],
           "engine" => Judgments.engine(judged["mode"], plane: @plane, fastpath_key: judged["fastpath_key"]),
           "outcome" => Judgments.outcome(judged["verdict"], enforced: judged["mode"] == "enforce", rendered: Judgments.rendered(output), governed: judged["governed"], error: judged["error"], duration_ms: ((clock - started) * 1000).round(2))
-        }
+        }.tap { |record| record["exceptions"] = judged["exceptions"] if judged["exceptions"].is_a?(Array) && !judged["exceptions"].empty? }
       end
     end
 

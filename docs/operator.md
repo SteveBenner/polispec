@@ -236,6 +236,29 @@ New projects that serve real users remain `onboarding` until a verified plane an
 
 Run protected commands through the actual active launcher with the required privilege and terminal confirmation. The example path is a placeholder, not an alternative authority source. Activation and rollback record authenticated transactions. This release does not activate any existing live-user project.
 
+## Exceptions: an always-allow list for guard asks
+
+Claude Code's prompt for a hook ask offers only Yes or No, so a command the guard cannot classify (an `eval`, `source` or `.` line, an unrecognised tool, an undeclared MCP operation) asks again in every session. `polispec exceptions` records a persistent exception instead.
+
+An exception lifts exactly the ask it names, for the commands it matches, and nothing else. The rest of a line is still judged by policy, a deny is never excepted, and neither are `POLISPEC-CONTROL-PROTECTION`, the container root guard, a broken seal or any lock-edition verdict. Every call an exception lifted carries the exception's `aex_` id in its judgment record, and `polispec judgments show` prints it.
+
+**Making one.** When a call asks, the ask text ends with a hint such as `polispec exceptions promote apr_0123456789ab`. The `apr_` id names a proposal the hook recorded; a proposal grants nothing. In a separate terminal (an agent shell cannot do this, and `!` in the agent prompt has no keyboard), run the command. It shows the pattern, the scope and the rule, asks you to type a phrase, and then writes `exceptions.yml` into the global shelf and commits it through `plan global` and `apply global` (the commit message is `Apply polispec plan <id>`).
+
+```
+polispec exceptions list
+polispec exceptions promote apr_0123456789ab
+polispec exceptions promote apr_0123456789ab --command '. */env.sh' --global
+polispec exceptions add --command 'source .venv/bin/activate' --note 'project venv'
+polispec exceptions add --kind rule --rule G-STAGE-EXPLICIT --command 'git add -A docs'
+polispec exceptions remove aex_0123456789ab
+```
+
+The proposed pattern is the exact, unexpanded text of the triggering command, with its glob characters escaped, so `. $B/env.sh` matches the next `. $B/env.sh` whatever `$B` holds. Widen it with `--command`, which takes a pattern as written; `*` matches across slashes, and the first word must not contain a glob character. An exception matches the text of a command, not what it expands to or runs: the entry for `. $B/env.sh` stays in force whatever `$B/env.sh` contains, so scope it as narrowly as the work allows. A new entry is scoped to the project root (the git toplevel of the directory, of the proposal's directory for `promote`); `--global` widens it to the host. Entries never expire; `remove` revokes.
+
+**Refusals.** Mutations need a TTY, a typed phrase, an unsealed plane (`sealed_authority` otherwise), a shelf that is a git repository on its ref (`global_not_repo`, `not_on_ref`), and no other uncommitted change under the shelf path (`dirty_shelf`), because `apply global` commits everything under it. A failed apply restores the previous file.
+
+**Where it applies.** `exceptions.yml` sits at the root of the global shelf and is read from the committed ref, so editing the working copy changes nothing until it is committed. The file is a protected path: an agent's Write, Edit or redirect into it is denied like an edit of the ledger. A program the classifier cannot read, such as an interpreter running inline code, is still an unknown write, as for every protected path. `polispec.exceptions off` (or `POLISPEC_EXCEPTIONS=off`) honors no entry, records no proposal and adds no hint. `polispec doctor` reports `exceptions_invalid` for a file that fails its schema; an invalid file honors nothing.
+
 ## Allow-once prompt
 
 `polispec allow-once <id>` prints the grant before it asks for the typed phrase: the project, environment, action class and rule, then the call itself. For a file tool the call is the tool name and the absolute target path, for example `edit /srv/shop/specs/polispec/policy.yml`, so the operator sees what the grant unlocks. The same text is stored as `raw` in the allow-once log and appears in the verdict reason. Refusals use the promote vocabulary: `not_tty` without a terminal and `confirmation_failed` on a wrong phrase.

@@ -73,6 +73,10 @@ module Polispec
       Benign.opaque_shell?(tool_name, tool_input, cwd)
     end
 
+    def self.opaque_commands(tool_name, tool_input, cwd)
+      Benign.opaque_commands(tool_name, tool_input, cwd)
+    end
+
     def self.positive(tool_name, tool_input, cwd)
       Benign.positive(tool_name, tool_input, cwd)
     end
