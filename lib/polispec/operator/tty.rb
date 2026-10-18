@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 require "io/console"
+require_relative "../delegate"
 
 module Polispec
   module Operator
@@ -11,11 +12,27 @@ module Polispec
 
       module_function
 
+      def delegate=(confirmer)
+        @delegate = confirmer
+      end
+
+      def delegate
+        @delegate
+      end
+
+      def delegated?
+        !@delegate.nil?
+      end
+
       def terminal?
+        return true if delegated?
+
         !console.nil? && $stdin.tty?
       end
 
       def confirm!(phrase, prompt: nil)
+        return confirm_delegated!(phrase, prompt) if delegated?
+
         tty = console
         raise NotTty, "this action needs an interactive terminal (a TTY on stdin and a controlling console); an agent shell cannot run it" unless tty && $stdin.tty?
 
@@ -25,6 +42,17 @@ module Polispec
         raise PhraseMismatch, "the typed phrase did not match; nothing was done" unless typed && typed.chomp == phrase
 
         true
+      end
+
+      def confirm_delegated!(phrase, prompt)
+        answer = @delegate.confirm(phrase, prompt)
+        raise PhraseMismatch, "the typed phrase did not match; nothing was done" unless answer == true
+
+        true
+      rescue StandardError => e
+        raise unless e.is_a?(Polispec::Delegate::NoAnswer)
+
+        raise NotTty, "this action needs an interactive terminal (a TTY on stdin and a controlling console); an agent shell cannot run it"
       end
 
       def console

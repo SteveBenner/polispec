@@ -271,6 +271,24 @@ Only the opaque trigger is relaxed. An unrecognised tool, a line the parser extr
 
 `polispec allow-once <id>` prints the grant before it asks for the typed phrase: the project, environment, action class and rule, then the call itself. For a file tool the call is the tool name and the absolute target path, for example `edit /srv/shop/specs/polispec/policy.yml`, so the operator sees what the grant unlocks. The same text is stored as `raw` in the allow-once log and appears in the verdict reason. Refusals use the promote vocabulary: `not_tty` without a terminal and `confirmation_failed` on a wrong phrase.
 
+## Delegation: letting an application run promote and deploy
+
+Since 0.31.0 an application can run `polispec promote` and `polispec deploy` for you, for example from a button in its console, without a terminal of its own. You stay in charge of the scope, the confirmation phrase and the kill switch.
+
+1. Grant the application a scope at your terminal. It asks for the phrase `grant delegation to teach`, then prints a token once:
+
+   ```
+   polispec delegate grant teach --projects teach,reach --verbs promote,deploy --targets test,stable
+   ```
+
+   Flags default to `--dry-run`, `--json` and `--tag`; add `--flags --dry-run,--json,--tag,--waive-soak` to allow more. Put the token in the application's protected secrets (for Teach, `TEACH_RELEASE_TOKEN` in its env file). Granting again replaces the token; `polispec delegate revoke teach` withdraws it.
+2. Run the runner as a user service. `polispec delegate unit` prints the unit and the two commands that install and start it. It refuses to start on a sealed plane.
+3. The application sends `request`, `output`, `phrase`, `cancel` and `status` over the local socket (`specs/app.yml#delegation` has the protocol). When a run reaches a confirmation, the application shows the phrase and forwards what the person typed, once; a wrong phrase stops the run with `confirmation_failed`, exactly as at a terminal.
+
+Every delegated run is recorded in `delegate_runs.jsonl`, and promotion and deploy records name it as `via: delegate:<app>:<who>`. `touch <state home>/delegate/delegate.disabled` stops all delegation at once: the runner answers `disabled` to every request and refuses to start. An agent that runs `delegate grant`, `revoke` or `serve` meets the policy-edit warn.
+
+Delegation is the terminal confirmation made reachable from the application, not stronger authentication: whoever holds the token and types the phrase can run what you granted. Keep the scope small and the token in the application's secret store.
+
 ## Protected allow-once service
 
 An unprivileged hook cannot safely mark a root-owned grant spent. Sealed one-use authorizations therefore use a small operator-run Unix socket service. It accepts only bounded request, consume, and status operations; redemption remains a local authenticated operator command.

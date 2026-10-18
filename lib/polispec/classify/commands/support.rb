@@ -3,6 +3,7 @@
 
 require_relative "../shell"
 require_relative "../../exceptions"
+require_relative "../../delegate"
 
 module Polispec
   module Classify
@@ -83,7 +84,14 @@ module Polispec
         false
       end
 
+      def delegate_grants_file?(path)
+        File.expand_path(path) == File.expand_path(Polispec::Delegate.grants_path)
+      rescue StandardError
+        false
+      end
+
       def write_class(path, input = nil)
+        return "policy.edit" if delegate_grants_file?(path)
         return "policy.edit" if exceptions_file?(path)
         return "policy.edit" if POLICY_PATH.match?(path) || ledger_file?(path) || ENVS_BODY.match?(path)
         return "fs.write" unless File.basename(path) == "AGENTS.md"

@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.31.0] - 2026-10-17
+
+### Added
+
+- `polispec delegate` lets an application run `polispec promote` and `polispec deploy` for the operator through a local runner (`lib/polispec/delegate.rb`, `lib/polispec/delegate/`, `lib/polispec/commands/delegate.rb`, `schemas/delegate_grants.v1.yml`). `grant APP` at a terminal, with a typed phrase, stores a scope of verbs, ledger projects, targets and flags and prints a one-time app token. Only the token's sha256 is kept, in `<state home>/delegate/grants.yml`. `revoke`, `list`, `status` and `unit` manage it. `serve` is the runner: a Unix socket private to the user, with a peer-uid check, per-app token authentication, a rate limit of 60 a minute, and runs forked into their own session with output kept by byte offset. Each run has an hour's timeout and at most 8 MiB of readable output. It refuses on a sealed plane and while `<state home>/delegate/delegate.disabled` exists.
+- `Operator::Tty.confirm!` and `Gates.interactive?` honor an in-process delegated confirmer that only the runner's child sets. It relays the phrase an application's user typed to the same exact-match check, once per prompt, waits at most 10 minutes, and never logs the typed text. Without a confirmer nothing changes: `deploy <project> stable` from a non-terminal still fails `not_tty` with the same message.
+- Promotion and deploy records and the `polispec.promote` and `polispec.deploy` events carry `via: delegate:<app>:<by>` for delegated runs. The new event `polispec.delegate` reports each run's result.
+
+### Changed
+
+- The guard classifies a Write, Edit or shell redirect into the grants file as `policy.edit`, and also `polispec delegate grant`, `revoke` and `serve`. The host defaults and the environment-control packages warn on that class, so an agent cannot quietly grant itself a scope or start its own runner. `delegate list`, `status` and `unit` stay benign.
+
 ## [0.30.2] - 2026-10-17
 
 ### Fixed

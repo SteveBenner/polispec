@@ -264,6 +264,7 @@ module Polispec
       end
 
       def interactive?
+        return true if Polispec::Operator::Tty.delegated?
         return false unless $stdin.tty?
 
         !IO.console.nil?

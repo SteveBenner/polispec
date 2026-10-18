@@ -1,0 +1,256 @@
+schema: is.v1
+metadata:
+  name: polispec delegation
+  slug: delegate
+  version: 0.1.0
+  created: '2026-10-17'
+  status: accepted
+  base_commit: b8c901e
+  base_version: 0.30.2
+  intended_release: 0.31.0
+  contract: specs/app.yml#delegation
+  worker: {harness: claude-code, model: sonnet, effort: medium}
+vision:
+  problem: >-
+    An application that operates a governed project (Teach's instructor console) wants to run polispec promote and
+    deploy for its operator with one click and show the output live. polispec offers no way to do that: promote --to
+    stable and deploy ... stable need an interactive terminal and a typed phrase (Operator::Tty.confirm!), an app's
+    web server has no terminal, and a stable deploy of the app restarts the very process that would run it.
+  outcome: >-
+    The operator grants an application a narrow, revocable scope at a real terminal with a typed phrase
+    (polispec delegate grant). That prints a one-time app token the operator stores in the app's protected secrets.
+    A polispec-owned runner (polispec delegate serve, a user service on a local Unix socket) accepts requests from
+    that app only with its token and only inside the grant. It runs polispec itself in its own process, outside the
+    app's units, records the output, and relays the phrase a person typed in the app into the same exact-match
+    confirmation the terminal uses. Every delegated run is attributed (via delegate:<app>:<label>) in promotion and
+    deploy records and events.
+  non_goals:
+    - Delegation on a sealed plane. Sealed protected actions keep needing root through the pinned launcher; delegate refuses while the plane is active.
+    - Any TCP listener or remote access. The socket is local and private to the user.
+    - Delegating anything but promote and deploy. The grant schema stores verbs as a list so a later release can add one, but this release accepts only promote and deploy.
+    - Changing what promote or deploy check. Gates, preflight, soak, tags, health and records run exactly as from a terminal.
+    - Answering a phrase for the person. The runner forwards only text the app sends, one attempt per prompt, compared exactly by the existing code.
+    - Tests (AGENTS.md Part S). Verification is by running this worktree's bin/polispec for real against scratch state.
+constraints:
+  - Ruby standard library only, same Ruby floor as the rest of lib/. Keep the two-line header (shebang, SPDX) every lib file carries.
+  - No comments or docstrings in code. No tests.
+  - Work only in /home/sven/github/foss/.polispec-wt/delegate (branch delegate). Never touch the pinned runtime under rstack-uber/plugins/.pinned/polispec, ~/.ai, ~/.config/polispec, ~/.local/state/polispec, /etc/polispec or any installed polispec.
+  - Every verification run sets POLISPEC_STATE_HOME, POLISPEC_HOME, POLISPEC_LEDGER and POLISPEC_GLOBAL (or the global repo settings through RPLUGIN_POLISPEC_* env) to scratch paths under /tmp/claude-1000/-home-sven-bitbucket-paterasai-teach/2d0f4d0a-f143-4578-92fe-906eee6c3e5f/scratchpad/delegate/, and XDG_RUNTIME_DIR to a scratch directory there too. Never redirect XDG_STATE_HOME.
+  - Run this worktree's bin/polispec only, never `polispec` from PATH, so the live guard is never the code under test.
+  - The guard judges your shell calls. Do not chain `polispec promote` or `polispec deploy` with other commands; run them as their own command. Never run promote or deploy against a real project; use the scratch project in the scratch ledger only.
+  - Do not commit, tag, push, install, pin or run rplugin. Leave the worktree modified and unstaged.
+  - Do not edit specs/app.yml, docs/, README.md, CHANGELOG.md, FEATURES.md, TODO.md, VERSION or any *.rplugin.yml or plugin.json; the primary writes those.
+owns_paths:
+  - lib/polispec/delegate.rb
+  - lib/polispec/delegate/
+  - lib/polispec/commands/delegate.rb
+  - schemas/delegate_grants.v1.yml
+shared_surfaces:
+  - path: lib/polispec/operator/tty.rb
+    change: the delegated confirmer seam (slice seam)
+  - path: lib/polispec/operator/gates.rb
+    change: interactive?, require_terminal! and actor honor the delegated confirmer (slice seam)
+  - path: lib/polispec/operator/promote.rb
+    change: the promotion record and event carry via (slice seam)
+  - path: lib/polispec/operator/deploy.rb
+    change: the deploy record and event carry via (slice seam)
+  - path: lib/polispec/events.rb
+    change: via added to polispec.promote and polispec.deploy, and a new polispec.delegate type (slice seam)
+  - path: lib/polispec/classify/commands/support.rb
+    change: the grants file classifies as policy.edit (slice protect)
+slices:
+  - id: seam
+    depends_on: []
+    deliverable: Operator confirmation and actor resolution can be driven by an in-process delegated confirmer, and nothing changes when none is set.
+    detail: |
+      1. lib/polispec/operator/tty.rb. Add to module Polispec::Operator::Tty a module-level accessor for a delegated
+         confirmer, set only in-process (never from an environment variable, a file or an argument):
+           def delegate=(confirmer)  -> @delegate = confirmer
+           def delegate              -> @delegate
+           def delegated?            -> !@delegate.nil?
+         terminal? returns true when delegated?, else the existing test.
+         confirm!(phrase, prompt: nil): when delegated?, call @delegate.confirm(phrase, prompt) and raise
+         PhraseMismatch with the existing message unless it returns exactly true; raise NotTty with the existing
+         message when it raises Polispec::Delegate::NoAnswer (defined in slice runner; reference it through
+         defined? so seam loads alone). When not delegated, the existing body runs unchanged.
+      2. lib/polispec/operator/gates.rb. interactive? returns true when Polispec::Operator::Tty.delegated?, before
+         the existing $stdin test. require_terminal! and actor then follow without other changes.
+      3. Attribution. Add module Polispec::Delegate in lib/polispec/delegate.rb (slice runner fills the rest) with
+         def self.via -> @via and def self.via=(text). Promote and deploy records and their events gain the key
+         "via" => Polispec::Delegate.via when it is non-nil, and omit the key when nil. Find every record hash and
+         Events.emit call for polispec.promote and polispec.deploy in lib/polispec/operator/promote.rb and
+         deploy.rb (records appended through State.append_jsonl to promotions and deploys) and add the key there
+         only. In lib/polispec/events.rb add "via" to the polispec.promote and polispec.deploy field lists and add
+         "polispec.delegate" => %w[app run_id by argv result exit_code duration_ms].
+    acceptance: >-
+      With no confirmer set, `bin/polispec deploy <scratch project> <its stable env>` from a non-terminal shell still
+      fails not_tty with the same message as before the change (show the unchanged branch in the diff). A ruby -I
+      lib one-liner that sets Tty.delegate to an object whose confirm returns true makes Gates.interactive? true and
+      Gates.actor "operator", and one returning false makes Tty.confirm!("x") raise PhraseMismatch.
+
+  - id: grants
+    depends_on: []
+    deliverable: Grants are stored, validated, created and revoked only at a terminal with a typed phrase, and checked in constant time.
+    detail: |
+      Module Polispec::Delegate (lib/polispec/delegate.rb) and lib/polispec/delegate/grants.rb.
+      Constants: VERBS = %w[promote deploy].freeze, APP = /\A[a-z][a-z0-9_-]{0,31}\z/, TOKEN_PREFIX = "pdt_",
+      MAX_GRANTS = 16, MAX_BYTES = 16_384, FLAGS_DEFAULT = %w[--dry-run --json --tag].freeze,
+      FLAGS_ALLOWED = %w[--dry-run --json --tag --waive-soak --skip-drain].freeze.
+      Paths: dir = File.join(State.home, "delegate") (mode 0700); grants file dir/grants.yml (mode 0600);
+      runs dir dir/runs (0700); kill marker dir/delegate.disabled.
+      Document (schema polispec.delegate_grants/v1; write schemas/delegate_grants.v1.yml in the repo's schema dialect
+      and register the kind delegate_grants where kinds are registered):
+        schema: polispec.delegate_grants/v1
+        grants:
+          - app: teach
+            token_sha256: <64 hex of sha256 of the full token text>
+            verbs: [promote, deploy]
+            projects: [teach, reach]          # ledger project ids, each must exist in the ledger at grant time
+            targets: [test, stable]           # env names; prod is normalised to stable
+            flags: [--dry-run, --json, --tag] # subset of FLAGS_ALLOWED
+            granted_at: 2026-10-17T00:00:00Z
+      Unique app per entry, no other keys, at most MAX_GRANTS, file at most MAX_BYTES. A file that is missing means no
+      grants; a file that is unreadable, oversize, unparsable (YAML.safe_load, permitted_classes []) or invalid means
+      no grants and a problem string (load never raises).
+      API: load -> Struct(:grants, :problems); find(app); authenticate(app, token) -> the grant or nil, comparing
+      sha256(token) to token_sha256 with a constant-time comparison (OpenSSL.fixed_length_secure_compare when
+      available, else a byte-wise xor fold); covers?(grant, argv) -> nil when covered, else a short reason string.
+      covers? rules, applied to the argv after `polispec` (no shell parsing; the runner receives an array):
+        - argv[0] is in grant verbs and in VERBS.
+        - promote: exactly one positional project, in grant projects; --to VALUE or --to=VALUE once, VALUE normalised
+          (prod -> stable) in grant targets; every other element is a flag in grant flags, with --tag never allowed
+          for promote.
+        - deploy: positional project then positional env, project in grant projects, env normalised in grant
+          targets; --tag VALUE (VALUE matching /\Av\d+\.\d+\.\d+([.-][0-9A-Za-z.-]+)?\z/) only when --tag is in
+          grant flags; other flags must be in grant flags.
+        - At most 12 elements, each at most 200 bytes, no NUL, no element starting with "--" that is not one of the
+          known flags. Anything else returns a reason such as "verb not granted", "project not granted: x",
+          "target not granted: y", "flag not granted: --skip-drain".
+      Grant and revoke (lib/polispec/commands/delegate.rb, slice cli wires them):
+        grant APP --projects a,b --verbs promote,deploy --targets test,stable [--flags f1,f2] [--json]
+          refuses (code sealed) while Runtime.sealed? or NativeSettings.sealed? is true; refuses (code invalid) on a
+          bad app, verb, unknown ledger project, unknown target or flag outside FLAGS_ALLOWED; prints the scope, then
+          Operator::Tty.confirm!("grant delegation to APP", prompt: <one line naming app, verbs, projects, targets,
+          flags>) which needs a real terminal (a delegated confirmer is never set in this process); then generates the
+          token TOKEN_PREFIX + SecureRandom.hex(32), writes the grant (replacing an existing one for APP, which revokes
+          its old token), and prints the token once with the line "Store this token in APP's protected secrets; it is
+          not shown again." --json prints {app, token, scope}. Writes go through a temp file and rename, mode 0600.
+        revoke APP: confirm!("revoke delegation from APP"), removes the entry; unknown app exits 1.
+        list [--json]: the grants without token_sha256; exits 0 with an empty list when there are none.
+    acceptance: >-
+      Against scratch state: grant without a terminal fails not_tty and writes nothing; a hand-written valid grants.yml
+      (token sha256 of a known string) loads; authenticate returns the grant for the right token and nil for a wrong
+      one, a wrong app and an empty token; covers? accepts `promote teach --to stable`, `promote teach --to=prod
+      --dry-run`, `deploy reach test`, `deploy teach stable --tag v1.2.3` (with --tag granted) and returns the stated
+      reason for `pause teach`, `promote rassessments --to test`, `promote teach --to canary`, `deploy teach stable
+      --skip-drain`, `promote teach --to stable --tag v1` and an argv of 13 elements; an unknown key, a duplicate app
+      and an oversize file each load as no grants with a problem.
+
+  - id: runner
+    depends_on: [seam, grants]
+    deliverable: polispec delegate serve runs granted requests in a child process with captured output and relayed confirmation, bounded and attributed.
+    detail: |
+      lib/polispec/delegate/server.rb (Polispec::Delegate::Server) and lib/polispec/delegate/run.rb.
+      Socket: File.join(ENV["XDG_RUNTIME_DIR"] non-empty ? ENV["XDG_RUNTIME_DIR"] : State.home, "polispec",
+      "delegate.sock"); its directory is created 0700 and the socket chmod 0600 right after bind. At start the server
+      refuses (prints the reason, exits 3) when Runtime.sealed? or NativeSettings.sealed? is true, when the kill
+      marker exists, or when a live listener already answers on the socket (try a connect); a stale socket path with no
+      listener is renamed to <path>.stale-<unix time> before bind (never deleted).
+      Peer check: on each accepted connection read SO_PEERCRED (Socket::Option via getsockopt(:SOCKET, :PEERCRED)
+      where available) and close unless the peer uid equals Process.uid; when the platform cannot report it, rely on
+      the 0600 socket mode.
+      Protocol: one JSON object per line, one request per connection, request at most 16_384 bytes, reply one JSON
+      line at most 131_072 bytes, read deadline 5 s. Every request carries app and token; authenticate first and
+      answer {ok:false, code:"unauthorized"} without detail on failure (same reply for unknown app and wrong token).
+      Rate limit 60 requests a minute per app (code rate_limited). Operations:
+        request {op, app, token, argv:[...], by:"label"}  by: 1..64 chars of [A-Za-z0-9 ._@:-], recorded as is.
+          -> covers? reason -> {ok:false, code:"out_of_scope", detail:reason}
+          -> a run of the same project still active -> {ok:false, code:"busy", run_id:<active>}
+          -> more than 2 runs active -> {ok:false, code:"busy"}
+          -> else start a run, {ok:true, run_id}. run_id = "drn_" + SecureRandom.hex(6).
+        output {op, app, token, run_id, offset}  offset integer >= 0 in bytes.
+          -> {ok:true, run_id, state, exit_code, offset:<new>, data:<UTF-8 text from offset, at most 65_536 bytes,
+             cut at a character boundary, invalid bytes scrubbed>, truncated:<bool total output cap hit>,
+             prompt:<null or {text:<the prompt lines>, phrase:<the exact phrase asked>}>, started_at, ended_at}
+          state is one of running, waiting_phrase, succeeded, failed, cancelled, timed_out. A run that belongs to
+          another app answers not_found.
+        phrase {op, app, token, run_id, text}  text at most 200 bytes, one line.
+          -> only in state waiting_phrase; forwards text once and answers {ok:true}; otherwise {ok:false, code:"not_waiting"}.
+        cancel {op, app, token, run_id} -> sends TERM to the run's process group, KILL after 10 s; {ok:true}.
+        status {op, app, token} -> {ok:true, version, scope:<the grant without token_sha256>, active:[run ids]}.
+      Run (Polispec::Delegate::Run): log file runs/<run_id>.log (0600) and a metadata line appended to
+      State.append_jsonl("delegate_runs", {run_id, app, by, argv, started_at}) and again at the end with state,
+      exit_code, ended_at, duration_ms. Start the child with fork (the server must not be multi-threaded at fork
+      time beyond the accepting thread; use one accept thread and a monitor thread, and fork from the accept thread
+      while holding a mutex):
+        child: Process.setsid; reopen $stdin to /dev/null; $stdout and $stderr reopened on the log file (sync true)
+        so every subprocess the deploy steps start inherits them; Polispec::Delegate.via =
+        "delegate:#{app}:#{by}"; Polispec::Operator::Tty.delegate = Confirmer.new(prompt_w, phrase_r, log) where
+        prompt_w and phrase_r are pipes to the parent; then exit!(Polispec::CLI.run(argv) || 0) inside a rescue
+        that writes the exception class and message to the log and exits 1.
+        Confirmer#confirm(phrase, prompt): writes prompt (when given) and "Type exactly: #{phrase}\n> " to the log
+        like the terminal does, writes one JSON line {phrase, prompt} to prompt_w, then blocks on phrase_r for one
+        line with a 600 s timeout (IO.select); on timeout raises Polispec::Delegate::NoAnswer ("no phrase was typed
+        within 10 minutes; nothing was done"); returns line.chomp == phrase and writes the typed text's length only
+        (never the text) as "(phrase received, N characters)" to the log.
+      parent: a monitor thread per run reads prompt_w's other end (state waiting_phrase, prompt kept for output),
+      writes phrase text to phrase_r's other end when the phrase op arrives (state back to running), waits for the
+      child (Process.wait2), and sets succeeded (exit 0) or failed. Output cap 8 MiB per run: past it, stop copying
+      into the readable view and set truncated (the child keeps writing to the file; output reads only the first 8
+      MiB). Run timeout 3600 s from start: cancel and set timed_out. Keep at most 50 finished runs' metadata in
+      memory; logs older than 30 days are removed on server start (rename into runs/.expired/ is not needed; these
+      are logs the server wrote itself, and the removal is limited to runs/drn_*.log older than 30 days).
+      Emit Events.emit("polispec.delegate", app:, run_id:, by:, argv:, result: state, exit_code:, duration_ms:) at
+      the end of each run.
+      Signals: TERM or INT stops accepting, cancels active runs, waits up to 15 s, removes the socket it created.
+    acceptance: >-
+      Against a scratch ledger holding one scratch project whose environments declare a test env with a trivial
+      deploy (for example a deploy step `true` and a health run `true`), with a scratch grant for app scratch: a
+      request with a wrong token answers unauthorized; `pause scratch` answers out_of_scope; `deploy scratch test`
+      runs, output returns the deploy text in chunks by offset, state ends succeeded with exit_code 0, and the
+      deploys record in the scratch state carries via delegate:scratch:<by>; a request whose run asks for a phrase
+      (use a scratch policy whose deploy of a stable-tier env needs `deploy scratch to prod`, or call a scratch argv
+      that reaches Gates.confirm!) shows state waiting_phrase with the exact phrase, a wrong phrase ends failed with
+      confirmation_failed in the output, the right phrase continues; cancel ends cancelled; a second request for the
+      same project while one runs answers busy; with the kill marker present serve refuses to start. Use a small
+      Ruby client one-liner over UNIXSocket for these.
+
+  - id: cli
+    depends_on: [grants, runner]
+    deliverable: polispec delegate grant|revoke|list|serve|unit|status is registered and documented in its usage line.
+    detail: |
+      lib/polispec/commands/delegate.rb, class Polispec::Commands::Delegate, registered with
+      CLI.register("delegate", ..., summary: "let an application run granted promote and deploy commands through a local runner").
+      USAGE = "usage: polispec delegate grant APP --projects P[,P] --verbs V[,V] --targets T[,T] [--flags F[,F]] [--json] | revoke APP | list [--json] | serve | unit [--json] | status [--json]".
+      unit renders (never installs or starts) a systemd user unit text:
+        [Unit] Description=polispec delegate runner
+        [Service] ExecStart=<absolute path of the running bin/polispec> delegate serve, Restart=on-failure,
+        KillMode=mixed, TimeoutStopSec=30
+        [Install] WantedBy=default.target
+      followed, outside --json, by the two lines the operator runs (write to ~/.config/systemd/user/polispec-delegate.service,
+      then systemctl --user daemon-reload && systemctl --user enable --now polispec-delegate).
+      status connects as no app: it reports whether a listener answers on the socket (reply to a bare {"op":"ping"}
+      with {ok:true, version} without authentication; ping is the only unauthenticated op) and lists grants like list.
+      Exit codes: 0 ok, 1 refused or failed, 2 usage, 3 sealed, disabled or not a terminal.
+    acceptance: >-
+      bin/polispec delegate prints the usage with exit 2; delegate list on scratch state prints the grants; delegate
+      unit prints a unit naming this worktree's bin/polispec; delegate status reports the listener when serve runs and
+      "not running" when it does not; bin/polispec --help lists delegate.
+
+  - id: protect
+    depends_on: [grants]
+    deliverable: The grants file is a protected path for the guard.
+    detail: |
+      In lib/polispec/classify/commands/support.rb add delegate_grants_file?(path) next to exceptions_file?, true when
+      File.expand_path(path) equals the absolute grants file path of Polispec::Delegate, and make write_class return
+      "policy.edit" for it, before the existing checks. Require the delegate file where Exceptions is required.
+    acceptance: >-
+      bin/polispec explain --harness claude --json on a Write of the scratch grants file and on a Bash `echo x >>`
+      into it both classify as policy.edit; a Write to a sibling file in the delegate directory stays fs.write.
+acceptance:
+  - All slice acceptances, shown with the exact commands and output in the report.
+  - ruby -c on every new or changed lib file.
+  - bin/polispec doctor on scratch state shows no new finding caused by delegate files.
+report:
+  - per slice, the files changed and what was run with its observed output
+  - every place the blueprint could not be followed exactly, and why
