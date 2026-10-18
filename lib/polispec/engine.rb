@@ -911,7 +911,13 @@ module Polispec
         EXTENSIONS.all? do |key|
           next true if match[key].nil?
           actual = key == "tool" ? ctx[:tool] : key == "role" ? ctx[:role] : hint[key]
-          key == "path" ? File.fnmatch?(match[key].to_s, actual.to_s, File::FNM_PATHNAME | File::FNM_DOTMATCH) : match[key].to_s == actual.to_s
+          if key == "path"
+            File.fnmatch?(match[key].to_s, actual.to_s, File::FNM_PATHNAME | File::FNM_DOTMATCH)
+          elsif key == "tool"
+            match[key].to_s.casecmp?(actual.to_s)
+          else
+            match[key].to_s == actual.to_s
+          end
         end
       end
 

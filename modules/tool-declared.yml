@@ -1,0 +1,34 @@
+schema: polispec.module/v1
+name: tool-declared
+summary: The tools polispec declares known on every host, composed as the shipped layer above the global shelf; every rule is overridable, so a shelf rule tightens one with a plain verdict and loosens one only by naming it in overrides.
+rules:
+  - { id: TOOL-TODOWRITE, match: { tool: TodoWrite, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-TODOREAD, match: { tool: TodoRead, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-SKILL, match: { tool: Skill, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-TOOLSEARCH, match: { tool: ToolSearch, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-ASKUSERQUESTION, match: { tool: AskUserQuestion, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-ENTERPLANMODE, match: { tool: EnterPlanMode, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-EXITPLANMODE, match: { tool: ExitPlanMode, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-TASKOUTPUT, match: { tool: TaskOutput, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-TASKLIST, match: { tool: TaskList, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-TASKGET, match: { tool: TaskGet, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-TASKCREATE, match: { tool: TaskCreate, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-TASKUPDATE, match: { tool: TaskUpdate, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-TASKSTOP, match: { tool: TaskStop, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-LISTAGENTS, match: { tool: ListAgents, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-SENDMESSAGE, match: { tool: SendMessage, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-SUBAGENTHANDBACK, match: { tool: SubagentHandback, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-STRUCTUREDOUTPUT, match: { tool: StructuredOutput, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-SCHEDULEWAKEUP, match: { tool: ScheduleWakeup, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-GLOB, match: { tool: Glob, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-LS, match: { tool: LS, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-UPDATE-PLAN, match: { tool: update_plan, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-READ-READ, match: { tool: Read, class: [tool.read] }, verdict: allow, overridable: true, reason: "read tool" }
+  - { id: TOOL-READ-NOTEBOOKREAD, match: { tool: NotebookRead, class: [tool.read] }, verdict: allow, overridable: true, reason: "read tool" }
+  - { id: TOOL-READ-READ-FILE, match: { tool: read_file, class: [tool.read] }, verdict: allow, overridable: true, reason: "read tool" }
+  - { id: TOOL-READ-VIEW, match: { tool: view, class: [tool.read] }, verdict: allow, overridable: true, reason: "read tool" }
+  - { id: TOOL-READ-GREP, match: { tool: Grep, class: [tool.read] }, verdict: allow, overridable: true, reason: "read tool" }
+  - { id: TOOL-READ-SEARCH-FILE-CONTENT, match: { tool: search_file_content, class: [tool.read] }, verdict: allow, overridable: true, reason: "read tool" }
+  - { id: TOOL-READ-READ-MANY-FILES, match: { tool: read_many_files, class: [tool.read] }, verdict: allow, overridable: true, reason: "read tool" }
+  - { id: TOOL-READ-VIEW-IMAGE, match: { tool: view_image, class: [tool.read] }, verdict: allow, overridable: true, reason: "read tool" }
+  - { id: TOOL-OPAQUE-DEVELOPMENT, match: { shape: [opaque_shell], in_development: true }, verdict: allow, overridable: true, reason: "an eval, source or . line in a project in development: every ledger project containing the directory is onboarding, and every command of the line runs in development or in no ledger project" }

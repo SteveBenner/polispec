@@ -267,6 +267,13 @@ A directory is in development when at least one non-retired ledger project conta
 
 Only the opaque trigger is relaxed. An unrecognised tool, a line the parser extracts no command from, an undeclared MCP operation and every deny or rule warn behave as before, and the visible commands of the line are judged as they always were, so `source env.sh; git push origin main:stable` is still denied. What the relaxation gives up is sight of the sourced file's own commands: a rule that would deny something inside `env.sh` cannot see it. Each relaxed call carries `relaxed` in its judgment record (`polispec judgments show <id>`), so the calls it let through can be audited. `polispec.relax.dev off` (or `POLISPEC_RELAX_DEV=off`) restores the ask everywhere without a release.
 
+Since 0.32.0 that relaxation is a rule polispec ships: `TOOL-OPAQUE-DEVELOPMENT` in `modules/tool-declared.yml`, composed as the `shipped` layer above the global shelf on every host (`polispec resolve <path> --layers` prints it first). It allows a line with shape `opaque_shell` when the `in_development` predicate holds, under the rules above; `polispec.relax.dev off` makes the predicate false everywhere, so the rule declares nothing. The same module declares the harness-internal tools (`TOOL-<NAME>`, class `tool.internal`: TodoWrite, Skill, AskUserQuestion and the rest) and the read tools (`TOOL-READ-<NAME>`, class `tool.read`: Read, Grep and the rest, when called without a path); an undeclared tool such as `CronCreate` still asks `POLISPEC-TOOL-UNKNOWN`. Every shipped rule is overridable, and the shelf changes them with ordinary rules through `polispec plan global` and `polispec apply global`:
+
+- declare another tool: `{ id: TOOL-CRONCREATE, match: { tool: CronCreate, class: [tool.internal] }, verdict: allow }`;
+- tighten one: the same match with `verdict: deny` (the strictest layer wins, and the tool leaves the fast-path skip list);
+- narrow the relaxation: `{ match: { shape: [opaque_shell], in_development: true, path: "/srv/**" }, verdict: warn }`, which asks with that rule's id instead of the control ask;
+- loosen a shipped rule only by naming it in `overrides`.
+
 ## Allow-once prompt
 
 `polispec allow-once <id>` prints the grant before it asks for the typed phrase: the project, environment, action class and rule, then the call itself. For a file tool the call is the tool name and the absolute target path, for example `edit /srv/shop/specs/polispec/policy.yml`, so the operator sees what the grant unlocks. The same text is stored as `raw` in the allow-once log and appears in the verdict reason. Refusals use the promote vocabulary: `not_tty` without a terminal and `confirmation_failed` on a wrong phrase.

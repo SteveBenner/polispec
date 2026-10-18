@@ -233,29 +233,26 @@ module Polispec
       begin
         @plane = HarnessControls::Plane.resolve
         raise Polispec::Error, "sealed authority is broken" if @plane["status"] == "broken"
-        @dev_projects = nil
         @exceptions_active = exceptions_active?
         @exceptions_used = []
         @exception_asks = []
         @exception_entries = nil
         ledger = Ledger.load
-        @dev_projects = dev_projects(ledger, cwd, calls)
         actions = calls.flat_map { |tool, data| Array(Classify.call(tool, data, cwd)) }
         baseline = Layers.baseline?
         option_applies = options["controls_file"] && (!options["controls_project"] || project_applies?(options["controls_project"], cwd, actions))
         control_gate = @plane["status"] == "active" || option_applies || HarnessControls::Features.enabled?("harness_controls")
         actions.concat(HarnessControls::RootGuard.classify(input.tool_name, input.tool_input, cwd)) if control_gate
         governed = baseline || relevant?(ledger, cwd, calls) || @plane["status"] == "active" || option_applies
-        if control_gate && actions.empty? && governed && !diagnostic_read?(input.tool_name)
+        opaque = control_gate && governed && calls.any? { |tool, data| Classify.opaque_shell?(tool, data, cwd) }
+        if control_gate && actions.empty? && governed
           known = calls.flat_map { |tool, data| Classify.positive(tool, data, cwd) }
           actions.concat(known)
-          actions << unknown_action(input, cwd, calls, false) if known.empty? && !(calls.any? && calls.all? { |tool, data| Classify.benign?(tool, data, cwd) || Classify.parsed_shell?(tool, data, cwd) || (@dev_projects && Classify.opaque_shell?(tool, data, cwd)) })
+          actions << unknown_action(input, cwd, calls, false, opaque) if known.empty? && !(calls.any? && calls.all? { |tool, data| Classify.benign?(tool, data, cwd) || Classify.parsed_shell?(tool, data, cwd) })
         end
-        if control_gate && governed && !diagnostic_read?(input.tool_name) && !@dev_projects && calls.any? { |tool, data| Classify.opaque_shell?(tool, data, cwd) }
-          actions << unknown_action(input, cwd, calls, true) unless actions.any? { |action| action.raw.is_a?(Hash) && action.raw["unknown_tool"] }
+        if opaque && actions.none? { |action| action.raw.is_a?(Hash) && action.raw["unknown_tool"] }
+          actions << unknown_action(input, cwd, calls, true, true)
         end
-        opaque_relaxed = @dev_projects && control_gate && governed && !diagnostic_read?(input.tool_name) && calls.any? { |tool, data| Classify.opaque_shell?(tool, data, cwd) }
-        @judged["relaxed"] = [{ "rule" => "POLISPEC-TOOL-UNKNOWN", "reason" => "development", "projects" => @dev_projects }] if opaque_relaxed
         groups = group(actions, ledger, cwd, baseline)
         @explain_state = { "actions" => actions, "ledger" => ledger, "cwd" => cwd, "baseline" => baseline, "documents" => [] } if @explain
         mode = enforce_mode
@@ -419,19 +416,44 @@ module Polispec
       target_for = control_target_resolver(ledger, cwd, baseline)
       lambda do |action|
         target = target_for.call(action)
-        next false unless target && target.policy.is_a?(Hash) && target.policy_source != "controls"
-        layer_context = { cwd: cwd, ledger: ledger }
-        rule, = Layers.pick(target, layer_context) do |candidate|
+        next false unless target && target.policy.is_a?(Hash)
+        matcher = lambda do |candidate|
           match = candidate["match"] || {}
-          exact = match["server"].to_s == action.env_hint["server"].to_s && match["operation"].to_s == action.env_hint["operation"].to_s
-          next false unless exact && !match["server"].to_s.empty? && !match["operation"].to_s.empty?
+          next false unless declares?(match, action)
           context = { cwd: cwd, ledger: ledger, predicate_memo: {}, findings: [], tool: input.tool_name.to_s, role: input.agent_type.to_s }
           matched = Engine::Match.rule?(match, action, target.env, target, context)
           raise Polispec::Error, "policy declaration predicate evidence is unavailable" unless context[:findings].empty?
           matched
         end
+        rule = if target.policy_source == "controls"
+                 action.action_class == "mcp.call" ? nil : Layers.shipped_rules.find(&matcher)
+               else
+                 Layers.pick(target, { cwd: cwd, ledger: ledger }, &matcher).first
+               end
+        note_relaxed(rule, ledger, cwd)
         !rule.nil?
       end
+    end
+
+    def declares?(match, action)
+      hint = action.env_hint || {}
+      raw = action.raw.is_a?(Hash) ? action.raw : {}
+      if action.action_class == "mcp.call"
+        exact = match["server"].to_s == hint["server"].to_s && match["operation"].to_s == hint["operation"].to_s
+        exact && !match["server"].to_s.empty? && !match["operation"].to_s.empty?
+      elsif raw["opaque"] == true
+        Array(match["shape"]).include?("opaque_shell")
+      elsif raw["unknown_tool"] == true
+        !match["tool"].to_s.empty? && match["tool"].to_s.casecmp?(hint["tool"].to_s)
+      else
+        false
+      end
+    end
+
+    def note_relaxed(rule, ledger, cwd)
+      return unless @judged && rule.is_a?(Hash) && rule.dig("match", "in_development") == true
+
+      @judged["relaxed"] = [{ "rule" => "POLISPEC-TOOL-UNKNOWN", "reason" => "development", "projects" => ledger.development(cwd) }]
     end
 
     def compose_ask_authority(control, adapter, input, actions, documents, edition, outcomes, ledger, cwd)
@@ -545,26 +567,6 @@ module Polispec
       false
     end
 
-    def dev_projects(ledger, cwd, calls)
-      return nil unless calls.any? { |tool, data| Classify.opaque_shell?(tool, data, cwd) }
-      return nil unless Engine::Settings.relax_dev?
-      return nil if HarnessControls::Plane.requested_edition == "lock"
-
-      ids = ledger.development(cwd)
-      return nil unless ids
-
-      calls.flat_map { |tool, data| Classify.command_cwds(tool, data, cwd) }.uniq.each do |dir|
-        more = ledger.development(dir)
-        next if more.nil? && ledger.locate(dir).nil?
-        return nil unless more
-
-        ids |= more
-      end
-      ids
-    rescue StandardError
-      nil
-    end
-
     def exceptions_active?
       Exceptions.active?(HarnessControls::Plane.requested_edition, @plane["status"])
     rescue StandardError
@@ -662,18 +664,15 @@ module Polispec
       nil
     end
 
-    def unknown_action(input, cwd, calls = [], opaque = false)
+    def unknown_action(input, cwd, calls = [], opaque = false, shaped = opaque)
       name = input.tool_name.to_s
-      klass = if name.match?(/agent|task|spawn/i)
-                "agent.spawn"
-              elsif name.match?(/web|fetch|http|url/i)
-                "web.fetch"
-              else
-                "shell.exec"
-              end
+      klass = shaped ? "shell.exec" : diagnostic_read?(name) ? "tool.read" : "tool.internal"
       raw = { "unknown_tool" => true, "tool" => name }
+      raw["opaque"] = true if shaped
       raw["triggers"] = exception_triggers(input, cwd, calls, opaque) if @exceptions_active
-      Action.new(class: klass, env_hint: { "path" => cwd, "tool" => name }, raw: raw)
+      hint = { "path" => cwd, "tool" => name }
+      hint.merge!("shape" => ["opaque_shell"], "cwds" => calls.flat_map { |tool, data| Classify.command_cwds(tool, data, cwd) }.uniq) if shaped
+      Action.new(class: klass, env_hint: hint, raw: raw)
     end
 
     def canonical_value(value)
