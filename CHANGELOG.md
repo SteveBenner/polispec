@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.30.2] - 2026-10-17
+
+### Fixed
+
+- The 0.30.0 relaxation kept the `POLISPEC-TOOL-UNKNOWN` ask on lines that change into a directory outside development before they source an env file. Real calls showed it: since 0.30.0 went live on this host it relaxed 84 calls and still asked 27, and 25 of those 27 touched the session scratchpad under `/tmp`, where agents write and source an env file (24 in rdemo, 1 in rEach, 1 in rllm). `dev_projects` (`lib/polispec/commands/hook.rb`) now accepts a command directory that is in development or that no non-retired ledger project contains (`Ledger#locate` returns nil). A line that changes into a live project or a checkout, a session that itself starts in an unowned path, the lock edition and `polispec.relax.dev off` keep the ask, and the visible commands of the line are judged as before. The `relaxed` field lists the development projects only.
+
 ## [0.30.1] - 2026-10-17
 
 ### Fixed

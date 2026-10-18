@@ -555,6 +555,7 @@ module Polispec
 
       calls.flat_map { |tool, data| Classify.command_cwds(tool, data, cwd) }.uniq.each do |dir|
         more = ledger.development(dir)
+        next if more.nil? && ledger.locate(dir).nil?
         return nil unless more
 
         ids |= more
