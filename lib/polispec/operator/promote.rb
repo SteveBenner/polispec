@@ -3,6 +3,7 @@
 
 require_relative "git"
 require_relative "gates"
+require_relative "../delegate"
 
 module Polispec
   module Operator
@@ -140,6 +141,7 @@ module Polispec
         {
           "id" => Gates.new_id("prm"), "project" => plan.project.id, "to" => plan.to, "from_sha" => plan.from_sha,
           "to_sha" => plan.to_sha, "tag" => plan.tag, "actor" => plan.actor, "preflight" => plan.preflight, "gates" => plan.gates, "waived" => plan.waived, "at" => Time.now.utc.iso8601,
+          "via" => Polispec::Delegate.via,
           "latest" => (plan.project.promotion["to_#{plan.to}"]["release"] || {})["flip_latest"] == "deferred" && plan.to == "stable" ? "deferred" : nil
         }.compact
       end
@@ -268,14 +270,16 @@ module Polispec
       def emit(plan, result)
         Events.emit(
           "polispec.promote", project: plan.project.id, to: plan.to, from_sha: plan.from_sha, to_sha: plan.to_sha, tag: plan.tag,
-                              actor: plan.actor, gates: plan.gates, waived: plan.waived, result: result, duration_ms: Gates.now_ms - plan.started
+                              actor: plan.actor, gates: plan.gates, waived: plan.waived, result: result, duration_ms: Gates.now_ms - plan.started,
+                              **Polispec::Delegate.via_fields
         )
       end
 
       def emit_failure(project_id, to, failure, started)
         Events.emit(
           "polispec.promote", project: project_id, to: to, from_sha: nil, to_sha: failure.payload["to_sha"], tag: failure.payload["tag"],
-                              actor: Gates.actor, gates: [], result: failure.code, duration_ms: started ? Gates.now_ms - started : nil
+                              actor: Gates.actor, gates: [], result: failure.code, duration_ms: started ? Gates.now_ms - started : nil,
+                              **Polispec::Delegate.via_fields
         )
       end
     end

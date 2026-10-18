@@ -5,6 +5,7 @@ require "net/http"
 require "uri"
 require_relative "git"
 require_relative "gates"
+require_relative "../delegate"
 
 module Polispec
   module Operator
@@ -69,7 +70,8 @@ module Polispec
         result["ok"] = false if run[:outcome][:code]
         record_state(project, name, run[:tag], run[:sha], pinned, record) if result["ok"]
         Events.emit("polispec.deploy", project: project.id, env: name, sha: run[:sha], tag: run[:tag], steps: run[:outcome][:steps], health: health["status"],
-                                       pinned_behind: pinned, actor: actor, result: result["ok"] ? "ok" : failure_code(run[:outcome], health))
+                                       pinned_behind: pinned, actor: actor, result: result["ok"] ? "ok" : failure_code(run[:outcome], health),
+                                       **Polispec::Delegate.via_fields)
         raise_failure(run[:outcome], health, result) unless result["ok"]
         result
       end
@@ -526,7 +528,8 @@ module Polispec
       def record_for(project, name, sha, tag, health, pinned, id = Gates.new_id("dpl"), detail = nil, skipped = false)
         {
           "id" => id, "project" => project.id, "env" => name, "sha" => sha, "tag" => tag, "health" => health["status"],
-          "pinned_behind" => pinned, "at" => Time.now.utc.iso8601, "detail" => detail, "drain" => (skipped ? "skipped" : nil)
+          "pinned_behind" => pinned, "at" => Time.now.utc.iso8601, "detail" => detail, "drain" => (skipped ? "skipped" : nil),
+          "via" => Polispec::Delegate.via
         }.compact
       end
 

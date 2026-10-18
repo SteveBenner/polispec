@@ -15,6 +15,7 @@ module Polispec
       OPERATOR_VERBS = %w[promote deploy].freeze
       APPLY_VALUE_FLAGS = %w[--to --tag --minutes --reason --since --role --pipeline --phase --profile --policy --ledger --confirm --repo --variant --param --from].freeze
       GOVERNED_TARGETS = %w[global ledger].freeze
+      DELEGATE_GOVERNED = %w[grant revoke serve].freeze
 
       class << self
         def classify(cmd)
@@ -27,6 +28,7 @@ module Polispec
           pos, = Support.split_args(cmd.args, APPLY_VALUE_FLAGS)
           verb = pos.first
           return apply(cmd, pos) if verb == "apply"
+          return delegate(cmd, pos) if verb == "delegate"
           return [] unless OPERATOR_VERBS.include?(verb)
 
           project = pos[1]
@@ -44,6 +46,12 @@ module Polispec
           attrs = { "path" => repo ? File.expand_path(repo, cmd.cwd.to_s) : cmd.cwd }
           attrs["project"] = target.delete_prefix("project:") if target.start_with?("project:")
           [Support.act("policy.edit", cmd.text, attrs)]
+        end
+
+        def delegate(cmd, pos)
+          return [] unless DELEGATE_GOVERNED.include?(pos[1].to_s)
+
+          [Support.act("policy.edit", cmd.text, "path" => cmd.cwd)]
         end
 
         def publish(cmd)
