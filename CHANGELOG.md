@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.32.1] - 2026-10-18
+
+### Fixed
+
+- A command placed in a shell script file no longer escapes classification. `bash run.sh`, `sh -e run.sh`, `sudo bash run.sh` and `./run.sh` (an executable with a shell shebang, or no shebang and `.sh`) used to parse as fully classified lines whose script was never read, so every deny rule could be walked past by writing the command to a file, while `source run.sh` asked. The parser (`Shell::Parser#follow_script`) now classifies the script's commands as if written in the line, taking the content a `cat > FILE` or `tee FILE` heredoc earlier in the same line wrote, else the file on disk up to 1 MB (`Shell::MAX_SCRIPT_FILE`), to `MAX_DEPTH`. A dynamic operand, a missing, unreadable or oversized file, exhausted depth, or a path the same line wrote with unknown content marks the line opaque, judged as `eval` and `source` are (`opaque_shell`). A followed script's host is not counted for `chained_release`, as a `-c` host is not.
+
+### Added
+
+- Shape `tmux_kill` (`Classify::Shapes.tmux_kill?`): `tmux kill-server` or `tmux kill-session` with no `-L` or `-S` before the subcommand, which also adds a `service.control` action. On 2026-10-17 an agent's scratch script ran `tmux kill-server` with an inherited `TMUX` and killed the live rterm agent server. `schemas/policy.v1.yml` and `schemas/control.v1.yml` accept the name; no shipped rule uses it.
+
 ## [0.32.0] - 2026-10-18
 
 ### Added

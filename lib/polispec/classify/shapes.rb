@@ -7,11 +7,12 @@ require_relative "commands/support"
 module Polispec
   module Classify
     module Shapes
-      NAMES = %w[bulk_stage chained_release latest_flip lockfile_edit pattern_kill cargo_clean worktree_force].freeze
+      NAMES = %w[bulk_stage chained_release latest_flip lockfile_edit pattern_kill cargo_clean worktree_force tmux_kill].freeze
       LOCKFILES = %w[Cargo.lock Gemfile.lock package-lock.json pnpm-lock.yaml yarn.lock uv.lock poetry.lock].freeze
       CHAIN_CLASSES = %w[git.tag git.push release.publish promote].freeze
       PATTERN_PRODUCERS = %w[pgrep].freeze
       PKILL_FORCE = /\A-[A-Za-z0-9]*f[A-Za-z0-9]*\z/.freeze
+      TMUX_KILLS = %w[kill-server kill-session].freeze
 
       module_function
 
@@ -64,6 +65,7 @@ module Polispec
         when "killall" then %w[pattern_kill]
         when "pkill" then pkill_shapes(cmd)
         when "kill" then pattern_pids?(cmd) ? %w[pattern_kill] : []
+        when "tmux" then tmux_kill?(cmd) ? %w[tmux_kill] : []
         else []
         end
       end
@@ -84,7 +86,26 @@ module Polispec
         pos.select { |arg| arg.match?(/\A\d+\z/) }
       end
 
+      def tmux_kill?(cmd)
+        explicit, sub = tmux_subcommand(cmd.args)
+        !explicit && TMUX_KILLS.include?(sub)
+      end
+
+      def tmux_subcommand(args)
+        explicit = false
+        rest = args.map(&:to_s)
+        while rest.first.to_s.start_with?("-") && rest.first != "-"
+          opt = rest.shift
+          break if opt == "--"
+
+          explicit ||= opt.match?(/\A-[A-Za-z0-9]*[LS]/)
+          rest.shift if opt.match?(/\A-[A-Za-z0-9]*[cfLST]\z/)
+        end
+        [explicit, rest.first]
+      end
+
       def kill_actions(cmd)
+        return tmux_kill_actions(cmd) if cmd.name == "tmux"
         return [] unless cmd.name == "kill"
 
         found = pids(cmd).map { |pid| Support.act("service.control", cmd.text, "pid" => pid.to_i, "command" => "kill") }
@@ -92,11 +113,19 @@ module Polispec
         found
       end
 
+      def tmux_kill_actions(cmd)
+        return [] unless tmux_kill?(cmd)
+
+        [Support.act("service.control", cmd.text, "command" => "tmux", "subcommand" => tmux_subcommand(cmd.args).last)]
+      end
+
       def effective_count(script)
         script.commands.count { |cmd| !embed_host?(cmd) }
       end
 
       def embed_host?(cmd)
+        return true if cmd.host
+
         (Shell::SHELLS.include?(cmd.name) || Shell::INTERPRETERS.include?(cmd.name)) && !Shell.embedded_sources(cmd).empty?
       end
 
