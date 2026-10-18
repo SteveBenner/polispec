@@ -21,6 +21,9 @@ module Polispec
       SQL_CLIENTS = %w[psql].freeze
       SQL_FEEDERS = %w[echo printf cat].freeze
       MAX_SQL_FILE = 1_000_000
+      MAX_SCRIPT_FILE = 1_000_000
+      SHELL_SHEBANG = %r{\A#!\s*(?:\S*/)?(?:env\s+(?:-\S+\s+)*)?(?:bash|sh|zsh|dash|ksh|ash)(?:\s|\z)}.freeze
+      SHELL_VALUE_OPTS = %w[-o +o -O +O --rcfile --init-file].freeze
 
       class Word < String
         attr_accessor :dynamic
@@ -44,7 +47,7 @@ module Polispec
         end
       end
 
-      Command = Struct.new(:argv, :cwd, :redirects, :env, :pipeline, :index, :text, :sudo, keyword_init: true) do
+      Command = Struct.new(:argv, :cwd, :redirects, :env, :pipeline, :index, :text, :sudo, :host, keyword_init: true) do
         def name
           File.basename(argv.first.to_s)
         end
@@ -145,6 +148,37 @@ module Polispec
         nil
       end
 
+      def script_operand(args)
+        rest = args.dup
+        until rest.empty?
+          arg = rest.shift
+          return rest.first if arg.to_s == "--"
+          return nil if arg.to_s.match?(/\A-[A-Za-z]*s[A-Za-z]*\z/)
+
+          if SHELL_VALUE_OPTS.include?(arg.to_s)
+            rest.shift
+          elsif !arg.to_s.start_with?("-", "+")
+            return arg
+          end
+        end
+        nil
+      end
+
+      def shell_script?(path)
+        return false unless File.file?(path) && File.executable?(path)
+
+        head = File.open(path, "rb") { |io| io.read(256) }.to_s
+        head.start_with?("#!") ? SHELL_SHEBANG.match?(head) : File.extname(path) == ".sh"
+      rescue SystemCallError
+        false
+      end
+
+      def read_script(path)
+        File.file?(path) && File.readable?(path) && File.size(path) <= MAX_SCRIPT_FILE ? File.read(path) : nil
+      rescue SystemCallError
+        nil
+      end
+
       def option_values(args, short, long)
         values = []
         args.each_with_index do |arg, i|
@@ -187,6 +221,8 @@ module Polispec
           @tok_start = 0
           @quoted = false
           @opaque = false
+          @written = {}
+          @unknown_writes = false
         end
 
         def run
@@ -549,7 +585,67 @@ module Polispec
           return change_directory(words) if %w[cd pushd].include?(name)
           return export_variables(words) if %w[export declare local readonly typeset].include?(name)
 
+          host = follow_script(words) == :followed
           add_command(words, redirects, env, text, sudo)
+          @commands.last.host = true if host
+        end
+
+        def follow_script(words)
+          file = script_target(words)
+          return unless file
+          return mark_opaque! if dynamic_word?(file) || @depth >= MAX_DEPTH
+
+          path = File.expand_path(file.to_s, @cwd)
+          body = written_body(path)
+          return mark_opaque! if body == :unknown
+
+          body ||= Shell.read_script(path)
+          return mark_opaque! unless body
+
+          parse_nested(body)
+          :followed
+        end
+
+        def script_target(words)
+          first = words.first
+          return Shell.script_operand(words.drop(1)) if SHELLS.include?(File.basename(first.to_s))
+          return nil if dynamic_word?(first) || !first.to_s.include?("/")
+
+          path = File.expand_path(first.to_s, @cwd)
+          first if @written.key?(path) || Shell.shell_script?(path)
+        end
+
+        def written_body(path)
+          entry = @written[path]
+          return (@unknown_writes ? :unknown : nil) if entry.nil?
+          return :unknown if entry == :unknown
+
+          body = entry.op == "<<<" ? "#{entry.target}\n" : entry.body
+          body || :unknown
+        end
+
+        def record_writes(cmd)
+          here = cmd.redirects.reverse.find(&:here?)
+          catted = cmd.name == "cat" && cmd.args.empty?
+          cmd.redirects.select(&:write?).each do |redirect|
+            next if redirect.op == ">&" || redirect.target.to_s.match?(/\A(?:\d+|-)\z/)
+
+            record_write(redirect.target, catted && %w[> >|].include?(redirect.op) ? here : nil)
+          end
+          return unless cmd.name == "tee"
+
+          append = cmd.args.any? { |arg| %w[-a --append].include?(arg.to_s) }
+          cmd.args.reject { |arg| arg.to_s.start_with?("-") }.each { |arg| record_write(arg, append ? nil : here) }
+        end
+
+        def record_write(target, source)
+          return @unknown_writes = true if target.nil? || dynamic_word?(target)
+
+          @written[File.expand_path(target.to_s, @cwd)] = source || :unknown
+        end
+
+        def dynamic_word?(word)
+          word.respond_to?(:dynamic?) && word.dynamic?
         end
 
         def change_directory(words)
@@ -575,6 +671,7 @@ module Polispec
           cmd = Command.new(argv: words, cwd: @cwd, redirects: redirects, env: env, pipeline: @pipe, index: @pipe.length, text: text, sudo: sudo)
           @pipe << cmd
           @commands << cmd
+          record_writes(cmd)
         end
       end
 

@@ -1,6 +1,6 @@
 schema_version: 1
 name: polispec
-version: 0.32.0
+version: 0.32.1
 kind: plugin
 purpose: "Spec-based policy guardrails for agentic development and operations. Every live project carries a versioned policy and, beside it, an environment manifest (main, test, stable), both read from the trust ref; the policy declares what agents may do in each environment, how code is promoted, what data and secrets each environment may hold, when it is frozen, and which harness, model and effort each agent role gets."
 ports:
@@ -94,6 +94,8 @@ stewardship:
 extension_points:
   commands: "lib/polispec/commands/*.rb is glob-loaded; a file calls Polispec::CLI.register(name, klass, summary:) and klass responds to run(args) returning an exit status, either as a class method or on a new instance."
   classifier: "lib/polispec/classify/commands/*.rb is glob-loaded; a file calls Polispec::Classify::Registry.register(family, klass) and klass responds to call(tool_name, tool_input, cwd) returning [Polispec::Action]."
+  script_files: "Since 0.32.1 the shell parser follows a shell script file the line runs and classifies its commands as if they were written in the line: the first operand of bash, sh, zsh, dash, ksh or ash after their options (none with -c, which stays the -c body, or with -s), and a command path containing a slash that is an executable file with a shell shebang, or with no shebang and the .sh extension. The body is the content an earlier command of the same line wrote with cat > FILE or tee FILE fed by a heredoc or here-string, else the file on disk up to 1 MB (Shell::MAX_SCRIPT_FILE), followed to MAX_DEPTH. The line is opaque (shape opaque_shell under the control gate, exactly as eval and source) when the operand is dynamic, the file is missing, unreadable or larger than the bound, the depth is exhausted, the same line wrote that path with content the parser does not know (an echo or printf redirect, an append, a heredoc read only after the run on the same line), or wrote any file through a dynamic target. A followed script's host command is not counted for chained_release, as a -c host is not. Not followed: scripts reached through PATH, source and . (still opaque), interpreters other than shells, and files written by cp, mv, sed -i or a download in the same line, which are read from disk as they are before the line runs."
+  tmux_kill: "Since 0.32.1 tmux kill-server and tmux kill-session with neither -L nor -S before the subcommand carry shape tmux_kill and add one service.control action (env_hint command tmux and the subcommand), because such a call reaches whatever server TMUX or the default socket names; on 2026-10-17 an agent's scratch script killed the live rterm agent server that way. A call that names its server with -L or -S is not tagged. No shipped rule matches the shape; a shelf or project rule governs it."
 code_specs:
   status: built
   summary: "Code specs: a tree of composable policies applied per language whenever an agent writes code. The policy is the atomic entity; a policy with subpolicies is composite; a spec is the root policy of one spec file, mounted at a path (code, code/ruby, code/ruby/code_quality, code/ruby/code_meta, code/code_meta)."
