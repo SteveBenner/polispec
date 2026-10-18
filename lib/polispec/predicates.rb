@@ -3,7 +3,7 @@
 
 module Polispec
   module Predicates
-    NAMES = %w[lock_held live_binary supervised pin_regress tag_claimed base_unpushed].freeze
+    NAMES = %w[lock_held live_binary supervised pin_regress tag_claimed base_unpushed in_development].freeze
     BUDGET = 2.0
     LOCK_MANIFEST = "TMP_AGENT_FILE_LOCKS.yml".freeze
     UNOWNED_WINDOW = 600
@@ -17,6 +17,25 @@ module Polispec
     class Expired < StandardError; end
 
     module_function
+
+    def check_in_development(action, ctx)
+      return no unless Engine::Settings.relax_dev?
+      return no if HarnessControls::Plane.requested_edition == "lock"
+
+      ledger = ctx[:ledger] || Ledger.load
+      data = hint(action)
+      ids = ledger.development(data["path"].to_s)
+      return no unless ids
+
+      Array(data["cwds"]).each do |dir|
+        more = ledger.development(dir)
+        next if more.nil? && ledger.locate(dir).nil?
+        return no unless more
+
+        ids |= more
+      end
+      yes("in development: #{ids.join(', ')}")
+    end
 
     def evaluate(name, action, ctx)
       memo = ctx[:predicate_memo]

@@ -17,6 +17,7 @@ module Polispec
     SUBSTITUTION_SKIP = %w[schema name params].freeze
     BUCKETS = %w[freezes to_test to_stable preflight].freeze
     EMPTY_EXTRAS = { "freezes" => [], "hermetic" => {}, "to_test" => [], "to_stable" => [], "preflight" => [] }.freeze
+    SHIPPED_INCLUDES = %w[tool-declared].freeze
 
     Source = Struct.new(:kind, :root, :repo, :ref, :path, keyword_init: true) do
       def key
@@ -256,6 +257,26 @@ module Polispec
         @stores[[:local, *src.key]] ||= Store.new(src, local: true)
       end
 
+      def shipped_store
+        @stores ||= {}
+        @stores[:shipped] ||= Store.new(Source.new(kind: :dir, root: Polispec::ROOT), local: true)
+      end
+
+      def shipped_layer(errors)
+        mods = Shelf.new(nil, shipped_store).expand(SHIPPED_INCLUDES, errors, {})
+        return nil if mods.empty?
+
+        Layer.new(
+          name: "shipped", source: "shipped:#{File.read(File.join(Polispec::ROOT, 'VERSION')).strip}",
+          digest: sha(mods.map(&:instance_text).join("\n--\n")),
+          rules: mods.flat_map { |mod| Array(mod.doc["rules"]) }, modules: mods.map(&:label), extras: extras_of(mods.map(&:doc))
+        )
+      end
+
+      def shipped_rules
+        Array(shipped_layer([])&.rules)
+      end
+
       def local_source(project, policy_source)
         return nil unless project && policy_source
 
@@ -357,7 +378,7 @@ module Polispec
         shelf = store
         return "" unless shelf
 
-        sha([shelf.source.key.inspect, shelf.global_text.to_s, shelf.profiles_text.to_s].join("\n--\n"))
+        sha([shipped_layer([])&.digest.to_s, shelf.source.key.inspect, shelf.global_text.to_s, shelf.profiles_text.to_s].join("\n--\n"))
       end
 
       def fallback_rules
@@ -375,6 +396,8 @@ module Polispec
         gstore = store
         profile = effective_profile(project, policy, errors)
         layers = []
+        shipped = shipped_layer(errors)
+        layers << shipped if shipped
         if gstore
           errors.concat(gstore.errors)
           layer = global_layer(gstore, profile, ledger, errors)
@@ -395,8 +418,6 @@ module Polispec
         ledger = ctx[:ledger]
         project = ledger && target.project ? ledger.project(target.project) : nil
         src = local_source(project, target.policy_source)
-        return nil if source.nil? && children(project, ledger, ctx[:cwd]).empty? && !(src && includes?(target.policy))
-
         key = [source&.key, src&.key, ctx[:cwd]]
         memo = target.instance_variable_get(:@polispec_chain)
         return memo[1] if memo && memo[0] == key

@@ -212,12 +212,12 @@ module Polispec
         result = Evaluate.call(input, values)
         return result if result["verdict"].deny?
         actions = Array(values["actions"])
+        trusted = values["trusted_declaration"]
+        declared = ->(action) { trusted.respond_to?(:call) && trusted.call(action) }
         undeclared = actions.select { |action| action.action_class == "mcp.call" }.reject do |action|
-          protected = Evaluate.declared_action?(values["documents"], action, input, values, protected_only: true)
-          trusted = values["trusted_declaration"].respond_to?(:call) && values["trusted_declaration"].call(action)
-          protected || trusted
+          Evaluate.declared_action?(values["documents"], action, input, values, protected_only: true) || declared.call(action)
         end
-        unknown = actions.select { |action| action.raw.is_a?(Hash) && action.raw["unknown_tool"] == true }
+        unknown = actions.select { |action| action.raw.is_a?(Hash) && action.raw["unknown_tool"] == true }.reject { |action| declared.call(action) }
         return result if undeclared.empty? && unknown.empty?
         lifter = values["excepted"]
         if lifter.respond_to?(:call)

@@ -6,7 +6,6 @@ require_relative "layers"
 require_relative "native_settings"
 require_relative "harness/base"
 require_relative "classify/tool"
-require_relative "classify/benign"
 
 module Polispec
   module Fastpath
@@ -86,16 +85,32 @@ module Polispec
     def skippable
       return ["*"] unless Layers.baseline?
 
-      reads = reads_governed? ? [] : Harness::Base::READ_TOOLS
-      (reads + Classify::Benign::INTERNAL_TOOLS).map(&:downcase).uniq
+      internal, reads = declared_tools
+      names = internal + (reads_governed?(reads) ? [] : reads)
+      blanket = global_rules.any? do |match|
+        match["tool"].to_s.empty? && (Array(match["class"]) & %w[tool.internal tool.read]).any?
+      end
+      names = [] if blanket
+      (names - global_rules.map { |match| match["tool"].to_s.downcase }).uniq
+    rescue StandardError
+      []
     end
 
-    def reads_governed?
+    def declared_tools
+      rules = Layers.shipped_rules.select { |rule| rule["verdict"] == "allow" && !rule.dig("match", "tool").to_s.empty? }
+      %w[tool.internal tool.read].map do |klass|
+        rules.select { |rule| Array(rule.dig("match", "class")) == [klass] }.map { |rule| rule.dig("match", "tool").to_s.downcase }
+      end
+    end
+
+    def global_rules
       doc = Layers.global || {}
       rules = Array(doc["rules"]) + (doc["modules"] || {}).values.flat_map { |mod| Array(mod.is_a?(Hash) ? mod["rules"] : nil) }
-      read_tools = Harness::Base::READ_TOOLS.map(&:downcase)
-      rules.any? do |rule|
-        match = rule.is_a?(Hash) ? (rule["match"] || {}) : {}
+      rules.map { |rule| rule.is_a?(Hash) ? (rule["match"] || {}) : {} }
+    end
+
+    def reads_governed?(read_tools = declared_tools[1])
+      global_rules.any? do |match|
         classes = match["class"]
         (classes.nil? && match["shape"].nil?) || Array(classes).include?("secrets.read") || read_tools.include?(match["tool"].to_s.downcase)
       end

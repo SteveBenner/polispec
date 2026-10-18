@@ -6,7 +6,6 @@ require_relative "commands/support"
 module Polispec
   module Classify
     module Benign
-      INTERNAL_TOOLS = %w[todowrite todoread skill toolsearch askuserquestion enterplanmode exitplanmode taskoutput tasklist taskget listagents update_plan view_image glob ls taskcreate taskupdate taskstop sendmessage subagenthandback structuredoutput schedulewakeup].freeze
       WEB_TOOLS = %w[webfetch web_fetch websearch web_search].freeze
       SEARCH_TOOLS = %w[websearch web_search].freeze
       AGENT_TOOLS = %w[agent task].freeze
@@ -67,7 +66,6 @@ module Polispec
 
       def benign?(tool_name, tool_input, cwd)
         name = tool_name.to_s.downcase
-        return true if INTERNAL_TOOLS.include?(name)
         return shell?(tool_name, tool_input, cwd) if Support::BASH_TOOLS.include?(name)
 
         false

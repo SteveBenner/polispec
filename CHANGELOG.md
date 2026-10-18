@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.32.0] - 2026-10-18
+
+### Added
+
+- `modules/tool-declared.yml`, a module polispec ships and composes first in every chain as the `shipped` layer, on every host, before the global shelf. It declares the harness-internal tools (`TOOL-<NAME>`, `match.tool` with class `tool.internal`), the read tools called without a path (`TOOL-READ-<NAME>`, class `tool.read`) and the development relaxation of `eval`, `source` and `.` lines (`TOOL-OPAQUE-DEVELOPMENT`, shape `opaque_shell` with the new `in_development` predicate). Every rule is overridable: the shelf declares another tool or tightens a shipped one with a plain rule, narrows the relaxation with a rule on `opaque_shell`, and loosens a shipped rule only through `overrides`, all through `polispec plan global` and `apply global`. `polispec resolve <path> --layers` prints the layer; `Layers.shipped_rules` exposes its rules.
+- Action classes `tool.internal` and `tool.read`, shape `opaque_shell` and the `in_development` predicate in the policy, module, global, control and ledger schemas. `in_development` applies `Ledger#development` to the line's directory and to every command directory as 0.30.2 did, and is false under the lock edition and under `polispec.relax.dev off`, which is now the predicate's kill switch.
+- An unknown-tool action is declared the way an MCP operation is: a trusted rule whose `match.tool` names the exact tool (case-insensitive) or whose `match.shape` includes `opaque_shell`, matching the action in full, lifts the unknown mark; the declared action is then judged by environment policy, so a stricter shelf rule on the same tool wins. With no trusted policy at all only the shipped rules declare.
+
+### Changed
+
+- The library keeps detection and the edition default only: `Classify::Benign::INTERNAL_TOOLS` and `HookCommand#dev_projects` are gone. A non-shell tool with no classified action yields a `tool.internal` action, a read tool with no path a `tool.read` action, an opaque shell line a `shell.exec` action with shape `opaque_shell`, each marked unknown until a rule declares it. An undeclared tool asks exactly as before. `match.tool` compares case-insensitively.
+- `fastpath.tools` derives from the shipped layer (the declared `tool.internal` and `tool.read` names, minus the read tools when the shelf governs reads, minus every tool a shelf rule names) instead of the two library lists.
+- `Layers.fingerprint` and every effective digest include the shipped layer digest, so the baseline target digest, the fast-path key and `resolve --layers` output change with this release while every verdict stays: the 0.30.2 development matrix, the recorded non-Bash judgments since 0.30.2 and the smoke suite against the pinned 0.31.0 give the same verdicts as an unmodified 0.31.0 tree.
+
 ## [0.31.0] - 2026-10-17
 
 ### Added
