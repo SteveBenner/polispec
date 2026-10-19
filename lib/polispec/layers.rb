@@ -17,7 +17,7 @@ module Polispec
     SUBSTITUTION_SKIP = %w[schema name params].freeze
     BUCKETS = %w[freezes to_test to_stable preflight].freeze
     EMPTY_EXTRAS = { "freezes" => [], "hermetic" => {}, "to_test" => [], "to_stable" => [], "preflight" => [] }.freeze
-    SHIPPED_INCLUDES = %w[tool-declared].freeze
+    SHIPPED_INCLUDES = %w[tool-declared delete-guard].freeze
 
     Source = Struct.new(:kind, :root, :repo, :ref, :path, keyword_init: true) do
       def key
@@ -271,6 +271,22 @@ module Polispec
           digest: sha(mods.map(&:instance_text).join("\n--\n")),
           rules: mods.flat_map { |mod| Array(mod.doc["rules"]) }, modules: mods.map(&:label), extras: extras_of(mods.map(&:doc))
         )
+      end
+
+      def shipped_delete_protected
+        @stores ||= {}
+        @stores[:shipped_delete] ||= delete_protected_union(Shelf.new(nil, shipped_store).expand(SHIPPED_INCLUDES, [], {}).map(&:doc))
+      end
+
+      def delete_protected_union(docs)
+        union = { "exact" => [], "tree" => [] }
+        docs.each do |doc|
+          listed = doc.is_a?(Hash) ? doc["delete_protected"] : nil
+          next unless listed.is_a?(Hash)
+
+          union.each_key { |kind| union[kind].concat(Array(listed[kind]).select { |path| path.is_a?(String) && !path.strip.empty? }) }
+        end
+        union.transform_values(&:uniq)
       end
 
       def shipped_rules

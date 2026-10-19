@@ -7,7 +7,7 @@ require_relative "commands/support"
 module Polispec
   module Classify
     module Shapes
-      NAMES = %w[bulk_stage chained_release latest_flip lockfile_edit pattern_kill cargo_clean worktree_force tmux_kill].freeze
+      NAMES = %w[bulk_stage chained_release latest_flip lockfile_edit pattern_kill cargo_clean worktree_force tmux_kill xargs_delete].freeze
       LOCKFILES = %w[Cargo.lock Gemfile.lock package-lock.json pnpm-lock.yaml yarn.lock uv.lock poetry.lock].freeze
       CHAIN_CLASSES = %w[git.tag git.push release.publish promote].freeze
       PATTERN_PRODUCERS = %w[pgrep].freeze

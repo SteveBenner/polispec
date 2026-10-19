@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.33.0] - 2026-10-19
+
+### Added
+
+- A shipped delete guard. `modules/delete-guard.yml` composes in the shipped layer beside `modules/tool-declared.yml` on every host, with three overridable rules. `G-DELETE-PROTECTED` denies a delete that reaches a protected path. `G-DELETE-PROTECTED-FILE` asks before a single, non-recursive file delete under a protected folder. `G-DELETE-XARGS` asks before a deleter fed through `xargs`, whose targets polispec cannot see.
+- The data key `delete_protected` holds `exact` entries (the path itself) and `tree` entries (the path and everything below it). The shipped list is exact `/`, `~`, `/home`, the system folders and `/usr/bin`, `/usr/sbin`, `/usr/lib` and `/usr/lib64`, and tree `~/.ssh`, `~/.ai`, `~/.claude`, `~/.config`, `~/.rplugins` and `~/.polispec`. The global doc and every shelf module may add entries; nothing removes one, and a global plan classifies an added entry tightening and a removed one loosening (`delete:exact:<path>`, `delete:tree:<path>`).
+- Match predicates `delete_protected` and `delete_protected_file`. A delete of a directory's contents (`*`, `.*`, `.[!.]*`, `..?*`, `.??*`) is judged as a delete of that directory. A recursive delete is denied at or under a tree entry or at an ancestor of any entry. Paths are compared lexically and with symlinks resolved, so a tree entry that is a symlink also protects the folder it points to, and every ancestor of it. Beneath a tree entry the resolved form counts only when the entry is a real folder: `~/.ssh` is covered through any alias, while a path inside a symlinked entry's target written by its real path (a build directory in the git repo `~/.rplugins` points into) is not judged.
+- `fs.delete` actions carry the `recursive` hint for `rm -r`/`-R`/`--recursive`, `rmdir`, find deletes and `cargo clean`. A deleter whose words come through `xargs` carries the shape `xargs_delete`.
+
 ## [0.32.2] - 2026-10-19
 
 ### Fixed

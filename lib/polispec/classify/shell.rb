@@ -47,7 +47,7 @@ module Polispec
         end
       end
 
-      Command = Struct.new(:argv, :cwd, :redirects, :env, :pipeline, :index, :text, :sudo, :host, keyword_init: true) do
+      Command = Struct.new(:argv, :cwd, :redirects, :env, :pipeline, :index, :text, :sudo, :host, :xargs, keyword_init: true) do
         def name
           File.basename(argv.first.to_s)
         end
@@ -567,6 +567,7 @@ module Polispec
 
         def dispatch(words, redirects, env, text)
           sudo = false
+          xargs = false
           loop do
             return if words.empty?
 
@@ -574,19 +575,20 @@ module Polispec
             break unless handler
 
             sudo ||= %w[sudo doas].include?(File.basename(words.first))
+            xargs ||= File.basename(words.first) == "xargs"
             words = Wrappers.public_send(handler, words, self, env)
             return if words.nil?
           end
-          finalize(words, redirects, env, text, sudo)
+          finalize(words, redirects, env, text, sudo, xargs)
         end
 
-        def finalize(words, redirects, env, text, sudo)
+        def finalize(words, redirects, env, text, sudo, xargs = false)
           name = File.basename(words.first)
           return change_directory(words) if %w[cd pushd].include?(name)
           return export_variables(words) if %w[export declare local readonly typeset].include?(name)
 
           host = follow_script(words) == :followed
-          add_command(words, redirects, env, text, sudo)
+          add_command(words, redirects, env, text, sudo, xargs)
           @commands.last.host = true if host
         end
 
@@ -666,9 +668,9 @@ module Polispec
           end
         end
 
-        def add_command(words, redirects, env, text, sudo)
+        def add_command(words, redirects, env, text, sudo, xargs = false)
           @pipe ||= []
-          cmd = Command.new(argv: words, cwd: @cwd, redirects: redirects, env: env, pipeline: @pipe, index: @pipe.length, text: text, sudo: sudo)
+          cmd = Command.new(argv: words, cwd: @cwd, redirects: redirects, env: env, pipeline: @pipe, index: @pipe.length, text: text, sudo: sudo, xargs: xargs)
           @pipe << cmd
           @commands << cmd
           record_writes(cmd)

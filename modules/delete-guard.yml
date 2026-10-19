@@ -1,0 +1,10 @@
+schema: polispec.module/v1
+name: delete-guard
+summary: Denies deletes that reach the protected system and configuration folders and warns on single-file deletes beneath them and on xargs-fed deletes; the shipped layer composes it on every host and every rule is overridable.
+delete_protected:
+  exact: ["/", "~", /home, /etc, /usr, /var, /boot, /bin, /sbin, /lib, /lib64, /opt, /root, /sys, /proc, /dev, /usr/bin, /usr/sbin, /usr/lib, /usr/lib64]
+  tree: ["~/.ssh", "~/.ai", "~/.claude", "~/.config", "~/.rplugins", "~/.polispec"]
+rules:
+  - { id: G-DELETE-PROTECTED, match: { class: [fs.delete], delete_protected: true }, verdict: deny, overridable: true, reason: "this delete reaches a protected path; ask the operator, who can delete it from their own shell" }
+  - { id: G-DELETE-PROTECTED-FILE, match: { class: [fs.delete], delete_protected_file: true }, verdict: warn, overridable: true, reason: "this file lies under a protected folder; confirm before deleting it" }
+  - { id: G-DELETE-XARGS, match: { shape: [xargs_delete] }, verdict: warn, overridable: true, reason: "polispec cannot see targets fed through xargs; confirm before deleting" }
