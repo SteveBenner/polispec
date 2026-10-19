@@ -55,3 +55,8 @@ compatibility:
 repository:
   remote: https://github.com/SteveBenner/polispec.git
   store_path: polispec
+
+serves: real_users
+polispec:
+  project: polispec
+  environments: specs/polispec/environments.yml
