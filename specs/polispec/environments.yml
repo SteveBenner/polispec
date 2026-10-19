@@ -1,0 +1,31 @@
+schema: polispec.environments/v1
+project: "polispec"
+recorded: "2026-10-19"
+summary: "polispec environments: main is dev, test is the persistent instance, stable is production."
+environments:
+  dev:
+    branch: main
+    checkout: repo
+    tier: dev
+    worktrees: [".polispec-wt/*"]
+    audience: [operator]
+    exposure: loopback
+    data_classes: [synthetic, operational]
+  test:
+    branch: test
+    checkout: "~/.polispec/envs/polispec/test"
+    tier: test
+    audience: [operator]
+    exposure: none
+    data_classes: [synthetic, operational]
+    operators: [agent, operator]
+  prod:
+    branch: stable
+    checkout: "~/.polispec/envs/polispec/stable"
+    tier: prod
+    runs: tag
+    audience: [users]
+    exposure: none
+    data_classes: [operational]
+    operators: [operator]
+    rollback: "polispec deploy polispec stable --tag vPREV"

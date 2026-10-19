@@ -1,5 +1,7 @@
 # AGENTS.md: polispec
 
+[ENVS] when developing this repo: it serves real users; dev is `main`, test is `test`, prod is `stable`; run `polispec resolve .` before writing and obey its verdict; table in .agents/directives/envs.md   d/ENVS   ⚙ guard:polispec   ⚡ [always]
+
 polispec is a plugin built on rplugin, the SDK for agent-harness plugins, and
 installs and runs without it.
 `CLAUDE.md` links to this file, so every harness reads the same text.
