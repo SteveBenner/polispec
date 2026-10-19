@@ -608,7 +608,7 @@ module Polispec
       end
 
       def under?(path, root)
-        path == root || path.start_with?("#{root}/")
+        root == "/" || path == root || path.start_with?("#{root}/")
       end
 
       def canonical(path)
