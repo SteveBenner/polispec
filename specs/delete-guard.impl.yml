@@ -1,0 +1,125 @@
+schema: is.v1
+metadata:
+  name: polispec shipped delete guard
+  slug: delete-guard
+  version: 0.1.0
+  created: '2026-10-19'
+  status: accepted
+  base_commit: e72f252
+  base_version: 0.32.2
+  intended_release: 0.33.0
+  contract: specs/app.yml#delete_guard
+  worker: {harness: claude-code, agent: coding-worker, note: "AGENTS.md Part T: the primary wrote this blueprint and verifies; the worker implements every slice"}
+  decisions_by_sven:
+    - "Every delete-guard rule is overridable like every shipped rule; the shelf loosens one only by naming it in overrides through plan global and apply global."
+    - "The default protected list lives in the shipped module as data (delete_protected: {exact, tree}); the shelf extends it with the same key in global.yml or a shelf module, never removes."
+    - "Tree entries: deny recursive deletes, directory removals, find deletes and globs over the folder; warn on a single-file delete (rm without -r, unlink, shred)."
+    - "xargs feeding rm, rmdir, unlink or shred: warn, through a new shape xargs_delete."
+    - "Symlinked tree entries (after the real-call replay showed rm -rf ./build denied in every plugin repo): the folder a tree entry resolves to, and its ancestors, are protected in either spelling; beneath a symlinked entry's target only the lexical ~/. spelling is judged; a real-folder entry such as ~/.ssh stays covered through any alias. The BKUP hook follows the same rule."
+vision:
+  problem: >-
+    On the stock shelf polispec allows rm -rf ~/.ssh in every shape (absolute, ~, $HOME, a variable, bash -c, cd then rm .,
+    a symlink, a glob, find -delete), rm -rf /* and deletes under ~/.claude and ~/.config, with NO-RULE. Only G-LIVE-BINARIES
+    catches rm -rf ~, /home/sven and /usr/lib, by the coincidence that a process runs from there. protected_roots with
+    G-LOCATION-BOUND is the wrong tool: it also denies ordinary writes, allows everything when the session works inside the
+    root, and is subtree-only. match.path is raw File.fnmatch (no ~ expansion, no symlink resolution, /x/** does not reach
+    /x/a/b, a literal /* is not seen as covering /). xargs rm produces no fs.delete action at all.
+  outcome: >-
+    polispec ships modules/delete-guard.yml as a second shipped module. Its data key delete_protected lists exact entries
+    (the path itself) and tree entries (the path and everything below it); the shelf may add entries. Two predicates judge an
+    fs.delete against the union: delete_protected (deny tier) and delete_protected_file (warn tier). A new hint recursive on
+    fs.delete actions and a new shape xargs_delete give the rules what they need. Verdicts change only for deletes that reach
+    a protected entry and for xargs-fed deletes; every other verdict on the host is unchanged.
+  non_goals:
+    - Any change to fs.write judgments, protected_roots, G-LOCATION-BOUND or match.path semantics.
+    - Resolving a variable the parser cannot see; an unresolved operand keeps falling back to the working directory as today.
+    - A non-overridable rule kind, a new setting, a new verb.
+constraints:
+  - Ruby standard library only. Keep the two-line header (shebang, SPDX) every lib file carries.
+  - No comments or docstrings in code (AGENTS.md Part Q). The only new test material is the smoke scenario named below; the user asked for it and smoke is the product's own test machinery.
+  - Work only in /home/sven/github/foss/.polispec-wt/delete-guard (branch delete-guard). Never touch the pinned runtime, ~/.ai, the live clone /home/sven/github/foss/polispec, or the real ledger and shelf.
+  - Every verification run sets POLISPEC_STATE_HOME, POLISPEC_LEDGER, POLISPEC_HOME and POLISPEC_GLOBAL to scratch paths; never redirect XDG_STATE_HOME.
+  - Never run a real delete of any protected path to check a verdict. Judge commands only through bin/polispec explain, classify or hook pretool with JSON on stdin.
+  - No new rStack dependency; no new setting; no change to the judgment record schema.
+  - Back up in place before deleting anything (AGENTS.md Part E); nothing in this change deletes a file.
+surfaces:
+  code:
+    - modules/delete-guard.yml (new, shipped data and rules)
+    - lib/polispec/layers.rb (SHIPPED_INCLUDES gains delete-guard; a reader for the shipped modules' delete_protected data)
+    - lib/polispec/predicates.rb (delete_protected, delete_protected_file)
+    - lib/polispec/classify/commands/fs.rb (recursive hint on fs.delete; xargs_delete shape)
+    - lib/polispec/classify/shell.rb (Command records that its words came through an xargs wrapper)
+    - lib/polispec/classify/shapes.rb (NAMES gains xargs_delete)
+    - lib/polispec/harness_controls/language.rb (MATCH_KEYS and DYNAMIC_MATCH_KEYS gain the two predicates)
+    - lib/polispec/plan.rb (global plan classifies delete_protected entries like protected_roots)
+  contract:
+    - "schemas/policy.v1.yml, schemas/module.v1.yml, schemas/global.v1.yml, schemas/control.v1.yml, schemas/ledger.v1.yml: wherever live_binary is a match key, add delete_protected and delete_protected_file with the same type; wherever tmux_kill is a shape enum value, add xargs_delete; module.v1.yml and global.v1.yml gain the top-level delete_protected object"
+    - specs/app.yml (a delete_guard row; version)
+  doc:
+    - docs/schema.md (the two match keys, the shape, the top-level key, the shipped layer now has two modules)
+    - README.md (where it lists what polispec stops), CHANGELOG.md, FEATURES.md, TODO.md (only mark an existing item done)
+  test_machinery:
+    - smoke/scenarios/delete-guard.yml (new)
+  fleet: []
+design:
+  data:
+    file: "modules/delete-guard.yml, schema polispec.module/v1, name delete-guard, summary one sentence"
+    key: "delete_protected: {exact: [...], tree: [...]}, lists of path strings; a leading ~ or ~/ is expanded with File.expand_path"
+    exact_default: ["/", "~", /home, /etc, /usr, /var, /boot, /bin, /sbin, /lib, /lib64, /opt, /root, /sys, /proc, /dev, /usr/bin, /usr/sbin, /usr/lib, /usr/lib64]
+    tree_default: ["~/.ssh", "~/.ai", "~/.claude", "~/.config", "~/.rplugins", "~/.polispec"]
+    union: "The effective list is the union of: every shipped module's delete_protected (read from Polispec::ROOT through the shipped store), the global doc's top-level delete_protected (ctx[:global]), and each shelf module's delete_protected (ctx[:global]['modules'] values, the shape Layers.global already returns). No source can remove an entry. A live project's policy does not contribute."
+  rules:
+    - "G-DELETE-PROTECTED: match {class: [fs.delete], delete_protected: true}, verdict deny, overridable: true, reason saying the delete reaches a protected path and to ask the operator, who can delete it from their own shell"
+    - "G-DELETE-PROTECTED-FILE: match {class: [fs.delete], delete_protected_file: true}, verdict warn, overridable: true, reason saying the file lies under a protected folder and asking for confirmation"
+    - "G-DELETE-XARGS: match {shape: [xargs_delete]}, verdict warn, overridable: true, reason saying polispec cannot see targets fed through xargs and asking for confirmation"
+  composition: "Layers::SHIPPED_INCLUDES = %w[tool-declared delete-guard]; the shipped layer digest covers both; resolve --layers shows rules=33 for the shipped row"
+  recursive_hint:
+    rule: "Fs.deletes sets env_hint recursive: true on each fs.delete action when: rm has --recursive or a short-option cluster containing r or R (-r, -R, -rf, -fr, -Rf); the command is rmdir; the delete comes from find (-delete or -exec/-execdir/-ok/-okdir rm); or it comes from cargo clean. unlink, shred and rm without r carry no recursive key."
+  xargs_delete:
+    rule: "A command whose words a Wrappers xargs handler produced records that fact (a new Command member, set where the wrapper unwraps, the way sudo is carried). Fs.shapes adds xargs_delete when that member is set and the command name is in DELETERS. The shape rides on whatever actions the command yields, as cargo_clean does."
+  predicates:
+    names: "Predicates::NAMES gains delete_protected and delete_protected_file; both only ever match an fs.delete action"
+    target: "p = hint path. leaf = File.basename(p). contents = leaf is exactly one of *, .*, .[!.]*, ..?* or .??*; then base = File.dirname(p), else base = p. Two forms of base are compared: File.expand_path(base) (lexical) and Engine::Envs.canonical(File.expand_path(base)) (symlinks resolved). Each list entry is compared in the same two forms. A form 'matches' an entry when the base form equals the entry form; 'under' uses Engine::Envs.under?(base_form, entry_form); 'ancestor' means Engine::Envs.under?(entry_form, base_form) and the two differ."
+    delete_protected: "Yes when any pair of forms gives: base equals an exact entry; or contents and base equals, is under, or is an ancestor of any entry (exact or tree); or not contents, hint recursive, and base is at or under a tree entry or is an ancestor of any entry. The note names the entry and whether it is exact or tree."
+    delete_protected_file: "Yes when delete_protected is false and: not contents, no recursive hint, and base is at or under a tree entry. The note names the tree entry."
+    budget: "Pure path arithmetic plus at most one Envs.canonical per form; well inside Predicates::BUDGET"
+  plan: "Plan's global part map adds delete_protected entries keyed 'delete:exact:<path>' and 'delete:tree:<path>' beside the 'root:<path>' keys, so an added entry classifies as tightening and a removed one as loosening, exactly as a protected root does (lib/polispec/plan.rb near the protected_roots map)"
+  controls_language: "MATCH_KEYS and DYNAMIC_MATCH_KEYS in harness_controls/language.rb gain delete_protected and delete_protected_file next to live_binary"
+slices:
+  - id: data-and-schemas
+    owns_paths: [modules/delete-guard.yml, schemas/policy.v1.yml, schemas/module.v1.yml, schemas/global.v1.yml, schemas/control.v1.yml, schemas/ledger.v1.yml]
+    deliverable: the shipped module and every schema change above
+    acceptance: "bin/polispec validate module modules/delete-guard.yml prints ok; bin/polispec validate module modules/tool-declared.yml still ok; every YAML under examples/ and smoke/ that validated before still validates"
+  - id: classify
+    owns_paths: [lib/polispec/classify/commands/fs.rb, lib/polispec/classify/shell.rb, lib/polispec/classify/shapes.rb]
+    deliverable: recursive hint and xargs_delete shape
+    acceptance: "bin/polispec classify --json --cwd /tmp: rm -rf /x has recursive true on fs.delete; rm /x has no recursive key; rmdir /x and find /x -delete have recursive true; echo a | xargs rm -rf and find . -print0 | xargs -0 rm -f carry shape xargs_delete; sudo rm -rf /x still has recursive true"
+  - id: engine
+    owns_paths: [lib/polispec/predicates.rb, lib/polispec/layers.rb, lib/polispec/harness_controls/language.rb, lib/polispec/plan.rb]
+    depends_on: [data-and-schemas, classify]
+    deliverable: SHIPPED_INCLUDES, the shipped delete_protected reader, both predicates, controls language keys, plan classification
+    acceptance: see verification
+  - id: docs-and-smoke
+    owns_paths: [docs/schema.md, README.md, smoke/scenarios/delete-guard.yml]
+    depends_on: [engine]
+    deliverable: "docs as listed; one smoke scenario, unit modules/delete-guard (match the unit naming the coverage report already uses), that judges with hook steps (expect decision and rule, as smoke/scenarios/hook-pretool-session.yml does) under the fixture's scratch home (see how harness.yml or noise.yml use {{home}} or fixture home) so ~ entries resolve inside the scratch home: rm -rf {{home}}/.ssh deny G-DELETE-PROTECTED, rm {{home}}/.ssh/old_key warn G-DELETE-PROTECTED-FILE, rm -rf /* deny, rm -rf / deny, echo x | xargs rm -rf warn G-DELETE-XARGS, rm -rf ./build inside the fixture project allow, echo hi > {{home}}/.ssh/config not judged by any G-DELETE rule"
+    acceptance: "bin/polispec smoke run --unit 'modules/delete-guard' passes; bin/polispec smoke coverage lists the unit"
+verification:
+  probe: "The primary's probe kit /home/sven/.cache/claude-code-tmp/claude-1000/-home-sven-github-foss-polispec/3cad82c8-2aa5-41bd-a08d-c62e5e55a0ca/scratchpad/probe/run.sh <shelf-dir> <polispec-bin> (25 delete commands from two cwds, JSON through explain with scratch POLISPEC_* state). Run it with the stock shelf /home/sven/.ai/polispec (read only) and this tree's bin/polispec."
+  expected:
+    - "deny G-DELETE-PROTECTED: every ~/.ssh shape except the xargs line and the redirect and mv lines (rm -rf absolute, ~, $HOME, \"$HOME/.ssh\", ~/.ssh/known_hosts.d, ~/.ssh/*, the scratch symlink lnk-ssh/keys, cd ~/.ssh && rm -rf ., cd ~ && rm -rf .ssh, D=~/.ssh; rm -rf \"$D\", bash -c, find ~/.ssh -delete), rm -rf /, rm -rf /*, rm -rf /home/sven, rm -rf ~, rm -rf /home/sven/.config/a, rm -rf /home/sven/.config/a/b, rm -rf ~/.claude/x/y, rm -rf /home/sven/.claude/x/y. A row that G-LIVE-BINARIES already denied may keep that rule id (strictest verdict wins, lowest layer reported on ties); report which id each row shows."
+    - "warn G-DELETE-XARGS: echo ~/.ssh | xargs rm -rf"
+    - "unchanged from v0.32.2: mv ~/.ssh /tmp/x, echo hi > ~/.ssh/config (no G-DELETE rule), rm -rf /usr/lib (G-LIVE-BINARIES), rm -rf <scratch>/t/nobackup/dir (allow)"
+  extra:
+    - "rm ~/.ssh/known_hosts.old, unlink ~/.ssh/config, shred -u ~/.ssh/id_x: warn G-DELETE-PROTECTED-FILE"
+    - "rm -rf /usr/local/nothing-here and rm -rf /home/sven/github/nothing-here: no G-DELETE rule (exact entries do not cover children)"
+    - "rm -rf /home/sven/bitbucket/paterasai (an ancestor of the canonical ~/.ai) and rm -rf /home/sven/bitbucket/paterasai/*: deny G-DELETE-PROTECTED"
+    - "a scratch shelf copy whose global.yml adds delete_protected: {tree: [/tmp/guarded]}: rm -rf /tmp/guarded/x deny; bin/polispec plan global against that shelf classifies tightening; removing the entry again classifies loosening"
+    - "a scratch shelf copy with overrides naming G-DELETE-PROTECTED and a looser rule: rm -rf ~/.ssh no longer denied by G-DELETE-PROTECTED"
+    - "explain writes nothing; resolve --layers shows the shipped row with both modules"
+  smoke: "bin/polispec smoke run --against /home/sven/bitbucket/paterasai/rstack-uber/plugins/.pinned/polispec/7e3da68d13fe9809a46badd46963cb6a088f8dec --no-record: every scenario passes; list every diff that is not the runtime kind, a commit, a path, an id or the version line"
+  checks: "ruby -wc on every changed .rb; YAML load on every changed .yml; ~/.rplugin/bin/rplugin check on the worktree (the directory-name and the two .rproject findings are known)"
+out_of_scope:
+  - Committing, tagging, version bumps, CHANGELOG, FEATURES and specs/app.yml; the primary does those after verification
+  - Any change to the BKUP hook in ~/.ai
+  - Codex and Antigravity adapters

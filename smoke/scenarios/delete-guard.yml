@@ -1,0 +1,44 @@
+schema: polispec.smoke-scenario/v1
+unit: delete_guard
+summary: the shipped delete guard denies recursive deletes that reach a protected folder or the filesystem root, warns on a single-file delete under a protected folder and on an xargs-fed delete, and leaves a delete inside a project and a write to a protected folder to the other rules
+fixture:
+  enforce: enforce
+  global: files
+  global_files:
+    "global.yml": "schema: polispec.global/v1\nsummary: Smoke baseline with one rule so every path is governed.\nrules:\n  - { id: SMOKE-NOSECRETS, match: { class: [secrets.read], env: prod }, verdict: deny, reason: \"smoke baseline: no production secrets\" }\n"
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      files:
+        "README.md": "shop\n"
+        "build/out.txt": "x\n"
+steps:
+  - name: recursive delete of a protected folder is denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{home}}/.ssh" }, cwd: "{{project.shop}}" }
+    home: true
+    expect: { decision: deny, rule: G-DELETE-PROTECTED }
+  - name: single-file delete under a protected folder warns
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm {{home}}/.ssh/old_key" }, cwd: "{{project.shop}}" }
+    home: true
+    expect: { decision: ask, rule: G-DELETE-PROTECTED-FILE }
+  - name: deleting the contents of the filesystem root is denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf /*" }, cwd: "{{project.shop}}" }
+    home: true
+    expect: { decision: deny, rule: G-DELETE-PROTECTED }
+  - name: deleting the filesystem root is denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf /" }, cwd: "{{project.shop}}" }
+    home: true
+    expect: { decision: deny }
+  - name: an xargs-fed delete warns
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "echo x | xargs rm -rf" }, cwd: "{{project.shop}}" }
+    home: true
+    expect: { decision: ask, rule: G-DELETE-XARGS }
+  - name: deleting a build folder inside the project is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf ./build" }, cwd: "{{project.shop}}" }
+    home: true
+    expect: { decision: allow }
+  - name: writing to a protected folder is not judged by a delete rule
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "echo hi > {{home}}/.ssh/config" }, cwd: "{{project.shop}}" }
+    home: true
+    expect: { decision: allow }

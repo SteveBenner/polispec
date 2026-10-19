@@ -507,6 +507,10 @@ module Polispec
       roots = Array(doc["protected_roots"]).each_with_object({}) do |entry, memo|
         memo["root:#{entry['path'] || entry}"] = entry
       end
+      protected_deletes = [doc] + (doc["modules"] || {}).values
+      Layers.delete_protected_union(protected_deletes).each do |kind, paths|
+        paths.each { |path| roots["delete:#{kind}:#{path}"] = path }
+      end
       modules = (doc["modules"] || {}).keys.to_h { |name| [name, name] }
       profiles = (doc["profiles"] || {}).to_h { |name, list| ["profile:#{name}", list] }
       { "rules" => rules, "modules" => modules.merge(profiles), "hermetic" => roots }

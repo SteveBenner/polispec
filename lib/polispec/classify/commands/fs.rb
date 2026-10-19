@@ -46,6 +46,7 @@ module Polispec
           found = []
           found << "cargo_clean" if cargo_clean?(cmd)
           found << "lockfile_edit" if lockfile_writer?(cmd)
+          found << "xargs_delete" if cmd.xargs && DELETERS.include?(cmd.name)
           found
         end
 
@@ -56,7 +57,24 @@ module Polispec
         end
 
         def deletes(cmd)
-          delete_paths(cmd).reject { |path| Support.discard?(path) }.map { |path| Support.act("fs.delete", cmd.text, "path" => path) }
+          recursive = recursive_delete?(cmd)
+          delete_paths(cmd).reject { |path| Support.discard?(path) }.map do |path|
+            hints = { "path" => path }
+            hints["recursive"] = true if recursive
+            Support.act("fs.delete", cmd.text, hints)
+          end
+        end
+
+        def recursive_delete?(cmd)
+          return true if cargo_clean?(cmd)
+
+          case cmd.name
+          when "rmdir", "find" then true
+          when "rm"
+            flags = Support.split_args(cmd.args).last
+            flags.any? { |flag| flag == "--recursive" || (!flag.start_with?("--") && flag.match?(/\A-[A-Za-z]*[rR]/)) }
+          else false
+          end
         end
 
         def delete_paths(cmd)

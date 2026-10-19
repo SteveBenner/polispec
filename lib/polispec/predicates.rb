@@ -3,8 +3,9 @@
 
 module Polispec
   module Predicates
-    NAMES = %w[lock_held live_binary supervised pin_regress tag_claimed base_unpushed in_development].freeze
+    NAMES = %w[lock_held live_binary delete_protected delete_protected_file supervised pin_regress tag_claimed base_unpushed in_development].freeze
     BUDGET = 2.0
+    CONTENTS_LEAVES = %w[* .* .[!.]* ..?* .??*].freeze
     LOCK_MANIFEST = "TMP_AGENT_FILE_LOCKS.yml".freeze
     UNOWNED_WINDOW = 600
     SUPERVISOR_TTL = 60
@@ -252,6 +253,60 @@ module Polispec
       Engine::Envs.under?(exe, root) ? exe : nil
     rescue SystemCallError
       nil
+    end
+
+    def check_delete_protected(action, ctx)
+      kind, note = delete_verdict(action, ctx)
+      kind == :deny ? yes(note) : no
+    end
+
+    def check_delete_protected_file(action, ctx)
+      kind, note = delete_verdict(action, ctx)
+      kind == :file ? yes(note) : no
+    end
+
+    def delete_verdict(action, ctx)
+      return nil unless action.action_class == "fs.delete"
+
+      target = hint(action)["path"]
+      return nil unless target.is_a?(String) && !target.empty?
+
+      contents = CONTENTS_LEAVES.include?(File.basename(target))
+      recursive = hint(action)["recursive"] == true
+      base = contents ? File.dirname(target) : target
+      lexical = File.expand_path(base)
+      forms = [lexical, Engine::Envs.canonical(lexical)]
+      found = delete_entries(ctx).filter_map { |kind, entry| delete_entry_verdict(forms, entry, kind, contents, recursive) }
+      found.find { |verdict| verdict.first == :deny } || found.first
+    end
+
+    def delete_entry_verdict(forms, entry, kind, contents, recursive)
+      lexical = File.expand_path(entry)
+      pairs = forms.zip([lexical, Engine::Envs.canonical(lexical)])
+      equal = pairs.any? { |base, root| base == root }
+      real = lexical == pairs.last.last
+      under = Engine::Envs.under?(*pairs.first) || (real && Engine::Envs.under?(*pairs.last))
+      ancestor = pairs.any? { |base, root| base != root && Engine::Envs.under?(root, base) }
+      tree = kind == :tree
+      label = "#{entry} (#{kind})"
+      return [:deny, "reaches protected #{label}"] if equal && kind == :exact
+      return [:deny, "reaches protected #{label}"] if contents && (equal || ancestor || (tree && under))
+      return [:deny, "reaches protected #{label}"] if !contents && recursive && ((tree && (equal || under)) || ancestor)
+      return [:file, "lies under protected #{label}"] if !contents && !recursive && tree && (equal || under)
+
+      nil
+    end
+
+    def delete_entries(ctx)
+      docs = []
+      shelf = ctx[:global]
+      if shelf.is_a?(Hash)
+        docs << shelf
+        docs.concat(shelf["modules"].values) if shelf["modules"].is_a?(Hash)
+      end
+      union = Layers.delete_protected_union(docs)
+      shipped = Layers.shipped_delete_protected
+      %w[exact tree].flat_map { |kind| (shipped[kind] + union[kind]).uniq.map { |path| [kind.to_sym, path] } }
     end
 
     def check_supervised(action, _ctx)

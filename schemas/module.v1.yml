@@ -40,6 +40,12 @@ properties:
       dev: { $ref: "#/$defs/hermetic" }
       test: { $ref: "#/$defs/hermetic" }
       prod: { $ref: "#/$defs/hermetic" }
+  delete_protected:
+    type: object
+    additionalProperties: false
+    properties:
+      exact: { $ref: "#/$defs/string_list" }
+      tree: { $ref: "#/$defs/string_list" }
 $defs:
   module_name: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }
   include_param:
@@ -93,6 +99,8 @@ $defs:
       shape: { $ref: "#/$defs/string_list" }
       lock_held: { const: true }
       live_binary: { const: true }
+      delete_protected: { const: true }
+      delete_protected_file: { const: true }
       supervised: { const: true }
       pin_regress: { const: true }
       tag_claimed: { const: true }
