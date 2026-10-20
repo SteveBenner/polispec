@@ -1,0 +1,87 @@
+schema: polispec.smoke-scenario/v1
+unit: effect
+summary: every judgment carries the epoch, a registered path writes a chained change record whose epoch_after the next judgment carries, the first pretool call after the change adds one notice line and the next adds none, session hooks leave session records, and changes await exits 1 for a session with no call since and 0 after one
+requires: [harness_controls]
+fixture:
+  enforce: enforce
+  global: files
+  global_files:
+    "global.yml": "schema: polispec.global/v1\nsummary: Smoke baseline with one rule so every path is governed.\nrules:\n  - { id: SMOKE-NOSECRETS, match: { class: [secrets.read], env: prod }, verdict: deny, reason: \"smoke baseline: no production secrets\" }\n"
+  projects:
+    - id: shop
+      variant: service
+      status: live
+steps:
+  - name: a session start leaves a session record
+    hook:
+      harness: claude
+      event: session
+      cwd: "{{project.shop}}"
+    expect:
+      decision: context
+  - name: a session start outside any project leaves a record too
+    hook:
+      harness: claude
+      event: session
+      cwd: "{{files}}"
+    expect:
+      decision: allow
+  - name: the session record names the project and the harness
+    run: [sh, -c, 'grep -q "\"event\":\"SessionStart\"" "$1" && grep -q "\"project\":\"shop\"" "$1" && grep -q "\"harness\":\"claude\"" "$1" && grep -q "\"project\":null" "$1" && grep -q "\"epoch\":\"ep_" "$1"', sh, "{{scratch}}/state/sessions.jsonl"]
+    expect: { exit: 0 }
+  - name: the first pretool call only records the epoch seen
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "ls" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: the judgment carries an epoch
+    run: [sh, -c, 'grep -q "\"epoch\":\"ep_[0-9a-f]\{16\}\"" "$1"', sh, "{{scratch}}/state/judgments.jsonl"]
+    expect: { exit: 0 }
+  - name: create a directory to register
+    run: [mkdir, -p, "{{files}}/tools"]
+    expect: { exit: 0 }
+  - name: register the directory
+    run: ["{{polispec}}", register, "{{files}}/tools", --id, tools]
+    expect: { exit: 0 }
+  - name: the change record is chained and verifies
+    run: ["{{polispec}}", changes, verify]
+    expect:
+      exit: 0
+      stdout_includes: ["chain ok"]
+  - name: the change list shows the register change
+    run: ["{{polispec}}", changes, list]
+    expect:
+      exit: 0
+      stdout_includes: ["register id=tools", "next call (host)"]
+  - name: await names the session that has made no call since
+    run: [sh, -c, 'id=$("$1" changes list | awk "/ register /{print \$2}" | tail -n 1); out=$("$1" changes await "$id" --timeout 1); code=$?; printf "%s\n" "$out"; test "$code" -eq 1 && printf "%s" "$out" | grep -q "pending smoke"', sh, "{{polispec}}"]
+    expect:
+      exit: 0
+  - name: the next pretool call adds one notice line and keeps the verdict
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "ls" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: context
+      stdout_includes: ["polispec: register tools landed"]
+  - name: the following call adds no notice
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "ls" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+      stdout_excludes: ["landed"]
+  - name: await exits 0 once the session has called since
+    run: [sh, -c, 'id=$("$1" changes list | awk "/ register /{print \$2}" | tail -n 1); "$1" changes await "$id" --timeout 5', sh, "{{polispec}}"]
+    expect:
+      exit: 0
