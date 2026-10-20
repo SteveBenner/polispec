@@ -173,6 +173,8 @@ polispec reads these machine settings. Unsealed, each comes from the first of: i
 | `polispec.global.ref` | `main` | Ref of that repository the layer is read from with `git show`; the working tree is never read. |
 | `polispec.global.path` | `polispec` | Directory inside the repository that holds `global.yml`, `profiles.yml` and `modules/`. |
 | `polispec.logs.count_command` | unset | Argv template (no shell) for the `logs_quiet` gate; takes `{service}`, `{since}` and `{until}` and prints one integer. Unset fails the gate closed. `RPLUGIN_POLISPEC_POLISPEC_LOGS_COUNT_COMMAND` overrides it. |
+| `polispec.notice` | `on` | `off` stops the in-band epoch notice (see [When a change lands](#when-a-change-lands-the-epoch-notice)). |
+| `polispec.description.strict` | `off` | `on` turns the description lint warnings of `polispec validate` into errors (exit 1). |
 | `polispec.records.raw` | `off` | `on` adds the classifier's raw view of the judged command or target, at most 2048 bytes, to each judgment record in local state; `off` keeps only the call digest. Raw text never goes through the events port. |
 
 The guard is a hook in each agent harness. The plugin ships `hooks/polispec.hooks.yml`, which rplugin renders for Claude Code (installed natively since 0.22.0; needs rplugin 1.15.0 for `SubagentStart`), Hermes, Pi, the DeepSeek TUI and Antigravity CLI. Every hook runs `bin/polispec-guard <pretool|session> --harness <name>`, a bash shim that:
@@ -260,6 +262,8 @@ The proposed pattern is the exact, unexpanded text of the triggering command, wi
 
 **Where it applies.** `exceptions.yml` sits at the root of the global shelf and is read from the committed ref, so editing the working copy changes nothing until it is committed. The file is a protected path: an agent's Write, Edit or redirect into it is denied like an edit of the ledger. A program the classifier cannot read, such as an interpreter running inline code, is still an unknown write, as for every protected path. `polispec.exceptions off` (or `POLISPEC_EXCEPTIONS=off`) honors no entry, records no proposal and adds no hint. `polispec doctor` reports `exceptions_invalid` for a file that fails its schema; an invalid file honors nothing.
 
+**Delegating the typed phrase (standard edition only).** Since 0.34.0 an application such as the web app can relay the phrase of `exceptions add`, `promote` and `remove` through the delegate runner. The operator grants it at a terminal with the verbs `exceptions-add`, `exceptions-promote` and `exceptions-remove` beside `promote` and `deploy` (see [Delegation](#delegation-letting-an-application-run-promote-and-deploy)). The runner accepts for each verb only the flags `exceptions` itself takes (`add`: `--command`, `--tool`, `--kind`, `--rule`, `--note`, `--global`; `promote`: `--command`, `--note`, `--global` and `apr_` proposal ids; `remove`: an `aex_` id), and every other flag or argument is refused with the reason `flag not granted` or similar. The relayed run stays a terminal confirmation made reachable from the application: the phrase is still typed by a person. Under the lock edition the feature does not exist (`exceptions.delegate_promote` is excluded): `delegate grant` refuses the verbs with `edition_excluded` and a runner refuses a request for them with `verb not available in this edition`. Exceptions themselves are also off under lock.
+
 ## Projects in development
 
 Agents working in a project write an env file and `source` it on nearly every task. The commands of a sourced file are invisible to the classifier, so since 0.24.0 a governed line that runs `eval`, `source` or `.` asks `POLISPEC-TOOL-UNKNOWN`. A ledger project with `status: onboarding` is listed but not enforced, which is the guard's word for a project in development, so since 0.30.0 that one ask is not raised there.
@@ -278,6 +282,41 @@ Since 0.32.0 that relaxation is a rule polispec ships: `TOOL-OPAQUE-DEVELOPMENT`
 ## Allow-once prompt
 
 `polispec allow-once <id>` prints the grant before it asks for the typed phrase: the project, environment, action class and rule, then the call itself. For a file tool the call is the tool name and the absolute target path, for example `edit /srv/shop/specs/polispec/policy.yml`, so the operator sees what the grant unlocks. The same text is stored as `raw` in the allow-once log and appears in the verdict reason. Refusals use the promote vocabulary: `not_tty` without a terminal and `confirmation_failed` on a wrong phrase.
+
+## Rolling out 0.34.0
+
+An installed polispec older than 0.34.0 rejects a ledger that carries `paths`, `owner` or `registered_by`, and any rulebook or ledger entry that carries `description`: every object rejects unknown keys, so the older guard cannot load them. Install 0.34.0 first, then use the new keys.
+
+1. Pin and install 0.34.0 (`polispec pin --ref <tag>`, or `rplugin install polispec --ref <tag>`), then run `polispec doctor` and check that the runtime is the new release.
+2. Only then register paths, add `description` to a policy, roster, environments file, global layer or module, or apply the environment-control package to a new project (it now stamps `owner` and `registered_by` on the entry it adds).
+3. Run `polispec doctor` again. It guards the order from both sides:
+   - `ledger_ahead_of_runtime` (warn) names the keys the ledger uses while the installed release is older than 0.34.0.
+   - `description_ahead_of_runtime` (warn) says a trust ref, the shelf or the ledger uses `description` while the installed release is older, and that the older runtime would judge by `fallback_rules`.
+   - `launcher_stale` (warn) names a session that still runs an older launcher than the installed release; run `/reload-plugins` in that session or start a new one.
+   - `codex_hook_untrusted` (warn) and `codex_hook_unverified` (info) report a Codex hook that reaches polispec but is not trusted, or whose trust cannot be checked offline; open `/hooks` in Codex, review and trust it, and start a new Codex session.
+   - `description_missing` (info) and `description_invalid` (warn) report the rulebooks that lack a description or whose description fails the lint.
+   - `editions_drift` (warn) repeats `polispec editions --check`.
+
+The writers refuse while the installed release is older than 0.34.0. `polispec register`, `polispec unregister` and the package apply that adds a project entry (`polispec apply environment-control`) fail with code `runtime_behind`, which names the installed release and says to install 0.34.0 first; with `--dry-run` (or `plan`) they still print the preview and add a note that the apply will be refused. A host with no installed release, or one at 0.34.0 or later, is unchanged. The release is read the same way `polispec doctor` reads it: the native pin (`<data home>/current/VERSION`), then a pinned runtime's own `VERSION`.
+
+## Registering software, directories and the system scope
+
+A path entry brings something that is not a git repository under polispec. `polispec register <path>` writes the proposed ledger to `<state home>/register/<id>.ledger.yml`, runs `plan` on it, prints the plan and applies it when the plan is a tightening (an onboarding add); `--dry-run` stops after the plan, and `--confirm PLAN_ID` applies a plan that needs confirmation. `unregister <id>` sets the entry to `retired`, which is a loosening and needs `--confirm`.
+
+- `--kind software|directory|system` (default `directory`). `system` registers only the home directory.
+- `--id` defaults to the path's base name, lowercased with other characters replaced by hyphens, at most 41 characters; it must be unique across projects and paths.
+- `--description` is optional, 1 to 4000 characters, and passes the same lint as any rulebook description.
+- It refuses a missing path (`path_missing`), a path inside a ledgered project's repository or worktree (`inside_project`), an id collision (`id_collision`), an already registered path (`path_registered`), and, under the lock edition, every governed path (`edition_restricted`): the protected ledger the sealed plane names is the only way to add one there.
+- The entry's `owner` is the uid and login name of the process that registered it and `registered_by` is `POLISPEC_ACTOR` or `cli`. The entry starts `onboarding` and changes nothing; its module `paths/<id>.yml` on the global shelf is written separately with `plan global` and `apply global`, and the entry becomes `live` through a plan the operator confirms.
+- The skill `polispec-register` walks an agent through this.
+
+## Publishing the index
+
+`polispec manifest index` prints the local index of every non-retired project and path entry (`docs/schema.md#manifest-polispecmanifestv1-and-the-index-polispecindexv1`). `polispec manifest index --publish` is an operator action and needs an interactive terminal, the directory `/var/lib/polispec/index` to exist and be writable by you (polispec does not create it), and the phrase `publish polispec index for <user>`. It writes `/var/lib/polispec/index/<user>.json` with mode 0644, so every local user can read the owners and governed paths in it. `--unpublish` removes only your file after the phrase `unpublish polispec index for <user>`. Publishing is opt-in, never automatic, and does not exist under the lock edition (`manifest.index_publish`; `edition_excluded`). `POLISPEC_INDEX_DIR` redirects the directory on an unsealed host, for scratch runs.
+
+## When a change lands: the epoch notice
+
+polispec derives an epoch from everything that decides a verdict: the runtime, the edition, the ledger, the layers and the global shelf, every live project's trust-ref commit, the control plane, and the enforce, relax and exceptions settings. Every change polispec itself applies (a plan, a register, a manifest publish, an exception) is recorded with the epoch before and after. In both editions, the first tool call a session makes after the epoch changed gets one line of context, at most 300 characters, once per session per epoch: `polispec: <kind> <subject> landed <age> (epoch <8 hex>); it applies from this call.`, with `Hooks changed: run /reload-plugins.` appended when the change touched hooks. A session sees no notice for its first call, and none when the epoch changed without a recorded change. `polispec.notice off` disables it. `polispec changes` lists the recorded changes. See [When a change takes effect](effect.md) for which changes need a restart.
 
 ## Delegation: letting an application run promote and deploy
 

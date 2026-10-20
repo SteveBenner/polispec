@@ -45,6 +45,18 @@ module Polispec
   autoload :GitHook, File.join(LIB, "git_hook")
   autoload :Controls, File.join(LIB, "controls")
   autoload :ControlRegistry, File.join(LIB, "control_registry")
+  autoload :Description, File.join(LIB, "description")
+  autoload :Effect, File.join(LIB, "effect")
+  autoload :Registration, File.join(LIB, "registration")
+  autoload :Manifest, File.join(LIB, "manifest")
+  autoload :Editions, File.join(LIB, "editions")
+  autoload :Author, File.join(LIB, "author")
+  autoload :Web, File.join(LIB, "web")
+  autoload :Sessions, File.join(LIB, "sessions")
+  autoload :Changes, File.join(LIB, "changes")
+  autoload :HookMemo, File.join(LIB, "hook_memo")
+  autoload :Notice, File.join(LIB, "notice")
+  autoload :Chain, File.join(LIB, "chain")
 
   module HarnessControls
     autoload :Contracts, File.join(LIB, "harness_controls", "contracts")

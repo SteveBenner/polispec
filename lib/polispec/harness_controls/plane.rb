@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require_relative "../hook_memo"
 require_relative "authority"
 require_relative "../operator/tty"
 require_relative "../operator/gates"
@@ -19,7 +20,7 @@ module Polispec
       module_function
 
       def resolve
-        resolve_root(Authority::ROOT_PATH, require_protected: true, development: false)
+        HookMemo.copy(:plane_resolve) { resolve_root(Authority::ROOT_PATH, require_protected: true, development: false) }
       end
 
       def development_resolve(root)
@@ -110,6 +111,10 @@ module Polispec
       end
 
       def requested_edition
+        HookMemo.fetch(:requested_edition) { requested_edition_uncached }
+      end
+
+      def requested_edition_uncached
         plane = resolve
         raise Authority::Failure.new("broken_plane", "sealed plane is broken", plane["findings"]) if plane["status"] == "broken"
         floor = build_edition

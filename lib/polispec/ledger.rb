@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require_relative "hook_memo"
+
 module Polispec
   class Ledger
     class Invalid < Polispec::Error; end
@@ -79,6 +81,10 @@ module Polispec
 
     def self.load(path = nil)
       path = File.expand_path(path || default_path)
+      HookMemo.fetch(:ledger_load, path) { load_uncached(path) }
+    end
+
+    def self.load_uncached(path)
       return new({}, path: path, digest: nil) unless File.file?(path)
 
       bytes = File.read(path)
@@ -139,6 +145,10 @@ module Polispec
     end
 
     def locate(path, paths: false)
+      HookMemo.fetch(:locate, object_id, path.to_s, paths) { locate_uncached(path, paths) }
+    end
+
+    def locate_uncached(path, paths)
       real = canonical(path)
       return nil if real.nil?
 
@@ -250,6 +260,10 @@ module Polispec
     end
 
     def real_or_nil(path)
+      HookMemo.fetch(:real_or_nil, path) { real_or_nil_uncached(path) }
+    end
+
+    def real_or_nil_uncached(path)
       existing = path
       existing = File.dirname(existing) until File.exist?(existing) || existing == "/"
       tail = path[existing.length..]

@@ -4,6 +4,7 @@
   "description": "Spec-based policy guardrails for agentic development and operations: committed environment policies and deterministic harness controls, with explicit backend capabilities and enforcement limits.",
   "repository": "https://github.com/SteveBenner/polispec",
   "skills": [
-    "./skills/polispec"
+    "./skills/polispec",
+    "./skills/polispec-register"
   ]
 }

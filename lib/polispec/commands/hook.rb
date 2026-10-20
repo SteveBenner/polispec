@@ -14,6 +14,9 @@ require_relative "../editions"
 require_relative "../effect"
 require_relative "../sessions"
 require_relative "../notice"
+require_relative "../fastpath"
+require_relative "../classify/benign"
+require_relative "../classify/shapes"
 
 module Polispec
   module DeferredEvents
@@ -100,14 +103,16 @@ module Polispec
       klass = Harness.const_get(ADAPTERS.fetch(harness, :Generic))
       adapter = Class.new(klass) { def ask?; true; end }.new(harness)
       within_budget do
-        input = adapter.parse(raw)
-        @input = input
-        @diagnostic_read = diagnostic_input?(adapter, input)
-        @judged = { "targets" => [], "raw" => nil, "control" => nil, "fastpath_key" => nil, "governed" => false, "mode" => nil, "verdict" => nil, "error" => nil }
-        @explain_state = nil
-        judge(adapter, input, { "controls_file" => options["controls_file"], "controls_project" => options["controls_project"] })
-        raise Polispec::Error, "judgment failed: #{@judged['error']}" if @judged["error"]
-        explained(input)
+        PolicySource.memoize do
+          input = adapter.parse(raw)
+          @input = input
+          @diagnostic_read = diagnostic_input?(adapter, input)
+          @judged = { "targets" => [], "raw" => nil, "control" => nil, "fastpath_key" => nil, "governed" => false, "mode" => nil, "verdict" => nil, "error" => nil }
+          @explain_state = nil
+          judge(adapter, input, { "controls_file" => options["controls_file"], "controls_project" => options["controls_project"] })
+          raise Polispec::Error, "judgment failed: #{@judged['error']}" if @judged["error"]
+          explained(input)
+        end
       end
     ensure
       DeferredEvents.queue.clear
@@ -420,9 +425,10 @@ module Polispec
           target.env = Engine::Envs.for_action(action, target, { cwd: cwd, ledger: ledger })
           cache[key] = target
         elsif baseline
-          id = owner ? owner.id : GLOBAL_ID
-          env = id == GLOBAL_ID ? "dev" : Engine::Envs.cwd_env({}, ledger, id, cwd)
-          target = Target.new(project: id, env: env, policy: { "rules" => [] }, roster: nil, policy_source: "global", digest: Layers.fingerprint)
+          id = owner ? owner.id : (Engine::Envs.path_entry(action, ledger, cwd) || GLOBAL_ENTRY).id
+          path = !owner && id != GLOBAL_ID
+          env = id == GLOBAL_ID || path ? "dev" : Engine::Envs.cwd_env({}, ledger, id, cwd)
+          target = Target.new(project: id, env: env, policy: { "rules" => [] }, roster: nil, policy_source: path ? "path" : "global", digest: Layers.fingerprint)
           target.env = Engine::Envs.for_action(action, target, { cwd: cwd, ledger: ledger })
           cache[key] = target
         else
@@ -742,7 +748,7 @@ module Polispec
         if owner && owner.status == "live"
           (groups[[:live, owner.id]] ||= [:live, owner, []])[2] << action
         elsif baseline && !(owner && owner.status == "retired")
-          id = owner ? owner.id : GLOBAL_ID
+          id = owner ? owner.id : (Engine::Envs.path_entry(action, ledger, cwd) || GLOBAL_ENTRY).id
           (groups[[:baseline, id]] ||= [:baseline, id, []])[2] << action
         end
       end
@@ -750,12 +756,14 @@ module Polispec
     end
 
     GLOBAL_ID = "global"
+    GLOBAL_ENTRY = Struct.new(:id).new(GLOBAL_ID)
 
     def evaluate_baseline(adapter, input, ledger, cwd, id, actions, mode)
-      env = id == GLOBAL_ID ? "dev" : Engine::Envs.cwd_env({}, ledger, id, cwd)
+      path = id != GLOBAL_ID && ledger.project(id).nil? && !ledger.path_entry(id).nil?
+      env = id == GLOBAL_ID || path ? "dev" : Engine::Envs.cwd_env({}, ledger, id, cwd)
       digest = Layers.fingerprint
       @policy_digests << digest unless digest.to_s.empty?
-      target = Target.new(project: id, env: env, policy: { "rules" => [] }, roster: nil, policy_source: "global", digest: digest)
+      target = Target.new(project: id, env: env, policy: { "rules" => [] }, roster: nil, policy_source: path ? "path" : "global", digest: digest)
       context = { ledger: ledger, cwd: cwd, session_id: input.session_id, role: (input.agent_type.to_s.empty? ? nil : input.agent_type), tool: input.tool_name.to_s, issue_allow_once: mode == "enforce" && !adapter.ask? }
       context.merge!(excepted: rule_lifter(input, cwd), exceptions_used: @exceptions_used) if @exceptions_active
       outcome = Engine.explain(actions, target, context)

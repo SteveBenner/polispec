@@ -100,7 +100,7 @@ steps:
     expect:
       exit: [0, 1]
       stdout_includes: ['"runtime":{"kind":']
-      stdout_excludes: ['"project":"shop"']
+      stdout_excludes: ['"project":"shop","kind":"repo_missing"', '"project":"shop","kind":"policy_missing"', '"project":"shop","kind":"policy_invalid"', '"project":"shop","kind":"policy_unreadable"', '"project":"shop","kind":"health_required"', '"project":"shop","kind":"gate_unreachable"', '"project":"shop","kind":"layers_invalid"', '"project":"shop","kind":"profile_check"', '"project":"shop","kind":"roster_missing"', '"project":"shop","kind":"agents_drift"', '"project":"shop","kind":"not_live"', '"project":"shop","kind":"package_upgrade_available"', '"project":"shop","kind":"package_file_drift"']
   - name: the trust ref is changed so a deploying environment has no health check
     run: [sh, -c, 'git checkout -q stable && sed -i "/^      health:$/,/^        run: /d" specs/polispec/environments.yml && git add specs/polispec/environments.yml && git commit -q -m nohealth -- specs/polispec/environments.yml && git checkout -q main']
     cwd: "{{project.shop}}"
@@ -131,7 +131,7 @@ steps:
     run: ["{{polispec}}", doctor]
     expect:
       exit: 1
-      stdout_includes: ["shop  package_file_drift (info)  specs/polispec/roster.yml differs from the environment-control 1.1.0 record", "fresh  not_live  status onboarding: the guard does not enforce this project", " blocking, 1 info)"]
+      stdout_includes: ["shop  package_file_drift (info)  specs/polispec/roster.yml differs from the environment-control 1.1.0 record", "fresh  not_live  status onboarding: the guard does not enforce this project", "(4 blocking, 7 info)"]
   - name: status lists both projects
     run: ["{{polispec}}", status]
     expect:
