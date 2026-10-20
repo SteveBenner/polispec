@@ -24,6 +24,9 @@ module Polispec
       MAX_SCRIPT_FILE = 1_000_000
       SHELL_SHEBANG = %r{\A#!\s*(?:\S*/)?(?:env\s+(?:-\S+\s+)*)?(?:bash|sh|zsh|dash|ksh|ash)(?:\s|\z)}.freeze
       SHELL_VALUE_OPTS = %w[-o +o -O +O --rcfile --init-file].freeze
+      SOURCE_BUILTINS = %w[source .].freeze
+      MAX_FOLLOWED_COMMANDS = 1000
+      FOLLOW_DEADLINE = 0.5
 
       class Word < String
         attr_accessor :dynamic
@@ -69,7 +72,20 @@ module Polispec
         end
       end
 
-      Script = Struct.new(:commands, :text, :opaque)
+      FollowBudget = Struct.new(:count, :started, :exceeded) do
+        def spend
+          self.started ||= Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          self.count += 1
+          self.exceeded = true if count > MAX_FOLLOWED_COMMANDS || Process.clock_gettime(Process::CLOCK_MONOTONIC) - started > FOLLOW_DEADLINE
+          !exceeded
+        end
+
+        def start
+          self.started ||= Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        end
+      end
+
+      Script = Struct.new(:commands, :text, :opaque, :followed)
 
       module_function
 
@@ -78,7 +94,7 @@ module Polispec
         parser = Parser.new(text.to_s, cwd, vars, depth)
         commands = parser.run
         nested = embedded_scripts(commands, depth)
-        Script.new(commands + nested.flat_map(&:commands), text.to_s, parser.opaque || nested.any?(&:opaque))
+        Script.new(commands + nested.flat_map(&:commands), text.to_s, parser.opaque || nested.any?(&:opaque), (parser.followed + nested.flat_map(&:followed)).uniq)
       end
 
       def default_vars(cwd)
@@ -207,9 +223,12 @@ module Polispec
       class Parser
         Segment = Struct.new(:words, :redirects, :pending, :start)
 
-        attr_reader :commands, :opaque
+        attr_reader :commands, :opaque, :followed
+        attr_accessor :vars, :cwd, :written, :unknown_writes
 
-        def initialize(text, cwd, vars, depth)
+        def initialize(text, cwd, vars, depth, budget = nil, following = false)
+          @budget = budget || FollowBudget.new(0, nil, false)
+          @following = following
           @s = text
           @ss = StringScanner.new(text)
           @cwd = cwd.to_s.empty? ? Dir.pwd : cwd.to_s
@@ -223,6 +242,7 @@ module Polispec
           @opaque = false
           @written = {}
           @unknown_writes = false
+          @followed = []
         end
 
         def run
@@ -230,12 +250,26 @@ module Polispec
           commands
         end
 
-        def parse_nested(source)
+        def parse_nested(source, following = @following)
           return if @depth >= MAX_DEPTH
 
-          child = Parser.new(source.to_s, @cwd, @vars.dup, @depth + 1)
+          child = Parser.new(source.to_s, @cwd, @vars.dup, @depth + 1, @budget, following)
           @commands.concat(child.run)
           @opaque ||= child.opaque
+          @followed.concat(child.followed)
+        end
+
+        def parse_sourced(source)
+          child = Parser.new(source.to_s, @cwd, @vars.dup, @depth + 1, @budget, true)
+          child.written = @written.dup
+          child.unknown_writes = @unknown_writes
+          @commands.concat(child.run)
+          @opaque ||= child.opaque
+          @followed.concat(child.followed)
+          @vars = child.vars
+          @cwd = child.cwd
+          @written = child.written
+          @unknown_writes = child.unknown_writes
         end
 
         def mark_opaque!
@@ -243,10 +277,22 @@ module Polispec
         end
 
         def set_cwd(dir)
-          @cwd = File.expand_path(dir.to_s, @cwd)
+          @cwd = resolve(dir) || @cwd
         end
 
         private
+
+        def halt_following
+          mark_opaque!
+          @ss.terminate
+          nil
+        end
+
+        def resolve(file)
+          File.expand_path(file.to_s, @cwd)
+        rescue ArgumentError
+          nil
+        end
 
         def new_segment
           Segment.new([], [], nil, nil)
@@ -587,25 +633,63 @@ module Polispec
           return change_directory(words) if %w[cd pushd].include?(name)
           return export_variables(words) if %w[export declare local readonly typeset].include?(name)
 
+          return if follow_source(words, redirects, env, sudo, xargs)
+
           host = follow_script(words) == :followed
-          add_command(words, redirects, env, text, sudo, xargs)
-          @commands.last.host = true if host
+          added = add_command(words, redirects, env, text, sudo, xargs)
+          added.host = true if host && added
         end
 
         def follow_script(words)
           file = script_target(words)
           return unless file
-          return mark_opaque! if dynamic_word?(file) || @depth >= MAX_DEPTH
+          return mark_opaque! if dynamic_word?(file) || @depth >= MAX_DEPTH || @budget.exceeded
 
-          path = File.expand_path(file.to_s, @cwd)
+          path = resolve(file)
+          return mark_opaque! unless path
+
           body = written_body(path)
           return mark_opaque! if body == :unknown
 
+          from_disk = body.nil?
           body ||= Shell.read_script(path)
           return mark_opaque! unless body
 
-          parse_nested(body)
+          note_followed(path) if from_disk
+          @budget.start
+          parse_nested(body, true)
           :followed
+        end
+
+        def follow_source(words, redirects, env, sudo, xargs)
+          return false unless SOURCE_BUILTINS.include?(words.first.to_s)
+
+          file = words[1]
+          plain = redirects.empty? && env.empty? && !sudo && !xargs && @pipe.to_a.empty?
+          return mark_opaque! && false unless plain && file && !dynamic_word?(file) && @depth < MAX_DEPTH && !@budget.exceeded
+
+          path = resolve(file)
+          return mark_opaque! && false unless path
+
+          body = written_body(path)
+          return mark_opaque! && false if body == :unknown
+
+          from_disk = body.nil?
+          body ||= Shell.read_script(path)
+          return mark_opaque! && false unless body
+
+          note_followed(path) if from_disk
+          @budget.start
+          parse_sourced(body)
+          true
+        end
+
+        def note_followed(path)
+          @followed << path
+          real = File.realpath(path)
+          @followed << real unless real == path
+        rescue SystemCallError
+          nil
         end
 
         def script_target(words)
@@ -613,7 +697,9 @@ module Polispec
           return Shell.script_operand(words.drop(1)) if SHELLS.include?(File.basename(first.to_s))
           return nil if dynamic_word?(first) || !first.to_s.include?("/")
 
-          path = File.expand_path(first.to_s, @cwd)
+          path = resolve(first)
+          return mark_opaque! && nil unless path
+
           first if @written.key?(path) || Shell.shell_script?(path)
         end
 
@@ -643,7 +729,10 @@ module Polispec
         def record_write(target, source)
           return @unknown_writes = true if target.nil? || dynamic_word?(target)
 
-          @written[File.expand_path(target.to_s, @cwd)] = source || :unknown
+          path = resolve(target)
+          return @unknown_writes = true unless path
+
+          @written[path] = source || :unknown
         end
 
         def dynamic_word?(word)
@@ -656,7 +745,7 @@ module Polispec
           return if target.respond_to?(:dynamic?) && target.dynamic?
           return if target == "-"
 
-          @cwd = File.expand_path(target.to_s, @cwd)
+          @cwd = resolve(target) || @cwd
         end
 
         def export_variables(words)
@@ -671,9 +760,12 @@ module Polispec
         def add_command(words, redirects, env, text, sudo, xargs = false)
           @pipe ||= []
           cmd = Command.new(argv: words, cwd: @cwd, redirects: redirects, env: env, pipeline: @pipe, index: @pipe.length, text: text, sudo: sudo, xargs: xargs)
+          return halt_following unless !@following || @budget.spend
+
           @pipe << cmd
           @commands << cmd
           record_writes(cmd)
+          cmd
         end
       end
 
