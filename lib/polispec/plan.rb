@@ -5,6 +5,7 @@ require "tmpdir"
 require_relative "packages"
 require_relative "probes"
 require_relative "journal"
+require_relative "effect"
 
 module Polispec
   class Plan
@@ -127,6 +128,7 @@ module Polispec
     def render_text(out = $stdout)
       out.puts "plan #{@data['plan_id']} #{@data['target']}"
       out.puts "classification: #{@data['classification']}; needs_confirm: #{@data['needs_confirm']}"
+      out.puts "Takes effect: #{Effect.describe(@data['effects'])}" unless Array(@data["effects"]).empty?
       @data["reasons"].first(12).each { |reason| out.puts "  #{reason}" }
       out.puts "  ... #{@data['reasons'].length - 12} more (--json lists all)" if @data["reasons"].length > 12
       unless @data["notes"].empty?
@@ -166,6 +168,13 @@ module Polispec
       parts.empty? ? "no structural change" : parts.join(", ")
     end
 
+    def effects_for(parts)
+      project = parts[:target].to_s[/\Aproject:(.+)\z/, 1]
+      Effect.classes("apply", "project" => project, "files" => Array(parts[:files]).select { |item| %w[add replace].include?(item["action"]) }.map { |item| item["path"] })
+    rescue StandardError
+      []
+    end
+
     def canonical(value)
       case value
       when Hash then value.keys.map(&:to_s).sort.each_with_object({}) { |key, memo| memo[key] = canonical(value[key] || value[key.to_sym]) }
@@ -185,7 +194,8 @@ module Polispec
       @data = {
         "schema" => SCHEMA, "target" => parts[:target], "plan_id" => id, "files" => parts[:files] || [], "ledger" => parts[:ledger],
         "policy_diff" => @diffs, "probes" => probes, "journal" => journal, "classification" => classification, "needs_confirm" => needs,
-        "reasons" => reasons, "steps" => parts[:steps], "notes" => @notes.uniq
+        "reasons" => reasons, "steps" => parts[:steps], "notes" => @notes.uniq,
+        "effects" => effects_for(parts)
       }
     end
 

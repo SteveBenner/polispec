@@ -75,6 +75,7 @@ steps:
       stderr_includes: ["confirm_required"]
   - name: an onboarding path entry changes no verdict
     hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{files}}/tools/build" }, cwd: "{{scratch}}" }
+    env: { POLISPEC_NOTICE: "off" }
     expect: { decision: allow }
   - name: the entry is flipped to live through a confirmed ledger plan
     run:
@@ -113,4 +114,5 @@ steps:
       stdout_includes: ["applied ledger"]
   - name: a retired path entry changes no verdict
     hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{files}}/tools/build" }, cwd: "{{scratch}}" }
+    env: { POLISPEC_NOTICE: "off" }
     expect: { decision: allow }
