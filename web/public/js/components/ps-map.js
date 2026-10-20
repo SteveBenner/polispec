@@ -236,6 +236,15 @@ class PsMap extends HTMLElement {
     if (this.model) this.render(false);
   }
 
+  setPreview(preview) {
+    this.preview = preview || null;
+    if (this.model) this.render(false);
+  }
+
+  isPreviewed(entry) {
+    return Boolean(this.preview) && this.preview.kind === entry.kind && this.preview.id === entry.id;
+  }
+
   blastFlips() {
     const flips = new Map();
     if (!this.blast) return flips;
@@ -339,8 +348,9 @@ class PsMap extends HTMLElement {
       const node = document.createElement("ps-map-card");
       node.dataset.key = card.key;
       place(node, card);
-      node.configure({ entry: card.entry, inherits: this.model.inherits.get(card.key), pinned: card.pinned, blast: this.blast ? flips.get(card.entry.id) : null });
+      node.configure({ entry: card.entry, inherits: this.model.inherits.get(card.key), pinned: card.pinned, blast: this.blast ? flips.get(card.entry.id) : null, preview: this.isPreviewed(card.entry) });
       if (this.blast && flips.has(card.entry.id)) node.setAttribute("data-flip", "");
+      node.toggleAttribute("data-preview", this.isPreviewed(card.entry));
       this.inner.append(node);
       this.cardEls.set(card.key, node);
       card.children.forEach((child) => {
@@ -679,7 +689,7 @@ class PsMap extends HTMLElement {
     card.pinned = true;
     const node = this.cardEls.get(key);
     const flips = this.blastFlips();
-    node.configure({ entry: card.entry, inherits: this.model.inherits.get(key), pinned: true, blast: this.blast ? flips.get(card.entry.id) : null });
+    node.configure({ entry: card.entry, inherits: this.model.inherits.get(key), pinned: true, blast: this.blast ? flips.get(card.entry.id) : null, preview: this.isPreviewed(card.entry) });
     this.dispatchEvent(new CustomEvent("ps-map-positions", { bubbles: true, detail: { positions: { ...this.positions } } }));
   }
 
