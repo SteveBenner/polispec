@@ -72,6 +72,7 @@ async function renderRoute(route, params, signal, name) {
     return;
   }
   const module = await import(new URL("../" + route.module, import.meta.url).href);
+  if (signal.aborted) return;
   container.replaceChildren();
   await module.render(container, params, signal);
 }
