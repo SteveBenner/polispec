@@ -133,6 +133,10 @@ ps-data-table .ps-lead {
   text-align: center;
 }
 
+ps-data-table .ps-lead ps-icon-button {
+  --ib-size: calc(var(--row) - var(--border-w));
+}
+
 ps-data-table .ps-open {
   max-width: 100%;
   min-height: var(--control-xs);

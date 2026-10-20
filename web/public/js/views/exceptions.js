@@ -448,7 +448,7 @@ class Exceptions {
     const header = el("header", "view-header");
     const heading = el("h1", "", "Exceptions");
     heading.tabIndex = -1;
-    this.addButton = button("Add exception", { size: "md", write: true });
+    this.addButton = button("Add exception", { size: "sm", write: true });
     this.addButton.addEventListener("click", () => this.openAdd());
     header.append(heading, this.addButton);
     this.body = el("div", "ex-body");
