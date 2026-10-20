@@ -48,7 +48,7 @@ export class PanZoom {
     const ratio = viewW / bounds.width;
     const z = clampZoom(Math.min(1, ratio));
     const width = bounds.width * z;
-    const x = viewW >= width ? (viewW - width) / 2 - bounds.x * z : -bounds.x * z;
+    const x = (viewW - width) / 2 - bounds.x * z;
     this.set(x, -bounds.y * z, z);
   }
 

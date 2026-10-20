@@ -136,6 +136,7 @@ class PsNav extends HTMLElement {
     };
     this.unsubscribe = app.subscribe(() => this.sync());
     this.ticker = setInterval(() => this.syncFooter(), 30000);
+    document.addEventListener("ps-route-start", this.onRoute);
     document.addEventListener("ps-route-change", this.onRoute);
     document.addEventListener("ps-nav-count", this.onCount);
     document.addEventListener("ps-nav-footer", this.onRoute);
@@ -146,6 +147,7 @@ class PsNav extends HTMLElement {
     this.unsubscribe = null;
     clearInterval(this.ticker);
     if (this.onRoute) {
+      document.removeEventListener("ps-route-start", this.onRoute);
       document.removeEventListener("ps-route-change", this.onRoute);
       document.removeEventListener("ps-nav-footer", this.onRoute);
     }

@@ -287,3 +287,14 @@
   font-size: var(--text-xs);
   overflow-wrap: anywhere;
 }
+
+.view.manifest ps-state .ps-main {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.view.manifest ps-state :is(.ps-title, .ps-body),
+.view.manifest ps-command,
+.view.manifest ps-command .ps-who {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

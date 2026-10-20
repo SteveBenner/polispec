@@ -933,7 +933,17 @@ class Manager {
       },
       { key: "pos", label: "Line:Col", align: "end", width: "72px", render: (row) => `${row.line || 1}:${row.col || 1}` },
       { key: "code", label: "Code", mono: true, width: "136px" },
-      { key: "message", label: "Message", width: "200px" },
+      {
+        key: "message",
+        label: "Message",
+        width: "200px",
+        render: (row) => {
+          const holder = el("span", "mgr-lint-msg");
+          holder.append(el("span", "mgr-lint-text", row.message || ""));
+          if (row.code) holder.append(el("span", "mono mgr-lint-code", row.code));
+          return holder;
+        },
+      },
     ];
     this.lintTable.addEventListener("ps-row-open", (event) => {
       const row = event.detail.row;

@@ -1,10 +1,18 @@
 .sessions .view-header {
-  align-items: flex-end;
+  container-type: inline-size;
+  align-items: center;
+  min-height: calc(var(--control-md) + var(--space-2));
+}
+
+.sessions .view-header > h1 {
+  display: flex;
+  align-items: center;
+  min-height: calc(var(--control-md) + var(--space-2));
 }
 
 .sessions .ss-controls {
   display: flex;
-  flex: 1 1 0;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
@@ -32,13 +40,20 @@
   min-width: 128px;
 }
 
-@media (max-width: 1023px) {
+@container (max-width: 1139px) {
   .sessions .ss-seg {
     display: none;
   }
 
   .sessions .ss-controls ps-select.ss-statuspick {
     display: flex;
+  }
+}
+
+@container (max-width: 639px) {
+  .sessions .ss-controls {
+    flex-basis: 100%;
+    justify-content: flex-start;
   }
 }
 

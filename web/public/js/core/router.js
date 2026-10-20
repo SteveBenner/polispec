@@ -108,6 +108,8 @@ async function mount() {
   if (!known) route = notFound;
   current = { name: known ? name : "not-found", params: parsed.params, query: parsed.query, title: route.title };
   container.setAttribute("aria-busy", "true");
+  document.title = route.title + " | polispec";
+  document.dispatchEvent(new CustomEvent("ps-route-start", { detail: current }));
   try {
     await renderRoute(route, parsed.params, signal, name);
   } catch (error) {
