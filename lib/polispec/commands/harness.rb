@@ -1,5 +1,6 @@
 require_relative "../harness_controls/language"
 require_relative "../harness_controls/lifecycle"
+require_relative "../editions"
 
 module Polispec
   class HarnessCommand
@@ -97,7 +98,7 @@ module Polispec
       unless result["integrity"] && result["ownership"]
         raise HarnessControls::Lifecycle::Failure.new("verification_failed", "installed artifact integrity or ownership verification failed", data: result, findings: result["findings"])
       end
-      if result["requested_edition"] == "lock" && result["certified"] != true
+      if Editions.lock?(result["requested_edition"]) && result["certified"] != true
         raise HarnessControls::Lifecycle::Failure.new("lock_prerequisites_unmet", "lock remains inactive because required evidence is incomplete", exit_status: 3, data: result, findings: result["findings"])
       end
       result

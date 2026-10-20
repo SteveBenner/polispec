@@ -5,6 +5,7 @@ require "json"
 require "digest"
 require "shellwords"
 require_relative "../../harness/base"
+require_relative "../../editions"
 
 module Polispec
   module HarnessControls
@@ -249,7 +250,7 @@ module Polispec
             capability(nil, "antigravity.cli_network", generated ? restrictions["status"] : "unavailable", "Only an exact unconditional user-scope empty allowlist can produce a native deny fragment; other restrictions remain callback-only."),
             capability(nil, "antigravity.gui", "unsupported", "GUI surfaces remain directive-only and are not claimed to execute the generated hook."),
             capability(nil, "antigravity.managed_scope", "unsupported", "The managed artifact is operator-owned staging; no native managed configuration scope is documented."),
-            capability(nil, "antigravity.lock", edition == "lock" ? "unsupported" : "unavailable", "Antigravity is never certified for lock.")
+            capability(nil, "antigravity.lock", Editions.lock?(edition) ? "unsupported" : "unavailable", "Antigravity is never certified for lock.")
           ])
         end
         private_class_method :capabilities_for
@@ -262,7 +263,7 @@ module Polispec
           if scope == "managed"
             rows << finding("antigravity_managed_scope_unavailable", "No native managed Antigravity hook path is documented; the generated exclusive artifact is operator-owned staging only.", nil, "antigravity.managed_scope", "Deploy only through an operator-approved immutable mechanism and do not claim native loading.")
           end
-          rows << finding("antigravity_lock_requested", "The requested lock edition remains uncertifiable on Antigravity.", nil, "antigravity.lock", "Select a certifiable harness for sealed enforcement.") if edition == "lock"
+          rows << finding("antigravity_lock_requested", "The requested lock edition remains uncertifiable on Antigravity.", nil, "antigravity.lock", "Select a certifiable harness for sealed enforcement.") if Editions.lock?(edition)
           rows
         end
         private_class_method :base_findings

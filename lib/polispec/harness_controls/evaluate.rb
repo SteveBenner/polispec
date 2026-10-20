@@ -1,5 +1,6 @@
 require_relative "root_guard"
 require_relative "../exceptions"
+require_relative "../editions"
 
 module Polispec
   module HarnessControls
@@ -229,7 +230,7 @@ module Polispec
         end
         code = undeclared.empty? ? "POLISPEC-TOOL-UNKNOWN" : "POLISPEC-MCP-UNDECLARED"
         reason = undeclared.empty? ? "the non-read-only tool could not be positively classified" : "one or more MCP operations are not declared by protected controls or committed policy"
-        level = values["edition"] == "lock" ? "deny" : "warn"
+        level = Editions.included?("unknown_call.ask", values["edition"]) ? "warn" : "deny"
         result["verdict"] = Verdict.new(level: level, rule_id: code, reason: reason, next_step: "Ask the operator to declare the exact operation.")
         result["ask_ids"] = Array(result["ask_ids"]) + [code] if level == "warn"
         result

@@ -10,6 +10,7 @@ require_relative "../harness_controls/evaluate"
 require_relative "../harness_controls/authorizations"
 require_relative "../judgments"
 require_relative "../exceptions"
+require_relative "../editions"
 
 module Polispec
   module DeferredEvents
@@ -291,14 +292,14 @@ module Polispec
       effective_digest = HarnessControls::Evaluate.effective_digest(documents)
       fast_context = { "plane" => @plane, "control_digest" => effective_digest, "edition" => edition,
                        "fail_mode" => "closed_mutations", "root_guard" => scan["root_guard"] == true || explicit_root_guard,
-                       "mcp_default" => edition == "lock" ? "deny" : "ask" }
+                       "mcp_default" => Editions.included?("mcp_default.ask", edition) ? "ask" : "deny" }
       Fastpath.refresh(ledger, fast_context) unless @explain
       @judged["fastpath_key"] = fastpath_key(ledger, fast_context)
       protected_paths = HarnessControls::Evaluate.protected_paths(@plane, documents, ledger)
       target_for = control_target_resolver(ledger, cwd, baseline)
       control_context = {
         "actions" => actions, "documents" => documents, "edition" => edition,
-        "root_guard" => edition == "lock" || explicit_root_guard || scan["root_guard"] == true,
+        "root_guard" => !Editions.allowed?("root_guard.optional", edition) || explicit_root_guard || scan["root_guard"] == true,
         "protected_paths" => protected_paths, "role" => input.agent_type,
         "env" => legacy && legacy.env, "target" => nil, "target_for" => target_for,
         "engine_context" => { cwd: cwd, ledger: ledger, predicate_memo: {}, findings: [] },
@@ -466,7 +467,7 @@ module Polispec
       legacy_warn = !warning_rows.empty?
       control_warn = control_verdict.warn?
       return Verdict.worst(independent) unless legacy_warn || control_warn
-      return Verdict.worst(independent) if edition == "lock" && (control_warn || !legacy_warn)
+      return Verdict.worst(independent) if !Editions.included?("legacy_warn", edition) && (control_warn || !legacy_warn)
       return Verdict.worst(independent) if @plane["status"] != "active" && !control_warn
 
       ask_set = warning_rows.map { |row| ["environment", *row] }

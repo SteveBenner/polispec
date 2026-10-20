@@ -4,6 +4,7 @@
 require "etc"
 require "socket"
 require "timeout"
+require_relative "../editions"
 
 module Polispec
   module HarnessControls
@@ -121,7 +122,7 @@ module Polispec
         sequence = persisted["sequence"].to_i + 1
         previous = persisted["last"]
         continuing = continuing_exposure?(previous, observations)
-        requested_lock = values["edition"].to_s == "lock" || values["requested_edition"].to_s == "lock"
+        requested_lock = !Editions.allowed?("root_guard.optional", values["edition"]) || !Editions.allowed?("root_guard.optional", values["requested_edition"])
         proposed_arm = continuing && !read_only
         root_guard = persisted["root_guard"] == true || requested_lock
         unknown = observations.values.any? { |item| item["status"] == "unknown" || item["access"] == "unknown" }
@@ -526,7 +527,7 @@ module Polispec
         {
           "exposures" => {},
           "sequence" => nil,
-          "root_guard" => values["edition"].to_s == "lock" || values["requested_edition"].to_s == "lock",
+          "root_guard" => !Editions.allowed?("root_guard.optional", values["edition"]) || !Editions.allowed?("root_guard.optional", values["requested_edition"]),
           "lock_eligible" => false,
           "findings" => [finding("environment_scan_failed", "The bounded environment scan failed: #{error.class}: #{error.message.to_s[0, 300]}", "Restore the scanner prerequisites and repeat the scan.")]
         }
