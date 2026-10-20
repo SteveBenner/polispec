@@ -1,0 +1,89 @@
+schema: polispec.editions/v1
+editions:
+  standard: "The edition main builds. Asks a person where policy is silent and lets the operator relax what the person has already judged."
+  lock: "polispec-lock, which differs from main only by EDITION lock. Denies where standard asks, honors no relaxation and accepts no authority the protected plane did not grant."
+values: [included, restricted, excluded]
+features:
+  - id: exceptions
+    standard: included
+    lock: excluded
+    since: 0.29.0
+    code: lib/polispec/exceptions.rb
+    note: "Exceptions.active? is false under lock; no proposal or promote hint is made."
+  - id: exceptions.delegate_promote
+    standard: included
+    lock: excluded
+    since: 0.34.0
+    code: lib/polispec/delegate
+    note: "The web app relays the typed phrase of exceptions add, promote and remove through the delegate runner. Never included in polispec-lock by operator direction on 2026-10-20."
+  - id: relax.dev
+    standard: included
+    lock: excluded
+    since: 0.30.0
+    code: lib/polispec/predicates.rb
+    note: "in_development is false under lock, so a governed eval, source or . line always asks."
+  - id: unknown_call.ask
+    standard: included
+    lock: restricted
+    since: 0.23.0
+    code: lib/polispec/harness_controls/evaluate.rb
+    note: "An unknown or undeclared call asks under standard and is denied under lock."
+  - id: mcp_default.ask
+    standard: included
+    lock: restricted
+    since: 0.23.0
+    code: lib/polispec/commands/hook.rb
+    note: "The undeclared MCP default is ask under standard and deny under lock."
+  - id: legacy_warn
+    standard: included
+    lock: restricted
+    since: 0.23.0
+    code: lib/polispec/commands/hook.rb
+    note: "Under lock a control warn, or any ask set without a legacy warn, settles to the worst independent verdict."
+  - id: root_guard.optional
+    standard: included
+    lock: excluded
+    since: 0.18.0
+    code: lib/polispec/harness_controls/environment.rb
+    note: "Lock forces root_guard on."
+  - id: network.domain_allowlist
+    standard: included
+    lock: restricted
+    since: 0.18.0
+    code: lib/polispec/harness_controls/backends
+    note: "Lock generates an empty domain allowlist (Codex) or a denied network (os), and ignores domain additions outside managed settings (Claude Code)."
+  - id: controls.user_scope
+    standard: included
+    lock: restricted
+    since: 0.18.0
+    code: lib/polispec/harness_controls/backends/claude.rb
+    note: "Lock honors controls only from managed scope."
+  - id: plane.standard
+    standard: included
+    lock: excluded
+    since: 0.18.0
+    code: lib/polispec/harness_controls/plane.rb
+    note: "A lock build refuses a standard plane (edition_mismatch)."
+  - id: web
+    standard: included
+    lock: excluded
+    since: 0.34.0
+    code: lib/polispec/web
+    note: "polispec web refuses to start under lock (edition_excluded). Decided 2026-10-20."
+  - id: author
+    standard: included
+    lock: excluded
+    since: 0.34.0
+    code: lib/polispec/author
+    note: "No AI drafting under lock."
+  - id: register.path
+    standard: included
+    lock: restricted
+    since: 0.34.0
+    code: lib/polispec/commands/register.rb
+    note: "Under lock a governed path entry is added only through the protected ledger the sealed plane names."
+  - id: epoch_notice
+    standard: included
+    lock: included
+    since: 0.34.0
+    code: lib/polispec/effect
