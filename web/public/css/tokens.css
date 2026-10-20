@@ -1,0 +1,75 @@
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --maxw: 1320px;
+  --dur-fast: 110ms;
+  --dur: 190ms;
+  --dur-slow: 340ms;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+
+  --text-2xs: 11px;
+  --lh-2xs: 14px;
+  --text-xs: 12px;
+  --lh-xs: 16px;
+  --text-sm: 13px;
+  --lh-sm: 18px;
+  --text-md: 14px;
+  --lh-md: 22px;
+  --text-lg: 16px;
+  --lh-lg: 22px;
+  --text-xl: 18px;
+  --lh-xl: 24px;
+  --text-num: 20px;
+  --lh-num: 24px;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-strong: 600;
+
+  --control-xs: 24px;
+  --control-sm: 28px;
+  --control-md: 32px;
+
+  --row: 28px;
+  --row-compact: 24px;
+
+  --icon: 16px;
+  --icon-lg: 18px;
+
+  --border-w: 1px;
+  --focus-w: 2px;
+  --focus-offset: 2px;
+
+  --topbar-h: 40px;
+  --nav-w: 200px;
+  --rail-w: 48px;
+  --panel-w: 360px;
+  --panel-w-compact: 320px;
+  --tray-h: 40px;
+  --gutter: var(--space-4);
+  --measure: 72ch;
+
+  --card-w: 240px;
+  --card-h: 116px;
+  --child-h: 52px;
+  --map-col-gap: var(--space-5);
+  --map-row-gap: var(--space-7);
+  --band-h: var(--space-7);
+  --band-gap: var(--space-2);
+  --band-to-grid: var(--space-8);
+  --canvas-pad: var(--space-6);
+
+  --z-sticky: 10;
+  --z-tray: 20;
+  --z-drawer: 30;
+  --z-popover: 40;
+  --z-toast: 60;
+}
