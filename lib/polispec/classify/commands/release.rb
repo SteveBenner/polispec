@@ -13,7 +13,7 @@ module Polispec
       RELEASE_SCRIPT = /(?:release_stable|stable_promote|promote_stable|release_publish)\.rb\z/.freeze
       ENV_NAMES = { "stable" => "prod", "prod" => "prod", "production" => "prod", "test" => "test", "dev" => "dev", "main" => "dev" }.freeze
       OPERATOR_VERBS = %w[promote deploy].freeze
-      APPLY_VALUE_FLAGS = %w[--to --tag --minutes --reason --since --role --pipeline --phase --profile --policy --ledger --confirm --repo --variant --param --from].freeze
+      APPLY_VALUE_FLAGS = %w[--to --tag --minutes --reason --since --role --pipeline --phase --profile --policy --ledger --confirm --repo --variant --param --from --bind --port].freeze
       GOVERNED_TARGETS = %w[global ledger].freeze
       DELEGATE_GOVERNED = %w[grant revoke serve].freeze
 
@@ -29,6 +29,7 @@ module Polispec
           verb = pos.first
           return apply(cmd, pos) if verb == "apply"
           return delegate(cmd, pos) if verb == "delegate"
+          return web(cmd, pos) if verb == "web"
           return [] unless OPERATOR_VERBS.include?(verb)
 
           project = pos[1]
@@ -46,6 +47,12 @@ module Polispec
           attrs = { "path" => repo ? File.expand_path(repo, cmd.cwd.to_s) : cmd.cwd }
           attrs["project"] = target.delete_prefix("project:") if target.start_with?("project:")
           [Support.act("policy.edit", cmd.text, attrs)]
+        end
+
+        def web(cmd, pos)
+          return [] if pos[1] == "unit" || (cmd.args & %w[--help -h]).any?
+
+          [Support.act("policy.edit", cmd.text, "path" => cmd.cwd)]
         end
 
         def delegate(cmd, pos)

@@ -1,0 +1,219 @@
+openapi: 3.0.3
+info:
+  title: polispec web
+  version: 0.34.0
+  description: The JSON API of polispec web, served under /api/v1 on a loopback address. Every route except POST /session needs the ps_session cookie. Every mutating route also needs the X-Polispec-CSRF header, an Origin equal to the server, and is limited to 30 a minute per session.
+servers:
+  - url: http://127.0.0.1:7421/api/v1
+tags:
+  - name: session
+  - name: config
+paths:
+  /session:
+    post:
+      tags: [session]
+      operationId: exchangeCode
+      summary: Exchange the one-time link code for a session cookie
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+                  description: The nonce.expiry.hmac value after #k= in the link printed by polispec web.
+      responses:
+        "200":
+          description: The session cookie is set and the CSRF token is returned.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: ps_session, HttpOnly, SameSite=Strict, Path=/.
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+    get:
+      tags: [session]
+      operationId: getSession
+      summary: Recover the CSRF token of the current session
+      responses:
+        "200":
+          description: The current session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [session]
+      operationId: endSession
+      summary: End the current session
+      parameters:
+        - $ref: "#/components/parameters/Csrf"
+      responses:
+        "200":
+          description: The session is ended and the cookie cleared.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /config:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: Version, edition, theme, operator and feature flags
+      responses:
+        "200":
+          description: The server configuration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Config"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    cookie:
+      type: apiKey
+      in: cookie
+      name: ps_session
+  parameters:
+    Csrf:
+      name: X-Polispec-CSRF
+      in: header
+      required: true
+      schema:
+        type: string
+  headers:
+    RequestId:
+      schema:
+        type: string
+        pattern: "^req_[0-9a-f]{12}$"
+  responses:
+    Error:
+      description: An error. A feature turned off by a flag answers 403 with error disabled and a reason.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/RequestId"
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds to wait, on 429.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Session:
+      type: object
+      required: [csrf, expires_at]
+      properties:
+        csrf:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+    Error:
+      type: object
+      required: [error, message, request_id]
+      properties:
+        error:
+          type: string
+          description: bad_json, unauthorized, forbidden, not_found, method_not_allowed, read_only, too_large, rate_limited, disabled, conflict, confirm_required, invalid, or server.
+        message:
+          type: string
+        reason:
+          type: string
+          description: Present when error is disabled.
+        findings:
+          type: array
+          items:
+            type: object
+        request_id:
+          type: string
+          pattern: "^req_[0-9a-f]{12}$"
+    Flag:
+      type: object
+      required: [enabled, reason]
+      properties:
+        enabled:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
+    Config:
+      type: object
+      required: [version, edition, epoch, theme, operator, flags]
+      properties:
+        version:
+          type: string
+        edition:
+          type: string
+          enum: [standard, lock]
+        epoch:
+          type: string
+          nullable: true
+          pattern: "^ep_[0-9a-f]{16}$"
+        theme:
+          type: string
+          enum: [system, light, dark, apple-noir, apple-austere, tronwave]
+        operator:
+          type: string
+        flags:
+          type: object
+          required: [author, feed, description, delegate]
+          properties:
+            author:
+              $ref: "#/components/schemas/Flag"
+            feed:
+              $ref: "#/components/schemas/Flag"
+            description:
+              type: object
+              required: [allowed, reason]
+              properties:
+                allowed:
+                  type: boolean
+                reason:
+                  type: string
+                  nullable: true
+            delegate:
+              type: object
+              required: [runner_up, granted_verbs]
+              properties:
+                runner_up:
+                  type: boolean
+                granted_verbs:
+                  type: array
+                  items:
+                    type: string
+security:
+  - cookie: []
