@@ -82,12 +82,16 @@ module Polispec
         args += @resume ? ["--resume", @id] : ["--session-id", @id]
         args += ["--model", @model.to_s] if @model && !@model.to_s.empty?
         args += ["--effort", @effort.to_s] if @effort && !@effort.to_s.empty? && help_flags.include?("--effort")
-        args += ["--tools", TOOLS.join(","), "--permission-mode", "manual", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+        args += ["--tools", TOOLS.join(","), "--allowedTools", *allow_rules, "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
                  "--append-system-prompt", @system_prompt.to_s]
         forbidden = args.find { |arg| arg.to_s.start_with?("--dangerously") }
         raise Polispec::Error, "refusing to start claude with #{forbidden}" if forbidden
 
         args
+      end
+
+      def allow_rules
+        @roots.map { |root| "Read(/#{root}/**)" }
       end
 
       def turn(text, timeout: Bounds::TURN_TIMEOUT, &emit)
