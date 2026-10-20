@@ -91,7 +91,7 @@ module Polispec
       end
 
       def allow_rules
-        @roots.map { |root| "Read(/#{root}/**)" }
+        @roots.flat_map { |root| ["Read(/#{root})", "Read(/#{root}/**)"] }
       end
 
       def turn(text, timeout: Bounds::TURN_TIMEOUT, &emit)
