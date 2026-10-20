@@ -1,0 +1,49 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/hook pretool|session
+summary: through bin/polispec-guard a Hermes deny reaches the harness as the block reply with exit status 2, a Hermes allow stays silent, a Hermes fail-closed internal denial is passed through, and Claude Code and Codex denies render as before
+fixture:
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+steps:
+  - name: link the candidate binary outside the shim directory
+    run: [sh, -c, 'mkdir -p "$1" && ln -sfn "$2" "$1/polispec"', sh, "{{files}}", "{{polispec}}"]
+    expect: { exit: 0 }
+  - name: a Hermes write into the stable checkout is blocked through the shim
+    run: ["{{tree}}/bin/polispec-guard", pretool, --harness, hermes]
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    stdin: "{\"hook_event_name\":\"pre_tool_call\",\"tool_name\":\"terminal\",\"tool_input\":{\"command\":\"echo x > {{checkout.shop.stable}}/app.rb\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"shim-hermes-deny\"}"
+    expect:
+      exit: 2
+      stdout_includes: ["\"action\":\"block\"", "[POLISPEC R-PROD-FS] DENIED:"]
+  - name: a Hermes dev read is allowed through the shim
+    run: ["{{tree}}/bin/polispec-guard", pretool, --harness, hermes]
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    stdin: "{\"hook_event_name\":\"pre_tool_call\",\"tool_name\":\"terminal\",\"tool_input\":{\"command\":\"git status\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"shim-hermes-allow\"}"
+    expect:
+      exit: 0
+      stdout_excludes: ["\"action\":\"block\""]
+  - name: a malformed Hermes call is denied fail-closed through the shim
+    run: ["{{tree}}/bin/polispec-guard", pretool, --harness, hermes]
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    stdin: "{\"hook_event_name\":\"pre_tool_call\",\"tool_name\":\"terminal\",\"cwd\":\"{{project.shop}}\",\"session_id\":\"shim-hermes-malformed\"}"
+    expect:
+      exit: 2
+      stdout_includes: ["\"action\":\"block\"", "guard unavailable; call denied."]
+  - name: a Claude Code write into the stable checkout is denied through the shim
+    run: ["{{tree}}/bin/polispec-guard", pretool, --harness, claude-code]
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    stdin: "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo x > {{checkout.shop.stable}}/app.rb\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"shim-claude-deny\"}"
+    expect:
+      exit: 0
+      stdout_includes: ["\"permissionDecision\":\"deny\"", "[POLISPEC R-PROD-FS] DENIED:"]
+  - name: a Codex write into the stable checkout is denied through the shim
+    run: ["{{tree}}/bin/polispec-guard", pretool, --harness, codex]
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    stdin: "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo x > {{checkout.shop.stable}}/app.rb\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"shim-codex-deny\"}"
+    expect:
+      exit: 0
+      stdout_includes: ["\"permissionDecision\":\"deny\"", "[POLISPEC R-PROD-FS] DENIED:"]

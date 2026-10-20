@@ -178,7 +178,7 @@ polispec reads these machine settings. Unsealed, each comes from the first of: i
 The guard is a hook in each agent harness. The plugin ships `hooks/polispec.hooks.yml`, which rplugin renders for Claude Code (installed natively since 0.22.0; needs rplugin 1.15.0 for `SubagentStart`), Hermes, Pi, the DeepSeek TUI and Antigravity CLI. Every hook runs `bin/polispec-guard <pretool|session> --harness <name>`, a bash shim that:
 
 - skips starting Ruby when the fast path (`fastpath.txt` and its `fastpath.watch` list in the polispec state directory) shows the call cannot touch a governed path and none of the watched files (ledger, global layer refs, settings, `/etc/polispec/active.json`) changed since, and appends one line for the skipped call to `skips.jsonl` in that directory (tool, session, fast-path key, `no_needles` or `no_match`) with bash builtins only;
-- otherwise runs `polispec hook <mode> --harness <name>` and prints the harness's own allow, ask or deny reply;
+- otherwise runs `polispec hook <mode> --harness <name>` and prints the harness's own allow, ask or deny reply, with the exit status the harness reads it by (since 0.33.1 a Hermes block keeps its exit status 2; before, the shim read it as a failure and let the call through);
 - runs the first `polispec` it finds in this order: `POLISPEC_BIN`, `PATH`, `~/.local/bin`, the rplugin store, the native pin (`<data home>/current/bin/polispec`), and only then the copy beside the shim in a harness's plugin cache, so a pinned release always wins over a cached copy and a plain plugin install still runs the real guard;
 - when polispec is missing or fails, denies shell calls that push, merge, tag or reset test or stable, control services, or publish releases, and lets everything else through.
 

@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.33.1] - 2026-10-20
+
+### Fixed
+
+- `bin/polispec-guard` passes a Hermes block through. The Hermes adapter answers a deny with exit status 2 and `{"action":"block",...}` on stdout, and so does its fail-closed internal denial. The shim treated every nonzero exit as a runtime failure, dropped the reply, applied the inline fallback and exited 0. On every Hermes host wired through the shim (the rplugin hook manifest wires every harness that way), a deny was an allow unless the command matched the fallback pattern for prod-shaped git, `systemctl` or `gh release`. A pretool reply with exit status 2 and a JSON object on stdout now reaches the harness unchanged with status 2; any other nonzero exit still takes the fallback. Claude Code, Codex and Antigravity replies exit 0 and are unchanged.
+
+### Added
+
+- Smoke scenario `guard-shim` (unit `commands/hook pretool|session`) drives the shim for Hermes (a deny, an allow and a malformed call) and for Claude Code and Codex (a deny each) in a live fixture project.
+
 ## [0.33.0] - 2026-10-19
 
 ### Added
