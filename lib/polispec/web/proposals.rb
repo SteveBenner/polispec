@@ -17,6 +17,7 @@ require_relative "../changes"
 require_relative "../sessions"
 require_relative "../author"
 require_relative "../commands/apply"
+require_relative "views"
 
 module Polispec
   module Web
@@ -39,7 +40,7 @@ module Polispec
         "unknown_project" => [404, "not_found"], "path_unknown" => [404, "not_found"], "unknown_entry" => [404, "not_found"],
         "unknown_plan" => [404, "not_found"], "not_on_main" => [409, "conflict"], "not_on_ref" => [409, "conflict"],
         "already_applied" => [409, "conflict"], "project_retired" => [409, "conflict"], "already_retired" => [409, "conflict"],
-        "sealed_authority" => [403, "sealed_authority"], "edition_restricted" => [403, "disabled"], "invalid" => [422, "invalid"]
+        "sealed_authority" => [403, "sealed_authority"], "runtime_behind" => [409, "runtime_behind"], "edition_restricted" => [403, "disabled"], "invalid" => [422, "invalid"]
       }.freeze
 
       Target = Struct.new(:kind, :id, :project, :repo, :ref, :file, :schema_kind, :scope, keyword_init: true)
@@ -54,7 +55,9 @@ module Polispec
 
       class << self
         def synchronize(&block)
-          MONITOR.synchronize(&block)
+          return yield if MONITOR.mon_owned?
+
+          Views::QUIET.synchronize { MONITOR.synchronize(&block) }
         end
 
         def actor_name
@@ -248,15 +251,25 @@ module Polispec
             raise Operator::Failure.new("invalid", "the document declares schema #{Schema.schema_id(declared)}, but #{target.kind} #{target.id} takes #{Schema.schema_id(target.schema_kind)}")
           end
 
-          errors = Schema.validate(target.schema_kind, doc)
+          errors = target.kind == "project" ? policy_errors(target, text) : Schema.validate(target.schema_kind, doc).map(&:to_h)
           unless errors.empty?
-            raise Operator::Failure.new("invalid", "the proposed #{target.kind} #{target.id} does not validate", "problems" => errors.first(50).map { |error| { "code" => "schema", "path" => error.pointer, "message" => error.message } })
+            raise Operator::Failure.new("invalid", "the proposed #{target.kind} #{target.id} does not validate", "problems" => errors.first(50).map { |error| { "code" => "schema", "path" => error["pointer"], "message" => error["message"] } })
           end
           if target.kind == "project" && doc["project"] != target.id
             raise Operator::Failure.new("invalid", "the proposed policy names project #{doc['project'].inspect}, not #{target.id}")
           end
 
           doc
+        end
+
+        def environments_text(target)
+          dir = File.dirname(target.file)
+          git_read(target.repo, "show", "#{target.ref}:#{dir == '.' ? '' : "#{dir}/"}#{Environments::FILE}")
+        end
+
+        def policy_errors(target, text)
+          combined = Environments.combine(text, environments_text(target), target.file)
+          Array(combined.errors)
         end
 
         def description_gate!(old_text, doc)
@@ -509,7 +522,7 @@ module Polispec
           variant = with.delete("variant")
           params = with.each_with_object({}) { |(key, value), memo| memo[key] = value.is_a?(String) ? value : JSON.generate(value) }
           spec = Plan::SPEC.new(kind: :package, package: compose["package"].to_s, repo: File.expand_path(project.repo), variant: variant&.to_s, params: params)
-          [Prepared.new(spec: spec, target: nil, repo: nil, ref: nil, project_id: project.id, force: false, change_kind: "compose", file: nil)]
+          Prepared.new(spec: spec, target: nil, repo: nil, ref: nil, project_id: project.id, force: false, change_kind: "compose", file: nil)
         end
 
         def prepare_move(target, change)
@@ -600,24 +613,24 @@ module Polispec
           rows.join
         end
 
-        def register_preview(body)
-          synchronize { with_actor { register_preview_locked(body) } }
+        def register_preview(body, dry: false)
+          synchronize { with_actor { register_preview_locked(body, dry: dry) } }
         end
 
-        def register_preview_locked(body)
+        def register_preview_locked(body, dry: false)
           raise Operator::Failure.new("invalid", "path, kind and id are required") unless body.is_a?(Hash) && body["path"].is_a?(String)
 
           current = ledger
           description = body["description"].is_a?(String) ? body["description"] : nil
-          id, text = Registration.propose_register(current, body["path"], id: body["id"].to_s.empty? ? nil : body["id"].to_s, kind: body["kind"].to_s.empty? ? "directory" : body["kind"].to_s, description: description)
+          id, text = Registration.propose_register(current, body["path"], id: body["id"].to_s.empty? ? nil : body["id"].to_s, kind: body["kind"].to_s.empty? ? "directory" : body["kind"].to_s, description: description, dry: dry)
           entry = Registration.entry_lines(id: id, kind: body["kind"].to_s.empty? ? "directory" : body["kind"].to_s, path: File.expand_path(body["path"]), description: description)
           { id: id, text: text, yaml: "paths:\n#{entry.join("\n")}\n", description: description }
         end
 
-        def register_plan(body)
+        def register_plan(body, dry: false)
           synchronize do
             with_actor do
-              preview = register_preview_locked(body)
+              preview = register_preview_locked(body, dry: dry)
               file = Registration.proposal_file(preview[:id], preview[:text])
               prepared = Prepared.new(spec: Plan::SPEC.new(kind: :ledger, file: file), target: nil, repo: nil, ref: nil, project_id: nil, force: false, change_kind: "register", file: file)
               [preview, store(build_record(prepared))]

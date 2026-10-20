@@ -61,9 +61,9 @@ module Polispec
             found = name && module_text(name)
             next unless found && found[0].include?(rule_id)
 
-            return describe(layer.name, rule, found[0], found[1], name, doc_of(found[0]))
+            return describe(layer.name, rule, found[0], found[1], name, doc_of(found[0])).merge("project" => project.id)
           end
-          return describe(layer.name, rule, policy_text(project), layer.name == "repo" ? project.policy : layer.source.to_s, nil, doc_of(policy_text(project)))
+          return describe(layer.name, rule, policy_text(project), layer.name == "repo" ? project.policy : layer.source.to_s, nil, doc_of(policy_text(project))).merge("project" => project.id)
         end
         nil
       end
@@ -258,8 +258,8 @@ module Polispec
 
           return {
             "match" => true, "judgment_id" => judgment_id, "rule_id" => token, "layer" => located["layer"], "module" => located["module"], "verdict" => located["verdict"],
-            "description" => located["description"], "source" => located["source"], "way_forward" => next_step(located, project),
-            "draft_exception" => draft_exception(token, located), "allow_once" => { "id" => allow_once_id(token, project) }
+            "description" => located["description"], "source" => located["source"], "way_forward" => next_step(located, project || located["project"]),
+            "draft_exception" => draft_exception(token, located), "allow_once" => { "id" => allow_once_id(token, project || located["project"]) }
           }
         end
         { "match" => false, "tried" => tokens }
