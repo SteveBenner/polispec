@@ -1050,7 +1050,7 @@ open_questions:
     question: 'The neutral light and dark pair uses an ink-blue accent (#2456c9 light, #7fa3ff dark). Is a blue accent right for the public face of polispec, or do you want a different hue for its identity?'
 decisions:
   decided_by: Sven
-  decided_at: 2026-10-20
+  decided_at: "2026-10-20"
   Q1: "Yes. ps-field and ps-button wrap a native text input or button fully restyled by tokens; native select, checkbox, radio, range, date, color and file inputs stay forbidden."
   Q2: "Cycle plus popover list: a click cycles the six themes in order; a long press, right-click or Shift+Enter opens a ps-popover listing all six with their glyphs (monitor, bulb, eclipse for the new three)."
   Q3: "First-visit default is system (neutral light or dark following the OS). polispec is recorded as a fleet.yml exception in specs/app.yml web.themes because it is public FOSS."
