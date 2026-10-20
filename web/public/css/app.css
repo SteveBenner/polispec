@@ -44,6 +44,9 @@
 @import url("views/feed.css") layer(views);
 @import url("views/heatmap.css") layer(views);
 @import url("views/manager.css") layer(views);
+@import url("views/playground.css") layer(views);
+@import url("views/explain.css") layer(views);
+@import url("views/history.css") layer(views);
 
 @layer flourish {
   [data-theme="apple-noir"] :is(h1, h2) {
