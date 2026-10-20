@@ -42,6 +42,7 @@ settings:
 contents:
   skills:
     - { id: polispec, path: skills/polispec/SKILL.md }
+    - { id: polispec-register, path: skills/polispec-register/SKILL.md }
   agents: []
   specs:
     - { path: specs/app.yml }
