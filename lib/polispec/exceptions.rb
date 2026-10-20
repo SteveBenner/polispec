@@ -9,6 +9,7 @@ require "fileutils"
 require_relative "state"
 require_relative "schema/core"
 require_relative "harness/base"
+require_relative "editions"
 
 module Polispec
   module Exceptions
@@ -34,7 +35,7 @@ module Polispec
     end
 
     def active?(edition, _plane_status = nil)
-      enabled? && edition.to_s != "lock"
+      enabled? && Editions.allowed?("exceptions", edition)
     end
 
     def path

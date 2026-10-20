@@ -5,6 +5,7 @@ require_relative "../backends"
 require_relative "../contracts"
 require_relative "../language"
 require_relative "../../harness/base"
+require_relative "../../editions"
 
 module Polispec
   module HarnessControls
@@ -213,7 +214,7 @@ module Polispec
             "writable_paths" => writes,
             "path_declared" => !paths.nil?,
             "network_declared" => !network.nil?,
-            "network_mode" => edition == "lock" ? "deny" : "open",
+            "network_mode" => Editions.included?("network.domain_allowlist", edition) ? "open" : "deny",
             "findings" => findings
           }
         end
@@ -241,7 +242,7 @@ module Polispec
         private_class_method :identical_or_refused
 
         def sandbox_document(runtime, restrictions, edition)
-          mode = edition == "lock" ? "deny" : "open"
+          mode = Editions.included?("network.domain_allowlist", edition) ? "open" : "deny"
           argv = bwrap_prefix(restrictions["writable_paths"], mode)
           {
             "schema" => "polispec.os-sandbox/v1",
