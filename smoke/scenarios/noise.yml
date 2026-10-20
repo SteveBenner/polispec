@@ -90,6 +90,7 @@ steps:
     expect: { decision: ask, rule: POLISPEC-TOOL-UNKNOWN }
   - name: source of a file asks as an unknown tool
     hook: { harness: claude, event: pretool, tool: Bash, input: { command: "source ~/.bashrc" }, cwd: "{{project.shop}}" }
+    home: true
     expect: { decision: ask, rule: POLISPEC-TOOL-UNKNOWN }
   - name: dot of a file asks as an unknown tool
     hook: { harness: claude, event: pretool, tool: Bash, input: { command: ". ./env.sh" }, cwd: "{{project.shop}}" }

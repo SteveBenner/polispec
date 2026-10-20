@@ -6,6 +6,7 @@ additionalProperties: false
 required: [schema, project, roles, environments]
 properties:
   schema: { const: polispec.roster/v1 }
+  description: { type: string, minLength: 1, maxLength: 4000 }
   project: { $ref: "#/$defs/id" }
   harness_effort:
     type: object
