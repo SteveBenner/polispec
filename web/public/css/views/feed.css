@@ -1,0 +1,90 @@
+.feed .fd-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.feed .fd-filter {
+  display: block;
+  inline-size: 140px;
+  min-inline-size: 0;
+}
+
+.feed ps-data-table table {
+  min-width: 760px;
+}
+
+.feed .fd-toolbar ps-conn-status {
+  margin-inline-start: auto;
+}
+
+.feed ps-banner {
+  margin-bottom: var(--space-2);
+}
+
+.feed ps-banner[hidden] {
+  display: none;
+}
+
+.feed .fd-region {
+  position: relative;
+}
+
+.feed .fd-region[hidden],
+.feed .fd-disabled[hidden] {
+  display: none;
+}
+
+.feed ps-data-table .ps-table-scroll {
+  max-height: calc(100dvh - var(--topbar-h) - 180px);
+  min-height: 160px;
+}
+
+.feed .fd-pill {
+  position: absolute;
+  inset-block-start: calc(var(--row-compact) + var(--space-2));
+  inset-inline: 0;
+  z-index: calc(var(--z-sticky) + 2);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.feed .fd-pill[hidden] {
+  display: none;
+}
+
+.feed .fd-pill ps-button {
+  pointer-events: auto;
+  box-shadow: var(--shadow);
+}
+
+.feed .fd-link {
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.feed ps-data-table tbody tr:has(.fd-tail) > td {
+  overflow: visible;
+  color: var(--text-dim);
+}
+
+.feed .fd-tail {
+  display: inline-block;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+}
+
+.feed ps-data-table :is(thead th, tbody td):is(:nth-child(4), :nth-child(6)) {
+  padding-inline: var(--space-1);
+}
+
+.feed ps-data-table ps-chip {
+  padding-inline: var(--space-1);
+}

@@ -1,0 +1,125 @@
+.sessions .view-header {
+  align-items: flex-end;
+}
+
+.sessions .ss-controls {
+  display: flex;
+  flex: 1 1 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  gap: var(--space-2) var(--space-3);
+}
+
+.sessions .ss-controls ps-select {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sessions .ss-chips {
+  display: inline-flex;
+  align-items: center;
+}
+
+.sessions .ss-controls ps-select.ss-statuspick {
+  display: none;
+}
+
+.sessions .ss-controls ps-select > .ps-native {
+  width: auto;
+  min-width: 128px;
+}
+
+@media (max-width: 1023px) {
+  .sessions .ss-seg {
+    display: none;
+  }
+
+  .sessions .ss-controls ps-select.ss-statuspick {
+    display: flex;
+  }
+}
+
+.sessions .ss-summary {
+  margin-bottom: var(--space-2);
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+.sessions ps-data-table .ps-table-scroll {
+  max-height: calc(100dvh - var(--topbar-h) - 160px);
+}
+
+.sessions ps-data-table table {
+  min-width: 1100px;
+}
+
+.sessions ps-data-table :is(thead th, tbody td):nth-child(2) {
+  position: sticky;
+  inset-inline-start: 28px;
+  background-color: var(--surface);
+  z-index: 1;
+}
+
+.sessions ps-data-table thead th:nth-child(2) {
+  z-index: calc(var(--z-sticky) + 1);
+}
+
+.sessions ps-data-table tbody tr:hover > td:nth-child(2) {
+  background-image: linear-gradient(var(--row-hover), var(--row-hover));
+}
+
+.sessions ps-data-table tbody tr[aria-current="true"] > td:nth-child(2) {
+  background-image: linear-gradient(var(--row-selected), var(--row-selected));
+}
+
+.sessions ps-data-table tbody td {
+  overflow: hidden;
+}
+
+.sessions .ss-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.sessions ps-data-table .ps-detail > td {
+  white-space: normal;
+}
+
+.sessions .ss-detail {
+  position: sticky;
+  inset-inline-start: var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+  inline-size: min(100%, calc(100cqw - 28px - 2 * var(--space-3) - 2 * var(--gutter)));
+  min-inline-size: 280px;
+}
+
+.sessions .ss-projects {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.sessions .ss-projects :is(th, td) {
+  height: 24px;
+  padding: 0 var(--space-2);
+  border-bottom: var(--border-w) solid var(--border);
+  text-align: start;
+  font-weight: var(--weight-regular);
+}
+
+.sessions .ss-projects thead th {
+  color: var(--text-dim);
+  font-weight: var(--weight-medium);
+}
+
+.sessions .ss-none {
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+}
