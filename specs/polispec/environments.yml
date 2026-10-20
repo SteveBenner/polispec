@@ -18,6 +18,11 @@ environments:
     audience: [operator]
     exposure: none
     data_classes: [synthetic, operational]
+    deploy:
+      steps: ["true"]
+      health:
+        run: "bin/polispec smoke run --no-record"
+        timeout_s: 900
     operators: [agent, operator]
   prod:
     branch: stable
@@ -27,5 +32,9 @@ environments:
     audience: [users]
     exposure: none
     data_classes: [operational]
+    deploy:
+      steps: ["true"]
+      health:
+        run: "bin/polispec version"
     operators: [operator]
     rollback: "polispec deploy polispec stable --tag vPREV"
