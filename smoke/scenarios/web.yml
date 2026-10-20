@@ -95,11 +95,11 @@ fixture:
         check("applying the same plan again is a conflict", status == 409 && again["error"] == "conflict")
 
         status, after = client.request("GET", "/rulebooks/project/shop/source")
-        check("the rulebook the web reads is still the trust ref until the operator promotes", status == 200 && after["ref"].to_s.start_with?("stable") && !after["yaml"].to_s.include?("R-SMOKE-DEV-SECRET"), after["ref"])
+        check("the manager edits main, which is ahead of the trust ref until the operator promotes", status == 200 && after["ref"].to_s.start_with?("main@") && after["trust_ref"].to_s.start_with?("stable") && after["ahead"].to_i >= 1 && after["yaml"].to_s.include?("R-SMOKE-DEV-SECRET"), after["ref"])
 
         loosened = after["yaml"].to_s.lines.reject { |row| row.include?("R-PROD-SECRET") }.join
         status, loose = client.request("POST", "/plans", { "target" => target, "change" => { "kind" => "replace", "yaml" => loosened } })
-        check("a loosening plan is classified and needs its id typed", status == 200 && loose["classification"] == "loosening" && loose["needs_confirm"] == true, loose["classification"])
+        check("a plan that loosens is classified against the trust ref and needs its id typed", status == 200 && %w[loosening mixed].include?(loose["classification"]) && loose["needs_confirm"] == true, loose["classification"])
         status, refused = client.request("POST", "/plans/#{loose['plan_id']}/apply", {})
         check("a loosening plan without confirm gets 422", status == 422 && refused["error"] == "confirm_required", "status #{status}")
         status, wrong = client.request("POST", "/plans/#{loose['plan_id']}/apply", { "confirm" => "plan_000000000000000000000000" })
@@ -161,8 +161,8 @@ steps:
         - "ok the tightening plan applies on one call"
         - "ok applying the same plan again is a conflict"
         - "ok the apply hands the stable promotion to the operator as a command"
-        - "ok the rulebook the web reads is still the trust ref until the operator promotes"
-        - "ok a loosening plan is classified and needs its id typed"
+        - "ok the manager edits main, which is ahead of the trust ref until the operator promotes"
+        - "ok a plan that loosens is classified against the trust ref and needs its id typed"
         - "ok a loosening plan without confirm gets 422"
         - "ok a loosening plan with another plan id gets 409"
         - "ok a mutating call without the CSRF header is refused"
