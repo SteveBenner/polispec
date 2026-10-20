@@ -25,7 +25,7 @@ $defs:
       verbs:
         type: array
         minItems: 1
-        items: { enum: [promote, deploy] }
+        items: { enum: [promote, deploy, exceptions-add, exceptions-promote, exceptions-remove] }
       projects: { $ref: "#/$defs/names" }
       targets:
         type: array
