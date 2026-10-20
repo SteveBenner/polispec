@@ -16,8 +16,11 @@ class PsTooltip extends HTMLElement {
     this.showTimer = 0;
     this.hideTimer = 0;
     this.onEnter = () => this.schedule(SHOW_DELAY);
-    this.onFocus = () => this.schedule(0);
+    this.onFocus = () => {
+      if (this.attached && this.attached.matches(":focus-visible")) this.schedule(0);
+    };
     this.onLeave = () => this.scheduleHide();
+    this.onPress = () => this.hide();
     this.onKey = (event) => {
       if (event.key === "Escape" && !this.hidden) this.hide();
     };
@@ -32,6 +35,7 @@ class PsTooltip extends HTMLElement {
     clearTimeout(this.showTimer);
     clearTimeout(this.hideTimer);
     document.removeEventListener("keydown", this.onKey);
+    document.removeEventListener("ps-overlay-open", this.onPress);
     this.bound = false;
   }
 
@@ -75,6 +79,7 @@ class PsTooltip extends HTMLElement {
     element.addEventListener("pointerleave", this.onLeave);
     element.addEventListener("focus", this.onFocus);
     element.addEventListener("blur", this.onLeave);
+    element.addEventListener("click", this.onPress);
     this.syncDescription();
   }
 
@@ -85,6 +90,7 @@ class PsTooltip extends HTMLElement {
     element.removeEventListener("pointerleave", this.onLeave);
     element.removeEventListener("focus", this.onFocus);
     element.removeEventListener("blur", this.onLeave);
+    element.removeEventListener("click", this.onPress);
     this.attached = null;
   }
 
@@ -117,12 +123,15 @@ class PsTooltip extends HTMLElement {
     this.hidden = false;
     this.place();
     document.addEventListener("keydown", this.onKey);
+    document.addEventListener("ps-overlay-open", this.onPress);
   }
 
   hide() {
     clearTimeout(this.showTimer);
+    clearTimeout(this.hideTimer);
     this.hidden = true;
     document.removeEventListener("keydown", this.onKey);
+    document.removeEventListener("ps-overlay-open", this.onPress);
   }
 
   place() {

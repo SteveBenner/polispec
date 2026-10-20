@@ -33,6 +33,7 @@ class PsConfirm extends HTMLElement {
     this.button = document.createElement("ps-button");
     this.button.setAttribute("variant", "primary");
     this.button.setAttribute("size", "md");
+    this.button.setAttribute("write", "");
     this.row.append(this.field, this.button);
     this.status = document.createElement("div");
     this.status.className = "ps-status";

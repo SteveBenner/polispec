@@ -41,6 +41,7 @@ function button(text, options = {}) {
   const node = document.createElement("ps-button");
   if (options.variant) node.setAttribute("variant", options.variant);
   if (options.size) node.setAttribute("size", options.size);
+  if (options.write) node.setAttribute("write", "");
   node.text = text;
   return node;
 }
@@ -234,7 +235,7 @@ class Register {
     const actions = el("div", "rg-actions");
     this.checkButton = button("Check", { size: "md" });
     this.checkButton.setAttribute("busy-label", "Checking");
-    this.registerButton = button("Register", { variant: "primary", size: "md" });
+    this.registerButton = button("Register", { variant: "primary", size: "md", write: true });
     actions.append(this.checkButton, this.registerButton);
     review.append(this.findings, actions);
 

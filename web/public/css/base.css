@@ -140,6 +140,10 @@ pre {
   min-width: 0;
 }
 
+.specimen:not([data-shown]) {
+  display: none;
+}
+
 .specimen-head {
   display: flex;
   flex-wrap: wrap;

@@ -23,7 +23,7 @@ import "./ps-session-gate.js";
 import { trapTab } from "./ps-side-panel.js";
 import "./ps-theme-switcher.js";
 import { guard } from "./ps-view-boundary.js";
-import { app } from "../core/store.js";
+import { app, readOnly, READ_ONLY_REASON } from "../core/store.js";
 import { get, endpoints } from "../core/api.js";
 import { currentRoute } from "../core/router.js";
 import * as keys from "../core/keys.js";
@@ -63,8 +63,13 @@ class PsAppShell extends HTMLElement {
     this.banner.addEventListener("ps-action", () => {
       get(endpoints.config, { retry: false }).catch(() => null);
     });
+    this.roBanner = document.createElement("ps-banner");
+    this.roBanner.setAttribute("severity", "info");
+    this.roBanner.setAttribute("text", READ_ONLY_REASON);
+    this.roBanner.setAttribute("data-banner", "read-only");
+    this.roBanner.hidden = true;
     this.tray = document.createElement("ps-plan-tray");
-    this.stage.append(this.banner, view, this.tray);
+    this.stage.append(this.banner, this.roBanner, view, this.tray);
     this.panel = document.createElement("ps-side-panel");
     this.panel.setAttribute("heading", "Author panel");
     this.palette = document.createElement("ps-palette");
@@ -246,6 +251,7 @@ class PsAppShell extends HTMLElement {
     const offline = Boolean(app.get().offline);
     this.banner.hidden = !offline;
     document.documentElement.toggleAttribute("data-offline", offline);
+    this.roBanner.hidden = !readOnly();
   }
 
   panelMode() {

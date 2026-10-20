@@ -49,7 +49,9 @@ class PsDigest extends HTMLElement {
     const value = this.getAttribute("value") || "";
     const length = Number(this.getAttribute("length")) || 8;
     const middle = this.getAttribute("truncate") === "middle";
-    this.button.textContent = middle ? middleTruncate(value, length) : value.slice(0, length);
+    const prefixed = /^sha256:/.test(value);
+    const shown = prefixed ? value.slice(7, 7 + Math.max(length, 12)) : value.slice(0, length);
+    this.button.textContent = middle ? middleTruncate(value, length) : shown;
     const kind = this.getAttribute("kind") || "digest";
     this.button.setAttribute("aria-label", `Copy ${kind} ${value}`);
     this.tooltip.setAttribute("text", value);

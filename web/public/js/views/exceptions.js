@@ -20,9 +20,11 @@ const POLL_MS = 700;
 const WAIT_LIMIT_MS = 600000;
 const WIDE = 1440;
 const END_STATES = ["succeeded", "failed", "cancelled", "timed_out"];
+const OPEN_STATES = ["requesting", "waiting"];
+let pendingCancel = null;
 const VERBS = {
   add: { title: "Add exception", action: "Add exception", grant: "exceptions-add" },
-  promote: { title: "Promote proposal", action: "Promote proposal", grant: "exceptions-promote" },
+  promote: { title: "Adopt proposal", action: "Adopt proposal", grant: "exceptions-promote" },
   remove: { title: "Remove exception", action: "Remove exception", grant: "exceptions-remove" },
 };
 
@@ -37,6 +39,7 @@ function button(text, options = {}) {
   const node = document.createElement("ps-button");
   if (options.variant) node.setAttribute("variant", options.variant);
   if (options.size) node.setAttribute("size", options.size);
+  if (options.write) node.setAttribute("write", "");
   node.text = text;
   return node;
 }
@@ -156,7 +159,7 @@ class PhraseFlow {
     const footer = el("div", "ex-flow-footer");
     footer.setAttribute("data-dialog-footer", "");
     this.cancel = button("Close", { size: "md" });
-    this.go = button(VERBS[verb].action, { variant: verb === "remove" ? "danger" : "primary", size: "md" });
+    this.go = button(VERBS[verb].action, { variant: verb === "remove" ? "danger" : "primary", size: "md", write: true });
     footer.append(this.cancel, this.go);
     this.dialog.append(this.body, footer);
     host.append(this.dialog);
@@ -172,7 +175,15 @@ class PhraseFlow {
     this.dialog.show(this.opener);
   }
 
+  cancelRun() {
+    if (!this.runId || !OPEN_STATES.includes(this.state)) return;
+    const id = this.runId;
+    this.runId = "";
+    pendingCancel = post(endpoints.runCancel(id), {}).catch(() => null);
+  }
+
   dispose() {
+    this.cancelRun();
     if (this.onClose && this.dialog.isConnected) {
       const done = this.state === "confirmed";
       const close = this.onClose;
@@ -221,6 +232,8 @@ class PhraseFlow {
     if (!this.mode.ok || this.state === "requesting" || this.state === "applying") return;
     this.gen += 1;
     const gen = this.gen;
+    if (pendingCancel) await pendingCancel;
+    pendingCancel = null;
     this.state = "requesting";
     this.output = "";
     this.offset = 0;
@@ -435,7 +448,7 @@ class Exceptions {
     const header = el("header", "view-header");
     const heading = el("h1", "", "Exceptions");
     heading.tabIndex = -1;
-    this.addButton = button("Add exception", { size: "md" });
+    this.addButton = button("Add exception", { size: "md", write: true });
     this.addButton.addEventListener("click", () => this.openAdd());
     header.append(heading, this.addButton);
     this.body = el("div", "ex-body");
@@ -560,8 +573,8 @@ class Exceptions {
         label: "Action",
         width: "96px",
         render: (row) => {
-          const promote = button("Promote", { size: "xs" });
-          promote.setAttribute("aria-label", `Promote proposal ${row.id}`);
+          const promote = button("Adopt", { size: "xs", write: true });
+          promote.setAttribute("aria-label", `Adopt proposal ${row.id}`);
           promote.addEventListener("click", () => this.openPromote(row, promote));
           return promote;
         },
@@ -592,7 +605,7 @@ class Exceptions {
     pane.append(heading);
     const scope = scopeOf(entry);
     const glob = el("code", "ex-glob mono", globOf(entry));
-    const remove = button("Remove", { variant: "danger", size: "md" });
+    const remove = button("Remove", { variant: "danger", size: "md", write: true });
     remove.addEventListener("click", () => this.openRemove(entry, remove));
     pane.append(
       kvList([

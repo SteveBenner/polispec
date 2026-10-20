@@ -25,6 +25,7 @@ export class ApiError extends Error {
     this.kind = kind;
     this.status = details.status || 0;
     this.code = details.code || null;
+    this.reason = details.reason || null;
     this.findings = details.findings || null;
     this.retryAfter = details.retryAfter == null ? null : details.retryAfter;
     this.elapsed = details.elapsed == null ? null : details.elapsed;
@@ -60,6 +61,7 @@ export function fromResponse(response, body, attempts, elapsed) {
   return new ApiError(kind, message, {
     status: response.status,
     code: payload.error || null,
+    reason: typeof payload.reason === "string" ? payload.reason : null,
     findings: payload.findings || null,
     retryAfter: parseRetryAfter(response.headers.get("Retry-After")),
     requestId: response.headers.get("X-Request-Id") || null,
