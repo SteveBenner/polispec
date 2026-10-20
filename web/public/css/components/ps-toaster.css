@@ -1,0 +1,117 @@
+ps-toaster {
+  position: fixed;
+  inset-inline-end: var(--gutter);
+  inset-block-end: var(--gutter);
+  z-index: var(--z-toast);
+  display: block;
+  width: 360px;
+  max-width: calc(100vw - 2 * var(--gutter));
+  pointer-events: none;
+}
+
+ps-toaster .ps-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+ps-toaster .ps-more {
+  align-self: flex-end;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 var(--border-w) var(--border-strong);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  pointer-events: auto;
+}
+
+ps-toaster .ps-more[hidden] {
+  display: none;
+}
+
+ps-toaster .ps-toast {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition:
+    opacity var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+
+@starting-style {
+  ps-toaster .ps-toast {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+ps-toaster .ps-toast[hidden] {
+  display: none;
+}
+
+ps-toaster .ps-toast[data-leaving] {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+ps-toaster .ps-lead {
+  display: inline-flex;
+  padding-top: 1px;
+  color: var(--text-dim);
+}
+
+ps-toaster .ps-toast[data-kind="success"] .ps-lead {
+  color: var(--verdict-allow);
+}
+
+ps-toaster .ps-toast[data-kind="error"] .ps-lead {
+  color: var(--danger);
+}
+
+ps-toaster .ps-toast[data-kind="warn"] .ps-lead {
+  color: var(--warn);
+}
+
+ps-toaster .ps-text {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+  min-width: 0;
+}
+
+ps-toaster .ps-title {
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  font-weight: var(--weight-medium);
+  overflow-wrap: anywhere;
+}
+
+ps-toaster .ps-body {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 767px) {
+  ps-toaster {
+    inset-inline-start: 50%;
+    inset-inline-end: auto;
+    width: calc(100vw - 2 * var(--gutter));
+    transform: translateX(-50%);
+  }
+}

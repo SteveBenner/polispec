@@ -1,0 +1,121 @@
+ps-palette {
+  display: contents;
+}
+
+ps-palette ps-dialog > .ps-native {
+  --dialog-w: min(640px, 100vw - 32px);
+  margin: 12vh auto auto;
+  max-height: min(76vh, 640px);
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+
+ps-palette ps-dialog .ps-header {
+  display: none;
+}
+
+ps-palette ps-dialog .ps-body {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+  padding: var(--space-2);
+}
+
+ps-palette ps-text-field {
+  --field-h: var(--control-md);
+}
+
+ps-palette .ps-list {
+  display: grid;
+  max-height: min(56vh, 460px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+ps-palette .ps-group {
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  color: var(--text-faint);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: var(--weight-medium);
+}
+
+ps-palette .ps-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--row);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  cursor: pointer;
+}
+
+ps-palette .ps-option .ps-icon {
+  color: var(--text-dim);
+}
+
+ps-palette .ps-option .ps-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+ps-palette .ps-option .ps-hint {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+}
+
+ps-palette .ps-option[aria-selected="true"] {
+  background: var(--row-selected);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+ps-palette .ps-note {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+ps-palette .ps-empty {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-2);
+}
+
+ps-palette .ps-empty .ps-title {
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  font-weight: var(--weight-medium);
+  overflow-wrap: anywhere;
+}
+
+ps-palette .ps-empty .ps-body {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+@media (max-width: 767px) {
+  ps-palette ps-dialog > .ps-native {
+    margin: 0;
+    max-height: 100dvh;
+  }
+
+  ps-palette ps-dialog .ps-header {
+    display: flex;
+  }
+
+  ps-palette .ps-list {
+    max-height: none;
+  }
+}
