@@ -40,9 +40,9 @@ module Polispec
           relay.call(type: "draft", yaml: built[:yaml], findings: built[:findings])
           announce("turn", entry, duration_ms: ((clock - started) * 1000).round, cost: done.is_a?(Hash) ? done[:cost] : nil)
           built.merge(adapter: entry.adapter_id, session: entry.id)
-        rescue StandardError
+        rescue StandardError => e
           close(entry.id) if fresh
-          raise
+          raise Author.translate(e)
         end
       end
 
@@ -92,23 +92,31 @@ module Polispec
 
       def open_entry(kind, context, relay)
         klass = Author.registry[@adapter_id]
-        raise Unavailable.new("unknown_adapter", "no author adapter #{@adapter_id}; known: #{Author.registry.keys.sort.join(', ')}") unless klass
+        extension = klass ? nil : extension_adapter
+        unless klass || extension
+          known = Author.registry.keys.sort.join(", ")
+          raise Unavailable.new("unknown_adapter", "no author adapter #{@adapter_id}; built in: #{known}; #{Author.extension_note}")
+        end
 
         id = SecureRandom.uuid
         lock = Bounds.acquire_session(id)
         begin
-          adapter = klass.new
+          adapter = klass ? klass.new : extension
           handle = adapter.open(context.merge(kind: kind.to_s, session_id: id))
           real_id = handle.respond_to?(:id) && !handle.id.to_s.empty? ? handle.id.to_s : id
-        rescue StandardError
+        rescue StandardError => e
           lock.release
-          raise
+          raise Author.translate(e)
         end
         entry = Entry.new(real_id, handle, adapter, lock, clock, nil, @adapter_id)
         @mutex.synchronize { @entries[real_id] = entry }
         start_reaper
         announce("open", entry)
         entry
+      end
+
+      def extension_adapter
+        Author.extension_adapter?(@adapter_id) ? Author.extension_port : nil
       end
 
       def start_reaper
