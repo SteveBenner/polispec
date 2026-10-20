@@ -25,6 +25,10 @@ metadata:
     - "Exceptions promote from the web relays the typed phrase through the delegate runner, never in polispec-lock."
     - "Edition registry specs/editions.yml; code reads it through Polispec::Editions; every lock branch in the code moves behind it; polispec editions --check and doctor report drift. Web is excluded from lock."
     - "Themes: system, light, dark, apple-noir, apple-austere, tronwave; first visit system; recorded as a fleet.yml exception."
+    - "Authorized token runs (2026-10-20): the author probe (Claude), the Codex investigations and a Codex author turn, the Claude Code hook snapshot test, and one rllm turn. Each runs once, in scratch projects, at the smallest model that answers."
+    - "rplugin 1.16.0 and catalogue 2.7.0 are built in worktrees and released before polispec 0.34.0, each release after Sven's yes."
+    - "At most 4 workers run at once."
+    - "Network fetches allowed once: the four gems from rubygems.org and a CodeMirror 6 pre-bundle built with npm and esbuild in the scratchpad only."
 vision:
   problem: >-
     polispec lives entirely in files and a CLI. A person cannot see which projects a shelf module reaches, what a policy is
@@ -264,7 +268,7 @@ slices:
   - id: B5b-author-probe
     wave: 2
     depends_on: [B5-author]
-    gated: "Runs a real Claude Code session and costs tokens. Only after Sven authorizes it through the primary."
+    gated: "Runs a real Claude Code session and costs tokens; authorized 2026-10-20, run once."
     deliverable: "One real draft with claude-haiku-5-5 at low effort in a scratch project: record the observed init, delta, control_request and result shapes, adjust ClaudeSession to them, and confirm the polispec guard judged the session's tool calls (judgment records with its session id)."
   - id: B6-manifest
     wave: 2
