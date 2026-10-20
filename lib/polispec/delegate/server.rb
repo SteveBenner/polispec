@@ -190,6 +190,8 @@ module Polispec
         by = request["by"]
         return { "ok" => false, "code" => "invalid", "detail" => "by" } unless by.is_a?(String) && BY.match?(by)
 
+        return { "ok" => false, "code" => "disabled", "detail" => "exceptions.delegate_promote" } if Grants.exceptions_argv?(argv) && Grants.exceptions_locked?
+
         reason = Grants.covers?(grant, argv)
         return { "ok" => false, "code" => "out_of_scope", "detail" => reason } if reason
 
