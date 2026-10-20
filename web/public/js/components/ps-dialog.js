@@ -70,6 +70,7 @@ class PsDialog extends HTMLElement {
   show(opener) {
     if (this.dialog.open) return;
     this.opener = opener || document.activeElement;
+    document.dispatchEvent(new CustomEvent("ps-overlay-open"));
     this.dialog.showModal();
     const selector = this.getAttribute("initial-focus");
     const target = selector ? this.dialog.querySelector(selector) : null;

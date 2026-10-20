@@ -69,6 +69,7 @@ function button(text, options = {}) {
   node.setAttribute("size", options.size || "sm");
   if (options.variant) node.setAttribute("variant", options.variant);
   if (options.icon) node.setAttribute("icon", options.icon);
+  if (options.write) node.setAttribute("write", "");
   node.text = text;
   return node;
 }
@@ -260,9 +261,9 @@ class Manager {
     this.validation.addEventListener("click", () => this.openTab("lint", true));
     this.composeButton = button("Compose");
     this.composeButton.addEventListener("click", () => this.openTab("compose", true));
-    this.moveButton = button("Move");
+    this.moveButton = button("Move", { write: true });
     this.moveButton.addEventListener("click", () => this.openMove());
-    this.planButton = button("Plan", { variant: "primary" });
+    this.planButton = button("Plan", { variant: "primary", write: true });
     this.planButton.addEventListener("click", () => this.plan());
     this.authorButton = document.createElement("ps-icon-button");
     this.authorButton.setAttribute("icon", "panel-right");
@@ -489,6 +490,9 @@ class Manager {
       etag: result.etag || data.etag || data.digest || "",
       digest: data.digest || "",
       schema: data.schema_id || data.schema || "",
+      ahead: Number(data.ahead) > 0 ? Number(data.ahead) : 0,
+      aheadFiles: Array.isArray(data.ahead_files) ? data.ahead_files.map((entry) => (entry && typeof entry === "object" ? entry.path || entry.file || "" : String(entry))).filter(Boolean) : [],
+      trustRef: data.trust_ref || "",
     };
   }
 
@@ -506,6 +510,7 @@ class Manager {
     this.etag = source.etag;
     this.digest = source.digest;
     this.schema = source.schema;
+    this.aheadBanner(source);
     const pending = first ? takePendingDraft() : null;
     const saved = first ? readDraft(this.kind, this.id) : null;
     let text = source.text;
@@ -524,6 +529,19 @@ class Manager {
     this.afterChange(true);
     if (restored) this.restoredBanner();
     if (pending && pending.yaml !== source.text) this.noteBanner("Draft from the author loaded into the editor.", "info");
+  }
+
+  aheadBanner(source) {
+    this.clearBanner("ahead");
+    if (!source || !(source.ahead > 0)) return;
+    const count = source.ahead;
+    const ref = source.trustRef || "the trust ref";
+    const banner = this.noteBanner(`main is ${count} ${count === 1 ? "commit" : "commits"} ahead of ${ref}. A plan from here includes those changes.`, "info", "ahead");
+    if (source.aheadFiles.length) {
+      const list = el("ul", "mgr-ahead-files mono");
+      for (const file of source.aheadFiles) list.append(el("li", "", file));
+      banner.append(list);
+    }
   }
 
   mountEditor(text) {
@@ -704,6 +722,7 @@ class Manager {
         this.base = source.text;
         this.etag = source.etag;
         this.digest = source.digest;
+        this.aheadBanner(source);
         this.editor.setValue(source.text);
         this.draft = source.text;
         this.afterChange(true);
@@ -790,6 +809,7 @@ class Manager {
       this.base = main.text;
       this.etag = main.etag;
       this.digest = main.digest;
+      this.aheadBanner(main);
       this.editor.setValue(merged);
       this.clearBanner("conflict");
       this.noteBanner(mine === merged ? "Draft rebased on main." : "Draft rebased on main. Review the merged text before planning.", "ok", "rebased");
@@ -1297,7 +1317,7 @@ class Manager {
     const footer = el("div", "mgr-dialog-footer");
     footer.setAttribute("data-dialog-footer", "");
     const cancel = button("Cancel", { size: "md" });
-    const go = button("Plan move", { size: "md", variant: "primary" });
+    const go = button("Plan move", { size: "md", variant: "primary", write: true });
     footer.append(cancel, go);
     dialog.append(footer);
     document.body.append(dialog);

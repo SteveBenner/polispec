@@ -72,7 +72,7 @@ function boundLabel(bounds, index) {
   const high = bounds[index];
   if (low > high) return "none";
   if (low === high) return formatCount(high);
-  return `${formatCount(low)}–${formatCount(high)}`;
+  return `${formatCount(low)}-${formatCount(high)}`;
 }
 
 function swatch(heat) {

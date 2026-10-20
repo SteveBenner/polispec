@@ -36,6 +36,7 @@ function button(text, options = {}) {
   const node = document.createElement("ps-button");
   if (options.variant) node.setAttribute("variant", options.variant);
   if (options.size) node.setAttribute("size", options.size);
+  if (options.write) node.setAttribute("write", "");
   node.text = text;
   return node;
 }
@@ -302,7 +303,7 @@ class Gallery {
     body.append(targetWrap);
     const actions = el("div", "gl-actions");
     const preview = button("Preview on map", { size: "md" });
-    const plan = button("Plan", { variant: "primary", size: "md" });
+    const plan = button("Plan", { variant: "primary", size: "md", write: true });
     actions.append(preview, plan);
     body.append(actions);
     drawer.append(body);
