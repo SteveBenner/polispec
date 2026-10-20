@@ -116,6 +116,7 @@ module Polispec
           "operator" => Engine::Settings.operator,
           "owner" => Registration.owner,
           "home" => Dir.home,
+          "read_only" => Web.context&.read_only == true,
           "flags" => {
             "author" => author_flag,
             "feed" => { "enabled" => true, "reason" => nil },
