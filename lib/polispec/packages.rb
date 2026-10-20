@@ -658,6 +658,7 @@ module Polispec
           original = Ledger.starter_text
           @ledger_created = true
         end
+        guard_runtime unless @upgrade
         updated = @upgrade ? replace_record(original, record_lines(digests)) : insert_entry(original, entry_for_ledger + ["    packages:"] + record_lines(digests))
         data = Schema::Document.parse(updated, path)
         errors = Schema.validate("ledger", data)
@@ -666,6 +667,16 @@ module Polispec
         updated
       rescue Schema::Document::ParseError => e
         raise Operator::Failure.new("ledger_invalid", e.message)
+      end
+
+      def guard_runtime
+        return unless Registration.runtime_behind?
+
+        Registration.refuse_behind! unless @options.dry
+        return if @behind_noted
+
+        @behind_noted = true
+        note("ledger", "note", Registration.behind_note.sub(/\Anote: /, ""))
       end
 
       def step_ledger

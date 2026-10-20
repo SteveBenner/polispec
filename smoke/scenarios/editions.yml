@@ -1,0 +1,47 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/editions
+summary: editions --check finds no drift between specs/editions.yml and the tree; the table lists the registered features; under the lock edition registering a governed path is refused with edition_restricted and the delegated exceptions verbs are refused with edition_excluded, while the standard edition accepts both
+fixture:
+  enforce: enforce
+  global: files
+  global_files:
+    "global.yml": "schema: polispec.global/v1\nsummary: Smoke baseline with one rule so every path is governed.\nrules:\n  - { id: SMOKE-NOSECRETS, match: { class: [secrets.read], env: prod }, verdict: deny, reason: \"smoke baseline: no production secrets\" }\n"
+  files:
+    "tools/README.md": "tools\n"
+  projects:
+    - id: shop
+      variant: service
+      status: live
+steps:
+  - name: editions --check reports zero findings on the tree
+    run: ["{{polispec}}", editions, --check]
+    expect:
+      exit: 0
+      stdout_includes: ["polispec editions: 0 findings"]
+  - name: editions --check --json is ok with no findings
+    run: ["{{polispec}}", editions, --check, --json]
+    expect:
+      exit: 0
+      stdout_includes: ["\"ok\":true", "\"findings\":[]"]
+  - name: the table lists the delegated exceptions feature with its standard and lock values
+    run: ["{{polispec}}", editions]
+    expect:
+      exit: 0
+      stdout_includes: ["exceptions.delegate_promote", "register.path", "manifest.index_publish"]
+  - name: under lock registering a governed path is refused
+    run: ["{{polispec}}", register, "{{files}}/tools", --id, tools, --dry-run]
+    env: { RPLUGIN_POLISPEC_POLISPEC_EDITION: lock }
+    expect:
+      exit: 1
+      stderr_includes: ["edition_restricted"]
+  - name: under lock granting a delegated exceptions verb is refused
+    run: ["{{polispec}}", delegate, grant, teach, --projects, shop, --verbs, exceptions-add, --targets, test]
+    env: { RPLUGIN_POLISPEC_POLISPEC_EDITION: lock }
+    expect:
+      exit: 1
+      stderr_includes: ["edition_excluded"]
+  - name: under the standard edition the same registration previews a tightening plan
+    run: ["{{polispec}}", register, "{{files}}/tools", --id, tools, --dry-run]
+    expect:
+      exit: 0
+      stdout_includes: ["classification: tightening", "ledger adds path tools with status onboarding"]

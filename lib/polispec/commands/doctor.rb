@@ -31,12 +31,15 @@ module Polispec
       findings = []
       ledger = load_ledger(findings)
       check_ledger(ledger, findings) if ledger
+      check_ledger_runtime(ledger, findings) if ledger
+      check_descriptions(ledger, findings) if ledger
       check_runtime(findings)
       check_release(findings)
       check_plane(findings)
       check_judgments(findings)
       check_exceptions(findings)
       check_editions(findings)
+      check_effect(findings)
       blocking = findings.reject { |item| NONBLOCKING.include?(item["severity"]) }
       json ? puts(JSON.generate("ok" => blocking.empty?, "runtime" => runtime_info, "findings" => findings)) : print_text(findings)
       blocking.empty? ? 0 : 1
@@ -430,6 +433,29 @@ module Polispec
       end
     rescue StandardError => error
       findings << finding(nil, "editions_drift", "#{error.class}: #{error.message}").merge("severity" => "warn")
+    end
+
+    def check_descriptions(ledger, findings)
+      findings.concat(Description.doctor_findings(ledger))
+    end
+
+    def check_effect(findings)
+      findings.concat(Effect.doctor_findings)
+    end
+
+    def check_ledger_runtime(ledger, findings)
+      keys = []
+      keys << "paths" unless Array(ledger.paths).empty?
+      keys << "owner" if Array(ledger.projects).any?(&:owner) || Array(ledger.paths).any?(&:owner)
+      keys << "registered_by" if Array(ledger.projects).any?(&:registered_by) || Array(ledger.paths).any?(&:registered_by)
+      return if keys.empty?
+
+      release = Description.installed_release
+      return unless Description.ahead_of_runtime?(release)
+
+      findings << finding(nil, "ledger_ahead_of_runtime", "the ledger uses #{keys.join(', ')} but the installed release is #{release.join('.')}, older than 0.34.0; that runtime rejects the ledger (additionalProperties false); install 0.34.0 first").merge("severity" => "warn")
+    rescue StandardError => error
+      findings << finding(nil, "ledger_ahead_of_runtime", "#{error.class}: #{error.message}").merge("severity" => "info")
     end
 
     def finding(project, kind, detail)
