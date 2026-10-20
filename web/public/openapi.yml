@@ -717,6 +717,8 @@ paths:
           "$ref": "#/components/responses/Error"
         '502':
           "$ref": "#/components/responses/Error"
+        '503':
+          "$ref": "#/components/responses/Error"
         '202':
           description: Accepted; the turn runs.
           content:
