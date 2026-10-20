@@ -93,6 +93,10 @@ case "$mode" in
 esac
 out="$(printf '%s' "$input" | "$bin" hook "$mode" --harness "$harness" 2>/dev/null)"
 rc=$?
+if [ "$rc" -eq 2 ] && [ "$mode" = pretool ] && [ "${out:0:1}" = "{" ]; then
+  printf '%s\n' "$out"
+  exit 2
+fi
 if [ "$rc" -ne 0 ]; then
   echo "polispec-guard: polispec exited $rc; inline fallback applied" >&2
   fallback
