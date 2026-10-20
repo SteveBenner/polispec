@@ -428,9 +428,10 @@ class PsPlanSheet extends HTMLElement {
     const plan = this.s.plan;
     this.bodyHost.replaceChildren();
     this.bodyHost.append(this.cells(plan), this.reachLine(plan));
-    if (plan.reasons.length) {
+    const reasonList = plan.reasons.filter((reason) => !/^(tighten|loosen): .* probe /.test(reason));
+    if (reasonList.length) {
       const reasons = el("ul", "plan-reasons text-xs");
-      for (const reason of plan.reasons.slice(0, 6)) reasons.append(el("li", "", reason));
+      for (const reason of reasonList.slice(0, 6)) reasons.append(el("li", "", reason));
       this.bodyHost.append(reasons);
     }
     this.tabs = this.buildTabs(plan);

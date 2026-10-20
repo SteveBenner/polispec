@@ -155,6 +155,7 @@ export async function render(container, params, signal) {
       if (mapMode && state.payload) button.removeAttribute("disabled");
       else button.setAttribute("disabled", "");
     }
+    reset.hidden = !mapMode;
     const saved = Object.keys(state.positions).length;
     if (saved > 0 && mapMode) {
       reset.removeAttribute("disabled");

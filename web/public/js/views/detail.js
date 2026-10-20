@@ -126,11 +126,20 @@ export async function render(container, params, signal) {
     if ((signal && signal.aborted) || !section.isConnected) return;
     body.textContent = "";
     const state = document.createElement("ps-state");
-    state.setAttribute("kind", "error");
-    state.setAttribute("heading", "The rulebook did not compose");
-    state.setAttribute("body", error.message || "The server did not answer.");
-    if (error.requestId) state.setAttribute("error-id", error.requestId);
-    state.addEventListener("ps-retry", () => render(container, params, signal));
+    if (error.status === 404) {
+      state.setAttribute("kind", "empty_first_run");
+      state.setAttribute("glyph", "question");
+      state.setAttribute("heading", `No ${kind} named ${id}`);
+      state.setAttribute("body", error.message || "Nothing is registered under this id.");
+      state.setAttribute("action", "Open map");
+      state.addEventListener("ps-action", () => navigate("map"));
+    } else {
+      state.setAttribute("kind", "error");
+      state.setAttribute("heading", "The rulebook did not compose");
+      state.setAttribute("body", error.message || "The server did not answer.");
+      if (error.requestId) state.setAttribute("error-id", error.requestId);
+      state.addEventListener("ps-retry", () => render(container, params, signal));
+    }
     body.append(state);
     if (error.findings && error.findings.length) {
       const findings = document.createElement("ps-data-table");
