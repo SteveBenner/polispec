@@ -535,7 +535,7 @@ class Manager {
     this.clearBanner("ahead");
     if (!source || !(source.ahead > 0)) return;
     const count = source.ahead;
-    const ref = source.trustRef || "the trust ref";
+    const ref = String(source.trustRef || "").split("@")[0] || "the trust ref";
     const banner = this.noteBanner(`main is ${count} ${count === 1 ? "commit" : "commits"} ahead of ${ref}. A plan from here includes those changes.`, "info", "ahead");
     if (source.aheadFiles.length) {
       const list = el("ul", "mgr-ahead-files mono");
