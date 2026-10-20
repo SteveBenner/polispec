@@ -3,6 +3,7 @@
 
 require "openssl"
 require_relative "../delegate"
+require_relative "../editions"
 require_relative "../schema/core"
 
 module Polispec
@@ -12,6 +13,12 @@ module Polispec
       TAG = /\Av\d+\.\d+\.\d+([.-][0-9A-Za-z.-]+)?\z/.freeze
       MAX_ARGV = 12
       MAX_ELEMENT = 200
+      EXCEPTIONS_VERBS = %w[exceptions-add exceptions-promote exceptions-remove].freeze
+      VERBS = (Delegate::VERBS + EXCEPTIONS_VERBS).freeze
+      EXCEPTIONS_VALUE_FLAGS = { "add" => %w[--command --tool --kind --rule --note], "promote" => %w[--command --note], "remove" => [] }.freeze
+      EXCEPTIONS_SWITCHES = { "add" => %w[--global], "promote" => %w[--global], "remove" => [] }.freeze
+      PROPOSAL_ID = /\Aapr_[0-9a-f]{12}\z/.freeze
+      ENTRY_ID = /\Aaex_[0-9a-f]{12}\z/.freeze
 
       module_function
 
@@ -85,9 +92,66 @@ module Polispec
         return "argv element contains NUL" if argv.any? { |item| item.include?("\0") }
 
         verb = argv.first
+        return exceptions_reason(grant, argv.drop(1)) if verb == "exceptions"
         return "verb not granted" unless VERBS.include?(verb) && Array(grant["verbs"]).include?(verb)
 
         verb == "promote" ? promote_reason(grant, argv.drop(1)) : deploy_reason(grant, argv.drop(1))
+      end
+
+      def exceptions_locked?
+        !Editions.allowed?("exceptions.delegate_promote")
+      end
+
+      def exceptions_argv?(argv)
+        argv.is_a?(Array) && argv.first == "exceptions"
+      end
+
+      def exceptions_reason(grant, rest)
+        sub = rest.first
+        return "verb not granted" unless EXCEPTIONS_VALUE_FLAGS.key?(sub) && Array(grant["verbs"]).include?("exceptions-#{sub}")
+        return "verb not available in this edition" if exceptions_locked?
+
+        values = []
+        switches = []
+        positional = []
+        queue = rest.drop(1)
+        until queue.empty?
+          item = queue.shift
+          name, inline = item.start_with?("--") ? item.split("=", 2) : [item, nil]
+          if EXCEPTIONS_SWITCHES.fetch(sub).include?(name)
+            return "flag not granted: #{item}" unless inline.nil?
+            return "flag given twice: #{name}" if switches.include?(name)
+
+            switches << name
+          elsif EXCEPTIONS_VALUE_FLAGS.fetch(sub).include?(name)
+            value = inline || queue.shift
+            return "flag needs a value: #{name}" if value.nil?
+            return "flag given twice: #{name}" if values.include?(name)
+
+            values << name
+          elsif item.start_with?("--")
+            return "flag not granted: #{item}"
+          else
+            positional << item
+          end
+        end
+        exceptions_arguments_reason(sub, positional, values)
+      end
+
+      def exceptions_arguments_reason(sub, positional, values)
+        case sub
+        when "add"
+          positional.empty? ? nil : "unexpected argument: #{positional.first}"
+        when "promote"
+          return "promote takes proposal ids" if positional.empty?
+          return "promote takes proposal ids: #{positional.find { |id| !PROPOSAL_ID.match?(id) }}" unless positional.all? { |id| PROPOSAL_ID.match?(id) }
+          return "proposal id given twice" unless positional.uniq.length == positional.length
+          return "--command takes a single proposal id" if values.include?("--command") && positional.length != 1
+
+          nil
+        else
+          positional.length == 1 && ENTRY_ID.match?(positional.first) ? nil : "remove takes one exception id"
+        end
       end
 
       def promote_reason(grant, rest)
