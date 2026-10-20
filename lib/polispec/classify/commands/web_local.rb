@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: MIT
 
 require "json"
-require "uri"
 require_relative "support"
 
 module Polispec
@@ -58,6 +57,7 @@ module Polispec
         end
 
         def parse(text)
+          require "uri"
           text = "http://#{text}" unless text.include?("://")
           URI.parse(text)
         rescue URI::InvalidURIError
