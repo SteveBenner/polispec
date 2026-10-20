@@ -88,6 +88,21 @@ steps:
     expect:
       exit: 1
       stderr_includes: ["not_tty"]
+  - name: the index directory exists
+    run: [mkdir, -p, "{{scratch}}/index"]
+    expect: { exit: 0 }
+  - name: publish is excluded under lock before the terminal check
+    run: ["{{polispec}}", manifest, index, --publish]
+    env: { POLISPEC_INDEX_DIR: "{{scratch}}/index", RPLUGIN_POLISPEC_POLISPEC_EDITION: lock }
+    expect:
+      exit: 1
+      stderr_includes: ["edition_excluded"]
+  - name: unpublish is excluded under lock before the terminal check
+    run: ["{{polispec}}", manifest, index, --unpublish]
+    env: { POLISPEC_INDEX_DIR: "{{scratch}}/index", RPLUGIN_POLISPEC_POLISPEC_EDITION: lock }
+    expect:
+      exit: 1
+      stderr_includes: ["edition_excluded"]
   - name: validate app accepts a declaration
     run: ["{{polispec}}", validate, app, "{{files}}/app.good.yml"]
     expect: { exit: 0 }

@@ -9,7 +9,7 @@ module Polispec
   module Changes
     SCHEMA = "polispec.change/v1"
     PREFIX = "chg_"
-    KINDS = %w[promote apply exceptions.add exceptions.promote exceptions.remove settings.set pin install register].freeze
+    KINDS = %w[promote apply exceptions.add exceptions.promote exceptions.remove settings.set pin install register manifest].freeze
 
     module_function
 

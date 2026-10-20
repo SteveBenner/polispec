@@ -9,6 +9,8 @@ require_relative "operator/git"
 require_relative "operator/tty"
 require_relative "changes"
 require_relative "description"
+require_relative "editions"
+require_relative "harness_controls/plane"
 require_relative "policy_source"
 require_relative "probes"
 require_relative "commands/doctor"
@@ -21,6 +23,7 @@ module Polispec
     MANIFEST_FILE = "polispec.manifest.json"
     BADGE_FILE = ".polispec/badge.svg"
     INDEX_DIR = "/var/lib/polispec/index"
+    INDEX_DIR_ENV = "POLISPEC_INDEX_DIR"
     USER_PATTERN = /\A[A-Za-z_][A-Za-z0-9_.-]{0,63}\z/
     COMMIT_MESSAGE = "Update the polispec manifest"
     SUMMARY_LIMIT = 200
@@ -311,7 +314,7 @@ module Polispec
 
       git.run!("commit", "--quiet", "-m", COMMIT_MESSAGE, "--", *changed, code: "commit_failed")
       sha = git.rev("HEAD")
-      Changes.record(kind: "apply", subject: { "manifest" => id, "action" => "write", "sha" => sha }, epoch_before: before, effects: [])
+      Changes.record(kind: "manifest", subject: { "manifest" => id, "action" => "write", "sha" => sha }, epoch_before: before, effects: [])
       { "id" => id, "committed" => changed, "sha" => sha, "detail" => "committed #{changed.join(', ')}" }
     end
 
@@ -323,10 +326,25 @@ module Polispec
       File.rename(temp, path)
     end
 
+    def index_dir
+      override = ENV[INDEX_DIR_ENV].to_s
+      return INDEX_DIR if override.empty?
+
+      HarnessControls::Plane.resolve["status"] == "unsealed" ? File.expand_path(override) : INDEX_DIR
+    rescue StandardError
+      INDEX_DIR
+    end
+
+    def refuse_excluded!
+      return if Editions.allowed?("manifest.index_publish")
+
+      raise Operator::Failure.new("edition_excluded", "publishing the index is not part of the lock edition (manifest.index_publish)")
+    end
+
     def index_path(name = user)
       raise Operator::Failure.new("user_invalid", "the current user name #{name.inspect} is not usable as an index file name") unless name.to_s.match?(USER_PATTERN)
 
-      File.join(INDEX_DIR, "#{name}.json")
+      File.join(index_dir, "#{name}.json")
     end
 
     def phrase(verb, name = user)
@@ -334,6 +352,7 @@ module Polispec
     end
 
     def require_terminal!(verb)
+      refuse_excluded!
       return if Operator::Tty.terminal?
 
       raise Operator::Failure.new("not_tty", "#{verb} polispec index needs an interactive terminal (a TTY on stdin and a controlling console); an agent shell cannot run it")
@@ -351,15 +370,15 @@ module Polispec
       require_terminal!("publish")
       name = user
       target = index_path(name)
-      unless File.directory?(INDEX_DIR) && File.writable?(INDEX_DIR)
-        raise Operator::Failure.new("index_dir_unavailable", "#{INDEX_DIR} must exist and be writable by #{name}; polispec does not create it", "dir" => INDEX_DIR)
+      unless File.directory?(index_dir) && File.writable?(index_dir)
+        raise Operator::Failure.new("index_dir_unavailable", "#{index_dir} must exist and be writable by #{name}; polispec does not create it", "dir" => index_dir)
       end
 
       document = validate!("index", index(ledger: ledger))
       confirm!("publish", name)
       before = Changes.epoch
       write_atomic(target, "#{JSON.pretty_generate(document)}\n", 0o644)
-      Changes.record(kind: "apply", subject: { "index" => name, "action" => "publish" }, epoch_before: before, effects: [])
+      Changes.record(kind: "manifest", subject: { "index" => name, "action" => "publish" }, epoch_before: before, effects: [])
       { "published" => target, "entries" => document["entries"].length }
     end
 
@@ -372,7 +391,7 @@ module Polispec
       confirm!("unpublish", name)
       before = Changes.epoch
       File.delete(target)
-      Changes.record(kind: "apply", subject: { "index" => name, "action" => "unpublish" }, epoch_before: before, effects: [])
+      Changes.record(kind: "manifest", subject: { "index" => name, "action" => "unpublish" }, epoch_before: before, effects: [])
       { "unpublished" => target }
     end
   end
