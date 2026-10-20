@@ -103,14 +103,16 @@ module Polispec
       klass = Harness.const_get(ADAPTERS.fetch(harness, :Generic))
       adapter = Class.new(klass) { def ask?; true; end }.new(harness)
       within_budget do
-        input = adapter.parse(raw)
-        @input = input
-        @diagnostic_read = diagnostic_input?(adapter, input)
-        @judged = { "targets" => [], "raw" => nil, "control" => nil, "fastpath_key" => nil, "governed" => false, "mode" => nil, "verdict" => nil, "error" => nil }
-        @explain_state = nil
-        judge(adapter, input, { "controls_file" => options["controls_file"], "controls_project" => options["controls_project"] })
-        raise Polispec::Error, "judgment failed: #{@judged['error']}" if @judged["error"]
-        explained(input)
+        PolicySource.memoize do
+          input = adapter.parse(raw)
+          @input = input
+          @diagnostic_read = diagnostic_input?(adapter, input)
+          @judged = { "targets" => [], "raw" => nil, "control" => nil, "fastpath_key" => nil, "governed" => false, "mode" => nil, "verdict" => nil, "error" => nil }
+          @explain_state = nil
+          judge(adapter, input, { "controls_file" => options["controls_file"], "controls_project" => options["controls_project"] })
+          raise Polispec::Error, "judgment failed: #{@judged['error']}" if @judged["error"]
+          explained(input)
+        end
       end
     ensure
       DeferredEvents.queue.clear

@@ -145,6 +145,10 @@ module Polispec
     end
 
     def locate(path, paths: false)
+      HookMemo.fetch(:locate, object_id, path.to_s, paths) { locate_uncached(path, paths) }
+    end
+
+    def locate_uncached(path, paths)
       real = canonical(path)
       return nil if real.nil?
 
@@ -256,6 +260,10 @@ module Polispec
     end
 
     def real_or_nil(path)
+      HookMemo.fetch(:real_or_nil, path) { real_or_nil_uncached(path) }
+    end
+
+    def real_or_nil_uncached(path)
       existing = path
       existing = File.dirname(existing) until File.exist?(existing) || existing == "/"
       tail = path[existing.length..]
