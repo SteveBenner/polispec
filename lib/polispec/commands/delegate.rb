@@ -104,7 +104,8 @@ module Polispec
 
       def build_scope(app, projects, verbs, targets, flags)
         raise Refused.new("invalid", "app must match #{::Polispec::Delegate::APP.source}") unless ::Polispec::Delegate::APP.match?(app)
-        raise Refused.new("invalid", "verbs must be a non-empty subset of #{::Polispec::Delegate::VERBS.join(', ')}") if verbs.empty? || (verbs - ::Polispec::Delegate::VERBS).any?
+        raise Refused.new("invalid", "verbs must be a non-empty subset of #{grants_module::VERBS.join(', ')}") if verbs.empty? || (verbs - grants_module::VERBS).any?
+        raise Refused.new("edition_excluded", "exceptions verbs are not available in this edition (exceptions.delegate_promote)") if (verbs & grants_module::EXCEPTIONS_VERBS).any? && grants_module.exceptions_locked?
         raise Refused.new("invalid", "projects must not be empty") if projects.empty?
 
         ledger = Polispec::Ledger.load
