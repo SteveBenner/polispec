@@ -4,6 +4,7 @@
 require "yaml"
 require "fileutils"
 require "time"
+require_relative "hook_memo"
 
 module Polispec
   module NativeSettings
@@ -33,6 +34,10 @@ module Polispec
     end
 
     def definitions
+      HookMemo.fetch(:native_definitions) { definitions_uncached }
+    end
+
+    def definitions_uncached
       manifest = YAML.safe_load(File.read(File.join(ROOT, "polispec.rplugin.yml")), permitted_classes: [], aliases: false)
       list = manifest.is_a?(Hash) ? Array(manifest["settings"]) : []
       list.select { |item| item.is_a?(Hash) && item["key"].is_a?(String) }.map do |item|
@@ -45,6 +50,10 @@ module Polispec
     end
 
     def read
+      HookMemo.copy(:native_read, path) { read_uncached }
+    end
+
+    def read_uncached
       data = YAML.safe_load(File.read(path), permitted_classes: [], aliases: false)
       data.is_a?(Hash) ? data.each_with_object({}) { |(key, value), memo| memo[key.to_s] = value } : {}
     rescue StandardError

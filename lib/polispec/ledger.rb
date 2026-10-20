@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require_relative "hook_memo"
+
 module Polispec
   class Ledger
     class Invalid < Polispec::Error; end
@@ -79,6 +81,10 @@ module Polispec
 
     def self.load(path = nil)
       path = File.expand_path(path || default_path)
+      HookMemo.fetch(:ledger_load, path) { load_uncached(path) }
+    end
+
+    def self.load_uncached(path)
       return new({}, path: path, digest: nil) unless File.file?(path)
 
       bytes = File.read(path)

@@ -164,6 +164,10 @@ module Polispec
       end
 
       def snapshot
+        HookMemo.copy(:settings_snapshot) { snapshot_uncached }
+      end
+
+      def snapshot_uncached
         plane = plane_settings
         return { "machine" => plane } if plane
         base = ENV["XDG_STATE_HOME"]

@@ -14,6 +14,9 @@ require_relative "../editions"
 require_relative "../effect"
 require_relative "../sessions"
 require_relative "../notice"
+require_relative "../fastpath"
+require_relative "../classify/benign"
+require_relative "../classify/shapes"
 
 module Polispec
   module DeferredEvents

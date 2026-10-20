@@ -4,6 +4,7 @@
 require "digest"
 require "json"
 require_relative "canonical"
+require_relative "hook_memo"
 
 module Polispec
   module Effect
@@ -19,6 +20,12 @@ module Polispec
     def epoch(ledger = nil, context = {})
       context = {} unless context.is_a?(Hash)
       ledger ||= Ledger.load
+      return epoch_uncached(ledger, context) unless context.empty?
+
+      HookMemo.fetch(:epoch, ledger.object_id) { epoch_uncached(ledger, context) }
+    end
+
+    def epoch_uncached(ledger, context)
       material = material_for(ledger, context)
       key = Digest::SHA256.hexdigest(material.map(&:to_s).join("\0"))
       epoch = "ep_#{key[0, 16]}"
