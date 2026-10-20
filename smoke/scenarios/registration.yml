@@ -1,0 +1,116 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/register
+summary: register plans a ledger path entry for a directory outside any ledgered repository, applies the tightening plan and stamps the owner; it refuses a path inside a ledgered repository, a repeated id and a missing path; unregister needs the confirmed plan id; a live path entry applies its shelf module under the directory and an onboarding or retired one changes nothing
+fixture:
+  enforce: enforce
+  global: files
+  global_files:
+    "global.yml": "schema: polispec.global/v1\nsummary: Smoke baseline with one rule so every path is governed.\nrules:\n  - { id: SMOKE-NOSECRETS, match: { class: [secrets.read], env: prod }, verdict: deny, reason: \"smoke baseline: no production secrets\" }\n"
+    "paths/tools.yml": "schema: polispec.module/v1\nname: tools\nsummary: Nothing under the tools directory is deleted.\nrules:\n  - { id: TOOLS-NODELETE, match: { class: [fs.delete] }, verdict: deny, reason: \"the tools directory must not be deleted from\" }\n"
+  files:
+    "tools/README.md": "tools\n"
+    "docs/README.md": "docs\n"
+  projects:
+    - id: shop
+      variant: service
+      status: onboarding
+      files:
+        "README.md": "shop\n"
+steps:
+  - name: register --dry-run prints a tightening plan and leaves the ledger alone
+    run: ["{{polispec}}", register, "{{files}}/tools", --id, tools, --dry-run]
+    expect:
+      exit: 0
+      stdout_includes: ["classification: tightening; needs_confirm: false", "ledger adds path tools with status onboarding"]
+  - name: the dry run did not write the entry
+    run: [sh, -c, 'grep -c "id: tools" "$1" || true', sh, "{{ledger}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["0"]
+  - name: register applies the tightening plan
+    run: ["{{polispec}}", register, "{{files}}/tools", --id, tools]
+    expect:
+      exit: 0
+      stdout_includes: ["classification: tightening", "applied ledger"]
+  - name: the ledger gained the entry with its owner and registered_by
+    run: [cat, "{{ledger}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["paths:", "id: tools", "kind: directory", "status: onboarding", "owner: {uid:", "registered_by: \"cli\"", "policy: paths/tools.yml"]
+  - name: the package step stamped owner and registered_by on the project it added
+    run: [grep, -c, "registered_by", "{{ledger}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["2"]
+  - name: a directory inside a ledgered repository is refused
+    run: ["{{polispec}}", register, "{{project.shop}}", --id, inner]
+    expect:
+      exit: 1
+      stderr_includes: ["inside_project", "shop"]
+  - name: a repeated id is refused
+    run: ["{{polispec}}", register, "{{files}}/docs", --id, tools]
+    expect:
+      exit: 1
+      stderr_includes: ["id_collision"]
+  - name: a path already registered is refused
+    run: ["{{polispec}}", register, "{{files}}/tools", --id, again]
+    expect:
+      exit: 1
+      stderr_includes: ["path_registered"]
+  - name: a missing path is refused
+    run: ["{{polispec}}", register, "{{files}}/absent", --id, absent]
+    expect:
+      exit: 1
+      stderr_includes: ["path_missing"]
+  - name: a system entry for any directory other than the home is refused
+    run: ["{{polispec}}", register, "{{files}}/docs", --id, sys, --kind, system]
+    expect:
+      exit: 1
+      stderr_includes: ["system_path_invalid"]
+  - name: unregister without --confirm prints the loosening plan and refuses
+    run: ["{{polispec}}", unregister, tools]
+    expect:
+      exit: 1
+      stdout_includes: ["classification: loosening; needs_confirm: true", "ledger changes status of path tools"]
+      stderr_includes: ["confirm_required"]
+  - name: an onboarding path entry changes no verdict
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{files}}/tools/build" }, cwd: "{{scratch}}" }
+    expect: { decision: allow }
+  - name: the entry is flipped to live through a confirmed ledger plan
+    run:
+      - sh
+      - -c
+      - |
+        set -e
+        awk '/^  - id: tools/ {p=1} p && /^    status:/ {print "    status: live"; p=0; next} {print}' "$2" > "$3/ledger.live.yml"
+        plan=$("$1" plan ledger --from "$3/ledger.live.yml" --json | grep -o '"plan_id":"[^"]*"' | cut -d'"' -f4)
+        "$1" apply ledger --from "$3/ledger.live.yml" --confirm "$plan"
+      - sh
+      - "{{polispec}}"
+      - "{{ledger}}"
+      - "{{scratch}}"
+    expect:
+      exit: 0
+      stdout_includes: ["applied ledger"]
+  - name: a live path entry applies its shelf module to a delete under the directory
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{files}}/tools/build" }, cwd: "{{scratch}}" }
+    expect: { decision: deny, rule: TOOLS-NODELETE }
+  - name: a delete outside the directory is not judged by the path module
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{files}}/docs/build" }, cwd: "{{scratch}}" }
+    expect: { decision: allow }
+  - name: unregister applies once the plan id is confirmed
+    run:
+      - sh
+      - -c
+      - |
+        set -e
+        plan=$("$1" unregister tools --dry-run --json | grep -o '"plan_id":"[^"]*"' | cut -d'"' -f4)
+        "$1" unregister tools --confirm "$plan"
+      - sh
+      - "{{polispec}}"
+    expect:
+      exit: 0
+      stdout_includes: ["applied ledger"]
+  - name: a retired path entry changes no verdict
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{files}}/tools/build" }, cwd: "{{scratch}}" }
+    expect: { decision: allow }

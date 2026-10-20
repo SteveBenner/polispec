@@ -6,12 +6,17 @@ module Polispec
     class Invalid < Polispec::Error; end
 
     DEFAULT_PATH = "~/.config/polispec/ledger.yml"
-    Project = Struct.new(:id, :status, :repo, :remote, :worktree_globs, :trust_ref, :policy, :roster, :related, :onboarded, :profile, :packages, keyword_init: true) do
+    Project = Struct.new(:id, :status, :repo, :remote, :worktree_globs, :trust_ref, :policy, :roster, :related, :onboarded, :profile, :packages, :owner, :registered_by, :description, keyword_init: true) do
       def to_h
         members.each_with_object({}) { |member, memo| memo[member.to_s] = self[member] }
       end
     end
-    Location = Struct.new(:project, :kind, :env, keyword_init: true)
+    PathEntry = Struct.new(:id, :kind, :path, :status, :owner, :registered_by, :description, :policy, keyword_init: true) do
+      def to_h
+        members.each_with_object({}) { |member, memo| memo[member.to_s] = self[member] }
+      end
+    end
+    Location = Struct.new(:project, :kind, :env, :entry, keyword_init: true)
 
     attr_reader :path, :host, :envs_root, :digest
 
@@ -105,6 +110,18 @@ module Polispec
       projects.find { |entry| entry.id == id.to_s }
     end
 
+    def paths
+      @paths ||= Array(@data["paths"]).map { |entry| build_path(entry) }
+    end
+
+    def path_entry(id)
+      paths.find { |entry| entry.id == id.to_s }
+    end
+
+    def entry(id)
+      project(id) || path_entry(id)
+    end
+
     def defaults
       @data["defaults"].is_a?(Hash) ? @data["defaults"] : { "rules" => [] }
     end
@@ -121,23 +138,26 @@ module Polispec
       locate(path)&.project
     end
 
-    def locate(path)
+    def locate(path, paths: false)
       real = canonical(path)
       return nil if real.nil?
 
-      live = projects.reject { |entry| entry.status == "retired" }
-      live.each do |entry|
-        env = env_checkout(entry, real)
-        return Location.new(project: entry, kind: :env_checkout, env: env) if env
+      found = locate_project(real)
+      return found if found || !paths
+
+      locate_path(real)
+    end
+
+    def locate_path(path)
+      real = canonical(path)
+      return nil if real.nil?
+
+      candidates = paths.reject { |entry| entry.status == "retired" }.filter_map do |entry|
+        root = roots(entry.path).find { |candidate| under?(real, candidate) }
+        root ? [root.length, entry] : nil
       end
-      candidates = []
-      live.each_with_index do |entry, index|
-        root = roots(entry.repo).find { |candidate| under?(real, candidate) }
-        candidates << [root.length, index, Location.new(project: entry, kind: :repo, env: "dev")] if root
-        shelter = worktree_root(entry, real)
-        candidates << [shelter.length, index, Location.new(project: entry, kind: :worktree, env: "dev")] if shelter
-      end
-      candidates.min_by { |length, index, _| [length, index] }&.last
+      best = candidates.max_by(&:first)&.last
+      best && Location.new(project: nil, kind: :path, env: nil, entry: best)
     end
 
     def development(path)
@@ -155,12 +175,37 @@ module Polispec
 
     private
 
+    def locate_project(real)
+      live = projects.reject { |entry| entry.status == "retired" }
+      live.each do |entry|
+        env = env_checkout(entry, real)
+        return Location.new(project: entry, kind: :env_checkout, env: env) if env
+      end
+      candidates = []
+      live.each_with_index do |entry, index|
+        root = roots(entry.repo).find { |candidate| under?(real, candidate) }
+        candidates << [root.length, index, Location.new(project: entry, kind: :repo, env: "dev")] if root
+        shelter = worktree_root(entry, real)
+        candidates << [shelter.length, index, Location.new(project: entry, kind: :worktree, env: "dev")] if shelter
+      end
+      candidates.min_by { |length, index, _| [length, index] }&.last
+    end
+
+    def build_path(entry)
+      PathEntry.new(
+        id: entry["id"].to_s, kind: entry["kind"].to_s, path: entry["path"].to_s, status: entry["status"].to_s,
+        owner: entry["owner"], registered_by: entry["registered_by"], description: entry["description"],
+        policy: (entry["policy"] || "paths/#{entry['id']}.yml").to_s
+      )
+    end
+
     def build_project(entry)
       Project.new(
         id: entry["id"].to_s, status: entry["status"].to_s, repo: entry["repo"].to_s, remote: entry["remote"],
         worktree_globs: Array(entry["worktree_globs"]), trust_ref: entry["trust_ref"].to_s,
         policy: entry["policy"].to_s, roster: entry["roster"].to_s, related: Array(entry["related"]),
-        onboarded: entry["onboarded"], profile: entry["profile"], packages: Array(entry["packages"])
+        onboarded: entry["onboarded"], profile: entry["profile"], packages: Array(entry["packages"]),
+        owner: entry["owner"], registered_by: entry["registered_by"], description: entry["description"]
       )
     end
 
