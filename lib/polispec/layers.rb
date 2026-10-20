@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 require "pathname"
+require_relative "hook_memo"
 
 module Polispec
   module Layers
@@ -263,6 +264,15 @@ module Polispec
       end
 
       def shipped_layer(errors)
+        layer, noted = HookMemo.fetch(:shipped_layer) do
+          local = []
+          [shipped_layer_uncached(local), local]
+        end
+        noted.each { |message| note(errors, message) }
+        layer
+      end
+
+      def shipped_layer_uncached(errors)
         mods = Shelf.new(nil, shipped_store).expand(SHIPPED_INCLUDES, errors, {})
         return nil if mods.empty?
 
@@ -434,6 +444,10 @@ module Polispec
       end
 
       def fingerprint
+        HookMemo.fetch(:layers_fingerprint) { fingerprint_uncached }
+      end
+
+      def fingerprint_uncached
         shelf = store
         return "" unless shelf
 
