@@ -311,6 +311,73 @@ slices:
       - "Now opaque: 'cp a env.sh; . env.sh', 'mv a env.sh; . env.sh', 'sed -i s/a/b/ env.sh; . env.sh', 'cp evil.sh x.sh; bash x.sh' (the last one is a tightening of 0.32.1 behavior)"
       - "Replay kit (scratchpad/replay, payloads.jsonl, run.rb with RPLUGIN_POLISPEC_POLISPEC_EDITION for lock) against /home/sven/github/foss/.polispec-wt/base-3103672 in both editions: every differing row is a source or . line now followed, or a same-line rewrite now opaque; list each with old and new verdict"
       - "Full smoke suite passes; smoke/scenarios/source-follow.yml covers the cases above"
+  - id: B13-v1-backend
+    wave: 4
+    depends_on: [B7-web-routes, B12-author-port]
+    origin: "V1 journeys 2026-10-20 (scratchpad/v1 report), defects D3, D6 server side, D7, D8."
+    owns_paths: [lib/polispec/web/proposals.rb, lib/polispec/web/views.rb, lib/polispec/web/routes/rulebooks.rb, lib/polispec/web/routes/observe.rb, lib/polispec/web/routes/plans.rb, lib/polispec/web/app.rb, web/public/openapi.yml]
+    design:
+      project_base: >
+        A project plan in the web matches `polispec plan project:<id>`.
+        - The editable text is main's: GET /rulebooks/project/:id/source reads the policy at main. It answers {yaml, schema_id, digest, ref: "main@<sha>", trust_ref: "<trust ref>@<sha>", ahead: <commits on main not on the trust ref that touch the policy directory>, ahead_files: [paths that differ between the trust ref and main in that directory]}.
+        - The proposal ref is main's tree with the edited files replaced, built with the same temp-index commit-tree.
+        - The plan compares the trust ref (current) with the proposal (proposed), as the CLI compares the trust ref with the worktree. Its classification, probes and journal replay therefore cover main's unpromoted changes too, and the plan's notes say so when ahead > 0: "main is <n> commits ahead of <trust ref>; this plan includes those changes".
+        - The base check (change.base.digest) compares against main's file. A main that moved after the plan was made answers 409 conflict with reason plan_changed.
+        - main_gate! is removed, because the plan now carries main's state, so nothing is discarded.
+        - Apply commits only the edited files onto main, as before.
+        - GET composition, and every read of what applies now, keeps reading the trust ref.
+      conflict_reasons: >
+        Every 409 from plans and apply carries {error: "conflict", reason, message}. The reason is one of plan_changed, already_applied, requires_destination and base_moved. The UI shows the message for every reason but plan_changed, for which it shows its own stale copy.
+      read_only: "config gains read_only: true|false (Web.context.read_only), documented in openapi Config."
+      path_without_policy: >
+        A registered path entry with no shelf file paths/<id>.yml composes as baseline only: composition and source answer 200 with empty own rules and yaml "" (source) plus note "no policy file yet; the baseline applies". A plan with replace creates the file.
+      pipeline_speed: >
+        GET /pipeline at 60 projects (the V1 overflowing fixture) answers cold in under 10 s and warm in under 1 s on this host. Change only how it is computed, not what it returns:
+        - Profile pipeline_row first and report the top costs.
+        - Then compute rows on a bounded pool of 4 threads, under Views::QUIET where Probes or the quiet flag are touched.
+        - Cache each row on (project id, trust-ref sha, main sha, test sha, epoch) instead of the whole response for 10 s, so one changed project recomputes alone.
+        - Reuse PolicySource.memoize and HookMemo within a request.
+    acceptance:
+      - "Against scratchpad/v1/fixtures typical (bash serve.sh typical), after a fresh build-typical.sh or after reset: on notes (main ahead of stable), the manager source shows main's text with ahead > 0. A tightening edit plans as tightening with the ahead note, and applies with one click when main's own unpromoted change is tightening (R-FIX-4 is). Show the plan's classification when it is mixed."
+      - "A second edit planned on teach after a web apply is not refused; it plans and applies. A main changed from the CLI between plan and apply gives 409 reason plan_changed."
+      - "config.read_only is true under --read-only and false otherwise."
+      - "#/detail/path/sandbox-notes composes as baseline only with no 422; a replace plan on it creates paths/sandbox-notes.yml on the shelf through the shelf's own plan and apply."
+      - "GET /pipeline on the overflowing fixture: cold under 10 s and warm under 1 s, measured 3 times each; the response bytes are identical to before apart from timing fields."
+      - "openapi validates every changed response (reuse B7b's validator approach). The full smoke suite passes, including smoke/scenarios/web.yml."
+  - id: F10-v1-frontend
+    wave: 4
+    depends_on: [F0-F8-frontend, B13-v1-backend]
+    origin: "V1 journeys 2026-10-20, defects D1, D2, D3 (UI side), D4, D5, D6, D9 to D13, D15 and D16."
+    owns_paths: [web/public/js/, web/public/css/]
+    design:
+      operator_words: >
+        No button's text or accessible name contains promote, deploy, pause, allow-once, seal or plane.
+        - The feed's stream control reads Hold and Resume.
+        - An exception proposal's action reads Adopt (accessible name "Adopt proposal <id>"); it still calls POST /exceptions/promote.
+        - The explainer's allow-once offer becomes a ps-command block, with who "The operator runs this in a terminal." and the polispec allow-once command, not a button.
+      copy: "No en or em dash in rendered text; ranges use a plain hyphen with no spaces, as in 1-3, 4-5."
+      manager_base: >
+        The manager editor loads main's text. When source.ahead > 0 it shows an info banner above the editor: "main is <n> commits ahead of <trust ref>. A plan from here includes those changes." with ahead_files listed.
+        The plan sheet shows a 409 message for every reason except plan_changed, which keeps its stale copy and Plan again.
+      editor_scroll: "The CodeMirror scroller scrolls horizontally inside its pane: the editor host and its shadow root are constrained to the pane width (min-width 0 on the grid or flex child, overflow auto on .cm-scroller), so a long line scrolls rather than clips, at 375, 1024 and 1600."
+      exceptions_cancel: "Closing the exceptions run dialog while the run is waiting_phrase calls POST /runs/<id>/cancel before closing, and the next add works at once."
+      read_only: >
+        When config.read_only is true:
+        - The shell shows a persistent info banner: "Read-only. This server was started with --read-only; changes are made from a terminal."
+        - Every write control is disabled, with that reason as its tooltip: Plan, Apply, Add exception, Adopt, Register, gallery Plan, author send and layout save.
+      rules_table: "The detail rules table virtualizes through ps-data-table above 200 rows, as the spec says."
+      minor:
+        - "D10: an env chip with no project renders the word global, or is omitted; never an empty box."
+        - "D11: a tooltip hides when its anchor is clicked or a dialog opens."
+        - "D12: no specimen heading flashes after the exchange; the router shows the loading state until the first view mounts."
+        - "D13: digest chips show the first 12 hex characters after sha256:, never a 1-character stub."
+        - "D15: a hash navigation closes an open plan sheet, or it asks first when a typed confirmation is in progress."
+        - "D16: the map's shipped band shows the shipped modules even when no entry exists, as Shipped <module count>."
+    acceptance:
+      - "Re-run the V1 sweep (scratchpad/v1/sweep.mjs) on typical, empty and overflowing at 375 and 1024: zero operator-verb buttons, zero dashes, zero native controls, zero horizontal scroll, zero foreign requests and zero page errors."
+      - "Re-run journeys 5, 8 and 11 (scratchpad/v1 j5*, j8*, j11*) to pass: the manager shows the ahead banner on notes; the long-line editor scrolls (scrollLeft reaches the line end); closing the dialog sends cancel and a second add reaches waiting_phrase; read-only disables and explains every write control."
+      - "The p00 rules table renders fewer than 80 tr elements and scrolls to rule 300."
+      - "node --check on every changed file; screenshots under scratchpad/f10/."
   - id: B12-author-port
     wave: 3
     depends_on: [B5-author, B7-web-routes]
