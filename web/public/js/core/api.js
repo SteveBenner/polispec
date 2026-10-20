@@ -8,6 +8,7 @@ export const RETRY_BASE_MS = 250;
 export const RETRYABLE_STATUS = [502, 503, 504];
 export const MUTATION_LIMIT = 30;
 export const MUTATION_WINDOW_MS = 60000;
+const COMPUTE_PATHS = new Set(["/lint", "/blast-radius", "/explain", "/explain-text"].map((path) => BASE + path));
 
 const FEATURE_GATES = [
   { pattern: /^\/author(\/|$)/, flag: "author" },
@@ -154,7 +155,7 @@ export async function requestFull(method, path, options = {}) {
       noteFailure(missing, false);
       throw missing;
     }
-    const grant = limiter.take();
+    const grant = COMPUTE_PATHS.has(url.pathname) ? { ok: true } : limiter.take();
     if (!grant.ok) {
       toast(rateLimitCopy(grant.wait), { kind: "error" });
       throw new ApiError("rate_limited", rateLimitCopy(grant.wait), { retryAfter: grant.wait });
