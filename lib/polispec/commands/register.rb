@@ -29,14 +29,17 @@ module Polispec
       target = options[:rest].first
       if unregister
         id = target
-        text = Registration.propose_unregister(ledger, id)
+        text = Registration.propose_unregister(ledger, id, dry: options[:dry_run])
       else
-        id, text = Registration.propose_register(ledger, target, id: options[:id], kind: options[:kind] || "directory", description: options[:description])
+        id, text = Registration.propose_register(ledger, target, id: options[:id], kind: options[:kind] || "directory", description: options[:description], dry: options[:dry_run])
       end
       file = Registration.proposal_file(id, text)
       plan = Plan.build(Plan::SPEC.new(kind: :ledger, file: file))
       @json ? puts(plan.to_json) : plan.render_text
-      return 0 if options[:dry_run]
+      if options[:dry_run]
+        warn Registration.behind_note if Registration.runtime_behind?
+        return 0
+      end
 
       apply = ["ledger", "--from", file]
       apply.push("--confirm", options[:confirm]) if options[:confirm]

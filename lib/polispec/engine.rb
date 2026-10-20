@@ -6,6 +6,7 @@ require_relative "classify/shell"
 require_relative "layers"
 require_relative "predicates"
 require_relative "native_settings"
+require_relative "hook_memo"
 
 module Polispec
   module Engine
@@ -164,6 +165,10 @@ module Polispec
       end
 
       def snapshot
+        HookMemo.copy(:settings_snapshot) { snapshot_uncached }
+      end
+
+      def snapshot_uncached
         plane = plane_settings
         return { "machine" => plane } if plane
         base = ENV["XDG_STATE_HOME"]
@@ -424,6 +429,23 @@ module Polispec
         home ? home.project : named_owner(hint, ledger)
       end
 
+      def path_entry(action, ledger, cwd)
+        return nil if ledger.paths.empty?
+
+        hint = hint_of(action)
+        return nil if hint["project"]
+
+        paths = paths_of(hint)
+        candidates = paths.empty? ? [cwd.to_s] : paths.map { |path| absolute(path, cwd) }
+        candidates.each do |path|
+          next if path.empty?
+
+          found = ledger.locate(path, paths: true)
+          return found.entry if found && found.kind == :path && found.entry.status == "live"
+        end
+        nil
+      end
+
       def paths_of(hint)
         hint.flat_map do |key, value|
           if value.is_a?(Hash)
@@ -444,11 +466,30 @@ module Polispec
         nil
       end
 
+      def prefetch_policies(ledger)
+        return unless HookMemo.active?
+
+        pending = ledger.projects.select { |project| project.status == "live" }
+        return if pending.length < 2
+
+        memo = Thread.current[HookMemo::SLOT]
+        pending.map do |project|
+          Thread.new do
+            Thread.current.report_on_exception = false
+            Thread.current[HookMemo::SLOT] = memo
+            HookMemo.fetch(:spec_policy, ledger.object_id, project.id) { PolicySource.load(project, ledger: ledger)[0] }
+          rescue StandardError
+            nil
+          end
+        end.each(&:join)
+      end
+
       def spec_owner(paths, ledger, cwd)
+        HookMemo.fetch(:prefetch_policies, ledger.object_id) { prefetch_policies(ledger); true }
         ledger.projects.find do |project|
           next false unless project.status == "live"
 
-          policy = PolicySource.load(project, ledger: ledger)[0]
+          policy = HookMemo.fetch(:spec_policy, ledger.object_id, project.id) { PolicySource.load(project, ledger: ledger)[0] }
           paths.any? { |path| by_spec_paths(canonical(absolute(path, cwd)), policy) }
         end
       end
@@ -461,7 +502,7 @@ module Polispec
         ledger.projects.find do |project|
           next false unless project.status == "live"
 
-          policy = PolicySource.load(project, ledger: ledger)[0]
+          policy = HookMemo.fetch(:spec_policy, ledger.object_id, project.id) { PolicySource.load(project, ledger: ledger)[0] }
           environments(policy).values.any? { |spec| names_match?(spec, unit, db) }
         end
       end
@@ -661,6 +702,10 @@ module Polispec
       end
 
       def canonical(path)
+        HookMemo.fetch(:canonical, path) { canonical_uncached(path) }
+      end
+
+      def canonical_uncached(path)
         existing = path
         existing = File.dirname(existing) until File.exist?(existing) || existing == "/"
         joined = File.join(File.realpath(existing), path[existing.length..-1].to_s).sub(%r{/+\z}, "")
@@ -769,7 +814,7 @@ module Polispec
 
         def lookup(id)
           entry = @ledger.project(id)
-          entry ? PolicySource.load(entry, ledger: @ledger)[0] : {}
+          entry ? HookMemo.fetch(:spec_policy, @ledger.object_id, entry.id) { PolicySource.load(entry, ledger: @ledger)[0] } : {}
         end
 
         def path_loc(hint)
@@ -807,8 +852,10 @@ module Polispec
         def locate_path(path)
           return nil if path.to_s.empty? || Polispec::Engine.store_ref?(path)
 
-          abs = Envs.canonical(Envs.absolute(path, @cwd))
-          protected_loc(abs) || global_loc(abs) || checkout_loc(abs)
+          HookMemo.fetch(:atlas_locate, @ledger.object_id, @target.project, @target.digest, @ctx[:policies].object_id, @ctx[:global].object_id, @cwd, path.to_s) do
+            abs = Envs.canonical(Envs.absolute(path, @cwd))
+            protected_loc(abs) || global_loc(abs) || checkout_loc(abs)
+          end
         end
 
         def global_loc(abs)
@@ -1140,7 +1187,7 @@ module Polispec
       end
 
       def unowned?(target)
-        target.project == "global" && target.policy_source == "global"
+        (target.project == "global" && target.policy_source == "global") || target.policy_source == "path"
       end
 
       def cleared(verdict, action, env, target, ctx)

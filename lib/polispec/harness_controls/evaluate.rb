@@ -1,3 +1,4 @@
+require_relative "../hook_memo"
 require_relative "root_guard"
 require_relative "../exceptions"
 require_relative "../editions"
@@ -179,6 +180,10 @@ module Polispec
       private_class_method :runtime_paths
 
       def canonical_path(path)
+        HookMemo.fetch(:evaluate_canonical, path.to_s) { canonical_path_uncached(path) }
+      end
+
+      def canonical_path_uncached(path)
         expanded = File.expand_path(path.to_s)
         existing = expanded
         existing = File.dirname(existing) until File.exist?(existing) || existing == "/"
@@ -186,7 +191,7 @@ module Polispec
       rescue SystemCallError
         expanded
       end
-      private_class_method :canonical_path
+      private_class_method :canonical_path, :canonical_path_uncached
 
       def result(level, control, asks, observations, injections)
         reason = control && control["reason"].to_s
