@@ -50,6 +50,7 @@ export async function render(container, params, signal) {
   let windowKey = getPref("map.window", "24h");
   if (!WINDOWS.some((item) => item.value === windowKey)) windowKey = "24h";
   const blastId = query.blast || "";
+  const previewId = query.preview || "";
 
   const section = node("section", "view map");
   const header = node("header", "view-header");
@@ -129,6 +130,7 @@ export async function render(container, params, signal) {
     saveTimer: 0,
     pendingSave: false,
     blast: null,
+    preview: null,
     loadToken: 0,
   };
 
@@ -269,6 +271,39 @@ export async function render(container, params, signal) {
     state.blast = payload;
   };
 
+  const closePreview = () => {
+    window.history.pushState(null, "", mode === "list" ? "#/map/list" : "#/map");
+    route.query = {};
+    banner.hidden = true;
+    state.preview = null;
+    if (state.map) state.map.setPreview(null);
+  };
+
+  const applyPreview = () => {
+    state.preview = null;
+    if (blastId || !previewId) return;
+    const cached = readView("gallery-draft:" + previewId);
+    const payload = cached && cached.payload;
+    const change = payload && payload.change && payload.change.compose;
+    const target = payload && payload.target;
+    banner.hidden = false;
+    banner.setAttribute("action", "Close preview");
+    banner.addEventListener("ps-action", closePreview);
+    if (!change || !target || !target.kind) {
+      banner.setAttribute("severity", "info");
+      banner.removeAttribute("icon");
+      banner.setAttribute("text", "That preview is no longer stored. Open the gallery and choose Preview on map again.");
+      return;
+    }
+    const itemKind = Object.keys(change).find((key) => key !== "with") || "item";
+    const name = change[itemKind];
+    const where = target.kind === "project" ? `project ${target.id}` : "the shelf";
+    banner.setAttribute("severity", "info");
+    banner.setAttribute("icon", "tightening");
+    banner.setAttribute("text", `Preview: ${itemKind} ${name} on ${where}. Nothing is planned or applied.`);
+    state.preview = { kind: target.kind, id: target.id };
+  };
+
   const renderPayload = (payload) => {
     state.payload = payload;
     state.model = buildModel(payload);
@@ -276,6 +311,7 @@ export async function render(container, params, signal) {
       state.map.setPositions(state.positions);
       state.map.setData(payload);
       if (state.blast) state.map.setBlast(state.blast);
+      if (state.preview) state.map.setPreview(state.preview);
     } else if (state.tree) {
       state.tree.setData(state.model);
       if (state.model.count === 0) {
@@ -371,6 +407,7 @@ export async function render(container, params, signal) {
   });
 
   applyBlast();
+  applyPreview();
   mountStage();
   try {
     const saved = await get(endpoints.state("layout"), { signal });

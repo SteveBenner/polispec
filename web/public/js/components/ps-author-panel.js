@@ -563,9 +563,30 @@ function startTicker() {
   }, 1000);
 }
 
+let livePanel = null;
+let pendingIntent = "";
+
+document.addEventListener("ps-open-author", (event) => {
+  const intent = event.detail && typeof event.detail.intent === "string" ? event.detail.intent.trim() : "";
+  if (!intent) return;
+  pendingIntent = intent;
+  if (livePanel) livePanel.takeIntent();
+});
+
 class PsAuthorPanel extends HTMLElement {
+  takeIntent() {
+    const intent = pendingIntent;
+    if (!intent || !this.input) return;
+    pendingIntent = "";
+    this.input.value = intent;
+    setTimeout(() => {
+      if (this.isConnected && this.input) this.input.focus();
+    }, 0);
+  }
+
   connectedCallback() {
     if (this.root) return;
+    livePanel = this;
     startTicker();
     this.nodes = new Map();
     this.following = true;
@@ -582,6 +603,7 @@ class PsAuthorPanel extends HTMLElement {
     };
     this.addEventListener("keydown", this.onKeyDown);
     this.syncTarget();
+    this.takeIntent();
     loadCatalog().then((catalog) => {
       this.catalog = rulebookList(catalog);
       this.fillTargets();
@@ -592,6 +614,7 @@ class PsAuthorPanel extends HTMLElement {
   }
 
   disconnectedCallback() {
+    if (livePanel === this) livePanel = null;
     if (this.unsubscribe) this.unsubscribe();
     this.removeEventListener("keydown", this.onKeyDown);
   }

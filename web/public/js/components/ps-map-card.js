@@ -124,6 +124,11 @@ class PsMapCard extends HTMLElement {
       chip.setAttribute("label", `${flips} flips`);
       chip.setAttribute("data-tone-flip", blast.stricter >= blast.looser ? "stricter" : "looser");
       foot.append(chip);
+    } else if (config.preview) {
+      const mark = document.createElement("ps-chip");
+      mark.className = "ps-preview-mark";
+      mark.setAttribute("label", "Preview");
+      foot.append(mark);
     } else {
       const counts = el("div", "ps-counts");
       counts.setAttribute("role", "group");
@@ -138,6 +143,7 @@ class PsMapCard extends HTMLElement {
       }
       foot.append(counts);
     }
+
     body.append(strip, head, summary, desc, foot);
     this.append(body);
   }
