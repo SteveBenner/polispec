@@ -1,4 +1,5 @@
 import "./components/ps-app-shell.js";
+import "./components/ps-author-panel.js";
 import "./core/theme.js";
 import { app } from "./core/store.js";
 import { get, endpoints } from "./core/api.js";
