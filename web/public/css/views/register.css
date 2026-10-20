@@ -1,0 +1,183 @@
+.view.register .rg-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .view.register .rg-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .view.register .rg-preview {
+    position: sticky;
+    inset-block-start: var(--space-3);
+  }
+}
+
+.view.register .rg-form,
+.view.register .rg-form-body {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.view.register .rg-section {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.view.register .rg-h2 {
+  margin: 0;
+  font-size: var(--text-md);
+  line-height: var(--lh-md);
+  font-weight: var(--weight-strong);
+}
+
+.view.register .rg-lead {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+.view.register .rg-avail {
+  min-height: var(--lh-xs);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.view.register .rg-avail:empty {
+  display: none;
+}
+
+.view.register .rg-ok,
+.view.register .rg-taken {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.view.register .rg-ok {
+  color: var(--ok);
+}
+
+.view.register .rg-taken {
+  color: var(--danger);
+}
+
+.view.register .rg-lint {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.view.register .rg-findings {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.view.register .rg-findings:empty {
+  display: none;
+}
+
+.view.register .rg-code {
+  margin-inline-end: var(--space-2);
+}
+
+.view.register .rg-starter,
+.view.register .rg-starter-form {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.view.register .rg-starter:empty {
+  display: none;
+}
+
+.view.register .rg-field {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.view.register .rg-field-label {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.view.register .rg-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.view.register .rg-check {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.view.register .rg-check:empty {
+  display: none;
+}
+
+.view.register .rg-plan {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.view.register .rg-plan-text {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.view.register .rg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.view.register .rg-table th,
+.view.register .rg-table td {
+  padding: var(--space-1) var(--space-2);
+  text-align: start;
+  box-shadow: inset 0 -1px var(--border);
+  overflow-wrap: anywhere;
+}
+
+.view.register .rg-preview {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  align-content: start;
+}
+
+.view.register .rg-editor {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  height: 320px;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 var(--border-w) var(--border);
+}
+
+.view.register ps-textarea .ps-box {
+  min-height: 96px;
+}
