@@ -35,6 +35,12 @@ function el(tag, className, text) {
   return node;
 }
 
+function dash() {
+  const node = el("span", "ss-dash", "-");
+  node.setAttribute("aria-label", "none");
+  return node;
+}
+
 function bare(epoch) {
   return String(epoch || "").replace(/^ep_/, "");
 }
@@ -135,10 +141,10 @@ function columns() {
       },
     },
     { key: "harness", label: "Harness", width: "96px", sortable: true },
-    { key: "agent_type", label: "Agent", width: "120px", render: (s) => s.agent_type || "" },
+    { key: "agent_type", label: "Agent", width: "120px", render: (s) => s.agent_type || dash() },
     { key: "started", label: "Started", width: "96px", sortable: true, sortValue: (s) => stamp(s.started), render: (s) => relTimeElement(s.started) },
     { key: "last_call", label: "Last call", width: "96px", sortable: true, sortValue: (s) => stamp(s.last_call), render: (s) => relTimeElement(s.last_call) },
-    { key: "runtime_version", label: "Runtime", width: "88px", mono: true, render: (s) => s.runtime_version || "" },
+    { key: "runtime_version", label: "Runtime", width: "88px", mono: true, render: (s) => s.runtime_version || dash() },
     { key: "epoch", label: "Epoch", width: "96px", render: (s) => (s.epoch ? digestNode(s.epoch, "epoch") : "") },
     { key: "projects", label: "Projects", width: "96px", align: "end", render: projectsCell },
     { key: "badges", label: "Status", render: statusCell },

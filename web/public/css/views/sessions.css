@@ -138,3 +138,7 @@
   color: var(--text-faint);
   font-size: var(--text-xs);
 }
+
+.sessions .ss-dash {
+  color: var(--text-faint);
+}

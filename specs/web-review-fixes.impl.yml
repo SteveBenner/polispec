@@ -100,6 +100,26 @@ slices:
       - id: D16
         change: build_map in lib/polispec/web/views.rb seeds the shipped band with every module of the shipped layer (reaches empty) before projects and paths add their reaches, so layers.shipped is never empty while polispec ships modules. Use the chain already loaded for paths or Layers.shipped_store; the band shape {id, name, reaches} is unchanged.
         accept: GET /api/v1/map on the empty fixture lists the shipped modules with reaches []; typical and overflowing keep their reaches.
+  - id: S4_preferences
+    items:
+      - id: P1
+        change: playground.css gives the input-kind ps-segmented justify-self start so it keeps its intrinsic width.
+        accept: segmented width well under the 792px content width at 1024.
+      - id: P2
+        change: ps-plan-sheet.js omits the plan reasons that restate a probe (tighten or loosen lines naming a probe), leaving the Probes tab as the only probe list; other reasons stay.
+        accept: no probe line in the plan sheet outside the Probes tab.
+      - id: P3
+        change: detail.js renders a not-found ps-state with an Open map action when the composition request answers 404; any other failure keeps The rulebook did not compose.
+        accept: detail/project/nonexistent shows No project named nonexistent.
+      - id: P4
+        change: map.js hides the Reset layout control in list mode.
+        accept: Reset layout hidden at map/list, visible at map.
+      - id: P5
+        change: sessions.js renders a text-faint dash for an empty Agent or Runtime cell.
+        accept: empty Agent and Runtime cells contain a dash.
+      - id: P6
+        change: Not implemented. specs/web-frontend.impl.yml line 48 and specs/webapp.impl.yml line 354 forbid the word pause in any web control name, so the feed toggle keeps Hold.
+        accept: toggle label unchanged.
 
 verification:
   serve: >-
