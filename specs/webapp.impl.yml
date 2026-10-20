@@ -1,0 +1,317 @@
+schema: is.v1
+metadata:
+  name: polispec web, author port, effect tracking, registration, manifest and the edition registry
+  slug: webapp
+  version: 0.1.0
+  created: '2026-10-20'
+  status: accepted
+  base_commit: 8c000fb
+  base_version: 0.33.1
+  intended_release: 0.34.0
+  contract: "specs/app.yml#description, #web, #author, #manifest, #registration, #effect, #editions, #extension_points, #delegation.exceptions_verbs, #judgments.epoch"
+  companions:
+    frontend: specs/web-frontend.impl.yml (Chris; slices F0 to F8; authoritative for every file under web/public)
+    rplugin: specs/webapp-rplugin.impl.yml (plugin-declared ports in rplugin and the rllm author adapter in the extension catalogue)
+    effect_inputs: docs/effect.md and TODO.md "Change receipts and effect tracking" (measured by the polispec-5d session; open items stay open)
+  worker: {harness: claude-code, agent: coding-worker, model: sonnet, effort: medium, note: "AGENTS.md Part T: the primary wrote this blueprint and verifies; workers implement the slices. Roster: coding-worker claude/sonnet/medium."}
+  decisions_by_sven:
+    - "Stack: Roda on Rack 3 served by WEBrick, all pure Ruby, vendored under vendor/; the UI is static ES modules and Web Components with no build step; a JSON API under /api/v1 with an OpenAPI document."
+    - "Writes: every change is a polispec plan; tightening or neutral and not global applies on one click; loosening, mixed, global, status flips, moves and ledger changes need the plan id typed; operator-only actions are copyable commands; a per-launch secret the agent cannot read and a guard rule that warns on agent calls to the web app's mutating endpoints."
+    - "description: a new optional field on every rulebook with a deterministic semantic lint, an optional decide-port judgment, a ratchet (warn by default, polispec.description.strict fails), rolled out runtime first."
+    - "author: a polispec-owned port; the built-in adapter is a persistent stream-json Claude Code session built inside polispec after rharness's Claude::Control design; rllm reaches it only through rplugin's rstack extension, which needs plugin-declared ports in rplugin (this release)."
+    - "One release. The eight extra views and polispec-5d's five effect screens plus their backend are all in it."
+    - "Manifest: generated per app, authored by the app (polispec.app.yml), and a host-wide index; plus polispec register and a skill for arbitrary software, directories and the user's system scope, with owner stamped per OS user and opt-in index publishing."
+    - "Move: relocate across scopes and reorder or regroup within a layer, both as plans."
+    - "Exceptions promote from the web relays the typed phrase through the delegate runner, never in polispec-lock."
+    - "Edition registry specs/editions.yml; code reads it through Polispec::Editions; every lock branch in the code moves behind it; polispec editions --check and doctor report drift. Web is excluded from lock."
+    - "Themes: system, light, dark, apple-noir, apple-austere, tronwave; first visit system; recorded as a fleet.yml exception."
+vision:
+  problem: >-
+    polispec lives entirely in files and a CLI. A person cannot see which projects a shelf module reaches, what a policy is
+    composed of, what a draft would change in real traffic, or whether a change has reached the sessions running right now.
+    Rulebooks carry a one-line summary that nothing checks. There is no way to register software that is not a git
+    repository with branches, nothing records which OS user owns an entry, and the difference between standard and lock is
+    scattered across about twenty string comparisons.
+  outcome: >-
+    polispec web serves a local, file-backed web app over the same library the CLI uses. Every rulebook may carry a linted
+    description. An author port drafts rulebooks through a persistent, governed Claude Code session. Every judgment carries
+    a policy epoch; change and session records show which sessions crossed a change. polispec register governs paths; a
+    manifest, an app declaration and a host index describe every governed app. specs/editions.yml is the single place the
+    two editions differ.
+  non_goals:
+    - Any change to a verdict outside the new web_local shape, G-WEB-AGENT and the policy.edit classification of polispec web, polispec web url and the new verbs. The edition refactor must change no verdict.
+    - A database, a remote service, a hosted mode or a network fetch at runtime.
+    - Sealing, plane activation, promotion to stable or any operator-only action from the web app.
+    - Writing description into any live rulebook in this release (runtime first, see description.rollout).
+    - Codex mid-session hook reload and trusted_hash semantics are investigated, not assumed (effect.open).
+constraints:
+  - "Ruby >= 2.6, standard library only in lib/polispec outside lib/polispec/web; lib/polispec/web loads only the vendored gems. Keep the two-line header (shebang, SPDX) every lib file carries."
+  - "No comments or docstrings in code (AGENTS.md Part Q). The only new test material is smoke scenarios under smoke/scenarios (the product's own test machinery). Browser journeys are driven from scripts in the primary's scratchpad, never committed."
+  - "Every Write or Edit stays under 60 KB of content per call: the live guard rejects hook input over 65,536 bytes. Split large files into several Edit appends."
+  - "Work only in the slice's worktree under /home/sven/github/foss/.polispec-wt/ (branch per slice, off feat/webapp). Never touch the pinned runtime, the live clone /home/sven/github/foss/polispec, ~/.ai, ~/.rplugin, the real ledger (~/.ai/polispec/ledger.yml), the real shelf, Sven's ../.polispec-wt/stable-hotfix, or any stable branch or production checkout."
+  - "Every verification run sets POLISPEC_STATE_HOME, POLISPEC_LEDGER, POLISPEC_HOME, POLISPEC_GLOBAL and POLISPEC_SPECS_REPO to scratch paths; never redirect XDG_STATE_HOME."
+  - "Never run git push, git tag, promote, deploy, pin or steward; the primary does releases."
+  - "APISAFE for every process or HTTP call the change adds: a limiter, bounded jittered retries, timeouts and a kill switch, exactly as given per component below."
+  - "No new direct rStack wire. rllm is reached only through the rplugin rstack extension (companion spec)."
+  - "Commands are files: a new command is lib/polispec/commands/<name>.rb calling Polispec::CLI.register; no registry edits."
+surfaces:
+  code:
+    new:
+      - lib/polispec/editions.rb
+      - lib/polispec/description.rb
+      - lib/polispec/effect.rb
+      - lib/polispec/chain.rb
+      - lib/polispec/changes.rb
+      - lib/polispec/sessions.rb
+      - lib/polispec/notice.rb
+      - lib/polispec/manifest.rb
+      - lib/polispec/registration.rb
+      - lib/polispec/author.rb
+      - lib/polispec/author/standalone.rb
+      - lib/polispec/author/prompt.rb
+      - lib/polispec/author/draft.rb
+      - lib/polispec/author/adapters/harness_cli.rb
+      - lib/polispec/author/claude_session.rb
+      - lib/polispec/author/codex_session.rb
+      - lib/polispec/web.rb
+      - lib/polispec/web/app.rb
+      - lib/polispec/web/server.rb
+      - lib/polispec/web/auth.rb
+      - lib/polispec/web/proposals.rb
+      - lib/polispec/web/views.rb
+      - lib/polispec/web/routes/*.rb
+      - lib/polispec/classify/commands/web_local.rb
+      - lib/polispec/commands/{web,manifest,register,changes,sessions,editions,author}.rb
+      - vendor/{rack,rackup,roda,webrick}/ and vendor/VERSIONS.yml
+      - web/public/openapi.yml
+    changed:
+      - lib/polispec/commands/hook.rb (session records, epoch on records, exception_rows, notice)
+      - lib/polispec/judgments.rb (epoch and exception_rows passthrough only; chain code untouched)
+      - lib/polispec/ledger.rb (paths entries, owner, registered_by, description; locate considers path entries)
+      - lib/polispec/layers.rb (a path-entry layer for live path entries)
+      - lib/polispec/engine.rb (Settings keys for the new settings)
+      - lib/polispec/plan.rb (ledger plans classify paths entries; effect classes in plan output)
+      - lib/polispec/commands/{apply,promote,exceptions,settings,pin,install,uninstall}.rb (change records after success)
+      - lib/polispec/commands/doctor.rb (description_*, editions_drift, launcher_stale, codex_hook_untrusted)
+      - lib/polispec/commands/validate.rb or wherever validate lives (description lint, --semantic, validate app)
+      - lib/polispec/delegate/grants.rb and lib/polispec/commands/delegate.rb (exceptions verbs)
+      - lib/polispec/classify/commands/support.rb and release.rb (web secret and token files, polispec web as policy.edit)
+      - lib/polispec/classify/shapes.rb (web_local)
+      - every file with an edition string comparison (editions slice)
+      - modules/tool-declared.yml (G-WEB-AGENT)
+      - polispec.rplugin.yml (ports.declared, settings, skills), plugin.json and native manifests through rplugin package only
+  contract:
+    - "schemas: description on policy, module, package, environments, global, roster, spec (root and policy objects), ledger project and path entry; ledger paths, owner, registered_by; judgment epoch and exception_rows; delegate_grants verbs; new change.v1, session.v1, manifest.v1, app.v1, index.v1, editions.v1"
+    - specs/app.yml (rows already written; the primary reconciles any deviation)
+    - specs/editions.yml (rows for every gate the refactor touches)
+  doc:
+    - docs/web.md (new), docs/effect.md (the built parts), docs/schema.md, docs/operator.md (web, delegation of exceptions), README.md, skills/polispec/SKILL.md, skills/polispec-register/SKILL.md (new)
+  test_machinery:
+    - smoke/scenarios/{description,editions,effect,registration,manifest,author,web}.yml (new)
+  fleet:
+    - "No supervised process: polispec web runs in the foreground of the person's terminal. polispec web unit renders an optional systemd user unit and installs nothing."
+design:
+  editions:
+    module: "lib/polispec/editions.rb, Polispec::Editions, module_function. registry: YAML.safe_load of ROOT/specs/editions.yml, frozen, memoized per process; validated against schemas/editions.v1.yml (schema, editions, values, features[] with id, standard, lock, since, code, note). value(id, edition = current) returns included, restricted or excluded and raises Polispec::Error for an unknown id. allowed?(id, edition = current) is value != excluded. included?(id, edition = current) is value == included. lock?(edition) is the one identity predicate (edition.to_s == 'lock'). current is HarnessControls::Plane.requested_edition, rescued to standard."
+    refactor: "Every site that compares an edition to the string lock calls Editions: a feature difference calls value, allowed? or included? with its registry id; an identity question (plane mismatch, certification, a profile or artifact name that embeds the edition, reading the EDITION file) calls lock?. Known sites at 8c000fb (grep -rnE \"['\\\"]lock['\\\"]\" lib and confirm each): exceptions.rb:37 exceptions; predicates.rb:24 relax.dev; harness_controls/evaluate.rb:232 unknown_call.ask; commands/hook.rb:294 mcp_default.ask, :301 root_guard.optional, :469 legacy_warn; harness_controls/environment.rb:529 and verification.rb:106 root_guard.optional; verification.rb:97-98 and commands/harness.rb:100 identity (certification); authority.rb:64, plane.rb:116 and :126, doctor.rb:143, backends/codex.rb:202 identity; backends/claude.rb:258, :356, :366, backends/codex.rb:261, :395, :404, backends/os.rb:216, :244 network.domain_allowlist; backends/claude.rb:374 controls.user_scope; backends/antigravity.rb:125 identity. Add a registry row for any gate found that has none, with since taken from git log -S."
+    behavior_parity: "Behavior must not change. Each rewritten condition is the boolean the old comparison computed: value(id, ed) is restricted or excluded exactly when ed is lock for every row whose lock value is not included."
+    check: "Editions.check returns findings: gate_without_row (a value/allowed?/included? call whose literal id has no row, found by scanning lib for Editions.(value|allowed\\?|included\\?)\\(\"([^\"]+)\"), row_code_missing (a row whose code path does not exist under ROOT), raw_lock_comparison (a line outside lib/polispec/editions.rb matching ==\\s*['\"]lock['\"] or !=\\s*['\"]lock['\"] or ['\"]lock['\"]\\s*[!=]=). polispec editions prints the registry (text table or --json); --check prints findings and exits 1 when any exist. doctor adds editions_drift (warn) with the same findings."
+    new_rows: "web excluded under lock: polispec web exits 2 with edition_excluded before loading the vendored gems. author excluded: Author.port raises unavailable with reason edition_excluded. exceptions.delegate_promote excluded: grants naming exceptions verbs are refused under lock and the runner answers disabled for them. register.path restricted: under lock polispec register refuses with edition_restricted and names the operator path. epoch_notice included."
+  description:
+    schemas: "Add description: {type: string, minLength: 1, maxLength: 4000} beside summary in schemas/policy.v1.yml, module.v1.yml, package.v1.yml, environments.v1.yml, global.v1.yml, roster.v1.yml, spec.v1.yml (the spec root and the policy object), and ledger.v1.yml project and path_entry."
+    lint: "lib/polispec/description.rb, Polispec::Description. lint(doc, kind) returns [{code, message, span}] and is pure. Vocabulary from the document itself: action classes in every match.class (each class contributes its part after the dot and the whole, e.g. fs.delete gives delete and fs.delete), environment names and their branch names, include module names (hyphens become spaces), rule ids lowercased with hyphens as spaces, gate and freeze ids, match.tool values, the last two components of every match.path, roles in a roster, package names and variants. Checks in order: missing (no description), too_short (fewer than 2 sentences or 20 words), too_long (more than 8 sentences or 400 words), restates_summary (description downcased and stripped of punctuation equals or starts with the summary so treated), names_nothing (no vocabulary term appears as a whole word, case-insensitive), states_no_effect (no word from EFFECT_WORDS = allow allows allowed ask asks warn warns deny denies denied refuse refuses block blocks stop stops promote promotes freeze freezes require requires forbid forbids). Sentences split on [.!?] followed by space or end. A document with no rules or vocabulary (a stub) skips names_nothing."
+    validate: "polispec validate <kind> <file> runs the lint after the schema passes: findings print as warnings (description_missing, description_invalid with the codes) and exit 0, unless polispec.description.strict is on, then exit 1. validate --semantic additionally asks the decide port: question 'Does this description match what the rules do?', options [matches, partial, contradicts], criteria one line each, context the description plus a compact rule list (id, verdict, match keys) bounded to 6000 characters; prints the choice and probability; skipped with a note when the port is unavailable or RPLUGIN_DECIDE_DISABLED is set."
+    doctor: "doctor adds description_missing (info) and description_invalid (warn) for each live project's policy, environments and roster at the trust ref, the global doc and every shelf module; and description_ahead_of_runtime (warn) when a trust ref, the shelf or the ledger uses description and the installed release (Runtime pinned release under the data home current link, or the rplugin store pin, read from its VERSION) is older than 0.34.0."
+    writers: "The web manager and author refuse to add a description to a rulebook while description_ahead_of_runtime would hold, with that reason."
+  effect:
+    epoch: "lib/polispec/effect.rb, Polispec::Effect. epoch(ledger, context) returns 'ep_' plus 16 hex of sha256 over material joined by NUL: Runtime.release tree_digest or Runtime.commit; ledger.digest; Layers.fingerprint; for each live project sorted by id: id, trust_ref, the resolved commit of the trust ref, policy path and roster path; context control_digest; plane status and generation; edition; enforce mode; Engine::Settings relax_dev? and exceptions?. Trust-ref commits are read without a fork: <git dir>/refs/heads/<ref>, else the packed-refs line, else nil (gitdir file of a worktree followed once). Cache in <state home>/epoch.json {key, epoch, at} where key is the sha256 of the same material with each commit; any read failure returns nil and never raises into the hook."
+    record: "hook.rb record_judgment and record_failure add 'epoch' => Effect.epoch(...) (nil omitted) beside engine. Judgments chain code is unchanged; the digest covers what is written. schemas/judgment.v1.yml gains optional epoch (string, pattern ^ep_[0-9a-f]{16}$) and exception_rows (array of {row: integer, entry: aex_ id})."
+    exception_rows: "Where Engine.settle lifts an excepted warn row and where Guard.evaluate lifts an unknown or undeclared ask, record {row: index into targets[].rows flattened in order, entry: aex_ id}; control-ask lifts use row -1. stamp_exceptions keeps the existing per-call exceptions list unchanged."
+    chain: "lib/polispec/chain.rb, Polispec::Chain.new(dir:, file:, head:, lock:, prefix:, schema:) with append(body) (exclusive flock, prev from the head anchor, digest sha256 of canonical JSON without digest, id prefix plus 12 hex, atomic head write), each, find(id), verify (broken chain, digest mismatch, truncated against the head). Same construction as judgments; Judgments itself is not changed to use it."
+    changes: "lib/polispec/changes.rb, Polispec::Changes over Chain (changes.jsonl, changes.head.json, changes.lock, prefix chg_, schema polispec.change/v1). record(kind:, actor:, subject:, epoch_before:, effects:) computes epoch_after itself after the change. actor is ENV POLISPEC_ACTOR, else 'delegate:<app>:<by>' when the delegate confirmer is set, else the OS user name. Never raises: a failure emits polispec.finding change_unrecorded."
+    writers: "After success only: promote (kind promote, subject {project, env, tag, sha}), apply (apply, {target, plan_id}), exceptions add/promote/remove (exceptions.add etc, {entry_ids}), settings set and unset (settings.set, {key}), pin (pin, {tag, commit}), install and uninstall (install, {harness, scope}), register and unregister (register, {id}). Each computes epoch_before before it acts."
+    effect_classes: "Effect.classes(kind, details) returns [{class, scope}]: promote, apply (project, global, ledger, package), exceptions.*, settings.set, register give next_call scope host; apply or promote whose diff touches SessionText inputs (roster, environments, policy) also add new_session scope project; pin adds next_call host and reload host when the launcher files (bin/polispec-guard, hooks/*.json, .claude-plugin/**) differ between the old and new release trees; install and uninstall give reload host; any change whose touched files include a Codex hook definition adds trust host. plan prints these as 'Takes effect: next call (host), new session (project <id>)' before apply, and its JSON carries effects."
+    sessions: "lib/polispec/sessions.rb, Polispec::Sessions: sessions.jsonl under the state home, rotated at 16 MiB, not chained. hook.rb session writes one record for every SessionStart and SubagentStart before the live-project early return: schema polispec.session/v1, ts, session_id, harness, event, agent_type, cwd home-relative, project (located id or null), epoch, text_digest (sha256 of the injected text, null when nothing was injected), launcher {kind claude-plugin|codex-bridge|native|unknown, version, path home-relative} from CLAUDE_PLUGIN_ROOT (version is its basename when it looks like a semver), PLUGIN_ROOT, or the guard script path in ENV POLISPEC_GUARD_PATH set by bin/polispec-guard. Failures are rescued."
+    active: "Sessions.active(window = 3600) merges session records and the session_id of judgments in the window: per session first_seen, last_call, harness, last epoch seen in a judgment, launcher, text_digest, and per project the last policy_digest."
+    await: "polispec changes await <id> [--timeout 600] [--active 1h] polls every 2 s with 20% jitter: crossed when the session has a judgment with an epoch equal to the change's epoch_after or recorded after the change's ts with a non-nil epoch different from epoch_before; pending otherwise; reload when the change has class reload and the session's launcher predates the change; trust when the change has class trust and the harness is codex. Exit 0 when all active sessions crossed, 1 on timeout, printing each pending one."
+    notice: "lib/polispec/notice.rb. In pretool, after the verdict is rendered and before writing, when polispec.notice is on: read <state home>/notices/<session_id> (a single line, the last epoch notified); when absent write the current epoch and add nothing; when it differs and the newest change record after that epoch exists, add one line through the adapter's context channel: 'polispec: <kind> <subject short> landed <relative time> (epoch <8 hex>); it applies from this call.' plus ' Hooks changed: run /reload-plugins.' when the change has class reload; at most 300 characters; then write the new epoch. Claude adapter: hookSpecificOutput.additionalContext merged into the existing output JSON. Codex adapter: only when data/harness-capabilities.yml marks codex pretool additional_context supported; otherwise nothing. Never alters the verdict; any error is rescued."
+    doctor: "launcher_stale (warn): an active session whose launcher version is older than the installed release. codex_hook_untrusted: only after the effect-investigate slice locates Codex's polispec wiring on the host; if it cannot, the finding is not built and docs/effect.md says so."
+  registration:
+    ledger: "schemas/ledger.v1.yml: project gains owner {uid integer, name string}, registered_by string, description; the top level gains paths: [path_entry]; path_entry {id (same pattern as project ids, unique across projects and paths), kind enum software|directory|system, path, status enum onboarding|live|retired, owner, registered_by, description, policy (shelf-relative, default paths/<id>.yml)}. Ledger#paths, Ledger#path(id), and Ledger#locate return a located path entry (kind :path) when no project owns the directory and the directory is at or under a non-retired path entry, deepest first."
+    judging: "A live path entry is judged like an unowned path (evaluate_baseline) with one extra layer composed after the global layer: the module at the entry's policy path on the global shelf, read through the same shelf source as modules (Layers.global's store), schema polispec.module/v1. A missing or invalid file is a layers_invalid finding and the baseline alone applies. Onboarding entries change nothing. The target in the judgment record carries project <id> with policy_source path."
+    command: "polispec register <path>: refuses a missing path, a path inside a ledgered project's repo or worktree (Ledger#locate finds a project), an id collision, and under lock (edition_restricted). kind defaults to directory, system means the home directory and refuses any other path. It writes the proposed ledger to <state home>/register/<id>.ledger.yml (0600), runs Plan ledger --from that file, prints the plan, and applies it when the plan is tightening (an onboarding add) unless --dry-run; --confirm PLAN_ID applies a non-tightening plan. owner is Process.uid and Etc.getpwuid name; registered_by is ENV POLISPEC_ACTOR, else 'cli'. unregister <id> sets status retired through the same path (loosening, needs --confirm). Both record a change (kind register)."
+    packages: "The package ledger step stamps owner and registered_by on the entries it adds."
+    plan: "Plan#build_ledger keys paths entries as path:<id> and classifies an added onboarding entry tighten, a removed entry or a status, path, kind or policy change loosen, description-only changes neutral."
+    skill: "skills/polispec-register/SKILL.md, listed in polispec.rplugin.yml contents.skills: interviews the person (what it is, who it serves, what must never happen to it, who else uses the machine), proposes kind, id, description (passing the lint) and a starter module, runs polispec register --dry-run, then the apply after the person's yes, then offers plan global for the starter module. It never edits the ledger or the shelf by hand. Update specs/app.yml registration.skill to this path."
+  manifest:
+    generated: "lib/polispec/manifest.rb, Polispec::Manifest.for(id) for a project or path entry returns the polispec.manifest/v1 hash listed in specs/app.yml manifest.generated; values come from Ledger, Layers.resolve chain, Probes.resolved, status deployments, Roster, doctor findings filtered to the id. index returns polispec.index/v1 {schema, user, host short name, generated_at, entries [{id, kind, status, owner, description, summary, policy_digest}]} with paths home-relative."
+    write: "polispec manifest <id> --write writes polispec.manifest.json and .polispec/badge.svg into the project's main worktree and commits exactly those two paths on main with message 'Update the polispec manifest'; refuses when the index already has staged changes or the worktree is not on main. Not available for path entries (no repo)."
+    authored: "schemas/app.v1.yml for polispec.app.yml; validate app <file>; Manifest.for reads it from the trust ref when present and includes it under declared."
+    publish: "manifest index --publish needs a TTY and the phrase publish polispec index for <user>; writes /var/lib/polispec/index/<user>.json (0644) only when that directory exists and is writable by the user; --unpublish removes only that user's file after the phrase. The web index view reads every *.json in that directory read-only and validates each."
+    badge: "Manifest.badge_svg(manifest) returns a 20 px high SVG: left 'polispec', right status and enforce mode, colors from fixed neutral values (no theme); text escaped."
+  author:
+    port: "lib/polispec/author.rb, Polispec::Author. port returns the rplugin declared port when Rplugin::Ports.for('polispec', root: ROOT) responds to author (companion spec), else Author::Standalone.new. Before either: raise Author::Unavailable (reason) when Engine::Settings author_enabled? is false or POLISPEC_AUTHOR=off (reason kill_switch), or Editions.allowed?('author') is false (edition_excluded). adapters lists the built-in ids, any extension adapter ids and why none loaded."
+    contract: "draft(kind:, intent:, context:, session: nil, on_event: nil) returns {yaml, rationale, adapter, session, findings, plan}. kind is one of policy, module, package, environments, roster, global, spec, description. context {project, target_file, current_yaml, shelf_modules, schema_id}. on_event receives {type: delta|tool|draft|error|done, ...} as the session streams."
+    standalone: "Author::Standalone holds a registry (Author.register(id, klass), glob-loading lib/polispec/author/adapters/*.rb) and picks polispec.author.adapter (default harness-cli). Adapters respond to open(context) returning a session, turn(session, text, &on_event) and close(session)."
+    harness_cli: "author/adapters/harness_cli.rb resolves harness, model and effort from Roster role spec-author of context.project (Roster.resolve; default claude, sonnet, medium when the role is absent) and opens a ClaudeSession or CodexSession."
+    claude_session: "author/claude_session.rb. argv: [claude, -p, --input-format, stream-json, --output-format, stream-json, --verbose, --include-partial-messages, --replay-user-messages, --permission-prompts, host, --session-id, UUID (resume: --resume UUID), --model, M, --effort, E when claude --help lists it, --allowedTools, 'Read Grep Glob', --strict-mcp-config, --mcp-config, '{\"mcpServers\":{}}', --append-system-prompt, PROMPT]; never any --dangerously flag (raise if one would be added). Spawned with Open3.popen3 in its own process group, cwd <state home>/author/<session>/ (0700), environment inherited (so the user's hooks, polispec included, govern it) plus POLISPEC_ACTOR=author:<session>. A reader thread parses stdout JSON lines: system init (record session_id, model, tools), stream_event content_block_delta text deltas (on_event delta), assistant messages, result (turn end, record total_cost_usd and usage), control_request with request subtype can_use_tool (answer with a control_response: behavior allow with the input unchanged when tool_name is Read, Grep or Glob and every path argument resolves inside the allowed roots: context.project repo, the shelf directory, ROOT/schemas, ROOT/modules, ROOT/examples; otherwise behavior deny with message 'polispec author drafts only; it reads the project and the shelf'; on_event tool with the decision). A user turn is written as one JSON line {type: user, message: {role: user, content: TEXT}}. These protocol shapes follow rharness's shellout-library spec and Claude Code 2.1.304's help; the author-probe slice confirms them on a real session before the adapter is considered done, and the adapter adapts to what it observes."
+    codex_session: "author/codex_session.rb: one codex exec --json run per turn with the model and effort from the role, resumed by its session id on later turns, read-only sandbox flags; parsed into the same events. Built after the claude session; verified with the author-probe slice when Sven authorizes a Codex run."
+    prompt: "author/prompt.rb builds the appended system prompt: you draft polispec rulebooks; output exactly one fenced yaml block containing one document of schema <id>, then a section headed Rationale; the description must pass these rules (the lint rules in words); never invent rule ids that collide with ones listed; the schema file text and the current document follow. The user turn carries the intent and, on later turns, the validation findings of the previous draft."
+    draft: "author/draft.rb extracts the last fenced yaml block, YAML.safe_load (permitted_classes Date), validates against the schema of kind, runs Description.lint, and when context names a project or global target builds the plan of the proposal through Web::Proposals (in memory, no ref written) to return its classification and probe changes. Invalid YAML or schema errors are returned as findings, never raised."
+    bounds: "At most 3 open sessions per host (a lock file per session under <state home>/author/; a fourth open raises busy); a session idle 15 minutes is closed; a turn times out after 180 s (process group TERM, KILL after 5 s); when the process exits before its first event, at most 2 retries with 1 s and 2 s delays plus or minus 30% jitter; a host token bucket of 10 turns a minute in <state home>/author/bucket.json under flock; the kill switch closes open sessions at their next event and refuses new ones."
+    cli: "polispec author draft <kind> --intent TEXT [--for PROJECT] [--adapter ID] [--json] runs one turn, prints the draft, findings and plan summary, writes nothing outside <state home>/author, closes the session. polispec author adapters [--json]."
+    events: "Each session open, turn end and close emits polispec.author through the events port with session id, adapter, harness, model, duration and cost, never prompt or draft text."
+  web:
+    loader: "lib/polispec/web.rb: Web.load! refuses with edition_excluded unless Editions.allowed?('web'); prepends ROOT/vendor/<name>/lib for rack, rackup, roda, webrick to $LOAD_PATH (in that order, before any installed gem) and requires them; a vendored gem that fails to load is a Polispec::Error naming it. Nothing else in polispec requires lib/polispec/web."
+    vendor: "vendor/VERSIONS.yml lists name, version, license, source (rubygems.org), sha256 of the .gem and the files copied. The worker fetches each gem once with gem fetch NAME -v VERSION into the scratchpad, unpacks it, and copies lib/ plus the license file. Versions: rack 3.1.x, rackup 2.2.x, roda 3.x, webrick 1.9.x, each the newest release at least 14 days old on 2026-10-20, all supporting Ruby 2.6 (check each gemspec's required_ruby_version; if a newest version needs more, take the newest that does not, and say so)."
+    server: "lib/polispec/web/server.rb starts Rackup::Handler::WEBrick with the Roda app on polispec.web.bind and polispec.web.port, Logger to <state home>/web/server.log (rotated at 4 MiB), AccessLog with method, path and status only (no query strings, no cookies). It refuses a non-loopback bind unless --expose was confirmed. It writes <state home>/web/server.json {pid, port, bind, started_at} (0600) and refuses to start while another live pid holds it (a dead pid's file is renamed, never deleted). TERM and INT stop it cleanly and close author sessions."
+    auth: "lib/polispec/web/auth.rb. <state home>/web/launch.secret: 32 random bytes hex, 0600, created at first start and kept. A link code is nonce.expiry.hmac with nonce 16 hex random, expiry unix seconds now+120, hmac first 32 hex of HMAC-SHA256(secret, nonce.expiry). The server prints http://<bind>:<port>/#k=<code> on start; polispec web url mints another for the running server. POST /api/v1/session {code} verifies the hmac, the expiry and that the nonce was not used before (in-memory set), then sets ps_session (32 random bytes hex; HttpOnly; SameSite=Strict; Path=/; no Secure on loopback) and returns {csrf}. Sessions live in memory, idle expiry 12 h, ended by DELETE /api/v1/session or a restart. Every /api/v1 route except POST /api/v1/session requires the cookie (401 otherwise). Every mutating route also requires X-Polispec-CSRF equal to the session's csrf, an Origin equal to the server's own origin, and a Host header naming the bind address or localhost with the port (403 otherwise; this also stops DNS rebinding). Mutations are limited to 30 a minute per session (429 with Retry-After)."
+    headers: "Every response: Content-Security-Policy default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'. X-Content-Type-Options nosniff, Referrer-Policy no-referrer, Cache-Control no-store on /api. Static files from web/public with ETag and a strict extension to MIME map."
+    routes: "lib/polispec/web/routes/<group>.rb registers with Polispec::Web.route(prefix, mutating:) { |r| ... } (Roda hash_branches). JSON in and out (Roda json and json_parser plugins), errors as {error: kind, message, findings?} with the status codes of the frontend data layer (401, 403, 409, 422, 429, 5xx). The authoritative list is web/public/openapi.yml; web smoke fails when a registered route is missing from it."
+    api:
+      - "POST /api/v1/session, DELETE /api/v1/session"
+      - "GET /api/v1/config: version, edition, epoch, flags {author.enabled with reason, feed.enabled, description.allowed with reason, delegate {runner_up, granted_verbs}}, theme default, operator name"
+      - "GET /api/v1/map: projects, path entries, worktree globs, the shipped, global and exceptions layers, module instances and every edge (layer or module to project), each node with name, summary, description, digest, status, verdict counts over 24 h; ETag is the epoch"
+      - "GET /api/v1/catalog: rulebooks by kind and id, packages with params and variants, shelf modules with params, examples"
+      - "GET /api/v1/rulebooks/:kind/:id/source (YAML text, schema id, ref, digest); /composition (the resolve --layers chain, module instances with parameters, rules with verdict, overridable and overrides, gates, freezes, and the winning rule per env for ?action=<class>&path=<p>); /history (commits and tags touching the file; ?from&to gives the semantic diff)"
+      - "POST /api/v1/lint {kind, yaml}: schema errors and description findings"
+      - "POST /api/v1/plans {target, change} creates a proposal and its plan; GET /api/v1/plans/:id; POST /api/v1/plans/:id/apply {confirm?}: refused 409 when stale, 422 confirm_required when the plan needs confirmation and confirm differs from the id"
+      - "POST /api/v1/explain {tool, input, cwd?, all_envs?}; POST /api/v1/explain-text {text | judgment_id}"
+      - "POST /api/v1/blast-radius {target, change}"
+      - "GET /api/v1/pipeline; GET /api/v1/heatmap?since=14d; GET /api/v1/sessions?active=1h; GET /api/v1/changes?since; GET /api/v1/judgments?since&session&project&rule&limit; GET /api/v1/judgments/stream (SSE)"
+      - "GET /api/v1/exceptions; GET /api/v1/exceptions/proposals; POST /api/v1/exceptions/:verb {args} (add, promote, remove) returns a delegate run id; GET /api/v1/runs/:id?offset; POST /api/v1/runs/:id/phrase {text}"
+      - "GET /api/v1/manifest/index; GET /api/v1/manifest/:id; GET /api/v1/badge/:id.svg"
+      - "POST /api/v1/register {path, kind, id, description}: returns the plan; applying it goes through /plans/:id/apply"
+      - "POST /api/v1/author/sessions {kind, project?, target_file?}; POST /api/v1/author/sessions/:sid/turns {intent}; GET /api/v1/author/sessions/:sid/stream (SSE); POST /api/v1/author/sessions/:sid/stop; DELETE /api/v1/author/sessions/:sid"
+      - "GET and PUT /api/v1/state/:name for name in layout, pins, playground: web/state/<name>.yml under the state home, at most 256 KiB each, schema-free YAML mapping"
+      - "GET /api/v1/editions"
+    proposals: "lib/polispec/web/proposals.rb turns a change into plan inputs without touching any working tree. project target: write the proposed files as blobs, build a tree from the trust ref's tree with the policy directory replaced, commit-tree with the trust ref as parent, and point refs/polispec/proposals/<n> at it (git hash-object -w, mktree, commit-tree, update-ref, all without a shell); Plan.build(project:<id>, from: that ref). global target: the same in the global shelf repo. ledger target: write the proposed ledger to <state home>/web/proposals/<n>.ledger.yml (0600) and plan ledger --from it. Apply goes through the same ApplyCommand code path with the same plan id and confirm rules (call the class, not a subprocess, with the delegated confirmer unset). Proposal refs older than 7 days are deleted at server start (update-ref -d; they are polispec-owned refs, not user branches). Change kinds: replace (full YAML), compose (add, remove or reparameterize an include), reorder (rule order within a layer), regroup (move rules into or out of a module), move (relocate a module or rule across scopes: two proposals, destination then source, returned as one change with both plan ids; the source is always a loosening and needs its plan id typed; apply runs the destination first and stops if it fails)."
+    views: "lib/polispec/web/views.rb computes the read models: map, pipeline (Status internals per project: main, test and stable commits and policy digests, unpromoted when the main and stable policy digests differ, package drift and doctor findings for the id, freezes, last gate results), heatmap (Judgments records in the window, at most 30 days: hits per rule, project and env; rules in the composition that never hit; NO-RULE rows grouped by action class and the first two path components), history (git log --follow of the file with tags; the semantic diff composes both refs through Probes.compose and the Plan item and diff logic, exposed as Plan.compare_refs(target, from, to)), explain (ExplainCommand's judging path with a synthetic hook input; all_envs runs it with cwd at the project repo for dev and at envs_root/<id>/<env> for test and prod), explain-text (a [POLISPEC <rule_id>] prefix or a jdg_ id resolves to the rule, its layer and module, its reason and the rulebook description). Read models are memoized per epoch and ledger digest."
+    sse: "GET /api/v1/judgments/stream tails judgments.jsonl from its end (following rotation) every 500 ms and sends each new record without raw as event judgment, with a heartbeat comment every 15 s; at most 8 streams; filters session, project, rule. The author stream sends the adapter's events. The response body is a streaming body the rackup WEBrick handler flushes per event; verify that events arrive within 1 s of being written, and if WEBrick buffers, implement the body as an object responding to call(stream) as rackup 2 supports."
+    delegate: "Exception verbs need a grant for app polispec-web with verbs exceptions-add, exceptions-promote and exceptions-remove (the operator runs polispec delegate grant at a terminal) and the token stored by polispec web token set (TTY, the operator pastes it; written to <state home>/web/delegate.token 0600). The web app talks to the runner socket with the existing protocol (request, output, phrase). Without a grant or a running runner, config.flags.delegate says so and the exceptions view shows the exact commands."
+    guard: "classify: lib/polispec/classify/commands/web_local.rb registers family web_local for curl, wget, http, https (httpie), xh and the WebFetch tool. When the URL host is 127.0.0.1, localhost, [::1] or 0.0.0.0 and the port equals the port in <state home>/web/server.json or polispec.web.port, it yields one policy.edit action with shape web_local when the request is mutating (curl -X/--request other than GET or HEAD, -d, --data*, -F, --form, --json, -T; wget --post-data, --post-file, --method; httpie or xh with a method word other than GET or HEAD or with key=value data items) or the path starts with /api/v1/plans/ and ends with /apply, /api/v1/exceptions/, /api/v1/register, /api/v1/session, /api/v1/author or /api/v1/state; otherwise a web.fetch action as today. release.rb: polispec web, polispec web url and polispec web token classify policy.edit; polispec web unit, polispec web --help and polispec editions are benign. support.rb: <state home>/web/launch.secret and <state home>/web/delegate.token are protected like the delegate grants file (a write classifies policy.edit, a read secrets.read). shapes.rb NAMES gains web_local. modules/tool-declared.yml gains G-WEB-AGENT {match: {shape: [web_local]}, verdict: warn, overridable: true, reason: 'this call reaches the local polispec web app's mutating API; the person at the browser makes these changes'}."
+    commands: "polispec web [--bind ADDR] [--port N] [--expose] [--open] [--read-only] [--json] serves (--read-only mounts no mutating route; --open runs xdg-open or open with the link when present); polispec web url; polispec web token set; polispec web unit (renders a systemd user unit, installs nothing)."
+  delegation:
+    verbs: "Delegate::Grants::VERBS gains exceptions-add, exceptions-promote and exceptions-remove; each maps to argv [exceptions, add|promote|remove, ...]. covers? checks the args against the exceptions usage: add with --command, --tool, --kind, --rule, --global and --note only; promote with proposal ids and --command, --global, --note; remove with one aex_ id; no other flag. Run.project_of returns global for them, so one exceptions run at a time. Under lock (Editions.allowed?('exceptions.delegate_promote') false) grant refuses these verbs and the runner answers disabled for a request naming them. schemas/delegate_grants.v1.yml verbs enum gains them; grant's typed phrase and the token flow are unchanged."
+  settings: "polispec.rplugin.yml settings gains polispec.description.strict (enum off|on, default off), polispec.web.bind (string, default 127.0.0.1), polispec.web.port (integer-as-string, default 7421), polispec.web.theme (enum system|light|dark|apple-noir|apple-austere|tronwave, default system), polispec.author.enabled (enum off|on, default on), polispec.author.adapter (string, default harness-cli), polispec.notice (enum off|on, default on), each scopes [machine] with a description from specs/app.yml. Engine::Settings gains description_strict?, web_bind, web_port, web_theme, author_enabled?, author_adapter, notice? with the env overrides POLISPEC_DESCRIPTION_STRICT, POLISPEC_AUTHOR, POLISPEC_NOTICE honored only while unsealed, as relax_dev? does."
+slices:
+  - id: B0-editions-settings
+    wave: 0
+    owns_paths: [lib/polispec/editions.rb, schemas/editions.v1.yml, lib/polispec/commands/editions.rb, specs/editions.yml, polispec.rplugin.yml, lib/polispec/engine.rb, "every file holding an edition comparison (design.editions.refactor)"]
+    deliverable: "Editions module, the refactor of every lock comparison, polispec editions [--check], all new settings rows and Engine::Settings accessors."
+    acceptance:
+      - "bin/polispec editions --check exits 0; grep -rnE \"==\\s*['\\\"]lock['\\\"]|!=\\s*['\\\"]lock['\\\"]\" lib shows only lib/polispec/editions.rb"
+      - "Parity: the primary's replay kit (scratchpad replay/run.sh, below) run under RPLUGIN_POLISPEC_EDITION=lock and under the default, with this tree and with an unmodified clone at 8c000fb, gives identical decision and rule for every payload"
+      - "bin/polispec settings list shows the seven new keys with their defaults"
+      - "smoke/scenarios/editions.yml: editions prints the registry; --check passes; a scratch copy of ROOT with a raw lock comparison added fails --check (run against a copied tree, never this one)"
+  - id: B1-description
+    wave: 1
+    depends_on: [B0-editions-settings]
+    owns_paths: [lib/polispec/description.rb, "schemas/{policy,module,package,environments,global,roster,spec}.v1.yml", "the validate command file", smoke/scenarios/description.yml]
+    deliverable: "Schema fields, the lint, validate output and --semantic, and Description.doctor_findings(ledger) for B9 to wire."
+    acceptance:
+      - "Every YAML under examples/, modules/, packages/ and smoke/ that validated before still validates; with no description each reports description_missing as a warning and exits 0"
+      - "A policy with a two-sentence description naming a class it governs and saying deny passes; restates_summary, names_nothing, states_no_effect, too_short and too_long each trigger on a crafted file"
+      - "POLISPEC_DESCRIPTION_STRICT=on makes the same missing case exit 1"
+      - "validate --semantic with RPLUGIN_DECIDE_DISABLED=1 prints the skip note and exits as without it"
+  - id: B2-effect
+    wave: 1
+    depends_on: [B0-editions-settings]
+    owns_paths: [lib/polispec/effect.rb, lib/polispec/chain.rb, lib/polispec/changes.rb, lib/polispec/sessions.rb, lib/polispec/notice.rb, lib/polispec/commands/hook.rb, lib/polispec/judgments.rb, schemas/judgment.v1.yml, schemas/change.v1.yml, schemas/session.v1.yml, lib/polispec/commands/changes.rb, lib/polispec/commands/sessions.rb, "lib/polispec/commands/{apply,promote,exceptions,settings,pin,install,uninstall}.rb (the record call only)", "lib/polispec/harness/*.rb adapters (additionalContext rendering only)", bin/polispec-guard (export POLISPEC_GUARD_PATH only), smoke/scenarios/effect.yml]
+    deliverable: "Epoch on every judgment, exception_rows, chained change records from every writer, session records, changes and sessions verbs with await, the once-per-epoch notice, effect classes, and Effect.doctor_findings for B9."
+    acceptance:
+      - "In a scratch fixture: two hook pretool calls carry the same epoch; after bin/polispec settings set polispec.exceptions off (scratch settings file) a third carries a different epoch and the change record's epoch_after equals it"
+      - "bin/polispec judgments verify passes on a scratch stream that holds records written by the pinned 0.33.1 and then by this tree"
+      - "A SessionStart and a SubagentStart hook call each leave a session record, also for a cwd no project owns; CLAUDE_PLUGIN_ROOT=/x/polispec/0.33.1 gives launcher version 0.33.1"
+      - "changes await <id> --timeout 5 exits 1 naming a session with no call since and 0 after one more pretool call in that session"
+      - "The first pretool call after a change in a session that already has a notices file returns additionalContext with the line; the next call does not; POLISPEC_NOTICE=off adds nothing; the decision and rule are unchanged in every case"
+      - "Hook latency: 20 pretool calls in the fixture, median duration_ms within 10% of the same run on 8c000fb (report both)"
+  - id: B2b-effect-investigate
+    wave: 1
+    owns_paths: [docs/effect.md]
+    deliverable: "Locate how Codex reaches polispec on this host (read ~/.codex, ~/.codex/plugins, the ~/.ai Codex bridge and its config; read only), record it in docs/effect.md, and design the codex_hook_untrusted check from what is found. The two live Codex questions (mid-session hook reload, trusted_hash coverage) and the Claude Code hook snapshot question are run only if Sven authorizes the token cost; otherwise they stay listed as open."
+    acceptance: ["docs/effect.md names the wiring with file paths, or says plainly that it could not be found and what was searched"]
+  - id: B3-registration
+    wave: 1
+    depends_on: [B0-editions-settings]
+    owns_paths: [schemas/ledger.v1.yml, lib/polispec/ledger.rb, lib/polispec/registration.rb, lib/polispec/commands/register.rb, lib/polispec/layers.rb, lib/polispec/packages.rb, smoke/scenarios/registration.yml]
+    shared: "lib/polispec/plan.rb (build_ledger paths keys; B2 adds effect printing to render_text and to_json: B3 merges first, B2 rebases)"
+    deliverable: "Ledger paths entries with owner and registered_by, the path-entry layer, register and unregister, package owner stamping, ledger plan classification."
+    acceptance:
+      - "Scratch ledger: register <scratch dir> --id tools plans tightening and applies; the ledger gains the entry with owner; register of a dir inside a ledgered repo refuses; unregister without --confirm refuses confirm_required"
+      - "With status live and a shelf module paths/tools.yml denying fs.delete under the dir, hook pretool for rm -rf <dir>/x denies with that rule; with onboarding it does not"
+      - "The pinned 0.33.1 still loads a ledger this tree wrote only when it has no paths and no owner keys: record the result either way (it is the rollout hazard, design.description.rollout applies to the ledger too)"
+  - id: B4-web-core
+    wave: 1
+    depends_on: [B0-editions-settings]
+    owns_paths: [vendor/, lib/polispec/web.rb, lib/polispec/web/app.rb, lib/polispec/web/server.rb, lib/polispec/web/auth.rb, lib/polispec/commands/web.rb, lib/polispec/classify/commands/web_local.rb, lib/polispec/classify/commands/release.rb, lib/polispec/classify/commands/support.rb, lib/polispec/classify/shapes.rb, modules/tool-declared.yml, web/public/openapi.yml]
+    deliverable: "Vendored gems, loader, server, auth, route registry, static serving with headers, the config and session routes, the guard classifier, G-WEB-AGENT, polispec web and its subcommands."
+    acceptance:
+      - "ruby -e with a clean GEM_HOME and GEM_PATH (no installed rack, roda or webrick) runs bin/polispec web --port 0 --json and serves /index.html (a placeholder until F0 lands) on 127.0.0.1"
+      - "curl without the cookie on /api/v1/config gets 401; after the code exchange it gets 200; a reused code gets 401; a POST without X-Polispec-CSRF or with a foreign Origin gets 403; a Host of evil.example gets 403; the 31st mutation in a minute gets 429"
+      - "Response headers carry the CSP and nosniff exactly"
+      - "--bind 0.0.0.0 without --expose refuses; RPLUGIN_POLISPEC_EDITION=lock makes polispec web exit 2 edition_excluded"
+      - "bin/polispec classify --json: curl -X POST http://127.0.0.1:<port>/api/v1/plans/p/apply gives policy.edit with shape web_local; curl http://127.0.0.1:<port>/api/v1/map gives web.fetch; polispec web gives policy.edit; cat <state home>/web/launch.secret gives secrets.read"
+  - id: B5-author
+    wave: 1
+    depends_on: [B0-editions-settings]
+    owns_paths: [lib/polispec/author.rb, lib/polispec/author/, lib/polispec/commands/author.rb, smoke/scenarios/author.yml]
+    deliverable: "The port facade, the standalone registry, harness-cli with ClaudeSession and CodexSession, prompt, draft pipeline, bounds, CLI."
+    acceptance:
+      - "Without spending tokens: a fake claude executable on PATH in the scratchpad that replays a recorded stream-json transcript (init, deltas, one can_use_tool for Read inside the project, one for Bash, result) drives author draft module --intent x: the Read is allowed, the Bash denied, the draft is extracted, validated and linted"
+      - "POLISPEC_AUTHOR=off and RPLUGIN_POLISPEC_EDITION=lock each refuse with their reason before spawning anything (the fake records no spawn)"
+      - "A fourth concurrent session raises busy; the bucket refuses the 11th turn in a minute"
+  - id: B5b-author-probe
+    wave: 2
+    depends_on: [B5-author]
+    gated: "Runs a real Claude Code session and costs tokens. Only after Sven authorizes it through the primary."
+    deliverable: "One real draft with claude-haiku-5-5 at low effort in a scratch project: record the observed init, delta, control_request and result shapes, adjust ClaudeSession to them, and confirm the polispec guard judged the session's tool calls (judgment records with its session id)."
+  - id: B6-manifest
+    wave: 2
+    depends_on: [B3-registration, B1-description]
+    owns_paths: [lib/polispec/manifest.rb, lib/polispec/commands/manifest.rb, schemas/manifest.v1.yml, schemas/app.v1.yml, schemas/index.v1.yml, smoke/scenarios/manifest.yml]
+    deliverable: "Manifest.for, index, badge, --write, publish and unpublish, validate app."
+    acceptance:
+      - "manifest <id> --json in a scratch fixture validates against manifest.v1; --write commits exactly the two files on main; index --publish without a TTY refuses not_tty"
+  - id: B7-web-routes
+    wave: 2
+    depends_on: [B1-description, B2-effect, B3-registration, B4-web-core, B5-author, B6-manifest, B8-delegate-exceptions]
+    owns_paths: [lib/polispec/web/routes/, lib/polispec/web/views.rb, lib/polispec/web/proposals.rb, web/public/openapi.yml]
+    shared: "lib/polispec/plan.rb (Plan.compare_refs only)"
+    deliverable: "Every route in design.web.api, proposals, read models, SSE, delegate relay."
+    acceptance:
+      - "Each route answers in the fixture with a JSON body matching its openapi schema; every registered route is in openapi.yml"
+      - "A project edit through POST /plans then /apply commits on main of the scratch project and leaves its working tree untouched until apply; a loosening plan without confirm gets 422; a stale id gets 409"
+      - "A judgment written by a hook call appears on /judgments/stream within 1 s"
+      - "A move creates two plans and applies the destination first"
+  - id: B8-delegate-exceptions
+    wave: 1
+    depends_on: [B0-editions-settings]
+    owns_paths: [lib/polispec/delegate/grants.rb, lib/polispec/commands/delegate.rb, lib/polispec/delegate/run.rb, schemas/delegate_grants.v1.yml]
+    deliverable: "Exceptions verbs in grants and runner, refused under lock."
+    acceptance:
+      - "In scratch state with a TTY driven by script(1): grant polispec-web --verbs exceptions-add; a runner request [exceptions, add, --command, 'echo *', --global] reaches waiting_phrase with the exact phrase; a request with an extra flag is out_of_scope; under lock the grant is refused"
+  - id: F0-F8-frontend
+    wave: "F0 to F3 in wave 1 against the openapi contract; F4 to F8 in wave 2 after B7"
+    spec: specs/web-frontend.impl.yml
+  - id: B9-integration
+    wave: 3
+    depends_on: [B1-description, B2-effect, B3-registration, B4-web-core, B5-author, B6-manifest, B7-web-routes, B8-delegate-exceptions, F0-F8-frontend]
+    owns_paths: [lib/polispec/commands/doctor.rb, docs/web.md, docs/schema.md, docs/operator.md, README.md, skills/polispec/SKILL.md, skills/polispec-register/SKILL.md, smoke/scenarios/web.yml]
+    deliverable: "doctor wiring (editions_drift, description_*, launcher_stale, codex_hook_untrusted when built), the docs and both skills, the web smoke scenario."
+    acceptance:
+      - "bin/polispec doctor in the fixture lists the new findings where crafted and nothing new on a clean fixture"
+      - "smoke/scenarios/web.yml starts polispec web --port 0 in the fixture, exchanges a code, reads config and map, creates and applies a tightening plan, and stops the server"
+verification:
+  replay_kit: "The primary builds <scratchpad>/replay/: the last 14 days of real hook payload shapes are not stored (records hold digests), so the kit is a fixed set of 120 synthetic PreToolUse payloads covering every action class, the eval/source/. shapes, MCP calls, unknown tools, deletes and pushes, run through bin/polispec explain --harness claude --json with scratch POLISPEC_* state and the stock shelf ~/.ai/polispec copied read-only. run.sh <polispec-bin> [edition] prints tool, decision, rule per payload."
+  parity: "replay/run.sh with this tree and with an unmodified clone at 8c000fb, under standard and lock: identical except payloads that reach web_local (new rule) and polispec web (policy.edit), each listed."
+  smoke: "bin/polispec smoke run --against <the release polispec doctor reports as pinned> --no-record: every scenario passes; every diff is the runtime kind, a commit, a path, an id, the version, the shipped rules count or digest (G-WEB-AGENT), or a new scenario; any other diff stops the release."
+  browser: "The primary drives the journeys of specs/web-frontend.impl.yml acceptance with Playwright from the scratchpad against polispec web in a scratch fixture; nothing is committed."
+  chris_review: "The chris agent reviews the rendered app in all six themes at 375, 1024 and 1600 px with empty, typical and overflowing data until clean."
+  rplugin: "~/.rplugin/bin/rplugin check polispec on the worktree (known .rproject findings aside); after the companion rplugin release, rplugin install polispec and rplugin doctor polispec at zero findings, done by the primary."
+  checks: "ruby -wc on every changed .rb; YAML load of every changed .yml with Date permitted; node --check on every web/public/js file; no file over 60 KB written in one call."
+out_of_scope:
+  - "Version bumps, CHANGELOG, FEATURES, TODO, specs/app.yml reconciliation, merging, tagging, promotion and re-pinning: the primary does these."
+  - "Writing description into any live rulebook, including polispec's own specs/polispec/*.yml."
+  - "The hardening release (polispec-5d): the hook input cap, HOOK_BUDGET, launcher deadline, shelf trust."
+  - "Any rStack component other than rplugin and its extension catalogue (companion spec)."
