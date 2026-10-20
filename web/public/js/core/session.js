@@ -56,10 +56,13 @@ async function exchange(code) {
 async function probe() {
   app.set({ session: "exchanging", cause: null });
   try {
+    const current = await get(endpoints.session);
+    setCsrf(current && current.csrf);
     await loadConfig();
     app.set({ session: "active", cause: null, offline: false });
     return true;
   } catch (error) {
+    setCsrf(null);
     if (error.kind === "unauthorized") {
       app.set({ session: "no_session", cause: null });
     } else {

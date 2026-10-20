@@ -54,14 +54,15 @@ export function parseRetryAfter(value) {
 
 export function fromResponse(response, body, attempts, elapsed) {
   const payload = body && typeof body === "object" ? body : {};
-  const kind = kindForStatus(response.status);
-  const message = payload.message || response.statusText || "Request failed with status " + response.status;
+  const disabled = response.status === 403 && payload.error === "disabled";
+  const kind = disabled ? "disabled" : kindForStatus(response.status);
+  const message = (disabled && payload.reason) || payload.message || response.statusText || "Request failed with status " + response.status;
   return new ApiError(kind, message, {
     status: response.status,
     code: payload.error || null,
     findings: payload.findings || null,
     retryAfter: parseRetryAfter(response.headers.get("Retry-After")),
-    requestId: response.headers.get("X-Request-Id") || payload.request_id || null,
+    requestId: response.headers.get("X-Request-Id") || null,
     attempts,
     elapsed,
   });
