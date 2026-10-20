@@ -346,6 +346,35 @@ polispec smoke coverage
 polispec smoke run --against ~/.rplugins/polispec
 ```
 
+**Web app.** `polispec web` serves a local web app over the files polispec already keeps: a map of every governed project and path with the layers that reach it, the pipeline from `main` to `stable`, live sessions and judgments, a heatmap of rule hits, a playground and explainer for why a call was judged, a manager and gallery for changing rulebooks, exceptions, registration, and the manifest. It has no database. Every change is a plan, the same plan `polispec plan` prints: a tightening or neutral plan that is not global applies on one click, a loosening, mixed, global, move, reorder, regroup, or status plan applies only after the person types the plan id, and an operator action (promote to stable, deploy, pause, allow-once, seal, plane) is shown as the exact command to run in a terminal and never as a button. It listens on `127.0.0.1:7421` by default, trades a one-time link for an `HttpOnly` session cookie, requires a CSRF header and a matching `Origin` on every change, and is excluded from the lock edition. An agent never drives its API: a call that does warns with `G-WEB-AGENT`, and an agent that wants the user to make a change points them to `polispec web`. An optional author panel drafts rulebooks from an intent in plain words, read-only and behind a kill switch (`POLISPEC_AUTHOR=off`) ([web app](docs/web.md)).
+
+```sh
+polispec web
+polispec web --read-only
+polispec web url
+```
+
+**Descriptions.** Since 0.34.0 every rulebook may carry a `description` beside its one-line `summary`: the prose a person reads on a card about what the rulebook governs, for whom, and what it refuses. `polispec validate` lints it without a model call and reports a warning, or an error when `polispec.description.strict` is `on`; the guard never reads it for a verdict. A policy that uses one is invalid to a runtime older than 0.34.0, so write descriptions into live rulebooks only after 0.34.0 is pinned on every host that reads them ([schema](docs/schema.md#description), [rollout](docs/operator.md#rolling-out-0340)).
+
+**Effect and the epoch notice.** The guard follows every policy change on the next call; the epoch, the change records, and the session records show which running sessions have crossed over and what still needs a new session, a reload, or a trust review. `polispec changes list|show|verify|await` reads the chained change records, `polispec sessions list` the sessions, and `doctor` reports a stale launcher and, for Codex, an untrusted hook. On the first call of a session after its epoch changes, the hook adds one bounded line naming the change, once per session per epoch; `polispec.notice off` turns it off ([when a change takes effect](docs/effect.md), [the epoch notice](docs/operator.md#when-a-change-lands-the-epoch-notice)).
+
+```sh
+polispec changes list --since 24h
+polispec changes await chg_3f9c0d2e1a7b
+polispec sessions list --active 1h
+```
+
+**Registration.** `polispec register <path>` puts software, a directory, or the system scope that is not a git repository under polispec, as a governed path entry in the ledger with its owner and who registered it. It is a ledger plan: an onboarding entry tightens and applies directly, and `polispec unregister <id>` retires one with a confirmed plan id. The `polispec-register` skill interviews the person and proposes the entry and a starter policy ([schema](docs/schema.md#registering-software-directories-and-the-system-scope), [operator guide](docs/operator.md#registering-software-directories-and-the-system-scope)).
+
+```sh
+polispec register ~/tools --id tools --kind directory --dry-run
+polispec register ~/tools --id tools
+```
+
+**Manifest and index.** `polispec manifest <id>` prints the generated manifest of a project or path (`polispec.manifest/v1`: owner, environments with digests, the layer chain, roster roles, edition, findings, and a badge); `--write` commits it and an SVG badge on `main`. An app may describe itself in a `polispec.app.yml` that the manifest shows beside the generated one and that grants nothing. `polispec manifest index --publish` shares the owner and description of what a user governs with other users of the host, and the web app shows what others published ([schema](docs/schema.md#manifest-polispecmanifestv1-and-the-index-polispecindexv1), [publishing the index](docs/operator.md#publishing-the-index)).
+
+**Editions.** `specs/editions.yml` lists every feature that differs between the standard edition and the lock edition, as included, restricted, or excluded. The web app, the author, the exceptions delegate, and the published index are excluded from lock, and registering a governed path is restricted to the protected ledger. `polispec editions --check` and `doctor` report drift between the registry and the code ([schema](docs/schema.md#editions-specseditionsyml-polispeceditionsv1), [harness controls](docs/harness-controls.md)).
+
 **Deployment receipts.** `polispec status <project> --json` includes `projects[].deployments` (contract `polispec.status.deployments/v1`). Each environment carries `receipt`, `latest_attempt`, and `verified`:
 
 - **Receipt.** It identifies the last successful deployment by record id, SHA, tag, health, pin status, and time.
@@ -447,6 +476,12 @@ The ledger is the list of projects polispec governs on this host. `polispec inst
 | `polispec harness …` / `seal` / `plane` / `authorizations` | Harness controls and the sealed authority plane |
 | `polispec smoke record\|list\|show\|verify\|coverage\|run` | The smoke ledger and the bundled suite |
 | `polispec judgments list\|show\|verify` | The chained record of every judged call, and a count of the calls the fast path skipped |
+| `polispec web [--bind ADDR] [--port N] [--read-only] [--open]` / `web url` / `web token set` / `web unit` | Serve the local web app, print a fresh one-time link, store the delegate token, or print a systemd user unit ([web app](docs/web.md)) |
+| `polispec author draft <kind> --intent TEXT` / `author adapters` | Draft a rulebook with an AI session that can only read; it writes nothing |
+| `polispec register <path>` / `unregister <id>` | Govern software, a directory, or the system scope that is not a git repository, through a ledger plan |
+| `polispec manifest <id> [--write]` / `manifest index [--publish]` | Generate a project or path manifest, commit it with its badge, and publish the host index |
+| `polispec changes list\|show\|verify\|await` / `sessions list` | The chained change records, how many running sessions crossed over, and the sessions the guard has seen |
+| `polispec editions [--check]` | Print the edition registry or check it for drift |
 
 `specs/app.yml` is the full contract for every command.
 
@@ -465,6 +500,10 @@ Change settings with `polispec settings set <key> <value>`, which writes `~/.con
 - `polispec.relax.dev`: `on` (default) or `off`. On, the `in_development` predicate holds when a directory lies only in ledger projects with status `onboarding` (projects in development), so the shipped rule `TOOL-OPAQUE-DEVELOPMENT` lets a governed `eval`, `source` or `.` line through without the `POLISPEC-TOOL-UNKNOWN` ask; off makes the predicate false everywhere and restores the ask. `POLISPEC_RELAX_DEV=off` does the same for one run.
 - `polispec.exceptions`: `on` (default) or `off`. Off honors no entry of the global shelf's `exceptions.yml`, records no proposal and adds no promote hint to asks.
 - `polispec.records.raw`: `off` (default) or `on`. When on, each judgment record also keeps the classifier's raw view of the command or target, at most 2048 bytes, in local state only; it never goes through the events port.
+- `polispec.web.bind` (default `127.0.0.1`), `polispec.web.port` (default `7421`; `0` picks a free port), and `polispec.web.theme` (`system`, `light`, `dark`, `apple-noir`, `apple-austere`, or `tronwave`; default `system`): the web app. A bind address that is not a loopback address needs `--expose` and a typed phrase ([web app](docs/web.md)).
+- `polispec.author.enabled`: `on` (default) or `off`; `POLISPEC_AUTHOR=off` does the same for one run. Off refuses every author request. `polispec.author.adapter` names the built-in adapter, default `harness-cli`.
+- `polispec.description.strict`: `off` (default) or `on`. On, a missing or failing description is an error in `validate` instead of a warning ([schema](docs/schema.md#description)).
+- `polispec.notice`: `on` (default) or `off`. Off stops the hook from adding the one-line epoch notice ([effect](docs/effect.md)).
 - `polispec.global.repo`, `polispec.global.ref` (default `main`), and `polispec.global.path` (default `polispec`): where the optional global shelf of shared rules, modules, and profiles is read from. Unset means no global layer. `POLISPEC_GLOBAL` points at a plain directory for scratch runs. See [schema](docs/schema.md).
 
 Optional integrations: none is required. Policy `observability.events` may name an `rlogs` sink, and `polispec apply environment-control` recognises a `*.rstack_component.yml` manifest as well as `*.rplugin.yml`.
@@ -537,6 +576,7 @@ Today polispec governs where an agent may act and how code travels to users. Wit
 - [`rules/polispec-stewardship.md`](rules/polispec-stewardship.md): the rule agents follow when they install, change, or repair polispec and its rulebooks.
 - [`docs/operator.md`](docs/operator.md): sealed authority, protected allow-once, promote, deploy, pause, and host wiring.
 - [`docs/harness-controls.md`](docs/harness-controls.md): grammar, native installation, authority ceilings, editions, and verification limits.
+- [`docs/web.md`](docs/web.md): the local web app: starting it, sessions and CSRF, every view, write safety, the author panel, the exceptions delegate, registration, the lock edition, local storage, and the API.
 - [`docs/effect.md`](docs/effect.md): when a change reaches running Claude Code and Codex sessions, what needs a reload, and how to confirm it landed.
 - [`docs/roster.md`](docs/roster.md): the roster resolver.
 - [`docs/behavior.md`](docs/behavior.md): behavioral policy.

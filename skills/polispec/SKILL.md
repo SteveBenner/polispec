@@ -15,6 +15,8 @@ description: >
 - The user wants a policy, roster, ledger, or behavioral policy file checked.
 - The user asks how code moves from `main` to `test` to `stable`.
 - The user wants deterministic harness controls, a native installation preview, or an explanation of sealed authority and lock prerequisites.
+- The user wants to see or change policy in a browser: which rulebooks govern which project, why a call was denied or warned, what a change would flip, who an exception reaches, or what a new project should register.
+- The user wants to put software, a directory, or their home directory that is not a git repository under polispec. Use the `polispec-register` skill (`skills/polispec-register/SKILL.md`).
 
 Moving `stable`, deploying production, pausing the guard, redeeming an allow-once ID, recording an exception to an ask (`polispec exceptions promote|add|remove`; the ask text names the proposal id), sealing, activating projects, and removing or loosening controls are operator actions. Give the operator the exact command. Sealed actions require authenticated privilege through the protected launcher; an interactive terminal and typed phrase alone do not establish that authority.
 
@@ -26,6 +28,15 @@ Moving `stable`, deploying production, pausing the guard, redeeming an allow-onc
 - `polispec version` prints the installed version.
 - `docs/schema.md` documents every key with an example.
 - `polispec help` lists the commands installed in this version.
+
+## The web app
+
+`polispec web` is a local web app for the person: a map of governed projects, the pipeline, live judgments, a playground and explainer for why a call was judged, and a manager that changes a rulebook through a plan with its effect shown first. `docs/web.md` documents it.
+
+- Point the user to it; do not run it. Tell them to run `polispec web` in their own terminal (add `--read-only` to look without changing anything). It prints a link that works once, for two minutes, on `127.0.0.1:7421`. `polispec web url` prints a new link for a server already running.
+- The agent never drives the web API. A `curl`, `wget`, HTTP client, or `WebFetch` call that changes anything at `/api/v1`, or that reaches its exceptions, author, state, register, session, or plan-apply routes, classifies as `policy.edit` and warns with `G-WEB-AGENT`. Do not retry it in another shape, and do not read or write `launch.secret` or `delegate.token` under the polispec state home.
+- A change made there is a plan the person applies: a tightening plan on one click, a loosening, global, move, or status plan only after they type its plan id, and promotion to `stable`, deploy, pause, allow-once, seal, and plane only as commands for the operator to run. Say which view to open (Map, Pipeline, Explainer, Manager, Exceptions, Register, Manifest) and what to look for; the plan id is theirs to type.
+- Under the lock edition there is no web app, no author, and no exceptions delegate; give the command-line route instead.
 
 ## Smoke tests
 
