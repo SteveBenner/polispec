@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>polispec</title>
+<script src="js/boot/theme-boot.js"></script>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<ps-app-shell>
+<main id="view">
+<section class="specimen" id="/specimen" aria-labelledby="specimen-title">
+<header class="specimen-head">
+<h1 id="specimen-title" tabindex="-1">Token specimen</h1>
+<span class="specimen-note text-xs">Route #/specimen. Review surface for tokens, type, icons, and heat ramp.</span>
+</header>
+
+<h2>Type scale</h2>
+<div class="specimen-stack">
+
+<div class="type-row"><code class="mono type-key">text-2xs</code><span class="type-sample fs-2xs">11 / 14 meta, group labels, kbd, chart axis</span></div>
+<div class="type-row"><code class="mono type-key">text-xs</code><span class="type-sample fs-xs">12 / 16 table headers, field labels, chips</span></div>
+<div class="type-row"><code class="mono type-key">text-sm</code><span class="type-sample fs-sm">13 / 18 default UI and data text</span></div>
+<div class="type-row"><code class="mono type-key">text-md</code><span class="type-sample fs-md">14 / 22 prose blocks</span></div>
+<div class="type-row"><code class="mono type-key">text-lg</code><span class="type-sample fs-lg">16 / 22 section headings</span></div>
+<div class="type-row"><code class="mono type-key">text-xl</code><span class="type-sample fs-xl">18 / 24 view title</span></div>
+<div class="type-row"><code class="mono type-key">text-num</code><span class="type-sample fs-num">20 / 24 plan banner counts</span></div>
+<div class="type-row"><code class="mono type-key">weights</code><span class="type-sample text-sm"><span class="w-regular">Regular 400</span> <span class="w-medium">Medium 500</span> <span class="w-strong">Strong 600</span></span></div>
+<div class="type-row"><code class="mono type-key">numerals</code><span class="type-sample text-sm"><span class="num">1,234.50</span> <span class="num">0.00</span> <span class="mono">a1b2c3d4 0O</span></span></div>
+</div>
+
+<h2>Controls</h2>
+<div class="specimen-stack">
+<div class="control-row"><code class="mono type-key">control-xs 24</code><span class="ctl ctl-xs">Label</span><span class="ctl ctl-xs ctl-primary">Primary</span><span class="ctl ctl-xs ctl-field">Field</span></div>
+<div class="control-row"><code class="mono type-key">control-sm 28</code><span class="ctl ctl-sm">Label</span><span class="ctl ctl-sm ctl-primary">Primary</span><span class="ctl ctl-sm ctl-field">Field</span></div>
+<div class="control-row"><code class="mono type-key">control-md 32</code><span class="ctl ctl-md">Label</span><span class="ctl ctl-md ctl-primary">Primary</span><span class="ctl ctl-md ctl-field">Field</span><span class="ctl ctl-md ctl-danger">Danger</span></div>
+<div class="control-row"><code class="mono type-key">row 28 / compact 24</code><span class="ctl ctl-row">Data row</span><span class="ctl ctl-row-compact">Compact row</span></div>
+</div>
+
+<h2>Verdicts</h2>
+<div class="specimen-wrap">
+<span class="signal signal-allow"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-allow"/></svg><span>Allow</span></span>
+<span class="signal signal-warn"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-warn"/></svg><span>Warn</span></span>
+<span class="signal signal-deny"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-deny"/></svg><span>Deny</span></span>
+</div>
+
+<h2>Surfaces</h2>
+<div class="swatch-grid">
+<div class="swatch sw-bg"><span class="text-xs">bg</span><span class="text-xs c-text">text</span><span class="text-xs c-text-dim">text-dim</span><span class="text-xs c-text-faint">text-faint</span></div>
+<div class="swatch sw-bg-elev"><span class="text-xs">bg-elev</span><span class="text-xs c-text">text</span><span class="text-xs c-text-dim">text-dim</span><span class="text-xs c-text-faint">text-faint</span></div>
+<div class="swatch sw-surface"><span class="text-xs">surface</span><span class="text-xs c-ok">ok</span><span class="text-xs c-warn">warn</span><span class="text-xs c-danger">danger</span></div>
+<div class="swatch sw-surface-2"><span class="text-xs">surface-2</span><span class="text-xs c-ok">ok</span><span class="text-xs c-warn">warn</span><span class="text-xs c-danger">danger</span></div>
+<div class="swatch sw-accent"><span class="text-xs">accent</span><span class="text-xs">accent-contrast</span></div>
+<div class="swatch sw-danger"><span class="text-xs">danger</span><span class="text-xs">danger-contrast</span></div>
+<div class="swatch sw-accent-soft"><span class="text-xs">accent-soft</span></div>
+<div class="swatch sw-row-hover"><span class="text-xs">row-hover</span></div>
+<div class="swatch sw-diff-add-bg"><span class="text-xs">diff-add-bg</span></div>
+<div class="swatch sw-diff-del-bg"><span class="text-xs">diff-del-bg</span></div>
+<div class="swatch swatch-border"><span class="text-xs">border</span></div>
+<div class="swatch swatch-border-strong"><span class="text-xs">border-strong</span></div>
+<div class="swatch swatch-control"><span class="text-xs">control-bg, control-border</span></div>
+<div class="swatch swatch-elev"><span class="text-xs">shadow</span></div>
+<div class="swatch swatch-map"><span class="text-xs">map-grid</span></div>
+<div class="swatch swatch-edge"><span class="text-xs">edge, edge-hot</span></div>
+<div class="swatch swatch-sample-light"><span class="text-xs">sample-light</span></div>
+<div class="swatch swatch-sample-dark"><span class="text-xs">sample-dark</span></div>
+</div>
+
+<h2>Heat ramp</h2>
+<div class="heat-row">
+<span class="heat heat-1">1</span><span class="heat heat-2">2</span><span class="heat heat-3">3</span><span class="heat heat-4">4</span><span class="heat heat-5">5</span><span class="heat heat-dead"><span class="visually-hidden">No data</span></span>
+</div>
+
+<h2>Theme glyphs</h2>
+<div class="specimen-wrap">
+
+<span class="glyph-cell"><svg class="ps-icon ps-icon-lg" viewBox="0 0 24 24" aria-hidden="true"><use href="icons/icons.svg#t-system"/></svg><code class="mono text-2xs">t-system</code></span>
+<span class="glyph-cell"><svg class="ps-icon ps-icon-lg" viewBox="0 0 24 24" aria-hidden="true"><use href="icons/icons.svg#t-light"/></svg><code class="mono text-2xs">t-light</code></span>
+<span class="glyph-cell"><svg class="ps-icon ps-icon-lg" viewBox="0 0 24 24" aria-hidden="true"><use href="icons/icons.svg#t-dark"/></svg><code class="mono text-2xs">t-dark</code></span>
+<span class="glyph-cell"><svg class="ps-icon ps-icon-lg" viewBox="0 0 24 24" aria-hidden="true"><use href="icons/icons.svg#t-apple-noir"/></svg><code class="mono text-2xs">t-apple-noir</code></span>
+<span class="glyph-cell"><svg class="ps-icon ps-icon-lg" viewBox="0 0 24 24" aria-hidden="true"><use href="icons/icons.svg#t-apple-austere"/></svg><code class="mono text-2xs">t-apple-austere</code></span>
+<span class="glyph-cell"><svg class="ps-icon ps-icon-lg" viewBox="0 0 24 24" aria-hidden="true"><use href="icons/icons.svg#t-tronwave"/></svg><code class="mono text-2xs">t-tronwave</code></span>
+</div>
+<h2>Icons, navigation</h2>
+<div class="icon-grid">
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-map"/></svg><code class="mono text-2xs">map</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-layers"/></svg><code class="mono text-2xs">layers</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-edit"/></svg><code class="mono text-2xs">edit</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-beaker"/></svg><code class="mono text-2xs">beaker</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-rails"/></svg><code class="mono text-2xs">rails</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-rewind"/></svg><code class="mono text-2xs">rewind</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-grid"/></svg><code class="mono text-2xs">grid</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-badge"/></svg><code class="mono text-2xs">badge</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-question"/></svg><code class="mono text-2xs">question</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-cards"/></svg><code class="mono text-2xs">cards</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-terminal"/></svg><code class="mono text-2xs">terminal</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-list-clock"/></svg><code class="mono text-2xs">list-clock</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-flag"/></svg><code class="mono text-2xs">flag</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-tray"/></svg><code class="mono text-2xs">tray</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-signal"/></svg><code class="mono text-2xs">signal</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-manifest"/></svg><code class="mono text-2xs">manifest</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-plus-folder"/></svg><code class="mono text-2xs">plus-folder</code></span>
+</div>
+<h2>Icons, effect</h2>
+<div class="icon-grid">
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-next-call"/></svg><code class="mono text-2xs">next-call</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-new-session"/></svg><code class="mono text-2xs">new-session</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-reload"/></svg><code class="mono text-2xs">reload</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-trust"/></svg><code class="mono text-2xs">trust</code></span>
+</div>
+<h2>Icons, classification</h2>
+<div class="icon-grid">
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-tightening"/></svg><code class="mono text-2xs">tightening</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-neutral"/></svg><code class="mono text-2xs">neutral</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-loosening"/></svg><code class="mono text-2xs">loosening</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-mixed"/></svg><code class="mono text-2xs">mixed</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-global"/></svg><code class="mono text-2xs">global</code></span>
+</div>
+<h2>Icons, interface</h2>
+<div class="icon-grid">
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-chevron-down"/></svg><code class="mono text-2xs">chevron-down</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-chevron-right"/></svg><code class="mono text-2xs">chevron-right</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-close"/></svg><code class="mono text-2xs">close</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-copy"/></svg><code class="mono text-2xs">copy</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-check"/></svg><code class="mono text-2xs">check</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-search"/></svg><code class="mono text-2xs">search</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-lock"/></svg><code class="mono text-2xs">lock</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-pin"/></svg><code class="mono text-2xs">pin</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-grip"/></svg><code class="mono text-2xs">grip</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-zoom-in"/></svg><code class="mono text-2xs">zoom-in</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-zoom-out"/></svg><code class="mono text-2xs">zoom-out</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-fit"/></svg><code class="mono text-2xs">fit</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-reset"/></svg><code class="mono text-2xs">reset</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-pause"/></svg><code class="mono text-2xs">pause</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-play"/></svg><code class="mono text-2xs">play</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-stop"/></svg><code class="mono text-2xs">stop</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-filter"/></svg><code class="mono text-2xs">filter</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-more"/></svg><code class="mono text-2xs">more</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-menu"/></svg><code class="mono text-2xs">menu</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-error"/></svg><code class="mono text-2xs">error</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-info"/></svg><code class="mono text-2xs">info</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-hourglass"/></svg><code class="mono text-2xs">hourglass</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-panel-right"/></svg><code class="mono text-2xs">panel-right</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-sort-asc"/></svg><code class="mono text-2xs">sort-asc</code></span>
+<span class="glyph-cell"><svg class="ps-icon" aria-hidden="true"><use href="icons/icons.svg#i-sort-desc"/></svg><code class="mono text-2xs">sort-desc</code></span>
+</div>
+</section>
+</main>
+</ps-app-shell>
+<div id="live-polite" class="visually-hidden" role="status" aria-live="polite"></div>
+<div id="live-assertive" class="visually-hidden" role="alert" aria-live="assertive"></div>
+</body>
+</html>
+
