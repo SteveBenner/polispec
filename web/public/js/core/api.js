@@ -10,8 +10,8 @@ export const MUTATION_LIMIT = 30;
 export const MUTATION_WINDOW_MS = 60000;
 
 const FEATURE_GATES = [
-  { pattern: /^\/author(\/|$)/, flag: "author.enabled" },
-  { pattern: /^\/judgments\/stream$/, flag: "feed.enabled" },
+  { pattern: /^\/author(\/|$)/, flag: "author" },
+  { pattern: /^\/judgments\/stream$/, flag: "feed" },
 ];
 
 let csrfToken = null;
@@ -113,10 +113,11 @@ function noteFailure(error, isExchange) {
   if (error.kind === "offline" && state.session === "active") {
     app.set({ offline: true });
   } else if (error.kind === "unauthorized") {
-    app.set({
-      session: state.session === "active" ? "session_ended" : "no_session",
-      cause: "The session expired or was signed out",
-    });
+    if (state.session === "active") {
+      app.set({ session: "session_ended", cause: "The session expired or was signed out" });
+    } else if (state.session === "unknown" || state.session === "exchanging") {
+      app.set({ session: "no_session", cause: null });
+    }
   } else if (error.kind === "forbidden" && state.session === "active") {
     app.set({ session: "session_ended", cause: error.message });
   } else if (error.kind === "rate_limited") {

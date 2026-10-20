@@ -113,7 +113,7 @@ function onVisibility() {
 
 export function start() {
   if (started) return;
-  if (!flag("feed.enabled").enabled) {
+  if (!flag("feed").enabled) {
     setState("disabled");
     return;
   }
