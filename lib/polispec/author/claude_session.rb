@@ -175,7 +175,8 @@ module Polispec
         File.chmod(0o700, @dir)
         @queue = TimedQueue.new
         @stderr_tail = +""
-        env = { "POLISPEC_ACTOR" => "author:#{@id}" }
+        env = ENV.keys.grep(/\APOLISPEC_/).to_h { |key| [key, nil] }
+        env["POLISPEC_ACTOR"] = "author:#{@id}"
         begin
           @stdin, stdout, stderr, @wait = Open3.popen3(env, *argv, chdir: @dir, pgroup: true)
         rescue SystemCallError => e
@@ -252,6 +253,7 @@ module Polispec
           nil
         when "stream_event"
           event = frame["event"]
+          deltas.clear if event.is_a?(Hash) && event["type"] == "message_start"
           delta = event.is_a?(Hash) ? event["delta"] : nil
           if event.is_a?(Hash) && event["type"] == "content_block_delta" && delta.is_a?(Hash) && delta["type"] == "text_delta"
             deltas << delta["text"].to_s
@@ -260,6 +262,7 @@ module Polispec
           nil
         when "assistant"
           blocks = frame.dig("message", "content")
+          assistant.clear if Array(blocks).any? { |block| block.is_a?(Hash) && block["type"] == "text" } && frame["parent_tool_use_id"].nil?
           Array(blocks).each { |block| assistant << block["text"].to_s if block.is_a?(Hash) && block["type"] == "text" }
           nil
         when "control_request"
@@ -293,7 +296,7 @@ module Polispec
       def finish(frame, deltas, assistant, started, emit)
         @usage = frame["usage"].is_a?(Hash) ? frame["usage"] : {}
         @cost = frame["total_cost_usd"]
-        text = [deltas, assistant, frame["result"].to_s].find { |item| !item.to_s.strip.empty? }.to_s
+        text = [frame["result"].to_s, deltas, assistant].find { |item| !item.to_s.strip.empty? }.to_s
         if frame["is_error"] == true
           emit&.call(type: "error", message: text.empty? ? "claude reported an error" : text)
           raise Unavailable.new("harness_error", text.empty? ? "claude reported an error" : text)

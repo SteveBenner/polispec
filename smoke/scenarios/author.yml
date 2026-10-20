@@ -24,7 +24,7 @@ fixture:
         puts "Usage: claude [options]\n  --effort <level>   Effort level\n  --model <model>"
         exit 0
       end
-      rec(event: "spawn", argv: ARGV, cwd: Dir.pwd, actor: ENV["POLISPEC_ACTOR"])
+      rec(event: "spawn", argv: ARGV, cwd: Dir.pwd, actor: ENV["POLISPEC_ACTOR"], state: ENV["POLISPEC_STATE_HOME"], ledger: ENV["POLISPEC_LEDGER"])
       exit 7 if ENV["FAKE_CLAUDE_DIE"] == "1"
       steps = File.readlines(ENV.fetch("FAKE_CLAUDE_TRANSCRIPT")).map { |line| JSON.parse(line) }
       session = ARGV[(ARGV.index("--session-id") || ARGV.index("--resume")) + 1]
@@ -53,9 +53,11 @@ fixture:
         end
       end
     "transcript.jsonl": |
-      {"emit":{"type":"system","subtype":"init","session_id":"__SESSION__","model":"claude-sonnet-5","cwd":"__CWD__","tools":["Read","Grep","Glob"],"permissionMode":"default"}}
+      {"emit":{"type":"system","subtype":"init","session_id":"__SESSION__","model":"claude-haiku-5-5","cwd":"__CWD__","tools":["Read","Grep","Glob","Bash"],"permissionMode":"auto"}}
+      {"emit":{"type":"user","message":{"role":"user","content":"x"},"session_id":"__SESSION__","parent_tool_use_id":null,"isReplay":true}}
+      {"emit":{"type":"stream_event","event":{"type":"message_start","message":{"role":"assistant","content":[]}},"session_id":"__SESSION__"}}
       {"emit":{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}},"session_id":"__SESSION__"}}
-      {"emit":{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Reading the project first.\n"}},"session_id":"__SESSION__"}}
+      {"emit":{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Reading the project first."}},"session_id":"__SESSION__"}}
       {"emit":{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_read1","name":"Read","input":{"file_path":"__READ_PATH__"}}]},"session_id":"__SESSION__"}}
       {"emit":{"type":"control_request","request_id":"req_read1","request":{"subtype":"can_use_tool","tool_name":"Read","input":{"file_path":"__READ_PATH__"},"tool_use_id":"toolu_read1"}}}
       {"await":"control_response"}
@@ -64,11 +66,12 @@ fixture:
       {"emit":{"type":"control_request","request_id":"req_bash1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"git status"},"tool_use_id":"toolu_bash1"}}}
       {"await":"control_response"}
       {"emit":{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_bash1","content":"denied","is_error":true}]},"session_id":"__SESSION__"}}
+      {"emit":{"type":"stream_event","event":{"type":"message_start","message":{"role":"assistant","content":[]}},"session_id":"__SESSION__"}}
       {"emit":{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"```yaml\nschema: polispec.module/v1\nname: no-force-push\n"}},"session_id":"__SESSION__"}}
       {"emit":{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"summary: Denies force pushes to protected branches.\nrules:\n  - { id: NFP-FORCE, match: { class: [git.push], env: prod }, verdict: deny, reason: \"no force push to prod\" }\n```\n\n"}},"session_id":"__SESSION__"}}
       {"emit":{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"## Rationale\n\nOne deny rule keeps prod history intact.\n"}},"session_id":"__SESSION__"}}
       {"emit":{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"assistant text block"}]},"session_id":"__SESSION__"}}
-      {"emit":{"type":"result","subtype":"success","is_error":false,"duration_ms":12,"result":"final","session_id":"__SESSION__","total_cost_usd":0.0012,"usage":{"input_tokens":10,"output_tokens":20}}}
+      {"emit":{"type":"result","subtype":"success","is_error":false,"duration_ms":12,"num_turns":3,"stop_reason":"end_turn","result":"```yaml\nschema: polispec.module/v1\nname: no-force-push\nsummary: Denies force pushes to protected branches.\nrules:\n  - { id: NFP-FORCE, match: { class: [git.push], env: prod }, verdict: deny, reason: \"no force push to prod\" }\n```\n\n## Rationale\n\nOne deny rule keeps prod history intact.\n","session_id":"__SESSION__","total_cost_usd":0.0012,"usage":{"input_tokens":10,"output_tokens":20}}}
   projects:
     - id: shop
       variant: service
@@ -92,6 +95,11 @@ steps:
       stdout_includes: ["schema: polispec.module/v1", "NFP-FORCE", "One deny rule keeps prod history intact."]
   - name: the fake saw exactly one spawn
     run: [grep, -c, "\"event\":\"spawn\"", "{{files}}/log.jsonl"]
+    expect:
+      exit: 0
+      stdout_includes: ["1"]
+  - name: the child claude env carries no scratch polispec variable
+    run: [grep, -c, "\"state\":null,\"ledger\":null", "{{files}}/log.jsonl"]
     expect:
       exit: 0
       stdout_includes: ["1"]
