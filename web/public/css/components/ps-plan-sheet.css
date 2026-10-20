@@ -1,0 +1,320 @@
+ps-plan-sheet {
+  display: contents;
+}
+
+ps-plan-sheet .plan-meta {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-inline-start: var(--space-3);
+}
+
+ps-plan-sheet .plan-meta ps-digest {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+ps-plan-sheet .plan-meta ps-digest .ps-native {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+
+ps-plan-sheet .plan-banner {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+ps-plan-sheet .plan-cell {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 var(--border-w) var(--border);
+}
+
+ps-plan-sheet .plan-cell-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-dim);
+}
+
+ps-plan-sheet .plan-cell-num {
+  color: var(--text);
+  font-size: var(--text-num);
+  line-height: var(--lh-num);
+  font-weight: var(--weight-strong);
+  text-align: start;
+}
+
+ps-plan-sheet .plan-cell-num[data-dim="true"] {
+  color: var(--text-faint);
+}
+
+ps-plan-sheet .plan-cell-means {
+  color: var(--text-dim);
+}
+
+ps-plan-sheet .plan-reach {
+  margin-block: var(--space-2);
+  color: var(--text-dim);
+}
+
+ps-plan-sheet .plan-reasons {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-2);
+  padding-inline-start: var(--space-4);
+  color: var(--text-dim);
+}
+
+ps-plan-sheet ps-tabs {
+  display: block;
+  margin-top: var(--space-2);
+}
+
+ps-plan-sheet .plan-panel {
+  padding-top: var(--space-2);
+}
+
+ps-plan-sheet .plan-quiet {
+  color: var(--text-dim);
+}
+
+.plan-diff {
+  max-height: 320px;
+  overflow: auto;
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--control-bg);
+}
+
+.plan-diff-path {
+  position: sticky;
+  inset-block-start: 0;
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-2);
+  border-bottom: var(--border-w) solid var(--border);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.plan-diff-row {
+  display: grid;
+  grid-template-columns: 4ch 4ch 2ch minmax(0, 1fr);
+  gap: var(--space-1);
+  padding-inline: var(--space-2);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.plan-diff-row[data-kind="add"] {
+  background: var(--diff-add-bg);
+}
+
+.plan-diff-row[data-kind="del"] {
+  background: var(--diff-del-bg);
+}
+
+.plan-diff-row[data-kind="hunk"],
+.plan-diff-row[data-kind="meta"] {
+  color: var(--text-dim);
+}
+
+.plan-diff-no {
+  color: var(--text-faint);
+  user-select: none;
+}
+
+.plan-diff-sign {
+  color: var(--text-dim);
+  user-select: none;
+}
+
+.plan-diff-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+ps-plan-sheet .plan-structural {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  padding-inline-start: var(--space-4);
+  color: var(--text-dim);
+}
+
+ps-plan-sheet .plan-kv {
+  display: grid;
+  margin: 0;
+}
+
+ps-plan-sheet .plan-kv-head,
+ps-plan-sheet .plan-kv-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1.5fr);
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: var(--border-w) solid var(--border);
+}
+
+ps-plan-sheet .plan-kv-head {
+  color: var(--text-dim);
+  font-weight: var(--weight-medium);
+}
+
+ps-plan-sheet .plan-kv-row dd,
+ps-plan-sheet .plan-kv-row dt {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+ps-plan-sheet .plan-kv-row[data-changed="true"] {
+  background: var(--row-selected);
+}
+
+ps-plan-sheet .plan-result .plan-kv-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+}
+
+ps-plan-sheet .plan-ok {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  color: var(--text);
+}
+
+ps-plan-sheet .plan-ok .ps-icon {
+  color: var(--ok);
+}
+
+ps-plan-sheet .plan-cells-host {
+  margin-top: var(--space-3);
+}
+
+ps-plan-sheet .plan-follow {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+ps-plan-sheet .plan-footer {
+  display: grid;
+  flex: 1 1 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+
+ps-plan-sheet .plan-notice {
+  grid-column: 1 / -1;
+}
+
+ps-plan-sheet .plan-notice:empty {
+  display: none;
+}
+
+ps-plan-sheet .plan-reason {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+ps-plan-sheet .plan-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+ps-plan-sheet .plan-operator {
+  display: block;
+  min-width: 0;
+}
+
+ps-plan-sheet .plan-inline-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text);
+}
+
+ps-plan-sheet .plan-rate {
+  margin: 0;
+  color: var(--text);
+}
+
+ps-plan-sheet .plan-result-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex: 1 1 auto;
+}
+
+ps-plan-sheet .plan-findings {
+  display: grid;
+  gap: var(--space-2);
+}
+
+ps-plan-sheet .plan-finding-list {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+ps-plan-sheet .plan-finding {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: var(--border-w) solid var(--border);
+}
+
+ps-plan-sheet .plan-loading {
+  display: grid;
+  gap: var(--space-3);
+}
+
+@media (max-width: 767px) {
+  ps-plan-sheet .plan-banner {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  ps-plan-sheet .plan-footer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  ps-plan-sheet .plan-action {
+    justify-content: stretch;
+  }
+
+  ps-plan-sheet .plan-kv-head,
+  ps-plan-sheet .plan-kv-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  ps-plan-sheet .plan-meta {
+    margin-inline-start: var(--space-2);
+  }
+}
