@@ -166,7 +166,12 @@ Names the live projects of the host. The file is resolved in order from the `POL
 | `schema`, `host` | | Document type and machine name. |
 | `envs_root` | path | Where `test` and `stable` checkouts live. |
 | `defaults.rules[]` | list | The fail-closed policy for a ledgered project whose stable policy is missing or invalid. Each rule has `match` (`env`, `ref`, `class`), `verdict`, optional `id` and `reason`. |
-| `projects[]` | list | `id`, `status` (`live`, `onboarding`, `retired`), `repo`, `remote`, `worktree_globs`, `trust_ref`, `policy`, `roster`, `related`, `onboarded`, `profile` (`personal`, `service` or `live`; default `personal`), `packages` (see below). |
+| `projects[]` | list | `id`, `status` (`live`, `onboarding`, `retired`), `repo`, `remote`, `worktree_globs`, `trust_ref`, `policy`, `roster`, `related`, `onboarded`, `profile` (`personal`, `service` or `live`; default `personal`), `packages` (see below), and since 0.34.0 `owner`, `registered_by` and `description` (see below). |
+| `paths[]` | list | Since 0.34.0. Governed software, directories and the system scope that are not git repositories. Each entry has `id`, `kind` (`software`, `directory`, `system`), `path`, `status` (`onboarding`, `live`, `retired`) and optionally `owner`, `registered_by`, `description` and `policy`. The id matches the project id pattern and must be unique across projects and paths. |
+| `paths[].policy` | path | The module that governs the entry, relative to the global shelf; defaults to `paths/<id>.yml`. Its schema is `polispec.module/v1`. |
+| `owner` | object | `{ uid, name }` of the person who registered the entry: the process uid and its login name (`uid<N>` when the name cannot be read). Present on projects the environment-control package adds and on every entry `polispec register` adds. |
+| `registered_by` | string | The actor that registered the entry: `POLISPEC_ACTOR` when set, else `cli`. |
+| `description` | string | Optional on a project or path entry, 1 to 4000 characters; the lint rules under [Description](#description) apply. |
 | `projects[].packages[]` | list | One record per applied package: `name`, `variant`, `version`, `applied_at` (date) and `files` (repository path to `sha256:<hex>` of the bytes apply wrote). Upgrades compare against these digests. |
 | `pauses_log`, `allow_once_log` | path | Append-only JSONL logs. |
 
@@ -174,6 +179,68 @@ Names the live projects of the host. The file is resolved in order from the `POL
 projects:
   - { id: shop, status: live, repo: ~/src/shop, trust_ref: stable, policy: specs/polispec/policy.yml, roster: specs/polispec/roster.yml }
 ```
+
+A path entry changes nothing until it is `live`; an `onboarding` entry is listed and judged by nothing. A live entry is judged like a path no project owns, with one extra layer composed after the global layer: the module at the entry's `policy` path on the global shelf. Each rule of that module is scoped to the entry: a rule without `match.path` applies to the entry's directory and everything under it, and a rule with its own `match.path` has that path read relative to the entry's directory. A missing or invalid module file is a `layers_invalid` finding and the global layer alone applies. A path inside a ledgered project's repository or worktree belongs to that project and cannot be registered. The judgment record of an action inside a live path entry names the entry as its project (`project` is the entry id and `policy_source` is `path`); the layer appears as `path:<id>` in the verdict text.
+
+Since 0.34.0 a ledger that carries `paths`, `owner`, `registered_by` or a `description` is rejected by an installed polispec older than 0.34.0 (every object rejects unknown keys). `polispec doctor` reports `ledger_ahead_of_runtime` when that holds, and `polispec register`, `unregister` and the environment-control package refuse with `runtime_behind` until 0.34.0 is installed. See [the rollout order](operator.md#rolling-out-0340).
+
+## Description
+
+Since 0.34.0 every rulebook can say in prose what it does. `description` is an optional string of 1 to 4000 characters on a policy, an environments file, a roster, a global document, a module, a package, a spec, a behavior document, and on each ledger project and path entry. It is documentation: the guard never reads it for a verdict.
+
+`polispec validate` lints it for the kinds policy, environments, roster, global, module, package and spec, and reports each finding as a warning (an error when the setting `polispec.description.strict` is `on`; the default is `off`):
+
+- `description_missing`: the rulebook carries no description.
+- `description_invalid`, with one or more of these codes: `too_short` (fewer than 2 sentences or 20 words), `too_long` (more than 8 sentences or 400 words), `restates_summary` (it repeats the `summary` instead of adding to it), `names_nothing` (it names nothing the rulebook declares: an action class, environment, path, tool, module, gate, rule, role or package) and `states_no_effect` (it states no effect in words such as allow, ask, warn, deny, refuse, promote or freeze).
+
+`validate --semantic` additionally asks the decide port whether the description matches what the rules do (`matches`, `partial` or `contradicts`); it needs a configured model and prints a note when none answers. `polispec doctor` reports `description_missing` (info) for a live project's rulebooks and the shelf, `description_invalid` (warn), `description_ahead_of_runtime` (warn) when a description is in use while the installed release is older than 0.34.0, and `description_unchecked` (info) when the check itself failed.
+
+## Editions: `specs/editions.yml`, `polispec.editions/v1`
+
+Lists every feature whose behavior differs between the standard edition and the lock edition (`EDITION` at the plugin root). `polispec editions` prints the table, and `polispec editions --check [--json]` reports drift between the registry and the code; `polispec doctor` repeats those findings as `editions_drift` (warn).
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `schema` | const `polispec.editions/v1` | Document type. |
+| `editions` | object | `standard` and `lock`, each a one-line meaning. |
+| `values` | list | `included`, `restricted`, `excluded`. |
+| `features[]` | list | `id` (dotted lowercase), `standard` and `lock` (a value), `since` (a version), `code` (the file or directory that implements it) and `note`. |
+
+`excluded` means the feature does not exist in that edition, `restricted` that it exists with narrower behavior, and `included` that it is unchanged.
+
+## Delegation grants: `delegate/grants.yml`, `polispec.delegate_grants/v1`
+
+Lives in the polispec state home and is written only by `polispec delegate grant` and `revoke` (never by hand). The file must be a regular file owned by the user and not writable by group or others, or no grant is honored.
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `schema`, `grants[]` | | Document type and the list of grants. |
+| `grants[].app` | string | The application, `^[a-z][a-z0-9_-]{0,31}$`. |
+| `grants[].token_sha256` | string | SHA-256 of the token shown once at grant time. |
+| `grants[].verbs` | list | `promote`, `deploy`, and since 0.34.0 `exceptions-add`, `exceptions-promote`, `exceptions-remove`. |
+| `grants[].projects`, `targets` | lists | Ledger project ids, and `test` and or `stable`. |
+| `grants[].flags` | list | A subset of `--dry-run`, `--json`, `--tag`, `--waive-soak`, `--skip-drain`. |
+| `grants[].granted_at` | string | UTC timestamp. |
+
+The exceptions verbs are accepted by the schema in both editions, but `delegate grant` refuses them with `edition_excluded` and a runner refuses a request for them under lock (`exceptions.delegate_promote`).
+
+## Manifest: `polispec.manifest/v1`, and the index: `polispec.index/v1`
+
+`polispec manifest <id>` prints the manifest of a project or path entry; `polispec manifest <id> --write` writes `polispec.manifest.json` and `.polispec/badge.svg` into the project's main worktree and commits exactly those two files on main with the message `Update the polispec manifest` (it refuses for a path entry, when the index has staged changes and when the worktree is not on main), and `polispec manifest badge <id>` prints the badge SVG.
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `schema`, `id`, `kind` | | `polispec.manifest/v1`, the id, and `project` or `path`. |
+| `path_kind`, `path` | | For a path entry only: its kind and path. |
+| `status`, `owner`, `description` | | From the ledger; `owner` and `description` may be null. |
+| `host`, `edition`, `enforce` | strings | The machine, the edition and the enforce mode. |
+| `policy` | object | `source`, `digest` and `trust_ref` of the policy; absent for a path entry. |
+| `environments` | object | Per environment `branch`, `tier` and `policy_digest`. |
+| `layers` | object | `profile`, `effective_digest`, `layers[]` (`layer`, `source`, `digest`, `rules`, `modules`) and `packages[]`. |
+| `roster`, `promotions`, `findings` | | The roster summary; the latest promotion per target environment (`tag`, `sha`, `at`, `actor`); and the doctor and description findings for the id grouped as `error`, `warn` and `info` lists of `{ kind, detail }`. A path entry has an empty roster and no promotions. |
+| `badge_url`, `declared` | | The badge path under the web app, and the contents of the project's `polispec.app.yml` (`polispec.app/v1`: `name`, `description`, `serves`, `owners`, `wants`, `contact`) read from its trust ref, or null. |
+
+`polispec manifest index` prints the index: `schema`, `user`, `host`, `generated_at` and `entries[]` of `id`, `kind`, `status`, `owner`, `description`, `summary` and `policy_digest`, with paths shown home-relative. `--publish` and `--unpublish` are operator actions described in [the operator guide](operator.md#publishing-the-index).
 
 ## Package: `packages/<name>/package.yml`, `polispec.package/v1`
 
