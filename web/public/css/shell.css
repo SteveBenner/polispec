@@ -1,0 +1,548 @@
+ps-app-shell {
+  display: grid;
+  grid-template-columns: var(--nav-w) minmax(0, 1fr) auto;
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr);
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+}
+
+ps-app-shell > ps-topbar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+ps-app-shell > .ps-nav-column {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+ps-app-shell > .ps-stage {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+ps-app-shell > ps-side-panel {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+ps-topbar {
+  position: relative;
+  z-index: var(--z-sticky);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  height: var(--topbar-h);
+  padding-inline: var(--gutter);
+  background: var(--bg);
+  border-bottom: var(--border-w) solid var(--border);
+}
+
+ps-topbar .ps-left,
+ps-topbar .ps-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+ps-topbar .ps-left {
+  justify-self: start;
+  gap: var(--space-3);
+}
+
+ps-topbar .ps-right {
+  justify-self: end;
+}
+
+ps-topbar .ps-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+ps-topbar .ps-wordmark {
+  color: var(--text);
+  font-size: var(--text-lg);
+  line-height: var(--lh-lg);
+  font-weight: var(--weight-strong);
+  text-decoration: none;
+}
+
+ps-topbar .ps-wordmark:hover {
+  color: var(--text);
+}
+
+ps-topbar .ps-wordmark-center {
+  display: none;
+}
+
+ps-topbar .ps-epoch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-faint);
+}
+
+ps-topbar .ps-epoch ps-digest {
+  color: var(--text-dim);
+}
+
+ps-topbar .ps-trigger {
+  width: clamp(240px, 36vw, 480px);
+}
+
+ps-topbar .ps-trigger .ps-hint {
+  margin-inline-start: auto;
+}
+
+ps-topbar .ps-search {
+  display: none;
+}
+
+ps-topbar .ps-menu {
+  display: none;
+}
+
+.ps-nav-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg);
+  border-inline-end: var(--border-w) solid var(--border);
+}
+
+ps-nav {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  padding: var(--space-2);
+}
+
+ps-nav > nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+ps-nav .ps-group {
+  display: flex;
+  flex-direction: column;
+}
+
+ps-nav .ps-group-label {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  padding-inline: var(--space-2);
+  color: var(--text-faint);
+  font-weight: var(--weight-medium);
+}
+
+ps-nav .ps-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--row);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  text-decoration: none;
+}
+
+ps-nav .ps-item .ps-icon {
+  color: var(--text-dim);
+}
+
+ps-nav .ps-item:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+
+ps-nav .ps-item[aria-current="page"] {
+  background: var(--row-selected);
+  color: var(--text);
+  font-weight: var(--weight-medium);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+ps-nav .ps-item[aria-current="page"] .ps-icon {
+  color: var(--accent);
+}
+
+ps-nav .ps-count {
+  margin-inline-start: auto;
+  color: var(--text-dim);
+}
+
+ps-nav .ps-footer {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: auto;
+  padding-inline: var(--space-2);
+  color: var(--text-faint);
+}
+
+ps-nav .ps-expiry {
+  color: var(--text-dim);
+}
+
+ps-nav ps-tooltip {
+  display: none;
+}
+
+.ps-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.ps-stage > main {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--gutter);
+  container-type: inline-size;
+}
+
+.ps-stage > ps-banner {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--z-sticky);
+  flex: none;
+  box-shadow:
+    inset 3px 0 0 var(--warn),
+    inset 0 -1px 0 var(--warn);
+}
+
+.view-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-height: var(--control-md);
+  margin-bottom: var(--space-3);
+}
+
+.view-header > :last-child:not(h1) {
+  margin-inline-start: auto;
+}
+
+ps-plan-tray {
+  position: sticky;
+  inset-block-end: 0;
+  z-index: var(--z-tray);
+  display: block;
+  flex: none;
+  background: var(--surface-2);
+  border-top: var(--border-w) solid var(--border-strong);
+}
+
+ps-plan-tray .ps-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tray-h);
+  padding-inline: var(--gutter);
+}
+
+ps-plan-tray .ps-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+ps-plan-tray .ps-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+ps-plan-tray .ps-expanded {
+  max-height: 40vh;
+  overflow: auto;
+  padding: var(--space-2) var(--gutter);
+  border-top: var(--border-w) solid var(--border);
+}
+
+ps-app-shell:not([data-route="manager"]):not([data-route="gallery"]) ps-plan-tray {
+  display: none;
+}
+
+ps-side-panel {
+  display: block;
+  min-height: 0;
+}
+
+ps-side-panel .ps-scrim {
+  display: none;
+}
+
+ps-side-panel .ps-sheet {
+  display: flex;
+  flex-direction: column;
+  width: var(--panel-w);
+  height: 100%;
+  min-height: 0;
+  background: var(--surface);
+  color: var(--text);
+  border-inline-start: var(--border-w) solid var(--border);
+  container-type: inline-size;
+}
+
+ps-side-panel .ps-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-bottom: var(--border-w) solid var(--border);
+}
+
+ps-side-panel .ps-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-3);
+}
+
+ps-side-panel:is([mode="overlay"], [mode="sheet"]) {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-drawer);
+}
+
+ps-side-panel:is([mode="overlay"], [mode="sheet"]) .ps-scrim {
+  display: block;
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+}
+
+ps-side-panel:is([mode="overlay"], [mode="sheet"]) .ps-sheet {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  width: min(var(--panel-w), 100vw);
+  box-shadow: var(--shadow);
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+
+@starting-style {
+  ps-side-panel:is([mode="overlay"], [mode="sheet"]) .ps-sheet {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+ps-side-panel[mode="sheet"] .ps-sheet {
+  inset: 0;
+  width: 100%;
+}
+
+ps-app-shell ps-drawer[edge="start"] > .ps-native {
+  --drawer-w: min(320px, calc(100vw - 48px));
+}
+
+ps-app-shell ps-drawer[edge="start"] .ps-body {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.ps-drawer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-top: var(--border-w) solid var(--border);
+}
+
+ps-app-shell .ps-shortcuts {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.ps-shortcut-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ps-shortcut-table caption {
+  padding-bottom: var(--space-1);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--weight-medium);
+  text-align: start;
+}
+
+.ps-shortcut-table :is(th, td) {
+  height: var(--row);
+  padding-inline: var(--space-2);
+  border-bottom: var(--border-w) solid var(--border);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  font-weight: var(--weight-regular);
+  text-align: start;
+}
+
+.ps-shortcut-table .ps-keys {
+  width: 40%;
+  white-space: nowrap;
+}
+
+ps-session-gate {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: var(--gutter);
+  background: var(--bg);
+  color: var(--text);
+}
+
+ps-session-gate .ps-panel {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  width: min(480px, 100vw - 32px);
+  padding: var(--space-5);
+  background: var(--surface);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+ps-session-gate .ps-lead {
+  color: var(--text-dim);
+}
+
+ps-session-gate ps-command {
+  justify-self: stretch;
+}
+
+ps-session-gate .ps-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+ps-view-boundary {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+ps-view-boundary ps-state .ps-body {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  ps-app-shell {
+    grid-template-columns: var(--rail-w) minmax(0, 1fr) auto;
+  }
+
+  .ps-nav-column ps-nav {
+    padding-inline: 0;
+  }
+
+  .ps-nav-column ps-nav .ps-group + .ps-group {
+    margin-top: calc(var(--space-3) * -1 + var(--space-2));
+    padding-top: var(--space-2);
+    border-top: var(--border-w) solid var(--border);
+  }
+
+  .ps-nav-column ps-nav .ps-group-label,
+  .ps-nav-column ps-nav .ps-count,
+  .ps-nav-column ps-nav .ps-footer {
+    display: none;
+  }
+
+  .ps-nav-column ps-nav .ps-item {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .ps-nav-column ps-nav .ps-item .ps-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .ps-nav-column ps-nav ps-tooltip:not([hidden]) {
+    display: block;
+  }
+}
+
+@media (max-width: 1023px) {
+  ps-topbar .ps-menu {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 767px) {
+  ps-app-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  ps-app-shell > .ps-nav-column {
+    display: none;
+  }
+
+  ps-app-shell > .ps-stage {
+    grid-column: 1;
+  }
+
+  ps-topbar .ps-wordmark-center {
+    display: inline;
+  }
+
+  ps-topbar .ps-left .ps-wordmark,
+  ps-topbar .ps-epoch,
+  ps-topbar .ps-trigger,
+  ps-topbar .ps-status,
+  ps-topbar .ps-author,
+  ps-topbar .ps-theme {
+    display: none;
+  }
+
+  ps-topbar .ps-search {
+    display: inline-flex;
+  }
+
+  ps-toaster {
+    z-index: var(--z-toast);
+  }
+}
+
+ps-app-shell[hidden],
+ps-app-shell [hidden] {
+  display: none;
+}
