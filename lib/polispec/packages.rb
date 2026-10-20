@@ -4,6 +4,7 @@
 require "stringio"
 require "tempfile"
 require_relative "operator/git"
+require_relative "registration"
 
 module Polispec
   module Packages
@@ -585,7 +586,8 @@ module Polispec
         lines << "    remote: #{remote}" if remote && !remote.empty?
         lines.concat([
           "    worktree_globs: [#{parent}/.#{File.basename(@root)}-wt/*]", "    trust_ref: #{@params['trust_ref'] || 'stable'}",
-          "    policy: #{POLICY_FILE}", "    roster: #{ROSTER_FILE}", "    related: []", "    onboarded: #{@today}"
+          "    policy: #{POLICY_FILE}", "    roster: #{ROSTER_FILE}", "    related: []", "    onboarded: #{@today}",
+          "    owner: #{Registration.owner_flow}", "    registered_by: #{JSON.generate(Registration.actor)}"
         ])
         lines
       end

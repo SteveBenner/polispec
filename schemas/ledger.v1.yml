@@ -20,6 +20,9 @@ properties:
   projects:
     type: array
     items: { $ref: "#/$defs/project" }
+  paths:
+    type: array
+    items: { $ref: "#/$defs/path_entry" }
   pauses_log: { type: string, minLength: 1 }
   allow_once_log: { type: string, minLength: 1 }
 $defs:
@@ -76,6 +79,29 @@ $defs:
       packages:
         type: array
         items: { $ref: "#/$defs/package_record" }
+      owner: { $ref: "#/$defs/owner" }
+      registered_by: { type: string, minLength: 1 }
+      description: { type: string, minLength: 1, maxLength: 4000 }
+  owner:
+    type: object
+    additionalProperties: false
+    required: [uid, name]
+    properties:
+      uid: { type: integer, minimum: 0 }
+      name: { type: string, minLength: 1 }
+  path_entry:
+    type: object
+    additionalProperties: false
+    required: [id, kind, path, status]
+    properties:
+      id: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }
+      kind: { enum: [software, directory, system] }
+      path: { type: string, minLength: 1 }
+      status: { enum: [onboarding, live, retired] }
+      owner: { $ref: "#/$defs/owner" }
+      registered_by: { type: string, minLength: 1 }
+      description: { type: string, minLength: 1, maxLength: 4000 }
+      policy: { type: string, minLength: 1 }
   package_record:
     type: object
     additionalProperties: false

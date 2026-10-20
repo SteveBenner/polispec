@@ -12,6 +12,7 @@ module Polispec
     FILE_LIMIT = 1_048_576
     TREE_LIMIT = 500
     LEDGER_LOOSEN_FIELDS = %w[status profile trust_ref repo policy roster worktree_globs].freeze
+    LEDGER_PATH_LOOSEN_FIELDS = %w[status path kind policy].freeze
     LEDGER_TOP_LOOSEN = %w[defaults envs_root].freeze
     SECTIONS = %w[rules gates freezes modules hermetic].freeze
     SPEC = Struct.new(:kind, :package, :repo, :variant, :params, :id, :from, :file, keyword_init: true)
@@ -529,12 +530,26 @@ module Polispec
       LEDGER_TOP_LOOSEN.each do |key|
         @changes << Change.new("loosen", "ledger #{key} changes") if old_data[key] != new_data[key]
       end
-      old_entries = Array(old_data["projects"]).to_h { |entry| [entry["id"], entry] }
-      new_entries = Array(new_data["projects"]).to_h { |entry| [entry["id"], entry] }
-      (old_entries.keys - new_entries.keys).each { |id| @changes << Change.new("loosen", "ledger drops project #{id}") }
+      old_entries = ledger_entries(old_data)
+      new_entries = ledger_entries(new_data)
+      (old_entries.keys - new_entries.keys).each do |id|
+        @changes << Change.new("loosen", id.start_with?("path:") ? "ledger drops path #{id.delete_prefix('path:')}" : "ledger drops project #{id}")
+      end
       changed_ids = []
       new_entries.each do |id, entry|
         old = old_entries[id]
+        if id.start_with?("path:")
+          name = id.delete_prefix("path:")
+          if old.nil?
+            changed_ids << id
+            @changes << Change.new(entry["status"] == "onboarding" ? "tighten" : "loosen", "ledger adds path #{name} with status #{entry['status']}")
+          else
+            fields = LEDGER_PATH_LOOSEN_FIELDS.select { |field| old[field] != entry[field] }
+            fields.each { |field| @changes << Change.new("loosen", "ledger changes #{field} of path #{name}") }
+            changed_ids << id unless fields.empty?
+          end
+          next
+        end
         if old.nil?
           changed_ids << id
           if entry["status"] == "onboarding"
@@ -567,6 +582,12 @@ module Polispec
         ledger: { "before" => old_entries.slice(*(changed_ids + dropped)), "after" => new_entries.slice(*changed_ids) },
         proposed: { "ledger" => Packages.sha(File.read(@spec.file)) }, current: { "ledger" => current.digest }
       }
+    end
+
+    def ledger_entries(data)
+      entries = Array(data["projects"]).to_h { |entry| [entry["id"], entry] }
+      Array(data["paths"]).each { |entry| entries["path:#{entry['id']}"] = entry }
+      entries
     end
 
     def ledger_data(path)
