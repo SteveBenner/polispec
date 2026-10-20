@@ -1,0 +1,97 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/manifest
+summary: manifest prints a polispec.manifest/v1 document for a project and for a registered path entry that validates against its schema; --write commits exactly polispec.manifest.json and .polispec/badge.svg on main, is idempotent, refuses a dirty index and a path entry, and records a change; the index validates against polispec.index/v1; publish and unpublish refuse without a terminal and publish refuses a missing index directory; validate app accepts a declaration and rejects a crafted one; the badge is a 20 px high SVG
+fixture:
+  enforce: enforce
+  global: files
+  global_files:
+    "global.yml": "schema: polispec.global/v1\nsummary: Smoke baseline with one rule so every path is governed.\nrules:\n  - { id: SMOKE-NOSECRETS, match: { class: [secrets.read], env: prod }, verdict: deny, reason: \"smoke baseline: no production secrets\" }\n"
+  files:
+    "tools/README.md": "tools\n"
+    "app.good.yml": "schema: polispec.app/v1\nname: Shop\ndescription: The shop serves orders to customers and holds their addresses.\nserves: customers placing orders\nowners: [ops]\nwants:\n  packages:\n    - { name: environment-control, variant: service, with: { serves: real_users } }\ncontact: ops@example.invalid\n"
+    "app.bad.yml": "schema: polispec.app/v1\nname: Shop\nunknown_key: 1\n"
+  projects:
+    - id: shop
+      variant: service
+      status: live
+steps:
+  - name: register a directory so a path entry exists
+    run: ["{{polispec}}", register, "{{files}}/tools", --id, tools, --description, "The tools directory holds build helpers. Nothing in it is deleted."]
+    expect: { exit: 0 }
+  - name: the project manifest prints as JSON with its schema and id
+    run: ["{{polispec}}", manifest, shop, --json]
+    expect:
+      exit: 0
+      stdout_includes: ['"schema":"polispec.manifest/v1"', '"id":"shop"', '"kind":"project"', '"badge_url":"/api/v1/badge/shop.svg"']
+  - name: the project manifest validates against manifest.v1
+    run: [sh, -c, '"$1" manifest shop --json > "$2/shop.manifest.json" && "$1" validate manifest "$2/shop.manifest.json"', sh, "{{polispec}}", "{{scratch}}"]
+    expect: { exit: 0 }
+  - name: the path manifest prints as JSON and validates against manifest.v1
+    run: [sh, -c, '"$1" manifest tools --json > "$2/tools.manifest.json" && grep -q "\"kind\":\"path\"" "$2/tools.manifest.json" && "$1" validate manifest "$2/tools.manifest.json"', sh, "{{polispec}}", "{{scratch}}"]
+    expect: { exit: 0 }
+  - name: an unknown id is refused
+    run: ["{{polispec}}", manifest, ghost, --json]
+    expect:
+      exit: 1
+      stdout_includes: ["unknown_entry"]
+  - name: --write is refused for a path entry
+    run: ["{{polispec}}", manifest, tools, --write]
+    expect:
+      exit: 1
+      stderr_includes: ["not_a_repo"]
+  - name: --write commits the manifest and the badge on main
+    run: ["{{polispec}}", manifest, shop, --write]
+    expect:
+      exit: 0
+      stdout_includes: ["committed .polispec/badge.svg, polispec.manifest.json"]
+  - name: the commit holds exactly those two paths with the fixed subject
+    run: [sh, -c, 'git -C "$1" log -1 --format=%s && git -C "$1" show --name-only --format= HEAD | sort', sh, "{{project.shop}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["Update the polispec manifest", ".polispec/badge.svg", "polispec.manifest.json"]
+  - name: the committed manifest validates and the working tree is clean
+    run: [sh, -c, '"$1" validate manifest "$2/polispec.manifest.json" && test -z "$(git -C "$2" status --porcelain)"', sh, "{{polispec}}", "{{project.shop}}"]
+    expect: { exit: 0 }
+  - name: the write left a change record
+    run: ["{{polispec}}", changes, list]
+    expect:
+      exit: 0
+      stdout_includes: ["apply"]
+  - name: a second --write finds nothing to commit
+    run: ["{{polispec}}", manifest, shop, --write]
+    expect:
+      exit: 0
+      stdout_includes: ["already current"]
+  - name: --write refuses when the index already has staged changes
+    run: [sh, -c, 'echo x > "$2/staged.txt" && git -C "$2" add staged.txt && ! "$1" manifest shop --write', sh, "{{polispec}}", "{{project.shop}}"]
+    expect:
+      exit: 0
+      stderr_includes: ["index_dirty"]
+  - name: the staged file is unstaged again
+    run: [sh, -c, 'git -C "$1" reset -q && rm -f "$1/staged.txt"', sh, "{{project.shop}}"]
+    expect: { exit: 0 }
+  - name: the badge is a 20 px high SVG naming the status and mode
+    run: ["{{polispec}}", manifest, badge, shop]
+    expect:
+      exit: 0
+      stdout_includes: ['height="20"', "polispec", "live", "enforce"]
+  - name: the index validates against index.v1 and lists both entries
+    run: [sh, -c, '"$1" manifest index --json > "$2/index.json" && grep -q "\"id\":\"shop\"" "$2/index.json" && grep -q "\"id\":\"tools\"" "$2/index.json" && "$1" validate index "$2/index.json"', sh, "{{polispec}}", "{{scratch}}"]
+    expect: { exit: 0 }
+  - name: publish without a terminal is refused
+    run: ["{{polispec}}", manifest, index, --publish]
+    expect:
+      exit: 1
+      stderr_includes: ["not_tty"]
+  - name: unpublish without a terminal is refused
+    run: ["{{polispec}}", manifest, index, --unpublish]
+    expect:
+      exit: 1
+      stderr_includes: ["not_tty"]
+  - name: validate app accepts a declaration
+    run: ["{{polispec}}", validate, app, "{{files}}/app.good.yml"]
+    expect: { exit: 0 }
+  - name: validate app rejects a crafted declaration
+    run: ["{{polispec}}", validate, app, "{{files}}/app.bad.yml"]
+    expect:
+      exit: 1
