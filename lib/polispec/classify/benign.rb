@@ -58,6 +58,7 @@ module Polispec
       }.freeze
       WRAPPERS = %w[eval exec source env sudo doas nohup timeout xargs command builtin nice ionice stdbuf setsid unbuffer flock time bash sh zsh dash ksh ash].freeze
       OPAQUE = %w[eval source .].freeze
+      WRITE_CLASSES = %w[fs.write policy.edit].freeze
       SUBSTITUTION = /\$\(|`|<\(|>\(/.freeze
       SHORT_OUTPUT = /\A-[A-Za-z]*o/.freeze
       REDIRECT_DUP = /\A(?:\d+|-)\z/.freeze
@@ -127,9 +128,29 @@ module Polispec
         script = Support.script_for(tool_name, tool_input, cwd)
         return false if script.nil? || script.commands.empty?
 
-        script.opaque == true || script.commands.any? { |cmd| OPAQUE.include?(cmd.name.to_s) }
+        script.opaque == true || script.commands.any? { |cmd| OPAQUE.include?(cmd.name.to_s) } || rewrites_followed?(tool_name, tool_input, cwd, script)
       rescue StandardError
         false
+      end
+
+      def rewrites_followed?(tool_name, tool_input, cwd, script)
+        followed = Array(script.followed)
+        return false if followed.empty?
+
+        Classify.call(tool_name, tool_input, cwd).any? do |action|
+          next false unless WRITE_CLASSES.include?(action.class)
+
+          path = action.env_hint.is_a?(Hash) ? action.env_hint["path"].to_s : ""
+          next false if path.empty?
+
+          followed.include?(path) || followed.include?(real_path(path))
+        end
+      end
+
+      def real_path(path)
+        File.realpath(path)
+      rescue SystemCallError
+        path
       end
 
       def opaque_commands(tool_name, tool_input, cwd)
