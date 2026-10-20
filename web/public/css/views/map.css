@@ -489,6 +489,16 @@ ps-map-card .ps-flips[data-tone-flip="stricter"] {
   --chip-line: var(--danger);
 }
 
+ps-map-card[data-preview] > ps-card {
+  outline: var(--focus-w) dashed var(--warn);
+  outline-offset: calc(var(--focus-w) * -1);
+}
+
+ps-map-card .ps-preview-mark {
+  --chip-line: var(--warn);
+  animation: ps-pulse 900ms ease-in-out 3;
+}
+
 ps-map-card .ps-glob {
   overflow: hidden;
   font-size: var(--text-xs);
