@@ -2,12 +2,16 @@ schema: rplugin/v1
 id: polispec
 name: Polispec
 version: 0.33.2
-rplugin: ">= 1.15.0"
+rplugin: ">= 1.17.0"
 native: true
 description: "Spec-based policy guardrails for agentic development and operations: committed environment policies and deterministic harness controls, with explicit backend capabilities and enforcement limits."
 ports:
   required: [state, events]
-  optional: [schedule, notify, registry, decide]
+  optional: [schedule, notify, registry, decide, author]
+  declared:
+    - name: author
+      summary: "Drafts a polispec rulebook in a streamed conversation: open(context) returns a session, turn(session, text) streams delta events and returns the done event, close(session) ends it."
+      standalone: { file: lib/polispec/author/adapters/harness_cli.rb, class: Polispec::Author::Adapters::HarnessCli }
 extensions:
   enabled: [rstack, claude-code, hermes, pi, deepseek-tui, antigravity, os]
   only: [claude-code, hermes, pi, deepseek-tui, antigravity]

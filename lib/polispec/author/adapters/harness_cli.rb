@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require_relative "../../../polispec"
+require_relative "../../author"
 require_relative "../claude_session"
 require_relative "../codex_session"
 
@@ -13,6 +15,9 @@ module Polispec
         SESSIONS = { "claude" => ClaudeSession, "codex" => CodexSession }.freeze
 
         Handle = Struct.new(:id, :session, :harness, :model, :effort)
+
+        def initialize(plugin_id: nil, fallback: nil, root: nil, events: nil, **)
+        end
 
         def open(context)
           spec = role_spec(context)
