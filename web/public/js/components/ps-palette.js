@@ -236,8 +236,8 @@ class PsPalette extends HTMLElement {
     entries.push({
       id: "action:feed",
       group: "Actions",
-      label: running ? "Pause the feed" : "Resume the feed",
-      keywords: "feed stream pause resume",
+      label: running ? "Hold the feed" : "Resume the feed",
+      keywords: "feed stream hold resume",
       icon: running ? "pause" : "play",
       hint: "Feed",
       run: () => (running ? feed.stop() : feed.start()),

@@ -712,11 +712,13 @@ class PsAuthorPanel extends HTMLElement {
     this.sendButton.setAttribute("variant", "primary");
     this.sendButton.setAttribute("size", "sm");
     this.sendButton.text = "Send";
+    this.sendButton.setAttribute("write", "");
     this.sendButton.addEventListener("click", () => this.onSendClick());
     this.restart = document.createElement("ps-button");
     this.restart.setAttribute("variant", "primary");
     this.restart.setAttribute("size", "sm");
     this.restart.text = "Start a new session";
+    this.restart.setAttribute("write", "");
     this.restart.hidden = true;
     this.restart.addEventListener("click", () => restartSession(this.current()));
     this.row.append(this.targetSelect, this.sendButton, this.restart);

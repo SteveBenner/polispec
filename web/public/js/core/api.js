@@ -290,6 +290,7 @@ export const endpoints = {
   proposals: "/exceptions/proposals",
   exceptionVerb: (verb) => `/exceptions/${enc(verb)}`,
   run: (id, params) => `/runs/${enc(id)}${query(params)}`,
+  runCancel: (id) => `/runs/${enc(id)}/cancel`,
   runPhrase: (id) => `/runs/${enc(id)}/phrase`,
   manifestIndex: "/manifest/index",
   manifest: (id) => `/manifest/${enc(id)}`,

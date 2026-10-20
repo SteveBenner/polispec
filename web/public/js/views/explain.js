@@ -154,7 +154,7 @@ export async function render(container, params, signal) {
     exceptionTab.dataset.label = "Draft exception";
     const onceTab = el("div", "ex-tab");
     onceTab.dataset.tab = "allow-once";
-    onceTab.dataset.label = "Allow-once request";
+    onceTab.dataset.label = "Operator request";
 
     const draft = data.draft_exception;
     const host = el("div", "ex-editor");
@@ -173,6 +173,7 @@ export async function render(container, params, signal) {
     const onceId = (data.allow_once && data.allow_once.id) || data.judgment_id || "";
     const command = document.createElement("ps-command");
     command.setAttribute("operator", "");
+    command.setAttribute("who", "The operator runs this in a terminal.");
     command.setAttribute("command", `polispec allow-once ${onceId}`);
     onceTab.append(command);
 
