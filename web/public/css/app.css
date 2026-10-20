@@ -30,6 +30,10 @@
 @import url("components/ps-conn-status.css") layer(components);
 @import url("components/ps-banner.css") layer(components);
 @import url("components/ps-card.css") layer(components);
+@import url("shell.css") layer(shell);
+@import url("components/ps-palette.css") layer(components);
+@import url("components/ps-toaster.css") layer(components);
+@import url("components/ps-theme-switcher.css") layer(components);
 
 @layer flourish {
   [data-theme="apple-noir"] :is(h1, h2) {

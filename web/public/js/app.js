@@ -1,3 +1,4 @@
+import "./components/ps-app-shell.js";
 import "./core/theme.js";
 import { app } from "./core/store.js";
 import { get, endpoints } from "./core/api.js";
@@ -72,7 +73,6 @@ const GATES = {
 const view = document.getElementById("view");
 const shell = document.querySelector("ps-app-shell");
 let gateHost = null;
-let bannerHost = null;
 let routerStarted = false;
 
 function routeTable() {
@@ -128,25 +128,6 @@ function hideGate() {
 
 function syncBanner(offline) {
   document.documentElement.toggleAttribute("data-offline", offline);
-  if (!offline) {
-    if (bannerHost) bannerHost.remove();
-    bannerHost = null;
-    return;
-  }
-  if (bannerHost) return;
-  bannerHost = document.createElement("div");
-  bannerHost.id = "offline-banner";
-  bannerHost.setAttribute("role", "status");
-  const text = document.createElement("span");
-  text.textContent = "polispec web is not responding. Views may be out of date.";
-  const retry = document.createElement("button");
-  retry.type = "button";
-  retry.textContent = "Retry";
-  retry.addEventListener("click", () => {
-    get(endpoints.config, { retry: false }).catch(() => null);
-  });
-  bannerHost.append(text, retry);
-  view.before(bannerHost);
 }
 
 function onState(state) {
