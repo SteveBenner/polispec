@@ -1,0 +1,179 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/author
+summary: "author draft drives a persistent stream-json claude session replayed by a fake binary - a Read inside the project is allowed, a Bash is denied, the draft is extracted and validated, the kill switch and the lock edition refuse before any spawn, a fourth concurrent session is busy and the eleventh turn in a minute is rate limited"
+fixture:
+  global: example
+  files:
+    "bin/claude": |
+      #!/usr/bin/env ruby
+      require "json"
+      LOG = ENV["FAKE_CLAUDE_LOG"]
+      def rec(entry)
+        File.open(LOG, "a") { |file| file.puts(JSON.generate(entry)) } if LOG
+      end
+      def sub(value, map)
+        case value
+        when String then map.reduce(value) { |text, (key, item)| text.gsub(key, item) }
+        when Hash then value.to_h { |key, item| [key, sub(item, map)] }
+        when Array then value.map { |item| sub(item, map) }
+        else value
+        end
+      end
+      if ARGV.include?("--help")
+        rec(event: "help")
+        puts "Usage: claude [options]\n  --effort <level>   Effort level\n  --model <model>"
+        exit 0
+      end
+      rec(event: "spawn", argv: ARGV, cwd: Dir.pwd, actor: ENV["POLISPEC_ACTOR"])
+      exit 7 if ENV["FAKE_CLAUDE_DIE"] == "1"
+      steps = File.readlines(ENV.fetch("FAKE_CLAUDE_TRANSCRIPT")).map { |line| JSON.parse(line) }
+      session = ARGV[(ARGV.index("--session-id") || ARGV.index("--resume")) + 1]
+      map = { "__SESSION__" => session, "__READ_PATH__" => ENV.fetch("FAKE_CLAUDE_READ", "/nonexistent"), "__CWD__" => Dir.pwd }
+      $stdout.sync = true
+      trap("TERM") { exit 0 }
+      while (line = $stdin.gets)
+        message = JSON.parse(line)
+        next unless message["type"] == "user"
+        rec(event: "user", content: message.dig("message", "content"))
+        steps.each do |step|
+          if step["emit"]
+            puts JSON.generate(sub(step["emit"], map))
+          elsif step["await"]
+            loop do
+              reply = $stdin.gets
+              exit 0 if reply.nil?
+              frame = JSON.parse(reply)
+              next unless frame["type"] == "control_response"
+              rec(event: "control_response", response: frame["response"])
+              break
+            end
+          elsif step["sleep"]
+            sleep step["sleep"]
+          end
+        end
+      end
+    "transcript.jsonl": |
+      {"emit":{"type":"system","subtype":"init","session_id":"__SESSION__","model":"claude-sonnet-5","cwd":"__CWD__","tools":["Read","Grep","Glob"],"permissionMode":"default"}}
+      {"emit":{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}},"session_id":"__SESSION__"}}
+      {"emit":{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Reading the project first.\n"}},"session_id":"__SESSION__"}}
+      {"emit":{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_read1","name":"Read","input":{"file_path":"__READ_PATH__"}}]},"session_id":"__SESSION__"}}
+      {"emit":{"type":"control_request","request_id":"req_read1","request":{"subtype":"can_use_tool","tool_name":"Read","input":{"file_path":"__READ_PATH__"},"tool_use_id":"toolu_read1"}}}
+      {"await":"control_response"}
+      {"emit":{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_read1","content":"read ok"}]},"session_id":"__SESSION__"}}
+      {"emit":{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_bash1","name":"Bash","input":{"command":"git status"}}]},"session_id":"__SESSION__"}}
+      {"emit":{"type":"control_request","request_id":"req_bash1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"git status"},"tool_use_id":"toolu_bash1"}}}
+      {"await":"control_response"}
+      {"emit":{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_bash1","content":"denied","is_error":true}]},"session_id":"__SESSION__"}}
+      {"emit":{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"```yaml\nschema: polispec.module/v1\nname: no-force-push\n"}},"session_id":"__SESSION__"}}
+      {"emit":{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"summary: Denies force pushes to protected branches.\nrules:\n  - { id: NFP-FORCE, match: { class: [git.push], env: prod }, verdict: deny, reason: \"no force push to prod\" }\n```\n\n"}},"session_id":"__SESSION__"}}
+      {"emit":{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"## Rationale\n\nOne deny rule keeps prod history intact.\n"}},"session_id":"__SESSION__"}}
+      {"emit":{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"assistant text block"}]},"session_id":"__SESSION__"}}
+      {"emit":{"type":"result","subtype":"success","is_error":false,"duration_ms":12,"result":"final","session_id":"__SESSION__","total_cost_usd":0.0012,"usage":{"input_tokens":10,"output_tokens":20}}}
+  projects:
+    - id: shop
+      variant: service
+      status: live
+steps:
+  - name: make the fake claude executable
+    run: [chmod, "+x", "{{files}}/bin/claude"]
+    expect:
+      exit: 0
+  - name: a draft runs one turn, allows the Read inside the project, denies the Bash and returns a valid module
+    run: ["{{polispec}}", author, draft, module, --intent, x, --for, shop, --json]
+    env:
+      PATH: "{{files}}/bin:/usr/local/bin:/usr/bin:/bin"
+      FAKE_CLAUDE_TRANSCRIPT: "{{files}}/transcript.jsonl"
+      FAKE_CLAUDE_READ: "{{project.shop}}/README.md"
+      FAKE_CLAUDE_LOG: "{{files}}/log.jsonl"
+
+    expect:
+      exit: 0
+      json: { ok: true, kind: module, adapter: harness-cli, findings: [] }
+      stdout_includes: ["schema: polispec.module/v1", "NFP-FORCE", "One deny rule keeps prod history intact."]
+  - name: the fake saw exactly one spawn
+    run: [grep, -c, "\"event\":\"spawn\"", "{{files}}/log.jsonl"]
+    expect:
+      exit: 0
+      stdout_includes: ["1"]
+  - name: the Read was answered allow
+    run: [grep, -c, "req_read1.*\"behavior\":\"allow\"", "{{files}}/log.jsonl"]
+    expect:
+      exit: 0
+      stdout_includes: ["1"]
+  - name: the Bash was answered deny with the author message
+    run: [grep, -c, "req_bash1.*\"behavior\":\"deny\".*drafts only", "{{files}}/log.jsonl"]
+    expect:
+      exit: 0
+      stdout_includes: ["1"]
+  - name: the kill switch refuses before spawning anything
+    run: ["{{polispec}}", author, draft, module, --intent, x]
+    env:
+      PATH: "{{files}}/bin:/usr/local/bin:/usr/bin:/bin"
+      FAKE_CLAUDE_TRANSCRIPT: "{{files}}/transcript.jsonl"
+      FAKE_CLAUDE_READ: "{{project.shop}}/README.md"
+      FAKE_CLAUDE_LOG: "{{files}}/off.jsonl"
+      POLISPEC_AUTHOR: "off"
+    expect:
+      exit: 2
+      stderr_includes: [kill_switch]
+      files_absent: ["{{files}}/off.jsonl"]
+  - name: the lock edition refuses before spawning anything
+    run: ["{{polispec}}", author, draft, module, --intent, x, --json]
+    env:
+      PATH: "{{files}}/bin:/usr/local/bin:/usr/bin:/bin"
+      FAKE_CLAUDE_TRANSCRIPT: "{{files}}/transcript.jsonl"
+      FAKE_CLAUDE_READ: "{{project.shop}}/README.md"
+      FAKE_CLAUDE_LOG: "{{files}}/lock.jsonl"
+      RPLUGIN_POLISPEC_POLISPEC_EDITION: "lock"
+    expect:
+      exit: 2
+      json: { ok: false, error: edition_excluded }
+      files_absent: ["{{files}}/lock.jsonl"]
+  - name: a fourth concurrent session is busy
+    run:
+      - ruby
+      - "-I{{tree}}/lib"
+      - -e
+      - |
+        require "polispec"
+        require "polispec/author"
+        port = Polispec::Author.port
+        3.times { port.draft(kind: "module", intent: "x", context: {}) }
+        begin
+          port.draft(kind: "module", intent: "x", context: {})
+          puts "no busy"
+          exit 1
+        rescue Polispec::Author::Busy => e
+          puts "busy #{e.reason}"
+        end
+        port.close_all
+    env:
+      PATH: "{{files}}/bin:/usr/local/bin:/usr/bin:/bin"
+      FAKE_CLAUDE_TRANSCRIPT: "{{files}}/transcript.jsonl"
+      FAKE_CLAUDE_READ: "{{project.shop}}/README.md"
+      FAKE_CLAUDE_LOG: "{{files}}/busy.jsonl"
+
+    expect:
+      exit: 0
+      stdout_includes: ["busy busy"]
+  - name: the eleventh turn in a minute is rate limited
+    run:
+      - sh
+      - -c
+      - |
+        i=0
+        while [ $i -lt 6 ]; do
+          "$0" author draft module --intent x >/dev/null || exit 9
+          i=$((i+1))
+        done
+        "$0" author draft module --intent x
+      - "{{polispec}}"
+    env:
+      PATH: "{{files}}/bin:/usr/local/bin:/usr/bin:/bin"
+      FAKE_CLAUDE_TRANSCRIPT: "{{files}}/transcript.jsonl"
+      FAKE_CLAUDE_READ: "{{project.shop}}/README.md"
+      FAKE_CLAUDE_LOG: "{{files}}/rate.jsonl"
+
+    expect:
+      exit: 2
+      stderr_includes: [rate_limited]
