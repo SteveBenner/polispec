@@ -11,6 +11,7 @@ module Polispec
   module Author
     KINDS = %w[policy module package environments roster global spec description].freeze
     BUILTIN = "harness-cli".freeze
+    EXTENSION_CLASS = /\ARplugin::Adapters::(?:Polispec::)?([A-Za-z0-9]+)(?:::[A-Za-z0-9]+)*::Author\z/.freeze
     ADAPTER_DIR = File.join(LIB, "author", "adapters")
 
     class Unavailable < Polispec::Error
@@ -77,8 +78,7 @@ module Polispec
 
       def port(adapter: nil)
         ensure_available!
-        external = adapter ? nil : extension_port
-        Port.new(external || Standalone.new(adapter: adapter))
+        Port.new(Standalone.new(adapter: adapter))
       end
 
       def draft(kind:, intent:, context: {}, session: nil, on_event: nil, adapter: nil)
@@ -96,6 +96,37 @@ module Polispec
         nil
       end
 
+      def extension_ids
+        chain = extension_port
+        return [] unless chain && chain.respond_to?(:adapter_names)
+
+        Array(chain.adapter_names).filter_map { |name| extension_id_of(name) }.uniq
+      rescue StandardError, LoadError
+        []
+      end
+
+      def extension_id_of(class_name)
+        match = EXTENSION_CLASS.match(class_name.to_s)
+        return nil unless match
+
+        match[1].gsub(/([a-z0-9])([A-Z])/, '\\1-\\2').downcase
+      end
+
+      def extension_adapter?(id)
+        wanted = id.to_s.gsub(/[-_]/, "").downcase
+        extension_ids.any? { |known| known.delete("-") == wanted }
+      end
+
+      def port_unavailable?(error)
+        error.class.ancestors.any? { |klass| klass.name == "Rplugin::PortUnavailable" }
+      end
+
+      def translate(error)
+        return error unless port_unavailable?(error)
+
+        Unavailable.new("port_unavailable", error.message)
+      end
+
       def extension_note
         return "no rplugin port set: state is redirected" if State.redirected
 
@@ -109,8 +140,7 @@ module Polispec
       end
 
       def adapters
-        external = extension_port
-        extension = external && external.respond_to?(:adapters) ? Array(external.adapters).map(&:to_s) : []
+        extension = extension_ids
         {
           "builtin" => registry.keys.sort,
           "extension" => extension,
