@@ -1,0 +1,105 @@
+schema: polispec.smoke-scenario/v1
+unit: description
+summary: validate lints the description of every rulebook kind deterministically, prints missing and failing descriptions as warnings that exit 0, fails them under polispec.description.strict, and skips the decide-port judgment with a note when the port is disabled
+steps:
+  - name: write the good module
+    run: [sh, -c, 'printf "%b" "$1" > "$2/good.yml"', sh, "schema: polispec.module/v1\nname: tools\nsummary: Nothing under the tools directory is deleted.\ndescription: This module governs the fs.delete class under the tools directory. It will deny every delete and refuse to let a caller bypass that.\nrules:\n  - { id: TOOLS-NODELETE, match: { class: [fs.delete] }, verdict: deny, reason: no deletes }\n", "{{files}}"]
+    expect:
+      exit: 0
+      files_exist: ["{{files}}/good.yml"]
+  - name: write the short module
+    run: [sh, -c, 'printf "%b" "$1" > "$2/short.yml"', sh, "schema: polispec.module/v1\nname: tools\nsummary: Nothing under the tools directory is deleted.\ndescription: Denies deletes.\nrules:\n  - { id: TOOLS-NODELETE, match: { class: [fs.delete] }, verdict: deny, reason: no deletes }\n", "{{files}}"]
+    expect:
+      exit: 0
+      files_exist: ["{{files}}/short.yml"]
+  - name: write the restate module
+    run: [sh, -c, 'printf "%b" "$1" > "$2/restate.yml"', sh, "schema: polispec.module/v1\nname: tools\nsummary: Nothing under the tools directory is deleted.\ndescription: Nothing under the tools directory is deleted. It will deny every delete and refuse to let a caller bypass that for anyone at all today.\nrules:\n  - { id: TOOLS-NODELETE, match: { class: [fs.delete] }, verdict: deny, reason: no deletes }\n", "{{files}}"]
+    expect:
+      exit: 0
+      files_exist: ["{{files}}/restate.yml"]
+  - name: write the nothing module
+    run: [sh, -c, 'printf "%b" "$1" > "$2/nothing.yml"', sh, "schema: polispec.module/v1\nname: tools\nsummary: Nothing under the tools directory is deleted.\ndescription: This is a cheerful little rulebook that exists for good reasons. It will deny things and refuse to let a caller bypass that for anyone here.\nrules:\n  - { id: TOOLS-NODELETE, match: { class: [fs.delete] }, verdict: deny, reason: no deletes }\n", "{{files}}"]
+    expect:
+      exit: 0
+      files_exist: ["{{files}}/nothing.yml"]
+  - name: write the noeffect module
+    run: [sh, -c, 'printf "%b" "$1" > "$2/noeffect.yml"', sh, "schema: polispec.module/v1\nname: tools\nsummary: Nothing under the tools directory is deleted.\ndescription: This module governs the fs.delete class under the tools directory. It exists because the directory matters a great deal to the people who use it daily.\nrules:\n  - { id: TOOLS-NODELETE, match: { class: [fs.delete] }, verdict: deny, reason: no deletes }\n", "{{files}}"]
+    expect:
+      exit: 0
+      files_exist: ["{{files}}/noeffect.yml"]
+  - name: write the long module
+    run: [sh, -c, 'printf "%b" "$1" > "$2/long.yml"', sh, "schema: polispec.module/v1\nname: tools\nsummary: Nothing under the tools directory is deleted.\ndescription: This module governs the fs.delete class and will deny deletes. This module governs the fs.delete class and will deny deletes. This module governs the fs.delete class and will deny deletes. This module governs the fs.delete class and will deny deletes. This module governs the fs.delete class and will deny deletes. This module governs the fs.delete class and will deny deletes. This module governs the fs.delete class and will deny deletes. This module governs the fs.delete class and will deny deletes. This module governs the fs.delete class and will deny deletes.\nrules:\n  - { id: TOOLS-NODELETE, match: { class: [fs.delete] }, verdict: deny, reason: no deletes }\n", "{{files}}"]
+    expect:
+      exit: 0
+      files_exist: ["{{files}}/long.yml"]
+  - name: write the nodesc module
+    run: [sh, -c, 'printf "%b" "$1" > "$2/nodesc.yml"', sh, "schema: polispec.module/v1\nname: tools\nsummary: Nothing under the tools directory is deleted.\nrules:\n  - { id: TOOLS-NODELETE, match: { class: [fs.delete] }, verdict: deny, reason: no deletes }\n", "{{files}}"]
+    expect:
+      exit: 0
+      files_exist: ["{{files}}/nodesc.yml"]
+  - name: a good description passes without a finding
+    run: ["{{polispec}}", validate, module, "{{files}}/good.yml"]
+    expect:
+      exit: 0
+      stdout_includes: ["ok (polispec.module/v1)"]
+      stdout_excludes: ["description_"]
+  - name: a missing description is a warning and exits 0
+    run: ["{{polispec}}", validate, module, "{{files}}/nodesc.yml"]
+    expect:
+      exit: 0
+      stdout_includes: ["ok (polispec.module/v1)", "warning: description_missing"]
+  - name: too_short triggers on the short module
+    run: ["{{polispec}}", validate, module, "{{files}}/short.yml"]
+    expect:
+      exit: 0
+      stdout_includes: ["warning: description_invalid", "too_short"]
+  - name: too_long triggers on the long module
+    run: ["{{polispec}}", validate, module, "{{files}}/long.yml"]
+    expect:
+      exit: 0
+      stdout_includes: ["warning: description_invalid", "too_long"]
+  - name: restates_summary triggers on the restate module
+    run: ["{{polispec}}", validate, module, "{{files}}/restate.yml"]
+    expect:
+      exit: 0
+      stdout_includes: ["warning: description_invalid", "restates_summary"]
+  - name: names_nothing triggers on the nothing module
+    run: ["{{polispec}}", validate, module, "{{files}}/nothing.yml"]
+    expect:
+      exit: 0
+      stdout_includes: ["warning: description_invalid", "names_nothing"]
+  - name: states_no_effect triggers on the noeffect module
+    run: ["{{polispec}}", validate, module, "{{files}}/noeffect.yml"]
+    expect:
+      exit: 0
+      stdout_includes: ["warning: description_invalid", "states_no_effect"]
+  - name: strict makes the missing case fail
+    run: ["{{polispec}}", validate, module, "{{files}}/nodesc.yml"]
+    env: {POLISPEC_DESCRIPTION_STRICT: "on"}
+    expect:
+      exit: 1
+      stdout_includes: ["error: description_missing"]
+  - name: strict leaves a good description alone
+    run: ["{{polispec}}", validate, module, "{{files}}/good.yml"]
+    env: {POLISPEC_DESCRIPTION_STRICT: "on"}
+    expect:
+      exit: 0
+      stdout_excludes: ["description_"]
+  - name: json carries the warnings
+    run: ["{{polispec}}", validate, module, "{{files}}/nodesc.yml", --json]
+    expect:
+      exit: 0
+      json: { ok: true }
+      stdout_includes: ["description_missing"]
+  - name: semantic with the decide port disabled prints the skip note and exits as without it
+    run: ["{{polispec}}", validate, module, "{{files}}/good.yml", --semantic]
+    env: {RPLUGIN_DECIDE_DISABLED: "1"}
+    expect:
+      exit: 0
+      stdout_includes: ["ok (polispec.module/v1)", "semantic check skipped"]
+  - name: semantic with the port disabled still fails strict on a missing description
+    run: ["{{polispec}}", validate, module, "{{files}}/nodesc.yml", --semantic]
+    env: {RPLUGIN_DECIDE_DISABLED: "1", POLISPEC_DESCRIPTION_STRICT: "on"}
+    expect:
+      exit: 1
+      stdout_includes: ["error: description_missing"]
