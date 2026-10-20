@@ -116,7 +116,14 @@ module Polispec
       end
 
       def extension_adapter
-        Author.extension_adapter?(@adapter_id) ? Author.extension_port : nil
+        return nil unless Author.extension_adapter?(@adapter_id)
+
+        first = Author.extension_ids.first.to_s
+        unless first.delete("-") == @adapter_id.to_s.gsub(/[-_]/, "").downcase
+          raise Unavailable.new("adapter_shadowed", "the author port answers from extension #{first} before #{@adapter_id}; select #{first} or remove it")
+        end
+
+        Author.extension_port
       end
 
       def start_reaper
