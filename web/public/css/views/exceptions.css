@@ -1,0 +1,140 @@
+.view.exceptions .ex-body {
+  min-width: 0;
+}
+
+.view.exceptions .ex-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+  min-width: 0;
+}
+
+@media (min-width: 1440px) {
+  .view.exceptions .ex-split[data-detail] {
+    grid-template-columns: minmax(0, 1fr) 420px;
+  }
+}
+
+.view.exceptions .ex-faint {
+  color: var(--text-faint);
+}
+
+.view.exceptions .ex-detail {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 var(--border-w) var(--border);
+}
+
+.view.exceptions .ex-detail-head {
+  display: flex;
+  align-items: center;
+}
+
+.view.exceptions .ex-detail-title {
+  margin: 0;
+  font-size: var(--text-md);
+  line-height: var(--lh-md);
+  font-weight: var(--weight-strong);
+  overflow-wrap: anywhere;
+}
+
+.view.exceptions .ex-h3 {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--weight-medium);
+}
+
+.view.exceptions .ex-kv {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+.view.exceptions .ex-kv dt {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-sm);
+}
+
+.view.exceptions .ex-kv dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.view.exceptions .ex-glob {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.view.exceptions .ex-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.view.exceptions .ex-flow,
+.view.exceptions .ex-form {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.view.exceptions .ex-flow-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.view.exceptions .ex-lead {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+.view.exceptions .ex-note {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.view.exceptions .ex-prompt {
+  max-height: 160px;
+  margin: 0;
+  padding: var(--space-2);
+  overflow: auto;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.view.exceptions .ex-done {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+.view.exceptions .ex-summary,
+.view.exceptions .ex-summary-body,
+.view.exceptions .ex-stage {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.view.exceptions .ex-split > ps-tabs ps-data-table table {
+  min-width: 880px;
+}
