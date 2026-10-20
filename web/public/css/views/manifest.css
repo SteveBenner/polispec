@@ -1,0 +1,289 @@
+.view.manifest .view-header ps-select {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.view.manifest .view-header ps-select > .ps-native {
+  width: auto;
+  min-width: 200px;
+}
+
+.view.manifest .mf-body {
+  min-width: 0;
+}
+
+.view.manifest .mf-panel {
+  padding-block-start: var(--space-3);
+}
+
+.view.manifest .mf-faint {
+  color: var(--text-faint);
+}
+
+.view.manifest .mf-quiet {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.view.manifest .mf-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .view.manifest .mf-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.view.manifest .mf-pane {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  align-content: start;
+}
+
+.view.manifest .mf-pane-head,
+.view.manifest .mf-index-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-sm);
+  min-width: 0;
+}
+
+.view.manifest .mf-head-extra {
+  margin-inline-start: auto;
+}
+
+.view.manifest .mf-h2 {
+  margin: 0;
+  font-size: var(--text-md);
+  line-height: var(--lh-md);
+  font-weight: var(--weight-strong);
+}
+
+.view.manifest .mf-h3 {
+  margin: 0 0 var(--space-2);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--weight-medium);
+}
+
+.view.manifest .mf-section {
+  min-width: 0;
+}
+
+.view.manifest .mf-kv {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+.view.manifest .mf-kv dt {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-sm);
+}
+
+.view.manifest .mf-kv dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.view.manifest .mf-layers {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.view.manifest .mf-layer {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 var(--border-w) var(--border);
+}
+
+.view.manifest .mf-layer-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.view.manifest .mf-step {
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+}
+
+.view.manifest .mf-layer-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.view.manifest .mf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.view.manifest .mf-doctor {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.view.manifest .mf-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-dim);
+}
+
+.view.manifest .mf-editor {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  height: 360px;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 var(--border-w) var(--border);
+}
+
+.view.manifest ps-command .ps-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.view.manifest .mf-index {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.view.manifest .mf-group {
+  min-width: 0;
+  box-shadow: inset 0 -1px var(--border);
+}
+
+.view.manifest .mf-group-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--control-sm);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: start;
+  cursor: pointer;
+}
+
+.view.manifest .mf-group-toggle:hover {
+  background: var(--row-hover);
+}
+
+.view.manifest .mf-group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view.manifest .mf-group-count {
+  color: var(--text-dim);
+}
+
+.view.manifest .mf-badges {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 640px;
+  min-width: 0;
+}
+
+.view.manifest .mf-badge-preview {
+  display: flex;
+  align-items: center;
+  min-height: var(--control-md);
+}
+
+.view.manifest .mf-card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 var(--border-w) var(--border);
+}
+
+.view.manifest .mf-card-title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-strong);
+  overflow-wrap: anywhere;
+}
+
+.view.manifest .mf-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.view.manifest .mf-card-line {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.view.manifest .mf-card-envs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.view.manifest .mf-card-env {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.view.manifest .mf-embed {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.view.manifest .mf-code {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
