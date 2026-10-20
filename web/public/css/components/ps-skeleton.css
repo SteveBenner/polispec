@@ -1,0 +1,21 @@
+ps-skeleton {
+  display: block;
+  min-width: var(--space-4);
+  height: var(--lh-sm);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+ps-skeleton:has(.ps-line) {
+  display: grid;
+  gap: var(--space-1);
+  height: auto;
+  background: transparent;
+}
+
+ps-skeleton .ps-line {
+  display: block;
+  height: var(--lh-sm);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
