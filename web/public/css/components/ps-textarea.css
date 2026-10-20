@@ -1,0 +1,19 @@
+ps-textarea .ps-box {
+  align-items: stretch;
+  padding-block: var(--space-1);
+}
+
+ps-textarea .ps-native {
+  height: auto;
+  min-height: calc(var(--lh-sm) * 2);
+  max-height: calc(var(--lh-sm) * 8);
+  resize: none;
+  overflow-y: auto;
+  display: block;
+}
+
+@supports (field-sizing: content) {
+  ps-textarea .ps-native {
+    field-sizing: content;
+  }
+}

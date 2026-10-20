@@ -1,0 +1,56 @@
+ps-conn-status {
+  display: inline-flex;
+  vertical-align: middle;
+  --conn-h: var(--control-md);
+  --conn-tone: var(--ok);
+}
+
+ps-conn-status[size="sm"] {
+  --conn-h: var(--control-xs);
+}
+
+ps-conn-status[data-tone="warn"] {
+  --conn-tone: var(--warn);
+}
+
+ps-conn-status[data-tone="dim"] {
+  --conn-tone: var(--text-dim);
+}
+
+ps-conn-status[data-tone="danger"] {
+  --conn-tone: var(--danger);
+}
+
+ps-conn-status[data-tone="faint"] {
+  --conn-tone: var(--text-faint);
+}
+
+ps-conn-status .ps-native {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--conn-h);
+  padding-inline: var(--space-3);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+ps-conn-status[size="sm"] .ps-native {
+  padding-inline: var(--space-2);
+}
+
+ps-conn-status .ps-native:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+ps-conn-status .ps-icon {
+  color: var(--conn-tone);
+}

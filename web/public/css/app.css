@@ -5,6 +5,32 @@
 @import url("themes.css") layer(themes);
 @import url("base.css") layer(base);
 
+@import url("components/ps-button.css") layer(components);
+@import url("components/ps-icon-button.css") layer(components);
+@import url("components/ps-text-field.css") layer(components);
+@import url("components/ps-textarea.css") layer(components);
+@import url("components/ps-select.css") layer(components);
+@import url("components/ps-combobox.css") layer(components);
+@import url("components/ps-toggle.css") layer(components);
+@import url("components/ps-segmented.css") layer(components);
+@import url("components/ps-tabs.css") layer(components);
+@import url("components/ps-dialog.css") layer(components);
+@import url("components/ps-drawer.css") layer(components);
+@import url("components/ps-tooltip.css") layer(components);
+@import url("components/ps-chip.css") layer(components);
+@import url("components/ps-digest.css") layer(components);
+@import url("components/ps-command.css") layer(components);
+@import url("components/ps-confirm.css") layer(components);
+@import url("components/ps-scrubber.css") layer(components);
+@import url("components/ps-data-table.css") layer(components);
+@import url("components/ps-state.css") layer(components);
+@import url("components/ps-skeleton.css") layer(components);
+@import url("components/ps-kbd.css") layer(components);
+@import url("components/ps-env-lanes.css") layer(components);
+@import url("components/ps-conn-status.css") layer(components);
+@import url("components/ps-banner.css") layer(components);
+@import url("components/ps-card.css") layer(components);
+
 @layer flourish {
   [data-theme="apple-noir"] :is(h1, h2) {
     font-family: var(--font-display);

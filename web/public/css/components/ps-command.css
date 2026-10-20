@@ -1,0 +1,39 @@
+ps-command {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+ps-command .ps-who {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+ps-command .ps-block {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding-inline: var(--space-2) var(--space-1);
+  background: var(--surface-2);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+ps-command .ps-lead {
+  display: inline-flex;
+  color: var(--text-dim);
+}
+
+ps-command .ps-code {
+  padding-block: var(--space-1);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: all;
+}

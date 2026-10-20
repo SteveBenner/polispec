@@ -1,0 +1,135 @@
+ps-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 20px;
+  max-width: 100%;
+  padding-inline: var(--space-2);
+  border: var(--border-w) solid var(--chip-line, var(--border-strong));
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  vertical-align: middle;
+  --chip-glyph: var(--text-dim);
+}
+
+ps-chip[size="table"] {
+  height: var(--control-xs);
+}
+
+ps-chip[data-tone="ok"] {
+  --chip-line: var(--ok);
+  --chip-glyph: var(--ok);
+}
+
+ps-chip[data-tone="warn"] {
+  --chip-line: var(--warn);
+  --chip-glyph: var(--warn);
+}
+
+ps-chip[data-tone="danger"] {
+  --chip-line: var(--danger);
+  --chip-glyph: var(--danger);
+}
+
+ps-chip[data-tone="accent"] {
+  --chip-line: var(--accent);
+  --chip-glyph: var(--accent);
+}
+
+ps-chip[data-tone="dim"] {
+  --chip-line: var(--border-strong);
+  --chip-glyph: var(--text-dim);
+}
+
+ps-chip[data-tone="faint"] {
+  --chip-line: var(--border-strong);
+  --chip-glyph: var(--text-faint);
+  border-style: dashed;
+}
+
+ps-chip .ps-chip-body {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+ps-chip .ps-chip-body.ps-native {
+  position: relative;
+  cursor: pointer;
+}
+
+ps-chip .ps-chip-body.ps-native::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+}
+
+ps-chip .ps-chip-body .ps-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--chip-glyph);
+}
+
+ps-chip .ps-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+ps-chip[kind="tag"] {
+  height: auto;
+  min-height: 20px;
+  border: 0;
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-weight: var(--weight-regular);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+ps-chip[kind="filter"] {
+  height: var(--control-xs);
+  padding-inline-end: 1px;
+  border-color: var(--control-border);
+  background: transparent;
+}
+
+ps-chip .ps-remove {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+ps-chip .ps-remove::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+}
+
+ps-chip .ps-remove:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+
+ps-chip .ps-remove .ps-icon {
+  width: 14px;
+  height: 14px;
+}
