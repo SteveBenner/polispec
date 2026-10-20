@@ -206,7 +206,7 @@ slices:
     deliverable: "Editions module, the refactor of every lock comparison, polispec editions [--check], all new settings rows and Engine::Settings accessors."
     acceptance:
       - "bin/polispec editions --check exits 0; grep -rnE \"==\\s*['\\\"]lock['\\\"]|!=\\s*['\\\"]lock['\\\"]\" lib shows only lib/polispec/editions.rb"
-      - "Parity: the primary's replay kit (scratchpad replay/run.sh, below) run under RPLUGIN_POLISPEC_EDITION=lock and under the default, with this tree and with an unmodified clone at 8c000fb, gives identical decision and rule for every payload"
+      - "Parity: the primary's replay kit (scratchpad replay/run.sh, below) run under RPLUGIN_POLISPEC_POLISPEC_EDITION=lock and under the default, with this tree and with an unmodified clone at 8c000fb, gives identical decision and rule for every payload"
       - "bin/polispec settings list shows the seven new keys with their defaults"
       - "smoke/scenarios/editions.yml: editions prints the registry; --check passes; a scratch copy of ROOT with a raw lock comparison added fails --check (run against a copied tree, never this one)"
   - id: B1-description
@@ -255,7 +255,7 @@ slices:
       - "ruby -e with a clean GEM_HOME and GEM_PATH (no installed rack, roda or webrick) runs bin/polispec web --port 0 --json and serves /index.html (a placeholder until F0 lands) on 127.0.0.1"
       - "curl without the cookie on /api/v1/config gets 401; after the code exchange it gets 200; a reused code gets 401; a POST without X-Polispec-CSRF or with a foreign Origin gets 403; a Host of evil.example gets 403; the 31st mutation in a minute gets 429"
       - "Response headers carry the CSP and nosniff exactly"
-      - "--bind 0.0.0.0 without --expose refuses; RPLUGIN_POLISPEC_EDITION=lock makes polispec web exit 2 edition_excluded"
+      - "--bind 0.0.0.0 without --expose refuses; RPLUGIN_POLISPEC_POLISPEC_EDITION=lock makes polispec web exit 2 edition_excluded"
       - "bin/polispec classify --json: curl -X POST http://127.0.0.1:<port>/api/v1/plans/p/apply gives policy.edit with shape web_local; curl http://127.0.0.1:<port>/api/v1/map gives web.fetch; polispec web gives policy.edit; cat <state home>/web/launch.secret gives secrets.read"
   - id: B5-author
     wave: 1
@@ -264,7 +264,7 @@ slices:
     deliverable: "The port facade, the standalone registry, harness-cli with ClaudeSession and CodexSession, prompt, draft pipeline, bounds, CLI."
     acceptance:
       - "Without spending tokens: a fake claude executable on PATH in the scratchpad that replays a recorded stream-json transcript (init, deltas, one can_use_tool for Read inside the project, one for Bash, result) drives author draft module --intent x: the Read is allowed, the Bash denied, the draft is extracted, validated and linted"
-      - "POLISPEC_AUTHOR=off and RPLUGIN_POLISPEC_EDITION=lock each refuse with their reason before spawning anything (the fake records no spawn)"
+      - "POLISPEC_AUTHOR=off and RPLUGIN_POLISPEC_POLISPEC_EDITION=lock each refuse with their reason before spawning anything (the fake records no spawn)"
       - "A fourth concurrent session raises busy; the bucket refuses the 11th turn in a minute"
   - id: B5b-author-probe
     wave: 2
