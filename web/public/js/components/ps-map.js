@@ -113,7 +113,17 @@ class PsMap extends HTMLElement {
     };
   }
 
+  placeEmpty() {
+    if (!this.emptyWrap || !this.emptyBox) return;
+    const { x, y, z } = this.pan;
+    this.emptyWrap.style.left = this.emptyBox.x * z + x + "px";
+    this.emptyWrap.style.top = this.emptyBox.y * z + y + "px";
+  }
+
   reset() {
+    if (this.emptyWrap) this.emptyWrap.remove();
+    this.emptyWrap = null;
+    this.emptyBox = null;
     this.inner.textContent = "";
     this.cardEls.clear();
     this.chipEls.clear();
@@ -131,6 +141,7 @@ class PsMap extends HTMLElement {
     const { x, y, z } = this.pan;
     if (!this.programmatic) this.autoFit = false;
     this.inner.style.transform = `translate(${x}px, ${y}px) scale(${z})`;
+    this.placeEmpty();
     this.style.setProperty("--pan-x", x + "px");
     this.style.setProperty("--pan-y", y + "px");
     this.dispatchEvent(new CustomEvent("ps-map-zoom", { bubbles: true, detail: { z } }));
@@ -368,7 +379,6 @@ class PsMap extends HTMLElement {
   renderEmpty(layout) {
     if (!layout.emptyBox) return;
     const wrap = div("ps-map-empty");
-    place(wrap, layout.emptyBox);
     const state = document.createElement("ps-state");
     state.setAttribute("kind", "empty_first_run");
     state.setAttribute("heading", "No projects are governed yet");
@@ -378,7 +388,10 @@ class PsMap extends HTMLElement {
     command.setAttribute("command", "polispec apply environment-control --repo <path> --variant service");
     state.append(command);
     wrap.append(state);
-    this.inner.append(wrap);
+    this.emptyWrap = wrap;
+    this.emptyBox = layout.emptyBox;
+    this.append(wrap);
+    this.placeEmpty();
   }
 
   edgesHidden() {

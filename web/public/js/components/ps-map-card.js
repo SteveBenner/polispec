@@ -112,11 +112,15 @@ class PsMapCard extends HTMLElement {
     }
 
     const foot = el("div", "ps-foot");
-    const digest = document.createElement("ps-digest");
-    digest.setAttribute("value", shortDigest(entry.digest || "", 64));
-    digest.setAttribute("kind", "dev policy digest");
-    digest.setAttribute("length", "8");
-    foot.append(digest);
+    if (entry.digest) {
+      const digest = document.createElement("ps-digest");
+      digest.setAttribute("value", shortDigest(entry.digest, 64));
+      digest.setAttribute("kind", "dev policy digest");
+      digest.setAttribute("length", "8");
+      foot.append(digest);
+    } else {
+      foot.append(el("span", "ps-nopolicy", "No policy"));
+    }
     if (blast) {
       const flips = blast.stricter + blast.looser;
       const chip = document.createElement("ps-chip");

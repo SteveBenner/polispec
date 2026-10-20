@@ -172,6 +172,52 @@
   height: 100%;
 }
 
+.mgr-panel .mgr-tab-lint {
+  container-type: inline-size;
+}
+
+.mgr-panel .mgr-tab-lint ps-data-table table {
+  width: 100%;
+  min-width: 0 !important;
+  table-layout: fixed;
+}
+
+.mgr-panel .mgr-tab-lint ps-data-table colgroup > col:last-child {
+  width: auto !important;
+}
+
+.mgr-lint-code {
+  display: none;
+}
+
+@container (max-width: 399px) {
+  .mgr-panel .mgr-tab-lint ps-data-table :is(thead th, tbody td):nth-child(3) {
+    display: none;
+  }
+
+  .mgr-panel .mgr-tab-lint ps-data-table colgroup > col:nth-child(3) {
+    width: 0 !important;
+  }
+
+  .mgr-panel .mgr-tab-lint ps-data-table tbody td:last-child {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .mgr-lint-msg {
+    display: grid;
+    gap: var(--space-1);
+    padding-block: var(--space-1);
+  }
+
+  .mgr-lint-code {
+    display: block;
+    color: var(--text-dim);
+    font-size: var(--text-xs);
+    line-height: var(--lh-xs);
+  }
+}
+
 .mgr-quiet {
   color: var(--text-dim);
 }
