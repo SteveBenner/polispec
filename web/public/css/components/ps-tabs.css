@@ -1,0 +1,65 @@
+ps-tabs {
+  display: block;
+  min-width: 0;
+}
+
+ps-tabs .ps-tablist {
+  display: flex;
+  contain: inline-size;
+  height: var(--control-sm);
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: var(--border-w) solid var(--border);
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+
+ps-tabs > .ps-tablist > .ps-native {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  height: 100%;
+  padding-inline: var(--space-3);
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  white-space: nowrap;
+  scroll-snap-align: start;
+  cursor: pointer;
+}
+
+ps-tabs > .ps-tablist > .ps-native:hover {
+  background: var(--row-hover);
+}
+
+ps-tabs > .ps-tablist > .ps-native[aria-selected="true"] {
+  color: var(--text);
+  font-weight: var(--weight-medium);
+}
+
+ps-tabs > .ps-tablist > .ps-native[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+ps-tabs > .ps-tablist > .ps-native:focus-visible {
+  outline-offset: calc(var(--focus-w) * -1);
+}
+
+ps-tabs .ps-count {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+ps-tabs > [role="tabpanel"][hidden] {
+  display: none;
+}

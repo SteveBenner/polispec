@@ -1,0 +1,21 @@
+ps-card {
+  display: block;
+  min-width: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 var(--border-w) var(--border);
+}
+
+ps-card:hover {
+  box-shadow: inset 0 0 0 var(--border-w) var(--border-strong);
+}
+
+ps-card[interactive] {
+  cursor: pointer;
+}
+
+ps-card:focus-visible {
+  outline: var(--focus-w) solid var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}

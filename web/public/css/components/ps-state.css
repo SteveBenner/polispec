@@ -1,0 +1,45 @@
+ps-state {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  min-width: 0;
+}
+
+ps-state .ps-lead {
+  display: inline-flex;
+  flex: none;
+  padding-top: 1px;
+  color: var(--text-faint);
+}
+
+ps-state[data-kind="error"] .ps-lead {
+  color: var(--danger);
+}
+
+ps-state .ps-main {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+  min-width: 0;
+}
+
+ps-state .ps-title {
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  font-weight: var(--weight-medium);
+}
+
+ps-state .ps-body {
+  max-width: var(--measure);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+ps-state .ps-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+}

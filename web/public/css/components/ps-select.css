@@ -1,0 +1,165 @@
+ps-select {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  --select-h: var(--control-sm);
+}
+
+ps-select[size="md"] {
+  --select-h: var(--control-md);
+}
+
+ps-select[size="xs"] {
+  --select-h: var(--control-xs);
+}
+
+ps-select .ps-label {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--weight-medium);
+}
+
+ps-select > .ps-native {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: var(--select-h);
+  padding-inline: var(--space-2);
+  border: var(--border-w) solid var(--control-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  text-align: start;
+  cursor: pointer;
+}
+
+ps-select > .ps-native:not([aria-disabled="true"]):hover {
+  background-color: var(--surface);
+  background-image: linear-gradient(var(--row-hover), var(--row-hover));
+}
+
+ps-select > .ps-native[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+ps-select .ps-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+ps-select .ps-placeholder {
+  color: var(--text-faint);
+}
+
+ps-select .ps-popup {
+  position: fixed;
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  overflow: hidden;
+  background: var(--bg-elev);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+ps-select .ps-popup[hidden],
+ps-select .ps-filter[hidden],
+ps-select .ps-label[hidden] {
+  display: none;
+}
+
+ps-select .ps-filter {
+  flex: none;
+  height: var(--control-sm);
+  padding-inline: var(--space-2);
+  border: 0;
+  border-bottom: var(--border-w) solid var(--border);
+  background: var(--control-bg);
+  color: var(--text);
+  font-size: var(--text-sm);
+  outline: 0;
+}
+
+ps-select .ps-filter:focus-visible {
+  outline: var(--focus-w) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-w) * -1);
+}
+
+ps-select .ps-list {
+  overflow: auto;
+  outline: 0;
+}
+
+ps-select .ps-list:focus-visible {
+  outline: var(--focus-w) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-w) * -1);
+}
+
+ps-select .ps-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row);
+  padding-inline: var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+ps-select .ps-option {
+  cursor: pointer;
+}
+
+ps-select .ps-option.ps-active {
+  background: var(--row-hover);
+}
+
+ps-select .ps-option[aria-selected="true"] {
+  font-weight: var(--weight-medium);
+}
+
+ps-select .ps-option[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+ps-select .ps-mark {
+  display: inline-flex;
+  flex: none;
+  width: var(--icon);
+  height: var(--icon);
+  color: var(--accent);
+}
+
+ps-select .ps-option-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+ps-select .ps-row-note {
+  justify-content: space-between;
+  color: var(--text-dim);
+}
+
+ps-select .ps-row-skeleton ps-skeleton {
+  width: 70%;
+}
+
+ps-select .ps-retry {
+  height: var(--control-xs);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-weight: var(--weight-medium);
+}

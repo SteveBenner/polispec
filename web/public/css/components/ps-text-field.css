@@ -1,0 +1,121 @@
+:is(ps-text-field, ps-textarea) {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  --field-h: var(--control-sm);
+}
+
+:is(ps-text-field, ps-textarea)[size="md"] {
+  --field-h: var(--control-md);
+}
+
+:is(ps-text-field, ps-textarea) .ps-label {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--weight-medium);
+}
+
+:is(ps-text-field, ps-textarea) .ps-box {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding-inline: var(--space-2);
+  background: var(--control-bg);
+  border: var(--border-w) solid var(--control-border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+
+ps-text-field .ps-box {
+  height: var(--field-h);
+}
+
+:is(ps-text-field, ps-textarea) .ps-box:hover {
+  border-color: var(--text-dim);
+}
+
+:is(ps-text-field, ps-textarea) .ps-box:has(.ps-native:focus) {
+  border-color: var(--focus-ring);
+  outline: var(--focus-w) solid var(--focus-ring);
+  outline-offset: 0;
+}
+
+:is(ps-text-field, ps-textarea):has(.ps-native[aria-invalid="true"]) .ps-box {
+  border-color: var(--danger);
+}
+
+:is(ps-text-field, ps-textarea) .ps-box > .ps-icon {
+  color: var(--text-faint);
+}
+
+:is(ps-text-field, ps-textarea) .ps-native {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+:is(ps-text-field, ps-textarea) .ps-native.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-size: var(--text-sm);
+}
+
+:is(ps-text-field, ps-textarea) .ps-native::placeholder {
+  color: var(--text-faint);
+  opacity: 1;
+}
+
+:is(ps-text-field, ps-textarea):has(.ps-native:disabled) .ps-box {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-faint);
+}
+
+:is(ps-text-field, ps-textarea) .ps-native:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+:is(ps-text-field, ps-textarea):has(:is(input, textarea).ps-native:read-only:not(:disabled)) .ps-box {
+  background: transparent;
+  border-color: var(--border);
+}
+
+:is(ps-text-field, ps-textarea) .ps-message {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--lh-xs);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+:is(ps-text-field, ps-textarea) .ps-message[data-kind="error"] {
+  color: var(--danger);
+}
+
+:is(ps-text-field, ps-textarea) :is(.ps-message, .ps-label, ps-icon-button)[hidden] {
+  display: none;
+}
+
+@media (max-width: 767px) and (pointer: coarse) {
+  :is(ps-text-field, ps-textarea, ps-combobox, ps-confirm) .ps-native {
+    font-size: var(--text-lg);
+    line-height: 20px;
+  }
+
+  :is(ps-text-field, ps-textarea, ps-combobox, ps-confirm) .ps-native.mono {
+    font-size: var(--text-lg);
+  }
+}

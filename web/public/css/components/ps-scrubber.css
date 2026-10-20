@@ -1,0 +1,130 @@
+ps-scrubber {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+ps-scrubber .ps-region {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-top: var(--lh-2xs);
+  scrollbar-width: thin;
+}
+
+ps-scrubber .ps-track {
+  position: relative;
+  height: var(--control-xs);
+  min-width: 100%;
+  touch-action: pan-x;
+  cursor: pointer;
+}
+
+ps-scrubber .ps-track.ps-empty {
+  display: flex;
+  align-items: center;
+  color: var(--text-dim);
+}
+
+ps-scrubber .ps-line {
+  position: absolute;
+  inset-block-start: calc(50% - 1px);
+  height: 2px;
+  background: var(--border-strong);
+}
+
+ps-scrubber .ps-band {
+  position: absolute;
+  inset-block-start: calc(50% - 2px);
+  height: 4px;
+  background: var(--accent-soft);
+}
+
+ps-scrubber .ps-tick {
+  position: absolute;
+  inset-block-start: calc(50% - 3px);
+  width: 1px;
+  height: 6px;
+  margin-inline-start: -0.5px;
+  background: var(--text-faint);
+}
+
+ps-scrubber .ps-tick.ps-tag {
+  inset-block-start: calc(50% - 6px);
+  height: 12px;
+  background: var(--text);
+}
+
+ps-scrubber .ps-tag-label {
+  position: absolute;
+  inset-block-end: calc(100% + 2px);
+  inset-inline-start: 0;
+  transform: translateX(-50%);
+  color: var(--text);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+ps-scrubber .ps-tag-label.ps-thinned {
+  display: none;
+}
+
+ps-scrubber .ps-tick.ps-tag:hover .ps-tag-label.ps-thinned {
+  display: block;
+  z-index: 1;
+  padding-inline: var(--space-1);
+  background: var(--surface);
+}
+
+ps-scrubber .ps-thumb {
+  position: absolute;
+  inset-block-start: calc(50% - 8px);
+  width: 16px;
+  height: 16px;
+  margin-inline-start: -8px;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  cursor: grab;
+}
+
+ps-scrubber .ps-thumb::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+
+ps-scrubber .ps-thumb[data-dragging] {
+  cursor: grabbing;
+}
+
+ps-scrubber .ps-readouts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+ps-scrubber .ps-readout {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+ps-scrubber .ps-readout:last-child {
+  text-align: end;
+}
+
+ps-scrubber .ps-pickers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+ps-scrubber .ps-pickers[hidden] {
+  display: none;
+}
