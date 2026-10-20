@@ -7,6 +7,7 @@ require_relative "../backends"
 require_relative "../contracts"
 require_relative "../language"
 require_relative "../../harness/base"
+require_relative "../../editions"
 
 module Polispec
   module HarnessControls
@@ -255,7 +256,7 @@ module Polispec
           reject_conflicting_restrictions!(path_controls, network_controls)
           unconditional_network = network_controls.select { |item| item.fetch("trigger_supported") && !item.fetch("conditional") }
           compiled_network = unconditional_network.first
-          network = if edition == "lock"
+          network = if !Editions.included?("network.domain_allowlist", edition)
                       {
                         "allowedDomains" => [],
                         "allowManagedDomainsOnly" => true,
@@ -353,7 +354,7 @@ module Polispec
             findings << finding("claude_version_unsupported", "The declared Claude version predates failure-closed onFailure:block support.", nil, "hook.pre_tool", "Upgrade Claude Code to 2.1.295 or later before treating the hook as failure closed.")
           end
           missing = missing_sandbox_executables
-          if edition != "lock" && !missing.empty?
+          if Editions.included?("network.domain_allowlist", edition) && !missing.empty?
             findings << finding("sandbox_unavailable", "Claude Code sandbox prerequisites are missing from PATH: #{missing.join(", ")}. The generated settings set sandbox.enabled and sandbox.failIfUnavailable, so Claude Code would refuse to start in this scope.", nil, "sandbox.prerequisites", "Install #{missing.join(" and ")} with the system package manager, then plan again.")
           end
           if scope != "managed"
@@ -363,7 +364,7 @@ module Polispec
             inventory = managed_consequence_inventory(context["existing"])
             detail = "allowManagedHooksOnly blocks user, project, local, plugin, and frontmatter hooks; narrows statusLine, fileSuggestion, and subagentStatusLine commands; disables command-source plugins and headersHelper commands; and makes /goal unavailable."
             detail = "#{detail} allowManagedReadPathsOnly ignores read-path additions outside managed settings, and allowUnsandboxedCommands false prevents repository settings from widening the sandbox."
-            detail = "#{detail} Lock edition also ignores domain additions outside managed settings." if edition == "lock"
+            detail = "#{detail} Lock edition also ignores domain additions outside managed settings." unless Editions.included?("network.domain_allowlist", edition)
             detail = "#{detail} Existing lower-scope inventory: #{inventory.join(", ")}." unless inventory.empty?
             detail = "#{detail} Existing lower-scope hook inventory was not supplied." if inventory.empty?
             findings << finding("managed_hook_consequences", detail, nil, "config.managed_hooks", "Review the consequence inventory before applying the managed artifact.")
@@ -371,7 +372,7 @@ module Polispec
           unless protected_runtime_supplied?(context, runtime_argv)
             findings << finding("runtime_ancestry_unverified", "The callback has no verified protected interpreter and separately protected SDK ancestry.", nil, "runtime.provenance", "Supply runtime_argv from the verified plane authority with protected interpreter, launcher, and SDK evidence.")
           end
-          if edition == "lock" && scope != "managed"
+          if !Editions.included?("controls.user_scope", edition) && scope != "managed"
             findings << finding("lock_scope_unenforceable", "Lock edition settings outside managed scope remain mutable by the user.", nil, "edition.lock", "Generate the lock edition in managed scope with operator authority.")
           end
           supported_paths = restrictions.fetch("path_controls").select { |item| item.fetch("trigger_supported") }

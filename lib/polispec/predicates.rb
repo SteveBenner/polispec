@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require_relative "editions"
+
 module Polispec
   module Predicates
     NAMES = %w[lock_held live_binary delete_protected delete_protected_file supervised pin_regress tag_claimed base_unpushed in_development].freeze
@@ -21,7 +23,7 @@ module Polispec
 
     def check_in_development(action, ctx)
       return no unless Engine::Settings.relax_dev?
-      return no if HarnessControls::Plane.requested_edition == "lock"
+      return no unless Editions.allowed?("relax.dev", HarnessControls::Plane.requested_edition)
 
       ledger = ctx[:ledger] || Ledger.load
       data = hint(action)

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 require_relative "../../harness/codex"
+require_relative "../../editions"
 
 module Polispec
   module HarnessControls
@@ -199,7 +200,7 @@ module Polispec
         private_class_method :runtime_argv
 
         def config_toml(scope, edition, callback, restrictions)
-          profile = edition == "lock" ? "polispec-lock" : "polispec-standard"
+          profile = Editions.lock?(edition) ? "polispec-lock" : "polispec-standard"
           paths = restrictions["paths"]
           lines = ["# polispec:begin codex/v1"]
           lines << "default_permissions = #{toml_string(profile)}"
@@ -258,7 +259,7 @@ module Polispec
         def network_toml(lines, edition, network)
           return if edition == "standard" && network.nil?
 
-          domains = edition == "lock" ? [] : network.fetch("domains", [])
+          domains = Editions.included?("network.domain_allowlist", edition) ? network.fetch("domains", []) : []
           lines << ""
           lines << "[experimental_network]"
           lines << "enabled = true"
@@ -392,7 +393,7 @@ module Polispec
             capability(nil, "codex.callback_denial", generated_disposition, "PreToolUse explicit deny is generated, but callback errors and timeouts can fail open."),
             capability(nil, "codex.exec_policy", generated_disposition, "Native rules forbid direct nested Codex sandbox-bypass flags; prefix coverage is incomplete."),
             capability(nil, "codex.filesystem_sandbox", generated ? restrictions["paths_status"] : "unavailable", restrictions["paths_status"] == "unsupported" ? "Conflicting or conditional path restrictions remain callback-only; the baseline profile is not claimed equivalent." : "A workspace or declared path permission profile is generated; live containment remains unverified."),
-            capability(nil, "codex.network_sandbox", generated ? (edition == "lock" ? "generated" : restrictions["network_status"]) : "unavailable", network_capability_detail(edition, restrictions)),
+            capability(nil, "codex.network_sandbox", generated ? (Editions.included?("network.domain_allowlist", edition) ? restrictions["network_status"] : "generated") : "unavailable", network_capability_detail(edition, restrictions)),
             capability(nil, "codex.hosted_tools", "unverified", "Hosted and specialized tool coverage is not established by generated hooks."),
             capability(nil, "codex.nested_execution", "unverified", scope == "managed" ? "Requirements are expected to bind nested processes but need native evidence." : "Same-user configuration can be bypassed by a nested Codex home or flags.")
           ])
@@ -401,7 +402,7 @@ module Polispec
         private_class_method :capabilities_for
 
         def network_capability_detail(edition, restrictions)
-          return "Managed proxy requirements carry an empty domain allowlist; live egress remains unverified." if edition == "lock"
+          return "Managed proxy requirements carry an empty domain allowlist; live egress remains unverified." unless Editions.included?("network.domain_allowlist", edition)
           return "Conflicting or conditional network restrictions remain callback-only; open native network is not claimed equivalent." if restrictions["network_status"] == "unsupported"
 
           "Standard uses open network unless one unconditional declared allowlist is compiled."
