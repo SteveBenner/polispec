@@ -326,7 +326,10 @@ module Polispec
           raise NotFound, "no path entry #{id}" unless entry
 
           shelf_file(entry.policy)
-        when "global" then shelf_file("global.yml")
+        when "global"
+          raise NotFound, "the only global rulebook is global" unless id == "global"
+
+          shelf_file("global.yml")
         when "module"
           raise NotFound, "#{id} is not a module name" unless Layers::MODULE_NAME.match?(id.to_s)
 
@@ -356,7 +359,39 @@ module Polispec
         rulebooks += current.paths.reject { |p| p.status == "retired" }.map { |p| { "kind" => "path", "id" => p.id, "scope" => "path" } }
         store = Layers.store
         rulebooks << { "kind" => "global", "id" => "global", "scope" => "global" } if store && store.global_doc
-        { "rulebooks" => rulebooks, "modules" => shelf_modules(store), "packages" => package_rows }
+        usage = module_usage(current)
+        modules = shelf_modules(store).map { |row| row.merge(usage_of(usage[row["name"]])) }
+        packages = package_rows.map { |row| row.merge(usage_of(current.projects.select { |p| p.packages.any? { |item| item["name"] == row["name"] } }.map(&:id))) }
+        { "rulebooks" => rulebooks, "modules" => modules, "packages" => packages, "examples" => example_rows }
+      end
+
+      def usage_of(ids)
+        list = Array(ids).uniq.sort
+        { "used_by" => list, "used_by_count" => list.length }
+      end
+
+      def module_usage(current)
+        usage = Hash.new { |hash, key| hash[key] = [] }
+        current.projects.reject { |p| p.status == "retired" }.each do |project|
+          chain = project_chain(current, project)
+          next unless chain
+
+          chain.layers.each { |layer| layer.modules.each { |label| usage[module_name(label)] << project.id } }
+        end
+        usage
+      end
+
+      def example_rows
+        files = Dir.glob(File.join(ROOT, "examples", "policy.*.yml")) + Dir.glob(File.join(ROOT, "examples", "*", "policy.yml"))
+        files.sort.filter_map do |file|
+          name = File.basename(file) == "policy.yml" ? File.basename(File.dirname(file)) : File.basename(file)[/\Apolicy\.(.+)\.yml\z/, 1]
+          doc = YAML.safe_load(File.read(file), permitted_classes: [], aliases: false)
+          next nil unless doc.is_a?(Hash)
+
+          { "name" => name, "summary" => doc["summary"].to_s, "description" => doc["description"].to_s, "params" => {}, "used_by" => [], "used_by_count" => 0 }
+        rescue StandardError
+          nil
+        end
       end
 
       def shelf_list(src, subdir, dirs: false)
@@ -384,7 +419,7 @@ module Polispec
             spec = spec.is_a?(Hash) ? spec : {}
             spec.merge("required" => !spec.key?("default"))
           end
-          { "name" => name, "summary" => mod.doc["summary"].to_s, "params" => params }
+          { "name" => name, "summary" => mod.doc["summary"].to_s, "description" => mod.doc["description"].to_s, "params" => params }
         end
       end
 
@@ -394,7 +429,7 @@ module Polispec
         names |= shelf_list(store.source, "packages", dirs: true) if store
         names.sort.filter_map do |name|
           package = Packages.find(name)
-          { "name" => package.name, "version" => package.version, "summary" => package.summary.to_s, "params" => package.params,
+          { "name" => package.name, "version" => package.version, "summary" => package.summary.to_s, "description" => package.data["description"].to_s, "params" => package.params,
             "variants" => package.variants.keys, "default_variant" => package.default_variant, "origin" => package.origin }
         rescue Polispec::Error
           nil
@@ -460,7 +495,10 @@ module Polispec
           raise NotFound, "no path entry #{id}" unless entry
 
           shelf_chain(current, "path:#{id}", entry)
-        when "global" then shelf_chain(current, "global", nil)
+        when "global"
+          raise NotFound, "the only global rulebook is global" unless id == "global"
+
+          shelf_chain(current, "global", nil)
         else module_context(id)
         end
       end
@@ -491,7 +529,7 @@ module Polispec
         raise NotFound, "no module #{id}" unless found.respond_to?(:doc)
 
         layer = Layers::Layer.new(name: "module", source: "modules/#{name}.yml", digest: sha_text(found.text), rules: Array(found.doc["rules"]), modules: [name],
-                                  extras: Layers.extras_of([found.doc]))
+                                  extras: Layers.send(:extras_of, [found.doc]))
         extras = layer.extras
         policy = { "freezes" => extras["freezes"], "promotion" => { "to_test" => { "gates" => extras["to_test"] }, "to_stable" => { "gates" => extras["to_stable"] } } }
         { chain: Layers::Chain.new(layers: [layer], errors: [], profile: nil, applied: []), policy: policy, project: nil, status: "live", digest: layer.digest,
@@ -643,7 +681,7 @@ module Polispec
         end
         { "commits" => commits }
       rescue Operator::Failure => e
-        raise Invalid.new(e.message, Array(e.to_h["problems"]).map { |text| { "code" => e.code.to_s, "path" => "", "message" => text } })
+        raise Invalid.new(e.message, Array(e.payload["problems"]).map { |text| { "code" => e.code.to_s, "path" => "", "message" => text } })
       end
 
       def ref_branches(project, policy)
@@ -924,21 +962,61 @@ module Polispec
         return [] unless File.directory?(dir)
 
         Dir.glob(File.join(dir, "*.json")).sort.filter_map do |file|
-          next nil if File.basename(file, ".json") == own || File.size(file) > 1_048_576
+          next nil if File.basename(file, ".json") == own
+          next { "user" => File.basename(file, ".json"), "host" => nil, "generated_at" => nil, "entries" => [], "error" => "the index file is larger than 1 MiB" } if File.size(file) > 1_048_576
 
           data = JSON.parse(File.read(file))
-          Schema.validate("index", data).empty? ? data : nil
-        rescue StandardError
-          nil
+          problems = Schema.validate("index", data)
+          next data if problems.empty?
+
+          { "user" => File.basename(file, ".json"), "host" => nil, "generated_at" => nil, "entries" => [], "error" => problems.first(3).map { |e| "#{e.pointer} #{e.message}".strip }.join("; ") }
+        rescue StandardError => e
+          { "user" => File.basename(file, ".json"), "host" => nil, "generated_at" => nil, "entries" => [], "error" => "#{e.class}: #{e.message}"[0, 200] }
         end
       end
 
       def manifest(id)
-        Manifest.validate!("manifest", Manifest.for(id, ledger: ledger))
+        current = ledger
+        generated = Manifest.validate!("manifest", Manifest.for(id, ledger: current))
+        project = current.project(id)
+        { "root" => project ? project.repo : (current.path_entry(id)&.path), "generated" => manifest_view(generated), "authored" => project ? authored_app(project) : nil }
       rescue Operator::Failure => e
         raise NotFound, e.message if e.code == "unknown_entry"
 
         raise Unavailable, e.message
+      end
+
+      def manifest_view(doc)
+        view = doc.dup
+        promotions = doc["promotions"].is_a?(Hash) ? doc["promotions"] : {}
+        view["environments"] = doc["environments"].to_h.to_h do |name, spec|
+          stamp = promotions[name] || promotions[name == "prod" ? "stable" : name]
+          [name, { "ref" => spec["branch"], "policy_digest" => spec["policy_digest"], "last_promotion" => stamp && stamp["at"] }]
+        end
+        layers = doc.dig("layers", "layers").to_a
+        packages = doc.dig("layers", "packages").to_a.map { |item| item["name"] }
+        view["layers"] = layers.map { |row| { "name" => row["layer"], "kind" => row["layer"].to_s.split(":").first, "modules" => row["modules"], "packages" => row["layer"] == "repo" ? packages : [] } }
+        view["roster"] = doc["roster"].to_h.map { |role, slot| { "role" => role }.merge(slot) }
+        groups = doc["findings"].is_a?(Hash) ? doc["findings"] : {}
+        findings = groups.flat_map { |severity, list| list.map { |item| { "severity" => severity == "warn" ? "warning" : severity, "code" => item["kind"], "message" => item["detail"] } } }
+        view["doctor"] = { "error" => groups["error"].to_a.length, "warning" => groups["warn"].to_a.length, "info" => groups["info"].to_a.length, "findings" => findings }
+        view
+      end
+
+      def authored_app(project)
+        return nil if project.status == "retired"
+
+        text = git(File.expand_path(project.repo), "show", "#{project.trust_ref}:#{Manifest::APP_FILE}")
+        return nil if text.nil?
+
+        findings = []
+        begin
+          data = Schema::Document.parse(text, Manifest::APP_FILE)
+          Schema.validate("app", data).each { |e| findings << { "severity" => "error", "code" => "schema", "message" => "#{e.pointer} #{e.message}".strip } }
+        rescue Schema::Document::ParseError => e
+          findings << { "severity" => "error", "code" => "parse", "message" => e.message }
+        end
+        { "path" => Manifest::APP_FILE, "text" => text, "valid" => findings.empty?, "findings" => findings }
       end
 
       def layout_path

@@ -8,6 +8,8 @@ servers:
 tags:
   - name: session
   - name: config
+  - name: read
+  - name: state
 paths:
   /session:
     post:
@@ -100,6 +102,380 @@ paths:
           $ref: "#/components/responses/Error"
         "403":
           $ref: "#/components/responses/Error"
+  /map:
+    get:
+      tags: [read]
+      operationId: getMap
+      summary: Every ledger project and path entry with the shipped, shelf and exception layers above them
+      parameters:
+        - name: window
+          in: query
+          schema:
+            type: string
+            enum: ["1h", "24h", "7d"]
+            default: "24h"
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The map. ETag is the epoch and the window.
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Map"
+        "304":
+          description: The epoch has not changed.
+        "401":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /catalog:
+    get:
+      tags: [read]
+      operationId: getCatalog
+      summary: Rulebooks by kind, shelf modules, packages and examples
+      responses:
+        "200":
+          description: The catalog.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Catalog"
+        "401":
+          $ref: "#/components/responses/Error"
+  /rulebooks/{kind}/{id}/source:
+    get:
+      tags: [read]
+      operationId: getRulebookSource
+      summary: The YAML text of one rulebook with its schema id, digest and ref
+      parameters:
+        - $ref: "#/components/parameters/Kind"
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The source. ETag is the digest.
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RulebookSource"
+        "304":
+          description: The digest has not changed.
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /rulebooks/{kind}/{id}/composition:
+    get:
+      tags: [read]
+      operationId: getRulebookComposition
+      summary: The layer chain, rules, gates, freezes and, with action, the winning rule per environment
+      parameters:
+        - $ref: "#/components/parameters/Kind"
+        - $ref: "#/components/parameters/Id"
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: path
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The composition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Composition"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /rulebooks/{kind}/{id}/history:
+    get:
+      tags: [read]
+      operationId: getRulebookHistory
+      summary: The commits touching a rulebook file, or with from and to the semantic diff between two refs
+      parameters:
+        - $ref: "#/components/parameters/Kind"
+        - $ref: "#/components/parameters/Id"
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The commits, or the changes between the two refs.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/History"
+                  - $ref: "#/components/schemas/HistoryDiff"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /pipeline:
+    get:
+      tags: [read]
+      operationId: getPipeline
+      summary: Refs, drift, doctor findings, freezes and the gate to test of every project
+      responses:
+        "200":
+          description: The pipeline.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pipeline"
+        "401":
+          $ref: "#/components/responses/Error"
+  /heatmap:
+    get:
+      tags: [read]
+      operationId: getHeatmap
+      summary: Rule hits per project and environment, NO-RULE rows and rules that never fired
+      parameters:
+        - name: window
+          in: query
+          schema:
+            type: string
+            enum: ["7d", "14d", "30d"]
+            default: "14d"
+      responses:
+        "200":
+          description: The heatmap.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Heatmap"
+        "401":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /sessions:
+    get:
+      tags: [read]
+      operationId: getSessions
+      summary: Active harness sessions with their epoch and badges
+      parameters:
+        - name: window
+          in: query
+          schema:
+            type: string
+            enum: ["1h", "6h", "24h"]
+            default: "1h"
+      responses:
+        "200":
+          description: The sessions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Sessions"
+        "401":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /changes:
+    get:
+      tags: [read]
+      operationId: getChanges
+      summary: Change records with the sessions that crossed, are pending or are flagged
+      parameters:
+        - name: since
+          in: query
+          schema:
+            type: string
+            default: "24h"
+      responses:
+        "200":
+          description: The changes, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Changes"
+        "401":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /judgments:
+    get:
+      tags: [read]
+      operationId: getJudgments
+      summary: Judgment records, oldest first, for gap filling
+      parameters:
+        - name: since
+          in: query
+          schema:
+            type: string
+        - name: session
+          in: query
+          schema:
+            type: string
+        - name: project
+          in: query
+          schema:
+            type: string
+        - name: rule
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 200
+      responses:
+        "200":
+          description: The judgments.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Judgments"
+        "401":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /judgments/stream:
+    get:
+      tags: [read]
+      operationId: streamJudgments
+      summary: Server-sent events, one judgment event per new record, a heartbeat comment every 15 seconds
+      parameters:
+        - name: session
+          in: query
+          schema:
+            type: string
+        - name: project
+          in: query
+          schema:
+            type: string
+        - name: rule
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: An event stream. Each event is named judgment and carries one polispec.judgment/v1 record without its raw field.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /manifest/index:
+    get:
+      tags: [read]
+      operationId: getManifestIndex
+      summary: The index of this host and the indexes other users published
+      responses:
+        "200":
+          description: The index.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManifestIndex"
+        "401":
+          $ref: "#/components/responses/Error"
+  /manifest/{id}:
+    get:
+      tags: [read]
+      operationId: getManifest
+      summary: The generated manifest of a project or path entry and its authored app file
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: The manifest.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManifestView"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /badge/{id}.svg:
+    get:
+      tags: [read]
+      operationId: getBadge
+      summary: The status badge of a project or path entry
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: An SVG badge.
+          content:
+            image/svg+xml:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /state/layout:
+    get:
+      tags: [state]
+      operationId: getLayout
+      summary: The saved card positions of the map
+      responses:
+        "200":
+          description: The positions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Layout"
+        "401":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [state]
+      operationId: putLayout
+      summary: Save the card positions of the map
+      parameters:
+        - $ref: "#/components/parameters/Csrf"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Layout"
+      responses:
+        "200":
+          description: The positions as stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Layout"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "405":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     cookie:
@@ -107,6 +483,25 @@ components:
       in: cookie
       name: ps_session
   parameters:
+    Kind:
+      name: kind
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [project, path, global, module]
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      schema:
+        type: string
     Csrf:
       name: X-Polispec-CSRF
       in: header
@@ -215,5 +610,883 @@ components:
                   type: array
                   items:
                     type: string
+    Epoch:
+      type: string
+      nullable: true
+      pattern: "^ep_[0-9a-f]{16}$"
+    Owner:
+      type: object
+      required: [uid, name]
+      properties:
+        uid:
+          type: integer
+          nullable: true
+        name:
+          type: string
+    Counts:
+      type: object
+      required: [allow, warn, deny]
+      properties:
+        allow:
+          type: integer
+        warn:
+          type: integer
+        deny:
+          type: integer
+    MapEntry:
+      type: object
+      required: [id, kind, status, owner, summary, description, digest, counts, globs, error]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [project, path]
+        status:
+          type: string
+          enum: [live, onboarding, retired]
+        owner:
+          $ref: "#/components/schemas/Owner"
+        summary:
+          type: string
+        description:
+          type: string
+        digest:
+          type: string
+          nullable: true
+        counts:
+          $ref: "#/components/schemas/Counts"
+        globs:
+          type: array
+          items:
+            type: object
+            required: [glob, matched]
+            properties:
+              glob:
+                type: string
+              matched:
+                type: integer
+        error:
+          type: string
+          nullable: true
+    MapChip:
+      type: object
+      required: [id, name, reaches]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        reaches:
+          type: array
+          items:
+            type: string
+    Map:
+      type: object
+      required: [epoch, window, layers, entries]
+      properties:
+        epoch:
+          $ref: "#/components/schemas/Epoch"
+        window:
+          type: string
+          enum: ["1h", "24h", "7d"]
+        layers:
+          type: object
+          required: [shipped, global, exceptions]
+          properties:
+            shipped:
+              type: array
+              items:
+                $ref: "#/components/schemas/MapChip"
+            global:
+              type: array
+              items:
+                $ref: "#/components/schemas/MapChip"
+            exceptions:
+              type: array
+              items:
+                $ref: "#/components/schemas/MapChip"
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/MapEntry"
+    CatalogItem:
+      type: object
+      required: [name, summary, description, params, used_by, used_by_count]
+      properties:
+        name:
+          type: string
+        summary:
+          type: string
+        description:
+          type: string
+        params:
+          type: object
+        used_by:
+          type: array
+          items:
+            type: string
+        used_by_count:
+          type: integer
+    Catalog:
+      type: object
+      required: [rulebooks, modules, packages, examples]
+      properties:
+        rulebooks:
+          type: array
+          items:
+            type: object
+            required: [kind, id, scope]
+            properties:
+              kind:
+                type: string
+                enum: [project, path, global]
+              id:
+                type: string
+              scope:
+                type: string
+        modules:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogItem"
+        packages:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogItem"
+        examples:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogItem"
+    RulebookSource:
+      type: object
+      required: [yaml, schema_id, digest, ref]
+      properties:
+        yaml:
+          type: string
+        schema_id:
+          type: string
+          nullable: true
+        digest:
+          type: string
+          pattern: "^sha256:[0-9a-f]{64}$"
+        ref:
+          type: string
+    Verdict:
+      type: string
+      enum: [allow, warn, deny]
+    Winner:
+      type: object
+      nullable: true
+      required: [verdict, rule, layer, overrides]
+      properties:
+        verdict:
+          $ref: "#/components/schemas/Verdict"
+        rule:
+          type: string
+        layer:
+          type: string
+          nullable: true
+        overrides:
+          type: array
+          items:
+            type: string
+    Composition:
+      type: object
+      required: [name, kind, status, digest, description, action_classes, own_rules, layers, rules, gates, freezes, winners]
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        status:
+          type: string
+        digest:
+          type: string
+          nullable: true
+        description:
+          type: string
+        action_classes:
+          type: array
+          items:
+            type: string
+        own_rules:
+          type: integer
+        layers:
+          type: array
+          items:
+            type: object
+            required: [id, name, rule_count, module_count, modules]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              rule_count:
+                type: integer
+              module_count:
+                type: integer
+              modules:
+                type: array
+                items:
+                  type: object
+                  required: [name, kind, params, rules]
+                  properties:
+                    name:
+                      type: string
+                    kind:
+                      type: string
+                    params:
+                      type: object
+                    rules:
+                      type: integer
+        rules:
+          type: array
+          items:
+            type: object
+            required: [id, layer, module, verdicts, applies_to, overrides, overridden_by, description, source, yaml]
+            properties:
+              id:
+                type: string
+              layer:
+                type: string
+              module:
+                type: string
+                nullable: true
+              verdicts:
+                type: object
+                required: [dev, test, prod]
+                properties:
+                  dev:
+                    type: string
+                    nullable: true
+                    enum: [allow, warn, deny]
+                  test:
+                    type: string
+                    nullable: true
+                    enum: [allow, warn, deny]
+                  prod:
+                    type: string
+                    nullable: true
+                    enum: [allow, warn, deny]
+              applies_to:
+                type: array
+                items:
+                  type: string
+              overrides:
+                type: array
+                items:
+                  type: string
+              overridden_by:
+                type: string
+                nullable: true
+              description:
+                type: string
+              source:
+                type: string
+              yaml:
+                type: string
+        gates:
+          type: array
+          items:
+            type: object
+            required: [id, transition, requirement, status]
+            properties:
+              id:
+                type: string
+              transition:
+                type: string
+              requirement:
+                type: string
+              status:
+                type: string
+                enum: [passing, failing, not_evaluated]
+        freezes:
+          type: array
+          items:
+            type: object
+            required: [id, env, start, end, reason, active]
+            properties:
+              id:
+                type: string
+              env:
+                type: string
+              start:
+                type: string
+                nullable: true
+              end:
+                type: string
+                nullable: true
+              reason:
+                type: string
+              active:
+                type: boolean
+        winners:
+          type: object
+          nullable: true
+          required: [dev, test, prod]
+          properties:
+            dev:
+              $ref: "#/components/schemas/Winner"
+            test:
+              $ref: "#/components/schemas/Winner"
+            prod:
+              $ref: "#/components/schemas/Winner"
+    History:
+      type: object
+      required: [commits]
+      properties:
+        commits:
+          type: array
+          items:
+            type: object
+            required: [sha, date, author, subject, tags]
+            properties:
+              sha:
+                type: string
+              date:
+                type: string
+              author:
+                type: string
+              subject:
+                type: string
+              tags:
+                type: array
+                items:
+                  type: string
+    HistoryDiff:
+      type: object
+      required: [from, to, changes]
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        changes:
+          type: array
+          items:
+            type: object
+            required: [kind, change, id, classification, summary, before, after]
+            properties:
+              kind:
+                type: string
+                enum: [module, rule, gate, freeze]
+              change:
+                type: string
+                enum: [added, removed, changed]
+              id:
+                type: string
+              classification:
+                type: string
+                enum: [tightening, loosening, neutral]
+              summary:
+                type: string
+              before:
+                type: string
+                nullable: true
+              after:
+                type: string
+                nullable: true
+    RefDigest:
+      type: object
+      nullable: true
+      required: [sha, policy_digest]
+      properties:
+        sha:
+          type: string
+        policy_digest:
+          type: string
+          nullable: true
+    Pipeline:
+      type: object
+      required: [projects]
+      properties:
+        projects:
+          type: array
+          items:
+            type: object
+            required: [id, repo, refs, drift, doctor, freezes, gate]
+            properties:
+              id:
+                type: string
+              repo:
+                type: string
+              refs:
+                type: object
+                required: [main, test, stable]
+                properties:
+                  main:
+                    $ref: "#/components/schemas/RefDigest"
+                  test:
+                    $ref: "#/components/schemas/RefDigest"
+                  stable:
+                    $ref: "#/components/schemas/RefDigest"
+              refs_error:
+                type: string
+              drift:
+                type: object
+                required: [packages]
+                properties:
+                  packages:
+                    type: integer
+              doctor:
+                type: object
+                required: [error, warning, info, findings]
+                properties:
+                  error:
+                    type: integer
+                  warning:
+                    type: integer
+                  info:
+                    type: integer
+                  findings:
+                    type: array
+                    items:
+                      type: object
+                      required: [severity, code, message]
+                      properties:
+                        severity:
+                          type: string
+                          enum: [error, warning, info]
+                        code:
+                          type: string
+                        message:
+                          type: string
+              freezes:
+                type: object
+                required: [active]
+                properties:
+                  active:
+                    type: integer
+              gate:
+                type: object
+                required: [status, requirements]
+                properties:
+                  status:
+                    type: string
+                    enum: [passing, failing]
+                  requirements:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, label, met]
+                      properties:
+                        id:
+                          type: string
+                        label:
+                          type: string
+                        met:
+                          type: boolean
+    Heatmap:
+      type: object
+      required: [window, projects, rules, no_rule, dead]
+      properties:
+        window:
+          type: string
+          enum: ["7d", "14d", "30d"]
+        projects:
+          type: array
+          items:
+            type: object
+            required: [id, envs]
+            properties:
+              id:
+                type: string
+              envs:
+                type: array
+                items:
+                  type: string
+        rules:
+          type: array
+          items:
+            type: object
+            required: [rule_id, layer, hits]
+            properties:
+              rule_id:
+                type: string
+              layer:
+                type: string
+              hits:
+                type: object
+                additionalProperties:
+                  type: integer
+        no_rule:
+          type: object
+          additionalProperties:
+            type: object
+            required: [count, top_action]
+            properties:
+              count:
+                type: integer
+              top_action:
+                type: string
+        dead:
+          type: array
+          items:
+            type: object
+            required: [rule_id, layer, projects, last_fired, added]
+            properties:
+              rule_id:
+                type: string
+              layer:
+                type: string
+              projects:
+                type: integer
+              last_fired:
+                type: string
+                nullable: true
+              added:
+                type: string
+                nullable: true
+    SessionRef:
+      type: object
+      required: [id, harness, badges]
+      properties:
+        id:
+          type: string
+        harness:
+          type: string
+          nullable: true
+        badges:
+          type: array
+          items:
+            type: string
+            enum: [current, pending, reload_needed, stale_briefing, untrusted_hook]
+    Sessions:
+      type: object
+      required: [epoch, window, sessions]
+      properties:
+        epoch:
+          $ref: "#/components/schemas/Epoch"
+        window:
+          type: string
+          enum: ["1h", "6h", "24h"]
+        sessions:
+          type: array
+          items:
+            type: object
+            required: [id, harness, agent_type, started, last_call, runtime_version, epoch, badges, projects]
+            properties:
+              id:
+                type: string
+              harness:
+                type: string
+                nullable: true
+              agent_type:
+                type: string
+                nullable: true
+              started:
+                type: string
+                nullable: true
+              last_call:
+                type: string
+                nullable: true
+              runtime_version:
+                type: string
+                nullable: true
+              epoch:
+                $ref: "#/components/schemas/Epoch"
+              badges:
+                type: array
+                items:
+                  type: string
+                  enum: [current, pending, reload_needed, stale_briefing, untrusted_hook]
+              projects:
+                type: array
+                items:
+                  type: object
+                  required: [id, policy_digest_seen, current_digest, in_step]
+                  properties:
+                    id:
+                      type: string
+                    policy_digest_seen:
+                      type: string
+                      nullable: true
+                    current_digest:
+                      type: string
+                      nullable: true
+                    in_step:
+                      type: boolean
+    Changes:
+      type: object
+      required: [changes]
+      properties:
+        changes:
+          type: array
+          items:
+            type: object
+            required: [id, ts, kind, actor, subject, effects, epoch_before, epoch_after, crossed, pending, flagged]
+            properties:
+              id:
+                type: string
+              ts:
+                type: string
+              kind:
+                type: string
+              actor:
+                type: string
+              subject:
+                type: object
+              effects:
+                type: array
+                items:
+                  type: object
+                  required: [class, scope]
+                  properties:
+                    class:
+                      type: string
+                    scope:
+                      type: string
+              epoch_before:
+                $ref: "#/components/schemas/Epoch"
+              epoch_after:
+                $ref: "#/components/schemas/Epoch"
+              crossed:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SessionRef"
+              pending:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SessionRef"
+              flagged:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SessionRef"
+    Judgment:
+      type: object
+      required: [schema, id, ts, action, targets, outcome]
+      properties:
+        schema:
+          type: string
+          enum: ["polispec.judgment/v1"]
+        id:
+          type: string
+          pattern: "^jdg_[0-9a-f]{12}$"
+        ts:
+          type: string
+        epoch:
+          $ref: "#/components/schemas/Epoch"
+        action:
+          type: object
+          required: [tool, harness, session_id]
+          properties:
+            tool:
+              type: string
+              nullable: true
+            harness:
+              type: string
+            session_id:
+              type: string
+              nullable: true
+        targets:
+          type: array
+          items:
+            type: object
+            required: [project, env, verdict, rule_id]
+            properties:
+              project:
+                type: string
+                nullable: true
+              env:
+                type: string
+              verdict:
+                $ref: "#/components/schemas/Verdict"
+              rule_id:
+                type: string
+                nullable: true
+        outcome:
+          type: object
+          required: [verdict]
+          properties:
+            verdict:
+              $ref: "#/components/schemas/Verdict"
+    Judgments:
+      type: object
+      required: [judgments]
+      properties:
+        judgments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Judgment"
+    IndexEntry:
+      type: object
+      required: [id, kind, status, owner, policy_digest]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        status:
+          type: string
+        owner:
+          $ref: "#/components/schemas/Owner"
+        description:
+          type: string
+          nullable: true
+        summary:
+          type: string
+          nullable: true
+        policy_digest:
+          type: string
+          nullable: true
+    ManifestIndex:
+      type: object
+      required: [user, host, generated_at, entries, published]
+      properties:
+        user:
+          type: string
+        host:
+          type: string
+        generated_at:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/IndexEntry"
+        published:
+          type: array
+          items:
+            type: object
+            required: [user, entries]
+            properties:
+              user:
+                type: string
+              host:
+                type: string
+                nullable: true
+              generated_at:
+                type: string
+                nullable: true
+              entries:
+                type: array
+                items:
+                  $ref: "#/components/schemas/IndexEntry"
+              error:
+                type: string
+    ManifestView:
+      type: object
+      required: [root, generated, authored]
+      properties:
+        root:
+          type: string
+          nullable: true
+        generated:
+          type: object
+          required: [schema, id, kind, owner, status, edition, enforce, environments, layers, roster, doctor]
+          properties:
+            schema:
+              type: string
+            id:
+              type: string
+            kind:
+              type: string
+            owner:
+              $ref: "#/components/schemas/Owner"
+            status:
+              type: string
+            edition:
+              type: string
+            enforce:
+              type: string
+            environments:
+              type: object
+              additionalProperties:
+                type: object
+                required: [ref, policy_digest, last_promotion]
+                properties:
+                  ref:
+                    type: string
+                    nullable: true
+                  policy_digest:
+                    type: string
+                    nullable: true
+                  last_promotion:
+                    type: string
+                    nullable: true
+            layers:
+              type: array
+              items:
+                type: object
+                required: [name, kind, modules, packages]
+                properties:
+                  name:
+                    type: string
+                  kind:
+                    type: string
+                  modules:
+                    type: array
+                    items:
+                      type: string
+                  packages:
+                    type: array
+                    items:
+                      type: string
+            roster:
+              type: array
+              items:
+                type: object
+                required: [role]
+                properties:
+                  role:
+                    type: string
+            doctor:
+              type: object
+              required: [error, warning, info, findings]
+              properties:
+                error:
+                  type: integer
+                warning:
+                  type: integer
+                info:
+                  type: integer
+                findings:
+                  type: array
+                  items:
+                    type: object
+                    required: [severity, code, message]
+                    properties:
+                      severity:
+                        type: string
+                      code:
+                        type: string
+                      message:
+                        type: string
+        authored:
+          type: object
+          nullable: true
+          required: [path, text, valid, findings]
+          properties:
+            path:
+              type: string
+            text:
+              type: string
+            valid:
+              type: boolean
+            findings:
+              type: array
+              items:
+                type: object
+                required: [severity, code, message]
+                properties:
+                  severity:
+                    type: string
+                  code:
+                    type: string
+                  message:
+                    type: string
+    Layout:
+      type: object
+      required: [positions]
+      properties:
+        positions:
+          type: object
+          additionalProperties:
+            type: object
+            required: [x, y]
+            properties:
+              x:
+                type: number
+              y:
+                type: number
 security:
   - cookie: []
