@@ -18,6 +18,7 @@ input="$(head -c 8388609 2>/dev/null || true)"
 self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
 state="${XDG_STATE_HOME:-$HOME/.local/state}/polispec"
 if [ -n "${POLISPEC_STATE_HOME:-}" ] && [ ! -e /etc/polispec/active.json ]; then state="$POLISPEC_STATE_HOME"; fi
+export POLISPEC_GUARD_PATH="$self_dir/polispec-guard"
 skip() {
   key=""
   { IFS= read -r key || true; } < "$state/fastpath.txt"

@@ -3,6 +3,7 @@
 
 require "json"
 require_relative "../native_settings"
+require_relative "../changes"
 
 module Polispec
   class SettingsCommand
@@ -110,9 +111,11 @@ module Polispec
         return 1
       end
       value = NativeSettings.coerce(key, raw)
+      before = Changes.epoch
       data = NativeSettings.read
       data[key] = value
       file = NativeSettings.write(data)
+      Changes.record(kind: "settings.set", subject: { "key" => key }, epoch_before: before)
       puts "set #{key} = #{value} in #{file}"
       overriding = overriding_source(key)
       puts "note: #{overriding} overrides this file for #{key}" if overriding
@@ -126,9 +129,11 @@ module Polispec
         warn SEALED
         return 1
       end
+      before = Changes.epoch
       data = NativeSettings.read
       data.delete(key)
       file = NativeSettings.write(data)
+      Changes.record(kind: "settings.set", subject: { "key" => key }, epoch_before: before)
       puts "unset #{key} in #{file}"
       0
     end
