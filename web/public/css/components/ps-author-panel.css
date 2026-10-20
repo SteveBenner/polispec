@@ -1,0 +1,311 @@
+ps-author-panel {
+  display: block;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+ps-author-panel .author-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: var(--space-2);
+}
+
+ps-author-panel .author-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-sm);
+}
+
+ps-author-panel .author-tabs-host {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+ps-author-panel .author-tabs [role="tabpanel"] {
+  display: none;
+}
+
+ps-author-panel .author-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-xs);
+  color: var(--text-dim);
+}
+
+ps-author-panel .author-tags {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
+ps-author-panel .author-state {
+  flex: none;
+  color: var(--text-dim);
+}
+
+ps-author-panel .author-thread-wrap {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 160px;
+}
+
+ps-author-panel .author-thread {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  padding-block: var(--space-1);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+ps-author-panel .author-jump {
+  position: absolute;
+  inset-block-end: var(--space-2);
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  border-radius: var(--radius-pill);
+}
+
+ps-author-panel .author-person {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: var(--text-md);
+  line-height: var(--lh-md);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+ps-author-panel .author-assistant {
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--text-md);
+  line-height: var(--lh-md);
+  overflow-wrap: anywhere;
+}
+
+ps-author-panel .author-assistant p {
+  margin: 0 0 var(--space-2);
+  max-width: none;
+}
+
+ps-author-panel .author-assistant :is(p, li):last-child {
+  margin-bottom: 0;
+}
+
+ps-author-panel .author-list {
+  margin: 0 0 var(--space-2);
+  padding-inline-start: var(--space-4);
+  list-style: disc;
+}
+
+ps-author-panel .author-code {
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+ps-author-panel .author-assistant code {
+  padding-inline: var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+ps-author-panel .author-caret {
+  display: inline-block;
+  width: 0.6em;
+  height: 1em;
+  margin-inline-start: 2px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+}
+
+ps-author-panel .author-quiet {
+  color: var(--text-dim);
+}
+
+ps-author-panel .author-trace {
+  min-width: 0;
+}
+
+ps-author-panel .author-trace-row {
+  min-width: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 var(--border-w) var(--border);
+}
+
+ps-author-panel .author-trace-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--row);
+  padding: 0 var(--space-2);
+  background: transparent;
+  color: var(--text);
+  text-align: start;
+  cursor: pointer;
+}
+
+ps-author-panel .author-trace-toggle:hover {
+  background: var(--row-hover);
+}
+
+ps-author-panel .author-trace-toggle .num {
+  flex: none;
+  white-space: nowrap;
+}
+
+ps-author-panel .author-trace-target {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+ps-author-panel .author-trace-detail {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-top: var(--border-w) solid var(--border);
+}
+
+ps-author-panel .author-trace-detail .author-code {
+  margin: 0;
+}
+
+ps-author-panel .author-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 3px 0 0 var(--danger), inset 0 0 0 var(--border-w) var(--border);
+}
+
+ps-author-panel .author-error > .ps-icon {
+  flex: none;
+  margin-top: var(--space-1);
+  color: var(--danger);
+}
+
+ps-author-panel .author-error-body {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+ps-author-panel .author-error-body p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+ps-author-panel .author-notice {
+  color: var(--text-dim);
+  text-align: center;
+}
+
+ps-author-panel .author-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+ps-author-panel .author-draft {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+ps-author-panel .author-draft-title {
+  font-weight: var(--weight-medium);
+  overflow-wrap: anywhere;
+}
+
+ps-author-panel .author-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+ps-author-panel .author-rationale {
+  margin: 0;
+  max-width: none;
+}
+
+ps-author-panel .author-rationale[data-clamped="true"] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
+}
+
+ps-author-panel .author-more {
+  justify-self: start;
+  min-height: var(--control-xs);
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+ps-author-panel .author-composer {
+  position: sticky;
+  inset-block-end: 0;
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--surface);
+  border-top: var(--border-w) solid var(--border);
+}
+
+ps-author-panel .author-composer-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+ps-author-panel .author-composer-row ps-button[hidden] {
+  display: none;
+}
+
+ps-author-panel .author-rate {
+  margin: 0;
+  color: var(--text);
+}
+
+ps-side-panel .ps-body:has(> ps-author-panel) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+ps-side-panel .ps-body > ps-author-panel {
+  flex: 1 1 auto;
+  height: auto;
+}
