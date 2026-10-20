@@ -42,7 +42,7 @@ module Polispec
       pause = Engine::Pauses.active(ledger, project.id)
       windows = %w[promote.to_stable desk.dispatch].flat_map { |scope| Freeze.active(loaded.policy, scope, project: project) }
       entry.merge(
-        "policy_source" => loaded.source, "policy_digest" => loaded.digest, "finding" => loaded.finding || semantic_finding(loaded, project, ledger),
+        "policy_source" => loaded.source, "policy_digest" => loaded.digest, "finding" => loaded.finding || semantic_finding(loaded, project, ledger) || unreachable_finding(loaded),
         "pause" => pause, "freezes" => windows.map(&:to_h), "pending_allow_once" => pending(ledger, project.id),
         "deployments" => deployments(project.id)
       )
@@ -53,6 +53,13 @@ module Polispec
 
       problems = Operator::Gates.health_required_errors(loaded.policy) + Operator::Gates.env_names_errors(loaded.policy) + ValidateProfiles.errors(loaded.policy, project, ledger: ledger)
       problems.empty? ? nil : { "kind" => "policy_invalid", "detail" => problems.join("; ") }
+    end
+
+    def unreachable_finding(loaded)
+      return nil if loaded.source == "defaults" || !loaded.policy.is_a?(Hash)
+
+      problems = Operator::Gates.unreachable_errors(loaded.policy)
+      problems.empty? ? nil : { "kind" => "gate_unreachable", "detail" => problems.join("; ") }
     end
 
     def deployments(project_id)

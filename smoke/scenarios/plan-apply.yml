@@ -42,12 +42,12 @@ steps:
     run: ["{{polispec}}", apply, environment-control, --repo, "{{scratch}}/fresh", --variant, service, --commit]
     expect:
       exit: 1
-      stderr_includes: ["already_applied: environment-control 1.0.0 is already applied to fresh"]
+      stderr_includes: ["already_applied: environment-control 1.1.0 is already applied to fresh"]
   - name: status records the package for the new project
     run: ["{{polispec}}", status, fresh]
     expect:
       exit: 0
-      stdout_includes: ["fresh: onboarding trust_ref=stable", "package environment-control 1.0.0 (service)"]
+      stdout_includes: ["fresh: onboarding trust_ref=stable", "package environment-control 1.1.0 (service)"]
   - name: an unknown package is refused
     run: ["{{polispec}}", plan, no-such-package, --repo, "{{scratch}}/fresh"]
     expect:

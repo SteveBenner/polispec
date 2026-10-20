@@ -82,7 +82,7 @@ module Polispec
       def scenarios
         files = Dir.glob(File.join(scenario_dir, "*.yml")).sort
         files.concat(Dir.glob(File.join(tree, "smoke", "live", "*.yml")).sort) unless options.live.empty?
-        files.uniq { |path| File.expand_path(path) }.map do |path|
+        files.uniq { |path| File.realpath(path) }.map do |path|
           begin
             scenario = Scenario.load(path)
             { path: path, scenario: scenario, error: nil }

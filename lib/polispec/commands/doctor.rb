@@ -71,6 +71,7 @@ module Polispec
       findings << finding(project.id, loaded.finding["kind"], loaded.finding["detail"]) if loaded.finding
       defaults = loaded.source == "defaults"
       Operator::Gates.health_required_errors(loaded.policy).each { |message| findings << finding(project.id, "health_required", message) } unless defaults
+      Operator::Gates.unreachable_errors(loaded.policy).each { |message| findings << finding(project.id, "gate_unreachable", message) } unless defaults
       Layers.policy_errors(loaded.policy, project: project, ledger: ledger).each { |message| findings << finding(project.id, "layers_invalid", message) }
       roster = PolicySource.roster_digest(project)
       Polispec::ValidateProfiles.errors(loaded.policy, project, ledger: ledger).each { |detail| findings << finding(project.id, "profile_check", detail) } unless defaults

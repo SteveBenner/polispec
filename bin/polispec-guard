@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
 set -u
+read_tools=(read notebookread read_file view grep search_file_content read_many_files view_image)
+if [ "${1:-}" = "--read-tools" ]; then printf '%s\n' "${read_tools[@]}"; exit 0; fi
 mode="${1:-pretool}"
 [ "$#" -gt 0 ] && shift
 harness="${POLISPEC_HARNESS:-claude}"
@@ -11,7 +13,8 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 [ "$harness" = claude-code ] && harness=claude
-input="$(cat 2>/dev/null || true)"
+[ "$harness" = deepseek-tui ] && harness=deepseek
+input="$(head -c 8388609 2>/dev/null || true)"
 self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
 state="${XDG_STATE_HOME:-$HOME/.local/state}/polispec"
 if [ -n "${POLISPEC_STATE_HOME:-}" ] && [ ! -e /etc/polispec/active.json ]; then state="$POLISPEC_STATE_HOME"; fi
@@ -66,41 +69,74 @@ if [ -z "$bin" ]; then
   if usable "$data_home/current/bin/polispec"; then bin="$data_home/current/bin/polispec"; fi
 fi
 if [ -z "$bin" ] && [ -f "$self_dir/polispec" ] && [ -x "$self_dir/polispec" ]; then bin="$self_dir/polispec"; fi
-reason="polispec: the guard is unavailable and this command targets test or stable, a live service, or a release. Ask the user to run it."
-fallback() {
-  [ "$mode" = pretool ] || return 0
-  printf '%s' "$input" | grep -Eq '"tool_name" *: *"(Bash|shell|exec_command)"' || return 0
-  re='git[^|;&]*[[:space:]](push|merge|tag|reset)[^|;&]*[[:space:]]([^[:space:]|;&]*[/:])?(test|stable)([^[:alnum:]_-]|$)|systemctl|gh[[:space:]]+release'
-  if printf '%s' "$input" | grep -Eq "$re"; then
-    echo "polispec-guard: fallback matched a prod-shaped command; denied" >&2
-    if [ "$harness" = claude ]; then
-      printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"$reason\"}}"
-      return 0
-    fi
-    echo "$reason" >&2
-    exit 2
-  fi
-  return 0
-}
-if [ -z "$bin" ]; then
-  echo "polispec-guard: polispec binary not found; inline fallback applied" >&2
-  fallback
-  exit 0
+deadline="${POLISPEC_GUARD_DEADLINE:-8}"
+case "$deadline" in [1-9]) ;; *) deadline=8 ;; esac
+tool=""
+if [[ $input =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then tool="${BASH_REMATCH[1],,}"; fi
+read_call=0
+if [ "$mode" = pretool ]; then
+  for name in "${read_tools[@]}"; do
+    if [ "$tool" = "$name" ]; then read_call=1; break; fi
+  done
 fi
+deny_unavailable() {
+  decision=deny
+  if [ "$mode" != pretool ] || [ "$read_call" = 1 ]; then decision=pass; fi
+  session=""
+  if [[ $input =~ \"session_id\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then session="${BASH_REMATCH[1]}"; fi
+  safe_tool="${tool//[\\\"]/_}"
+  safe_session="${session//[\\\"]/_}"
+  safe_harness="${harness//[\\\"]/_}"
+  umask 077
+  TZ=UTC printf '{"ts":"%(%Y-%m-%dT%H:%M:%SZ)T","tool":"%s","session":"%s","harness":"%s","mode":"%s","cause":"%s","decision":"%s"}\n' -1 "$safe_tool" "$safe_session" "$safe_harness" "$mode" "$1" "$decision" >> "$state/launcher.jsonl" 2>/dev/null
+  [ "$decision" = pass ] && exit 0
+  case "$harness" in
+    claude | codex)
+      printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"[POLISPEC internal] guard unavailable; call denied."}}'
+      exit 0 ;;
+    hermes)
+      printf '%s\n' '{"action":"block","message":"[POLISPEC internal] guard unavailable; call denied."}'
+      exit 2 ;;
+    antigravity)
+      printf '%s\n' '{"decision":"deny","reason":"[POLISPEC internal] guard unavailable; call denied."}'
+      exit 0 ;;
+    pi | deepseek)
+      printf '%s\n' '{"decision":"block","reason":"[POLISPEC internal] guard unavailable; call denied."}'
+      exit 0 ;;
+  esac
+  echo "[POLISPEC internal] guard unavailable; call denied." >&2
+  exit 2
+}
+if [ -z "$bin" ]; then deny_unavailable no_binary; fi
 case "$mode" in
   pretool | session) ;;
   *) exit 0 ;;
 esac
-out="$(printf '%s' "$input" | "$bin" hook "$mode" --harness "$harness" 2>/dev/null)"
-rc=$?
+if command -v timeout >/dev/null 2>&1; then
+  out="$(printf '%s' "$input" | timeout -k 1 "$deadline" "$bin" hook "$mode" --harness "$harness" 2>/dev/null)"
+  rc=$?
+else
+  out="$(
+    set -m
+    "$bin" hook "$mode" --harness "$harness" 2>/dev/null < <(printf '%s' "$input") &
+    hp=$!
+    { sleep "$deadline"; kill -9 -- "-$hp" "$hp"; } >/dev/null 2>&1 &
+    wp=$!
+    wait "$hp"
+    hrc=$?
+    kill "$wp" >/dev/null 2>&1
+    exit "$hrc"
+  )"
+  rc=$?
+fi
 if [ "$rc" -eq 2 ] && [ "$mode" = pretool ] && [ "${out:0:1}" = "{" ]; then
   printf '%s\n' "$out"
   exit 2
 fi
-if [ "$rc" -ne 0 ]; then
-  echo "polispec-guard: polispec exited $rc; inline fallback applied" >&2
-  fallback
-  exit 0
-fi
+case "$rc" in
+  0) ;;
+  124 | 137 | 143) deny_unavailable timeout ;;
+  *) deny_unavailable "exit_$rc" ;;
+esac
 [ -n "$out" ] && printf '%s\n' "$out"
 exit 0

@@ -1,5 +1,6 @@
 require_relative "../harness_controls/language"
 require_relative "../harness_controls/lifecycle"
+require_relative "hook"
 
 module Polispec
   class HarnessCommand
@@ -53,7 +54,7 @@ module Polispec
         "effects" => HarnessControls::Language::EFFECTS,
         "predicates" => HarnessControls::Language::MATCH_KEYS,
         "pairs" => HarnessControls::Language::PAIRS.map { |pair, action| { "verb" => pair[0], "object" => pair[1], "action" => action } },
-        "limits" => { "input_bytes" => HarnessControls::Language::MAX_INPUT_BYTES, "controls" => 256, "hook_input_bytes" => 65_536, "hook_seconds" => 10 },
+        "limits" => { "input_bytes" => HarnessControls::Language::MAX_INPUT_BYTES, "controls" => 256, "hook_input_bytes" => HookCommand::INPUT_LIMIT, "hook_seconds" => HookCommand::HOOK_BUDGET },
         "examples" => [
           "when agent write file where path = \"/tmp/polispec-control-fixtures/*\" then deny because \"protect synthetic files\"",
           "when schedule \"*-*-* 04:30:00\" then verify ctl_example"

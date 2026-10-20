@@ -1,0 +1,24 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/hook pretool|session
+summary: one hook call composes each ledgered project's policy at most once however many paths the command names, gives the same verdict as the binary, and keeps nothing between calls
+fixture:
+  global: example
+  enforce: enforce
+  projects:
+    - { id: alpha, variant: service, status: live, checkouts: true }
+    - { id: bravo, variant: service, status: live, checkouts: true }
+    - { id: charlie, variant: service, status: live, checkouts: true }
+    - { id: delta, variant: service, status: live, checkouts: true }
+steps:
+  - name: a Bash payload names twenty absolute paths inside and outside the projects
+    run: [sh, -c, 'ruby -rjson -e ''inside = ARGV[1..4].flat_map { |root| %w[a b c].map { |n| File.join(root, "src", n) } }; outside = (1..10).map { |i| "/usr/share/polispec-memo/f#{i}" }; print JSON.generate("hook_event_name" => "PreToolUse", "tool_name" => "Bash", "tool_input" => { "command" => "ls " + (inside + outside).join(" ") + "; echo x > " + File.join(ARGV[5], "app.rb") }, "cwd" => ARGV[1], "session_id" => "memo")'' "$1" "$2" "$3" "$4" "$5" "$6" > "$1/payload.json"', sh, "{{files}}", "{{project.alpha}}", "{{project.bravo}}", "{{project.charlie}}", "{{project.delta}}", "{{checkout.alpha.stable}}"]
+    expect: { exit: 0 }
+  - name: the in-process hook composes each project at most once
+    run: [sh, -c, "ruby -I\"$1/lib\" -e 'require \"polispec\"; require \"polispec/cli\"; require \"polispec/commands/hook\"; require \"stringio\"; n = 0; Polispec::Layers.singleton_class.prepend(Module.new { define_method(:compose) { |*a, **k, &b| n += 1; super(*a, **k, &b) } }); $stdin = StringIO.new(File.read(ARGV[0])); status = Polispec::CLI.run(%w[hook pretool --harness claude]); File.write(ARGV[1], n.to_s); exit(status.to_i)' \"$2/payload.json\" \"$2/count.txt\" > \"$2/$3.out\"; rc=$?; test \"$rc\" = 0 || exit 1; n=$(cat \"$2/count.txt\"); test \"$n\" -ge 1 && test \"$n\" -le 4", sh, "{{tree}}", "{{files}}", first]
+    expect: { exit: 0 }
+  - name: the binary gives the same verdict as the in-process hook
+    run: [sh, -c, '"$1" hook pretool --harness claude < "$2/payload.json" > "$2/binary.out" && cmp "$2/first.out" "$2/binary.out"', sh, "{{polispec}}", "{{files}}"]
+    expect: { exit: 0 }
+  - name: a second process composes again so nothing persists between calls
+    run: [sh, -c, "ruby -I\"$1/lib\" -e 'require \"polispec\"; require \"polispec/cli\"; require \"polispec/commands/hook\"; require \"stringio\"; n = 0; Polispec::Layers.singleton_class.prepend(Module.new { define_method(:compose) { |*a, **k, &b| n += 1; super(*a, **k, &b) } }); $stdin = StringIO.new(File.read(ARGV[0])); status = Polispec::CLI.run(%w[hook pretool --harness claude]); File.write(ARGV[1], n.to_s); exit(status.to_i)' \"$2/payload.json\" \"$2/count.txt\" > \"$2/$3.out\"; rc=$?; test \"$rc\" = 0 || exit 1; n=$(cat \"$2/count.txt\"); test \"$n\" -ge 1 && test \"$n\" -le 4", sh, "{{tree}}", "{{files}}", second]
+    expect: { exit: 0 }

@@ -76,7 +76,8 @@ module Polispec
         case kind
         when "policy"
           health = Operator::Gates.health_required_errors(data).map { |message| Schema::Error.new("/environments", message) }
-          health + Layers.policy_errors(data, file: file).map { |message| Schema::Error.new("/layers", message) }
+          unreachable = Operator::Gates.unreachable_errors(data).map { |message| Schema::Error.new("/promotion", message) }
+          health + unreachable + Layers.policy_errors(data, file: file).map { |message| Schema::Error.new("/layers", message) }
         when "global", "module"
           Layers.document_errors(kind, data, file).map { |message| Schema::Error.new("/layers", message) }
         else
