@@ -43,6 +43,8 @@ module Polispec
       attr_reader :id, :app, :by, :argv, :project, :started_at
 
       def self.project_of(argv)
+        return "global" if argv.first == "exceptions"
+
         skip = false
         argv.drop(1).each do |item|
           if skip
