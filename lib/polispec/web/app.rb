@@ -6,6 +6,9 @@ require "ipaddr"
 require "roda"
 require_relative "../delegate"
 require_relative "../delegate/grants"
+require_relative "../effect"
+require_relative "../description"
+require_relative "../registration"
 require_relative "auth"
 
 module Polispec
@@ -13,6 +16,7 @@ module Polispec
     class App < Roda
       CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
       SAFE = %w[GET HEAD].freeze
+      COMPUTE = %w[lint explain explain-text blast-radius].freeze
       MAX_BODY = 2 * 1024 * 1024
       MIME = {
         ".html" => "text/html; charset=utf-8",
@@ -110,10 +114,12 @@ module Polispec
           "epoch" => epoch,
           "theme" => Engine::Settings.web_theme,
           "operator" => Engine::Settings.operator,
+          "owner" => Registration.owner,
+          "home" => Dir.home,
           "flags" => {
             "author" => author_flag,
             "feed" => { "enabled" => true, "reason" => nil },
-            "description" => { "allowed" => true, "reason" => nil },
+            "description" => description_flag,
             "delegate" => delegate_flag
           }
         }
@@ -122,11 +128,20 @@ module Polispec
       private
 
       def epoch
-        return nil unless defined?(Polispec::Effect) && Polispec::Effect.respond_to?(:current)
-
-        Polispec::Effect.current
+        Polispec::Effect.epoch
       rescue StandardError
         nil
+      end
+
+      def description_flag
+        strict = Engine::Settings.description_strict?
+        if Polispec::Description.ahead_of_runtime?
+          { "allowed" => false, "reason" => "the installed release is older than 0.34.0; readers of a rulebook with a description would reject it", "strict" => strict }
+        else
+          { "allowed" => true, "reason" => nil, "strict" => strict }
+        end
+      rescue StandardError
+        { "allowed" => false, "reason" => "the description state could not be read", "strict" => false }
       end
 
       def author_flag
@@ -216,6 +231,8 @@ module Polispec
         fail!(405, "read_only", "polispec web is running read-only") if Web.context.read_only && group && group.mutating
         fail!(403, "forbidden", "the CSRF header is missing or wrong") unless Auth.equal?(r.env["HTTP_X_POLISPEC_CSRF"], @current_session.csrf)
         fail!(403, "forbidden", "the Origin is not this server") unless allowed_origin?(r.env["HTTP_ORIGIN"])
+        return if COMPUTE.include?(path.split("/")[1].to_s)
+
         granted, wait = auth.take_mutation(@current_session)
         return if granted
 
