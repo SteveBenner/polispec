@@ -1,0 +1,39 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.index/v1
+title: Polispec published index
+type: object
+additionalProperties: false
+required: [schema, user, host, generated_at, entries]
+properties:
+  schema: { const: polispec.index/v1 }
+  user: { type: string, minLength: 1 }
+  host: { type: string, minLength: 1 }
+  generated_at: { type: string, minLength: 1 }
+  entries:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [id, kind, status, owner, description, summary, policy_digest]
+      properties:
+        id: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }
+        kind: { enum: [project, path] }
+        status: { enum: [onboarding, live, retired] }
+        owner:
+          anyOf:
+            - { type: "null" }
+            - { $ref: "#/$defs/owner" }
+        description: { type: [string, "null"] }
+        summary: { type: [string, "null"] }
+        policy_digest:
+          anyOf:
+            - { type: "null" }
+            - { type: string, pattern: "^sha256:[0-9a-f]{64}$" }
+$defs:
+  owner:
+    type: object
+    additionalProperties: false
+    required: [uid, name]
+    properties:
+      uid: { type: [integer, "null"] }
+      name: { type: string, minLength: 1 }
