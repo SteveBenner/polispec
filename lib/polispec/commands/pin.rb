@@ -3,6 +3,7 @@
 
 require "json"
 require_relative "../native_pin"
+require_relative "../changes"
 
 module Polispec
   class PinCommand
@@ -16,7 +17,10 @@ module Polispec
       options = parse(args)
       return usage unless options
 
+      before = options[:dry_run] ? nil : Changes.epoch
+      previous = options[:dry_run] ? nil : current_release
       result = NativePin.pin!(ref: options[:ref], source: options[:source], dry_run: options[:dry_run])
+      record_change(result, before, previous) unless options[:dry_run]
       if options[:json]
         puts JSON.generate(result.reject { |key, _| %w[steps notes].include?(key) })
       else
@@ -26,6 +30,17 @@ module Polispec
     end
 
     private
+
+    def current_release
+      File.realpath(NativePin.current_link)
+    rescue SystemCallError
+      nil
+    end
+
+    def record_change(result, before, previous)
+      Changes.record(kind: "pin", subject: { "tag" => result["ref"], "commit" => result["commit"] }, epoch_before: before,
+                     details: { "old_release" => previous, "new_release" => result["release"], "runtime_dir" => result["release"] })
+    end
 
     def parse(args)
       options = { ref: nil, source: nil, dry_run: false, json: false }

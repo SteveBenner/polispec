@@ -3,6 +3,7 @@
 
 require_relative "../operator/gates"
 require_relative "../operator/promote"
+require_relative "../changes"
 
 module Polispec
   module Commands
@@ -17,7 +18,9 @@ module Polispec
         target = extract_target(args)
         return usage unless args.length == 1 && target
 
+        before = dry_run ? nil : Changes.epoch
         result = Polispec::Operator::Promote.call(args.first, to: target, dry_run: !dry_run.nil?, waive_soak: !waive_soak.nil?)
+        record_change(result, before) unless dry_run
         json ? puts(JSON.generate(result)) : print_text(result)
         0
       rescue Polispec::Operator::Failure => e
@@ -29,6 +32,21 @@ module Polispec
       end
 
       private
+
+      def record_change(result, before)
+        Changes.record(kind: "promote", subject: { "project" => result["project"], "env" => result["to"], "tag" => result["tag"], "sha" => result["to_sha"] },
+                       epoch_before: before, details: { "project" => result["project"], "files" => session_files(result) })
+      end
+
+      def session_files(result)
+        project = Ledger.load.project(result["project"])
+        return [] unless project && project.trust_ref == result["to"] && result["from_sha"].to_s.match?(/\A[0-9a-f]{40,64}\z/) && result["from_sha"].to_s.count("0") != result["from_sha"].to_s.length
+
+        out, status = Open3.capture2(Polispec::Operator::Git.env, "git", "-C", File.expand_path(project.repo), "diff", "--name-only", result["from_sha"], result["to_sha"], err: File::NULL)
+        status.success? ? out.lines.map(&:strip) : []
+      rescue StandardError
+        []
+      end
 
       def extract_target(args)
         inline = args.find { |arg| arg.start_with?("--to=") }

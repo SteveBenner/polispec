@@ -1,0 +1,31 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.session/v1
+title: Polispec session record
+type: object
+additionalProperties: false
+required: [schema, ts, session_id, harness, event, agent_type, cwd, project, epoch, text_digest, launcher]
+properties:
+  schema: { const: polispec.session/v1 }
+  ts: { type: string, minLength: 1 }
+  session_id: { type: [string, "null"] }
+  harness: { type: string, minLength: 1 }
+  event: { enum: [SessionStart, SubagentStart] }
+  agent_type: { type: [string, "null"] }
+  cwd: { type: [string, "null"] }
+  project: { type: [string, "null"] }
+  epoch:
+    anyOf:
+      - { type: "null" }
+      - { type: string, pattern: "^ep_[0-9a-f]{16}$" }
+  text_digest:
+    anyOf:
+      - { type: "null" }
+      - { type: string, pattern: "^[0-9a-f]{64}$" }
+  launcher:
+    type: object
+    additionalProperties: false
+    required: [kind, version, path]
+    properties:
+      kind: { enum: [claude-plugin, codex-bridge, native, unknown] }
+      version: { type: [string, "null"] }
+      path: { type: [string, "null"] }

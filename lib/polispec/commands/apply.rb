@@ -3,6 +3,7 @@
 
 require_relative "../plan"
 require_relative "../stewardship"
+require_relative "../changes"
 
 module Polispec
   class ApplyCommand
@@ -38,7 +39,16 @@ module Polispec
         return 0
       end
       gate(plan, parsed.confirm)
-      send("apply_#{spec.kind}", plan, parsed)
+      before = Changes.epoch
+      status = send("apply_#{spec.kind}", plan, parsed)
+      record_change(spec, plan, before) if status == 0
+      status
+    end
+
+    def record_change(spec, plan, before)
+      files = Array(plan.data["files"]).select { |item| %w[add replace].include?(item["action"]) }.map { |item| item["path"] }
+      Changes.record(kind: "apply", subject: { "target" => plan.data["target"], "plan_id" => plan.plan_id }, epoch_before: before,
+                     details: { "project" => spec.kind == :project ? spec.id : nil, "files" => files })
     end
 
     def steward(parsed)

@@ -25,6 +25,16 @@ properties:
   exceptions:
     type: array
     items: { type: string, pattern: "^aex_[0-9a-f]{12}$" }
+  epoch: { type: string, pattern: "^ep_[0-9a-f]{16}$" }
+  exception_rows:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [row, entry]
+      properties:
+        row: { type: integer, minimum: -1 }
+        entry: { type: string, pattern: "^aex_[0-9a-f]{12}$" }
   relaxed:
     type: array
     items:
