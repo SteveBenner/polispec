@@ -273,7 +273,12 @@ web:
     exception_detail: "Per exception: scope, command glob, who added it, first and last use, hit count, sessions that used it; and the proposals inbox, whose promote relays the phrase through the delegate runner."
     plan_banner: "Before every apply: the effect classes of the plan and how many active sessions it reaches on the next call, at a new session, after /reload-plugins or after a trust review."
     feed: "Live judgments filtered by session, project or rule, streamed with server-sent events from the judgment stream."
-  themes: "One switcher with system, light, dark, apple-noir, apple-austere and tronwave; the neutral light and dark pair is the default for public users. Every surface is designed and reviewed by Chris across all six."
+  themes:
+    switcher: "One switcher: a click cycles system, light, dark, apple-noir, apple-austere and tronwave; a long press, right-click or Shift+Enter opens a list of all six."
+    default: system
+    fleet_exception: "rStack fleet.yml makes tronwave the default; polispec is public FOSS, so its first-visit default is system (the neutral light or dark pair following the OS, ink-blue accent #2456c9 light, #7fa3ff dark). Decided 2026-10-20."
+    canonical: { source: "~/rstack/themes (apple-noir.yml, apple-austere.yml, tronwave.yml)", themes: [apple-noir, apple-austere, tronwave] }
+    review: "Every surface is designed and reviewed by Chris across all six, as specified in specs/web-frontend.impl.yml."
   observability: "Starts, stops, applies and author sessions emit polispec.web through the events port; failures emit polispec.finding."
 author:
   summary: "Since 0.34.0 a polispec-owned port, author, drafts rulebooks and descriptions: draft(kind:, intent:, context:, session: nil) returns {yaml, rationale, adapter, session}. Every draft is validated and planned before a person sees it; nothing is applied by the port."
