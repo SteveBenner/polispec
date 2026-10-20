@@ -9,6 +9,7 @@ tags:
   - name: session
   - name: config
   - name: read
+  - name: write
   - name: state
 paths:
   /session:
@@ -102,6 +103,687 @@ paths:
           $ref: "#/components/responses/Error"
         "403":
           $ref: "#/components/responses/Error"
+  "/lint":
+    post:
+      tags:
+      - write
+      operationId: lint
+      summary: Validate a rulebook or a description and return findings with positions
+      parameters:
+      - &1
+        "$ref": "#/components/parameters/Csrf"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - kind
+              - yaml
+              properties:
+                kind:
+                  type: string
+                yaml:
+                  type: string
+                id:
+                  type: string
+      responses:
+        '200':
+          description: The findings.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/LintResult"
+        '400':
+          "$ref": "#/components/responses/Error"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+        '413':
+          "$ref": "#/components/responses/Error"
+  "/plans":
+    post:
+      tags:
+      - write
+      operationId: createPlan
+      summary: Create a plan for a replace, compose, reorder, regroup, move or status
+        change; a move returns two plans, destination first
+      parameters:
+      - *1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/PlanRequest"
+      responses:
+        '200':
+          description: The plan, or the two plans of a move.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - "$ref": "#/components/schemas/Plan"
+                - "$ref": "#/components/schemas/PlanSet"
+        '400':
+          "$ref": "#/components/responses/Error"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+        '404':
+          "$ref": "#/components/responses/Error"
+        '409':
+          "$ref": "#/components/responses/Error"
+        '422':
+          "$ref": "#/components/responses/Error"
+        '429':
+          "$ref": "#/components/responses/Error"
+  "/plans/{id}":
+    get:
+      tags:
+      - write
+      operationId: getPlan
+      summary: A plan created earlier by this server
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The plan.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Plan"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+        '404':
+          "$ref": "#/components/responses/Error"
+  "/plans/{id}/apply":
+    post:
+      tags:
+      - write
+      operationId: applyPlan
+      summary: Apply a plan through the same code as polispec apply; loosening, mixed,
+        global, status, move, reorder, regroup and ledger plans need confirm equal to
+        the plan id
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - *1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties:
+                confirm:
+                  type: string
+      responses:
+        '200':
+          description: The applied change.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ApplyResult"
+        '400':
+          "$ref": "#/components/responses/Error"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+        '404':
+          "$ref": "#/components/responses/Error"
+        '409':
+          "$ref": "#/components/responses/Error"
+        '422':
+          "$ref": "#/components/responses/Error"
+        '429':
+          "$ref": "#/components/responses/Error"
+  "/explain":
+    post:
+      tags:
+      - write
+      operationId: explain
+      summary: Judge a tool call per environment, or replay a recorded judgment
+      parameters:
+      - *1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/ExplainRequest"
+      responses:
+        '200':
+          description: The verdicts.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ExplainResult"
+        '400':
+          "$ref": "#/components/responses/Error"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+        '404':
+          "$ref": "#/components/responses/Error"
+        '422':
+          "$ref": "#/components/responses/Error"
+  "/explain-text":
+    post:
+      tags:
+      - write
+      operationId: explainText
+      summary: Resolve a deny message or a judgment id to its rule
+      parameters:
+      - *1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties:
+                text:
+                  type: string
+                judgment_id:
+                  type: string
+      responses:
+        '200':
+          description: The rule, or the tokens tried.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ExplainText"
+        '400':
+          "$ref": "#/components/responses/Error"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+        '404':
+          "$ref": "#/components/responses/Error"
+        '422':
+          "$ref": "#/components/responses/Error"
+  "/blast-radius":
+    post:
+      tags:
+      - write
+      operationId: blastRadius
+      summary: Replay recorded judgments against a draft
+      parameters:
+      - *1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - target
+              - change
+              properties:
+                target:
+                  type: object
+                  additionalProperties: true
+                change:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: The flips per project.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Blast"
+        '400':
+          "$ref": "#/components/responses/Error"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+        '404':
+          "$ref": "#/components/responses/Error"
+        '409':
+          "$ref": "#/components/responses/Error"
+        '422':
+          "$ref": "#/components/responses/Error"
+  "/register":
+    post:
+      tags:
+      - write
+      operationId: register
+      summary: 'Register a path, system or software entry: a dry run previews it, otherwise
+        the plan is returned and applied through /plans/{id}/apply'
+      parameters:
+      - *1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - path
+              properties:
+                path:
+                  type: string
+                kind:
+                  type: string
+                id:
+                  type: string
+                description:
+                  type: string
+                starter:
+                  type: object
+                  additionalProperties: true
+                dry_run:
+                  type: boolean
+      responses:
+        '200':
+          description: The dry run preview or the plan.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - "$ref": "#/components/schemas/RegisterDryRun"
+                - "$ref": "#/components/schemas/Plan"
+        '400':
+          "$ref": "#/components/responses/Error"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+        '409':
+          "$ref": "#/components/responses/Error"
+        '422':
+          "$ref": "#/components/responses/Error"
+        '429':
+          "$ref": "#/components/responses/Error"
+  "/exceptions":
+    get:
+      tags:
+      - read
+      operationId: listExceptions
+      summary: The exceptions in force with their use
+      responses:
+        '200':
+          description: The exceptions.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ExceptionList"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+  "/exceptions/proposals":
+    get:
+      tags:
+      - read
+      operationId: listExceptionProposals
+      summary: Exceptions the guard proposed
+      responses:
+        '200':
+          description: The proposals.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ExceptionProposals"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+  "/exceptions/{verb}":
+    post:
+      tags:
+      - write
+      operationId: runExceptionVerb
+      summary: Relay add, promote or remove to the delegate runner under the polispec-web
+        grant
+      parameters:
+      - name: verb
+        in: path
+        required: true
+        schema:
+          type: string
+      - *1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - args
+              properties:
+                args:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: The run id.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - run_id
+                properties:
+                  run_id:
+                    type: string
+        '400':
+          "$ref": "#/components/responses/Error"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+        '404':
+          "$ref": "#/components/responses/Error"
+        '409':
+          "$ref": "#/components/responses/Error"
+        '422':
+          "$ref": "#/components/responses/Error"
+        '429':
+          "$ref": "#/components/responses/Error"
+  "/runs/{id}":
+    get:
+      tags:
+      - write
+      operationId: getRun
+      summary: Output and state of a delegate run
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: offset
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: The run.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Run"
+        '400':
+          "$ref": "#/components/responses/Error"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+        '404':
+          "$ref": "#/components/responses/Error"
+  "/runs/{id}/phrase":
+    post:
+      tags:
+      - write
+      operationId: answerRun
+      summary: Offer the typed phrase to a waiting run
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - *1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - text
+              properties:
+                text:
+                  type: string
+      responses:
+        '200':
+          description: Whether the phrase was offered.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/PhraseResult"
+        '400':
+          "$ref": "#/components/responses/Error"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+        '404':
+          "$ref": "#/components/responses/Error"
+        '429':
+          "$ref": "#/components/responses/Error"
+  "/runs/{id}/cancel":
+    post:
+      tags:
+      - write
+      operationId: cancelRun
+      summary: Cancel a running or waiting run
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - *1
+      responses:
+        '200':
+          description: Cancelled.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ok"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+        '404':
+          "$ref": "#/components/responses/Error"
+        '429':
+          "$ref": "#/components/responses/Error"
+  "/author/sessions":
+    post:
+      tags:
+      - write
+      operationId: openAuthorSession
+      summary: Open an author session for a rulebook
+      parameters:
+      - *1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - kind
+              properties:
+                kind:
+                  type: string
+                project:
+                  type: string
+                target_file:
+                  type: string
+                resume:
+                  type: string
+      responses:
+        '200':
+          description: The session.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/AuthorSession"
+        '400':
+          "$ref": "#/components/responses/Error"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+        '409':
+          "$ref": "#/components/responses/Error"
+        '422':
+          "$ref": "#/components/responses/Error"
+        '429':
+          "$ref": "#/components/responses/Error"
+  "/author/sessions/{sid}":
+    delete:
+      tags:
+      - write
+      operationId: closeAuthorSession
+      summary: Close an author session
+      parameters:
+      - name: sid
+        in: path
+        required: true
+        schema:
+          type: string
+      - *1
+      responses:
+        '200':
+          description: Closed.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ok"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+        '404':
+          "$ref": "#/components/responses/Error"
+        '429':
+          "$ref": "#/components/responses/Error"
+  "/author/sessions/{sid}/turns":
+    post:
+      tags:
+      - write
+      operationId: authorTurn
+      summary: Start a turn; events arrive on the stream
+      parameters:
+      - name: sid
+        in: path
+        required: true
+        schema:
+          type: string
+      - *1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - intent
+              properties:
+                intent:
+                  type: string
+                context:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '400':
+          "$ref": "#/components/responses/Error"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+        '404':
+          "$ref": "#/components/responses/Error"
+        '409':
+          "$ref": "#/components/responses/Error"
+        '429':
+          "$ref": "#/components/responses/Error"
+        '502':
+          "$ref": "#/components/responses/Error"
+        '202':
+          description: Accepted; the turn runs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - ok
+                - sid
+                properties:
+                  ok:
+                    type: boolean
+                  sid:
+                    type: string
+  "/author/sessions/{sid}/stop":
+    post:
+      tags:
+      - write
+      operationId: stopAuthorTurn
+      summary: Stop the running turn
+      parameters:
+      - name: sid
+        in: path
+        required: true
+        schema:
+          type: string
+      - *1
+      responses:
+        '200':
+          description: Stopped.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ok"
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+        '404':
+          "$ref": "#/components/responses/Error"
+        '429':
+          "$ref": "#/components/responses/Error"
+  "/author/sessions/{sid}/stream":
+    get:
+      tags:
+      - write
+      operationId: authorStream
+      summary: 'Server-sent events: delta, tool, status, draft, error, done and closed'
+      parameters:
+      - name: sid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: An event stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          "$ref": "#/components/responses/Error"
+        '403':
+          "$ref": "#/components/responses/Error"
+        '404':
+          "$ref": "#/components/responses/Error"
   /map:
     get:
       tags: [read]
@@ -567,7 +1249,7 @@ components:
           nullable: true
     Config:
       type: object
-      required: [version, edition, epoch, theme, operator, flags]
+      required: [version, edition, epoch, theme, operator, owner, home, flags]
       properties:
         version:
           type: string
@@ -583,6 +1265,10 @@ components:
           enum: [system, light, dark, apple-noir, apple-austere, tronwave]
         operator:
           type: string
+        owner:
+          $ref: "#/components/schemas/Owner"
+        home:
+          type: string
         flags:
           type: object
           required: [author, feed, description, delegate]
@@ -593,8 +1279,10 @@ components:
               $ref: "#/components/schemas/Flag"
             description:
               type: object
-              required: [allowed, reason]
+              required: [allowed, reason, strict]
               properties:
+                strict:
+                  type: boolean
                 allowed:
                   type: boolean
                 reason:
@@ -1488,5 +2176,667 @@ components:
                 type: number
               y:
                 type: number
+    Finding:
+      type: object
+      required:
+      - severity
+      - code
+      - message
+      properties:
+        severity:
+          type: string
+          enum:
+          - error
+          - warning
+          - info
+        code:
+          type: string
+        message:
+          type: string
+        line:
+          type: integer
+          nullable: true
+        col:
+          type: integer
+          nullable: true
+        end_line:
+          type: integer
+          nullable: true
+        end_col:
+          type: integer
+          nullable: true
+    LintResult:
+      type: object
+      required:
+      - findings
+      - schema_id
+      properties:
+        findings:
+          type: array
+          items:
+            "$ref": "#/components/schemas/Finding"
+        schema_id:
+          type: string
+          nullable: true
+        description:
+          type: object
+          required:
+          - sentences
+          - words
+          properties:
+            sentences:
+              type: integer
+            words:
+              type: integer
+    PlanRequest:
+      type: object
+      required:
+      - target
+      - change
+      properties:
+        target: &2
+          type: object
+          required:
+          - kind
+          - id
+          properties:
+            kind:
+              type: string
+            id:
+              type: string
+        change:
+          type: object
+          required:
+          - kind
+          properties:
+            kind:
+              type: string
+              enum:
+              - replace
+              - compose
+              - reorder
+              - regroup
+              - move
+              - status
+          additionalProperties: true
+    Plan:
+      type: object
+      required:
+      - plan_id
+      - target
+      - classification
+      - needs_confirm
+      - reasons
+      - files
+      - ledger
+      - policy_diff
+      - probes
+      - journal
+      - effects
+      - active_sessions
+      - operator_only
+      - applied
+      properties:
+        plan_id:
+          type: string
+          pattern: "^plan_[0-9a-f]{24}$"
+        target:
+          type: string
+        classification:
+          type: string
+          enum:
+          - tightening
+          - neutral
+          - loosening
+          - mixed
+        needs_confirm:
+          type: boolean
+        reasons:
+          type: array
+          items:
+            type: string
+        files:
+          type: array
+          items:
+            type: object
+            required:
+            - path
+            - action
+            - diff
+            - digest
+            properties:
+              path:
+                type: string
+              action:
+                type: string
+              diff:
+                type: string
+              digest:
+                type: string
+        ledger:
+          type: object
+          nullable: true
+          additionalProperties: true
+        policy_diff:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        probes:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        journal:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        effects:
+          type: object
+          required:
+          - next_call
+          - new_session
+          - reload
+          - trust
+          properties:
+            next_call: &1
+              type: object
+              required:
+              - affected
+              - count
+              - sessions
+              properties:
+                affected:
+                  type: boolean
+                count:
+                  type: integer
+                sessions:
+                  type: array
+                  items:
+                    type: string
+                scope:
+                  type: string
+            new_session: *1
+            reload: *1
+            trust: *1
+        active_sessions:
+          type: integer
+        notes:
+          type: array
+          items:
+            type: string
+        operator_only:
+          type: boolean
+        operator_command:
+          type: string
+        applied:
+          type: boolean
+        change_kind:
+          type: string
+        repo:
+          type: string
+        requires:
+          type: string
+    PlanSet:
+      type: object
+      required:
+      - plans
+      properties:
+        plans:
+          type: array
+          items:
+            "$ref": "#/components/schemas/Plan"
+    ApplyResult:
+      type: object
+      required:
+      - plan_id
+      - commit
+      - change_id
+      - epoch_before
+      - epoch_after
+      - committed
+      properties:
+        plan_id:
+          type: string
+        commit:
+          type: string
+          nullable: true
+        change_id:
+          type: string
+          nullable: true
+        epoch_before:
+          type: string
+          nullable: true
+        epoch_after:
+          type: string
+          nullable: true
+        committed:
+          type: array
+          items:
+            type: string
+        operator_command:
+          type: string
+    ExplainRequest:
+      type: object
+      required: []
+      properties:
+        tool:
+          type: string
+        input:
+          type: object
+          additionalProperties: true
+        cwd:
+          type: string
+        all_envs:
+          type: boolean
+        target: *2
+        judgment_id:
+          type: string
+    ExplainResult:
+      type: object
+      required: []
+      properties:
+        envs: &3
+          type: object
+          additionalProperties:
+            type: object
+            required:
+            - verdict
+            - rule
+            - layer
+            - overrides
+            - reason
+            - trace
+            properties:
+              verdict:
+                type: string
+              rule:
+                type: string
+                nullable: true
+              layer:
+                type: string
+                nullable: true
+              overrides:
+                type: array
+                items:
+                  type: string
+              reason:
+                type: string
+                nullable: true
+              trace:
+                type: array
+                items:
+                  type: object
+                  required: []
+                  properties:
+                    layer:
+                      type: string
+                      nullable: true
+                    rule:
+                      type: string
+                    matched:
+                      type: boolean
+                    verdict:
+                      type: string
+                    winner:
+                      type: boolean
+        entries:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - kind
+            - envs
+            properties:
+              id:
+                type: string
+              kind:
+                type: string
+              envs: *3
+        record:
+          type: object
+          required:
+          - id
+          properties:
+            id:
+              type: string
+            project:
+              type: string
+              nullable: true
+            env:
+              type: string
+              nullable: true
+            verdict:
+              type: string
+              nullable: true
+            rule:
+              type: string
+              nullable: true
+    ExplainText:
+      type: object
+      required:
+      - match
+      properties:
+        match:
+          type: boolean
+        judgment_id:
+          type: string
+          nullable: true
+        rule_id:
+          type: string
+        layer:
+          type: string
+          nullable: true
+        module:
+          type: string
+          nullable: true
+        verdict:
+          type: string
+        description:
+          type: string
+        source:
+          type: object
+          required: []
+          properties:
+            path:
+              type: string
+            line:
+              type: integer
+              nullable: true
+        way_forward:
+          type: string
+        draft_exception:
+          type: object
+          required: []
+          properties:
+            target: *2
+            yaml:
+              type: string
+        allow_once:
+          type: object
+          required: []
+          properties:
+            id:
+              type: string
+              nullable: true
+        tried:
+          type: array
+          items:
+            type: string
+    Blast:
+      type: object
+      required:
+      - days
+      - rows_replayed
+      - projects
+      properties:
+        days:
+          type: integer
+        rows_replayed:
+          type: integer
+        projects:
+          type: array
+          items:
+            type: object
+            required:
+            - project
+            - replayed
+            - stricter
+            - looser
+            - unchanged
+            properties:
+              project:
+                type: string
+              replayed:
+                type: integer
+              stricter:
+                type: integer
+              looser:
+                type: integer
+              unchanged:
+                type: integer
+              largest_flip:
+                type: string
+                nullable: true
+    RegisterDryRun:
+      type: object
+      required:
+      - ok
+      - findings
+      - owner
+      - registered_by
+      - preview
+      - plan
+      properties:
+        ok:
+          type: boolean
+        findings:
+          type: array
+          items:
+            "$ref": "#/components/schemas/Finding"
+        owner:
+          "$ref": "#/components/schemas/Owner"
+        registered_by:
+          type: string
+        preview:
+          type: object
+          required:
+          - yaml
+          properties:
+            yaml:
+              type: string
+        plan:
+          "$ref": "#/components/schemas/Plan"
+        starter:
+          type: object
+          additionalProperties: true
+    ExceptionList:
+      type: object
+      required:
+      - exceptions
+      - enabled
+      - problems
+      properties:
+        exceptions:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - kind
+            - tool
+            - scope
+            - hits
+            - sessions
+            properties:
+              id:
+                type: string
+              kind:
+                type: string
+              tool:
+                type: string
+              command:
+                type: string
+                nullable: true
+              rule:
+                type: string
+                nullable: true
+              scope:
+                type: object
+                additionalProperties: true
+              note:
+                type: string
+                nullable: true
+              added_by:
+                type: string
+                nullable: true
+              added:
+                type: string
+                nullable: true
+              first_use:
+                type: string
+                nullable: true
+              last_use:
+                type: string
+                nullable: true
+              hits:
+                type: integer
+              sessions:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - id
+                  - last_use
+                  - hits
+                  properties:
+                    id:
+                      type: string
+                    harness:
+                      type: string
+                      nullable: true
+                    last_use:
+                      type: string
+                    hits:
+                      type: integer
+        enabled:
+          type: boolean
+        problems:
+          type: array
+          items:
+            type: string
+    ExceptionProposals:
+      type: object
+      required:
+      - proposals
+      properties:
+        proposals:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - kind
+            - tool
+            - proposed_by
+            - reason
+            - ts
+            properties:
+              id:
+                type: string
+              kind:
+                type: string
+              tool:
+                type: string
+              command:
+                type: string
+                nullable: true
+              rule:
+                type: string
+                nullable: true
+              proposed_by:
+                type: string
+              reason:
+                type: string
+              ts:
+                type: string
+    Run:
+      type: object
+      required:
+      - run_id
+      - state
+      - exit_code
+      - offset
+      - data
+      - truncated
+      - prompt
+      properties:
+        run_id:
+          type: string
+        state:
+          type: string
+          enum:
+          - running
+          - waiting_phrase
+          - succeeded
+          - failed
+          - cancelled
+          - timed_out
+        exit_code:
+          type: integer
+          nullable: true
+        offset:
+          type: integer
+        data:
+          type: string
+        truncated:
+          type: boolean
+        prompt:
+          type: object
+          nullable: true
+          properties:
+            text:
+              type: string
+            phrase:
+              type: string
+        started_at:
+          type: string
+          nullable: true
+        ended_at:
+          type: string
+          nullable: true
+        change_id:
+          type: string
+          nullable: true
+    PhraseResult:
+      type: object
+      required:
+      - ok
+      properties:
+        ok:
+          type: boolean
+        code:
+          type: string
+        message:
+          type: string
+    Ok:
+      type: object
+      required:
+      - ok
+      properties:
+        ok:
+          type: boolean
+    AuthorSession:
+      type: object
+      required:
+      - sid
+      - kind
+      - roster
+      properties:
+        sid:
+          type: string
+        kind:
+          type: string
+        project:
+          type: string
+          nullable: true
+        target_file:
+          type: string
+          nullable: true
+        roster:
+          type: object
+          required: []
+          properties:
+            harness:
+              type: string
+              nullable: true
+            model:
+              type: string
+              nullable: true
+            effort:
+              type: string
+              nullable: true
 security:
   - cookie: []
