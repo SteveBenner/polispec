@@ -289,12 +289,20 @@ module Polispec
           "error" => entry.status == "live" && chain && layer.nil? ? "the path policy #{entry.policy} did not load" : nil }
       end
 
-      def shelf_file(relative)
+      NO_POLICY_NOTE = "no policy file yet; the baseline applies".freeze
+
+      def shelf_file(relative, missing_ok: false)
         store = Layers.store
         raise NotFound, "no global shelf is configured" unless store
 
         text = store.read(relative)
-        raise NotFound, "#{relative} is not in the global shelf" if text.nil?
+        note = nil
+        if text.nil?
+          raise NotFound, "#{relative} is not in the global shelf" unless missing_ok
+
+          text = ""
+          note = NO_POLICY_NOTE
+        end
 
         src = store.source
         ref = if src.kind == :repo
@@ -303,7 +311,22 @@ module Polispec
                 "dir"
               end
         { text: text, ref: ref.empty? ? src.ref.to_s : ref, repo: src.kind == :repo ? src.repo : nil, branch: src.kind == :repo ? src.ref : nil,
-          file: src.kind == :repo && !src.path.to_s.empty? ? "#{src.path}/#{relative}" : relative }
+          file: src.kind == :repo && !src.path.to_s.empty? ? "#{src.path}/#{relative}" : relative, note: note }
+      end
+
+      def project_ahead(project, repo)
+        trust = project.trust_ref.to_s
+        trust_sha = git(repo, "rev-parse", "--verify", "--quiet", "#{trust}^{commit}").to_s.strip
+        info = { "trust_ref" => trust_sha.empty? ? trust : "#{trust}@#{trust_sha}", "ahead" => 0, "ahead_files" => [] }
+        return info if trust_sha.empty? || trust == "main"
+
+        dir = File.dirname(project.policy)
+        scope = dir == "." ? [] : ["--", dir]
+        count = git(repo, "rev-list", "--count", "#{trust_sha}..main", *scope)
+        files = git(repo, "diff", "--name-only", trust_sha, "main", *scope)
+        info["ahead"] = count.to_i
+        info["ahead_files"] = files.to_s.lines.map(&:chomp).reject(&:empty?)
+        info
       end
 
       def rulebook_source_file(current, kind, id)
@@ -313,19 +336,19 @@ module Polispec
           raise NotFound, "no project #{id}" unless project
 
           repo = File.expand_path(project.repo)
-          [project.trust_ref, "main"].uniq.each do |branch|
+          ["main", project.trust_ref].uniq.each do |branch|
             text = git(repo, "show", "#{branch}:#{project.policy}")
             next if text.nil?
 
             sha = git(repo, "rev-parse", "--verify", "--quiet", "#{branch}^{commit}").to_s.strip
-            return { text: text, ref: "#{branch}@#{sha}", repo: repo, branch: branch, file: project.policy }
+            return { text: text, ref: "#{branch}@#{sha}", repo: repo, branch: branch, file: project.policy, project: project }
           end
-          raise NotFound, "#{project.policy} is not on #{project.trust_ref} in #{project.repo}"
+          raise NotFound, "#{project.policy} is not on main or #{project.trust_ref} in #{project.repo}"
         when "path"
           entry = current.path_entry(id)
           raise NotFound, "no path entry #{id}" unless entry
 
-          shelf_file(entry.policy)
+          shelf_file(entry.policy, missing_ok: true)
         when "global"
           raise NotFound, "the only global rulebook is global" unless id == "global"
 
@@ -346,7 +369,10 @@ module Polispec
         rescue StandardError
           nil
         end
-        { "yaml" => found[:text], "schema_id" => doc.is_a?(Hash) ? doc["schema"] : nil, "digest" => sha_text(found[:text]), "ref" => found[:ref] }
+        out = { "yaml" => found[:text], "schema_id" => doc.is_a?(Hash) ? doc["schema"] : nil, "digest" => sha_text(found[:text]), "ref" => found[:ref] }
+        out.merge!(project_ahead(found[:project], found[:repo])) if found[:project]
+        out["note"] = found[:note] if found[:note]
+        out
       end
 
       def catalog
@@ -467,7 +493,7 @@ module Polispec
           "layers" => layers.each_with_index.map { |layer, index| layer_row(layer, mods[index]) },
           "rules" => rules, "gates" => gate_rows(ctx), "freezes" => freeze_rows(ctx[:project], policy),
           "winners" => nil, "__side" => ctx[:side]
-        }
+        }.tap { |body| body["note"] = ctx[:note] if ctx[:note] }
       end
 
       def composition_context(current, kind, id)
@@ -507,12 +533,17 @@ module Polispec
         full = Layers.load(nil, nil, ledger: current)
         errors = []
         layers = full.layers.reject { |l| l.name.start_with?("path:") }
+        note = nil
         if entry
-          layer = Layers.path_layer(Layers.store, entry, errors)
-          unless layer
-            raise Invalid.new("the path policy did not load", errors.map { |m| { "code" => "path_invalid", "path" => entry.policy, "message" => m } })
+          if Layers.store.read(entry.policy).nil?
+            note = NO_POLICY_NOTE
+          else
+            layer = Layers.path_layer(Layers.store, entry, errors)
+            unless layer
+              raise Invalid.new("the path policy did not load", errors.map { |m| { "code" => "path_invalid", "path" => entry.policy, "message" => m } })
+            end
+            layers << layer
           end
-          layers << layer
         end
         chain = Layers::Chain.new(layers: layers, errors: full.errors, profile: nil, applied: full.applied)
         own = layers.find { |l| l.name == own_name }
@@ -520,7 +551,7 @@ module Polispec
         policy = { "freezes" => extras["freezes"], "promotion" => { "to_test" => { "gates" => extras["to_test"] }, "to_stable" => { "gates" => extras["to_stable"] } } }
         doc = entry ? nil : Layers.store&.global_doc
         { chain: chain, policy: policy, project: nil, status: entry ? entry.status : "live", digest: own&.digest, side: nil,
-          description: entry ? entry.description : (doc && doc["description"]), own: own, stores: [Layers.store, Layers.shipped_store] }
+          description: entry ? entry.description : (doc && doc["description"]), own: own, stores: [Layers.store, Layers.shipped_store], note: note }
       end
 
       def module_context(id)
@@ -703,14 +734,93 @@ module Polispec
         nil
       end
 
+      PIPELINE_THREADS = 4
+      PIPELINE_ROW_TTL = 60
+
+      @rows = {}
+      @rows_lock = Mutex.new
+
       def pipeline
         current = ledger
-        cached("pipeline", 10, epoch(current), current.digest) do
-          { "projects" => current.projects.reject { |p| p.status == "retired" }.map { |project| pipeline_row(current, project) } }
+        stamp = [epoch(current), current.digest]
+        projects = current.projects.reject { |p| p.status == "retired" }
+        findings = Lazy.new { Description.doctor_findings(current).group_by { |item| item["project"] } }
+        keyed = pipeline_map(projects) { |project| pipeline_lookup(project, stamp) }
+        misses = keyed.each_index.select { |index| keyed[index][:row].nil? }
+        unless misses.empty?
+          QUIET.synchronize do
+            computed = pipeline_map(misses) { |index| pipeline_store(current, projects[index], keyed[index], findings) }
+            misses.each_with_index { |index, at| keyed[index][:row] = computed[at] }
+          end
+        end
+        rows = keyed.map { |item| item[:row] }
+        @rows_lock.synchronize { @rows.keep_if { |id, _| projects.any? { |project| project.id == id } } }
+        { "projects" => rows }
+      end
+
+      class Lazy
+        def initialize(&block)
+          @block = block
+          @lock = Mutex.new
+          @done = false
+        end
+
+        def value
+          @lock.synchronize do
+            unless @done
+              @value = @block.call
+              @done = true
+            end
+            @value
+          end
         end
       end
 
-      def pipeline_row(current, project)
+      def pipeline_map(items)
+        results = Array.new(items.length)
+        queue = Queue.new
+        items.each_index { |index| queue << index }
+        workers = Array.new([PIPELINE_THREADS, items.length].min) do
+          Thread.new do
+            PolicySource.memoize do
+              loop do
+                index = begin
+                  queue.pop(true)
+                rescue ThreadError
+                  break
+                end
+                results[index] = yield(items[index])
+              end
+            end
+          end
+        end
+        workers.each(&:join)
+        results
+      end
+
+      def pipeline_fingerprint(project)
+        repo = File.expand_path(project.repo)
+        return "missing" unless File.directory?(repo)
+
+        listing = git(repo, "for-each-ref", "--format=%(objectname) %(refname)", "refs/heads", "refs/tags")
+        Digest::SHA256.hexdigest(listing.to_s)
+      end
+
+      def pipeline_lookup(project, stamp)
+        key = [project.id, project.repo, project.trust_ref, project.policy, pipeline_fingerprint(project), *stamp]
+        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        hit = @rows_lock.synchronize { @rows[project.id] }
+        row = hit && hit[:key] == key && now - hit[:at] < PIPELINE_ROW_TTL ? hit[:row] : nil
+        { key: key, at: now, row: row }
+      end
+
+      def pipeline_store(current, project, item, findings)
+        row = pipeline_row(current, project, findings)
+        @rows_lock.synchronize { @rows[project.id] = { key: item[:key], at: item[:at], row: row } }
+        row
+      end
+
+      def pipeline_row(current, project, findings = nil)
         repo = File.expand_path(project.repo)
         loaded = PolicySource.resolve(project, ledger: current)
         policy = loaded.policy
@@ -736,7 +846,7 @@ module Polispec
                 "doctor" => { "error" => 0, "warning" => 0, "info" => 0, "findings" => [] }, "freezes" => { "active" => 0 },
                 "gate" => { "status" => "passing", "requirements" => [] } }
         row["refs_error"] = "missing: #{missing.join(', ')}" unless missing.empty?
-        fill_doctor(row, current, project)
+        fill_doctor(row, current, project, findings)
         fill_freezes(row, project, policy)
         fill_gate(row, project, policy, refs)
         row
@@ -746,10 +856,11 @@ module Polispec
           "gate" => { "status" => "failing", "requirements" => [] } }
       end
 
-      def fill_doctor(row, current, project)
+      def fill_doctor(row, current, project, findings = nil)
         list = []
         DoctorCommand.new.send(:check_project, current, project, list)
-        list.concat(Description.doctor_findings(current).select { |item| item["project"] == project.id })
+        described = findings ? Array(findings.value[project.id]) : Description.doctor_findings(current).select { |item| item["project"] == project.id }
+        list.concat(described)
         row["drift"]["packages"] = list.count { |item| %w[package_upgrade_available package_file_drift].include?(item["kind"]) }
         list.each do |item|
           severity = { "warn" => "warning", "info" => "info" }.fetch(item["severity"].to_s, "error")

@@ -39,13 +39,16 @@ module Polispec
         "confirm_required" => [422, "confirm_required"], "plan_changed" => [409, "conflict"], "conflict" => [409, "conflict"],
         "unknown_project" => [404, "not_found"], "path_unknown" => [404, "not_found"], "unknown_entry" => [404, "not_found"],
         "unknown_plan" => [404, "not_found"], "not_on_main" => [409, "conflict"], "not_on_ref" => [409, "conflict"],
-        "already_applied" => [409, "conflict"], "project_retired" => [409, "conflict"], "already_retired" => [409, "conflict"],
+        "already_applied" => [409, "conflict"], "requires_destination" => [409, "conflict"], "base_moved" => [409, "conflict"], "project_retired" => [409, "conflict"], "already_retired" => [409, "conflict"],
         "sealed_authority" => [403, "sealed_authority"], "runtime_behind" => [409, "runtime_behind"], "edition_restricted" => [403, "disabled"], "invalid" => [422, "invalid"]
       }.freeze
 
+      CONFLICT_REASONS = %w[plan_changed already_applied requires_destination base_moved].freeze
+      CONFLICT_FALLBACK = { "not_on_main" => "base_moved", "not_on_ref" => "base_moved" }.freeze
+
       Target = Struct.new(:kind, :id, :project, :repo, :ref, :file, :schema_kind, :scope, keyword_init: true)
       Prepared = Struct.new(:spec, :target, :repo, :ref, :project_id, :force, :change_kind, :file, :label, :extra_files, keyword_init: true)
-      Record = Struct.new(:plan_id, :spec, :repo, :ref, :file, :project_id, :force, :change_kind, :requires, :applied, :data, :created, :target_label, :trust_ref, keyword_init: true)
+      Record = Struct.new(:plan_id, :spec, :repo, :ref, :file, :project_id, :force, :change_kind, :requires, :applied, :data, :created, :target_label, :trust_ref, :ahead, :base_blobs, keyword_init: true)
       Section = Struct.new(:header, :stop, :items, :inline)
 
       MONITOR = Monitor.new
@@ -89,6 +92,10 @@ module Polispec
             extra[key.to_sym] = value
           end
           extra[:reason] = code if kind == "disabled"
+          if status == 409 && kind == "conflict"
+            given = payload["reason"].to_s
+            extra[:reason] = CONFLICT_REASONS.include?(given) ? given : (CONFLICT_REASONS.include?(code) ? code : CONFLICT_FALLBACK.fetch(code, "plan_changed"))
+          end
           [status, kind, error.message, extra]
         end
 
@@ -156,8 +163,8 @@ module Polispec
           raise Operator::Failure.new("project_retired", "#{id} is retired") if project.status == "retired"
 
           repo = File.expand_path(project.repo)
-          ref = [project.trust_ref, "main"].uniq.find { |branch| !git_read(repo, "show", "#{branch}:#{project.policy}").nil? }
-          raise Operator::Failure.new("policy_missing", "#{project.policy} is not on #{project.trust_ref} in #{project.repo}") unless ref
+          ref = ["main", project.trust_ref].uniq.find { |branch| !git_read(repo, "show", "#{branch}:#{project.policy}").nil? }
+          raise Operator::Failure.new("policy_missing", "#{project.policy} is not on main or #{project.trust_ref} in #{project.repo}") unless ref
 
           Target.new(kind: "project", id: id, project: project, repo: repo, ref: ref, file: project.policy, schema_kind: "policy", scope: :project)
         end
@@ -293,7 +300,7 @@ module Polispec
           given = [base["digest"], base["etag"]].map { |item| item.to_s.delete('"') }.reject(&:empty?)
           return if given.empty? || given.include?(digest)
 
-          raise Operator::Failure.new("conflict", "#{target.kind}/#{target.id} changed since the draft was opened", "digest" => digest)
+          raise Operator::Failure.new("base_moved", "#{target.kind}/#{target.id} changed since the draft was opened", "digest" => digest)
         end
 
         def rule_ids(doc)
@@ -638,12 +645,30 @@ module Polispec
           end
         end
 
+        def main_blob(repo, path)
+          git_read(repo, "rev-parse", "--verify", "--quiet", "main:#{path}").to_s.strip
+        end
+
+        def base_blobs_of(prepared, data)
+          return nil unless prepared.spec.kind == :project && prepared.repo
+
+          Array(data["files"]).each_with_object({}) { |file, memo| memo[file["path"]] = main_blob(prepared.repo, file["path"]) }
+        end
+
+        def ahead_of(prepared)
+          project = prepared.target&.project
+          return nil unless project && prepared.spec.kind == :project
+
+          Views.project_ahead(project, prepared.repo)
+        end
+
         def build_record(prepared)
           plan = Plan.build(prepared.spec)
           data = plan.data
           Record.new(plan_id: data["plan_id"], spec: prepared.spec, repo: prepared.repo, ref: prepared.ref, file: prepared.file, project_id: prepared.project_id,
                      force: prepared.force || data["needs_confirm"] == true, change_kind: prepared.change_kind, requires: nil, applied: false, data: data,
-                     created: Time.now.to_i, target_label: data["target"], trust_ref: prepared.target&.project&.trust_ref)
+                     created: Time.now.to_i, target_label: data["target"], trust_ref: prepared.target&.project&.trust_ref,
+                     ahead: ahead_of(prepared), base_blobs: base_blobs_of(prepared, data))
         rescue StandardError
           drop_ref(prepared.repo, prepared.ref)
           raise
@@ -721,11 +746,14 @@ module Polispec
           reasons << "#{record.change_kind} changes need the plan id typed" if record.force && data["needs_confirm"] != true && !reasons.include?("#{record.change_kind} changes need the plan id typed")
           sessions = effects_payload(data["effects"], record.project_id)
           operator_only = sealed? && %w[ledger global].include?(record.spec.kind.to_s)
+          notes = data["notes"].dup
+          count = record.ahead ? record.ahead["ahead"].to_i : 0
+          notes << "main is #{count} commits ahead of #{record.ahead['trust_ref'].to_s.split('@').first}; this plan includes those changes" if count > 0
           out = {
             "plan_id" => record.plan_id, "target" => data["target"], "classification" => data["classification"], "needs_confirm" => needs, "reasons" => reasons,
             "files" => data["files"].map { |file| file.slice("path", "action", "diff", "digest") }, "ledger" => data["ledger"], "policy_diff" => data["policy_diff"],
             "probes" => data["probes"].map { |row| row.merge("env" => row["probe"].to_s[/\(([^()]+)\)\z/, 1]) }, "journal" => data["journal"],
-            "effects" => sessions, "active_sessions" => sessions.values.map { |entry| entry["count"] }.max.to_i, "notes" => data["notes"],
+            "effects" => sessions, "active_sessions" => sessions.values.map { |entry| entry["count"] }.max.to_i, "notes" => notes,
             "operator_only" => operator_only, "applied" => record.applied == true, "change_kind" => record.change_kind
           }
           out["operator_command"] = "polispec plane status" if operator_only
@@ -789,14 +817,14 @@ module Polispec
           synchronize do
             record = @records[plan_id.to_s]
             raise Operator::Failure.new("unknown_plan", "no plan #{plan_id}; create it again") unless record
-            raise Operator::Failure.new("conflict", "plan #{plan_id} is already applied") if record.applied
+            raise Operator::Failure.new("already_applied", "plan #{plan_id} is already applied") if record.applied
 
             if record.requires
               first = @records[record.requires]
-              raise Operator::Failure.new("conflict", "apply the destination plan #{record.requires} first", "plan_id" => record.requires) unless first && first.applied
+              raise Operator::Failure.new("requires_destination", "apply the destination plan #{record.requires} first", "plan_id" => record.requires) unless first && first.applied
             end
             gate!(record, confirm)
-            main_gate!(record)
+            base_gate_main!(record)
             if sealed? && %w[ledger global].include?(record.spec.kind.to_s)
               raise Operator::Failure.new("sealed_authority", "the sealed plane owns the global layer and the ledger; change the sealed source and reseal")
             end
@@ -805,18 +833,18 @@ module Polispec
           end
         end
 
-        def main_gate!(record)
-          return unless record.spec.kind == :project && record.trust_ref && record.trust_ref != "main"
+        def base_gate_main!(record)
+          return unless record.base_blobs
 
-          Array(record.data["files"]).each do |file|
-            next unless %w[add replace].include?(file["action"])
+          record.base_blobs.each do |path, blob|
+            next if main_blob(record.repo, path) == blob
 
-            on_main = git_read(record.repo, "show", "main:#{file['path']}")
-            on_trust = git_read(record.repo, "show", "#{record.trust_ref}:#{file['path']}")
-            next if on_main.nil? || on_main == on_trust || sha(on_main) == file["digest"]
-
-            raise Operator::Failure.new("conflict", "main holds unpromoted changes to #{file['path']}; promote or reconcile them before applying", "path" => file["path"])
+            raise Operator::Failure.new("plan_changed", "main changed #{path} after this plan was made; plan again", "path" => path)
           end
+          dirty = git_read(record.repo, "status", "--porcelain", "--", *record.base_blobs.keys).to_s.strip
+          return if dirty.empty?
+
+          raise Operator::Failure.new("base_moved", "the working tree of #{record.repo} holds uncommitted changes to the policy files; commit or discard them first", "path" => dirty.lines.first.to_s[3..].to_s.strip)
         end
 
         def run_apply(record)
