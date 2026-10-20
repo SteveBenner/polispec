@@ -354,7 +354,7 @@ module Polispec
             findings << finding("claude_version_unsupported", "The declared Claude version predates failure-closed onFailure:block support.", nil, "hook.pre_tool", "Upgrade Claude Code to 2.1.295 or later before treating the hook as failure closed.")
           end
           missing = missing_sandbox_executables
-          if Editions.included?("network.domain_allowlist", edition) && !missing.empty?
+          if Editions.included?("controls.sandbox_prerequisite_finding", edition) && !missing.empty?
             findings << finding("sandbox_unavailable", "Claude Code sandbox prerequisites are missing from PATH: #{missing.join(", ")}. The generated settings set sandbox.enabled and sandbox.failIfUnavailable, so Claude Code would refuse to start in this scope.", nil, "sandbox.prerequisites", "Install #{missing.join(" and ")} with the system package manager, then plan again.")
           end
           if scope != "managed"
