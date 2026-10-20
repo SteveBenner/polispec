@@ -34,6 +34,8 @@
 @import url("components/ps-palette.css") layer(components);
 @import url("components/ps-toaster.css") layer(components);
 @import url("components/ps-theme-switcher.css") layer(components);
+@import url("components/ps-plan-sheet.css") layer(components);
+@import url("components/ps-author-panel.css") layer(components);
 @import url("views/map.css") layer(views);
 @import url("views/detail.css") layer(views);
 @import url("views/pipeline.css") layer(views);
@@ -41,6 +43,7 @@
 @import url("views/timeline.css") layer(views);
 @import url("views/feed.css") layer(views);
 @import url("views/heatmap.css") layer(views);
+@import url("views/manager.css") layer(views);
 
 @layer flourish {
   [data-theme="apple-noir"] :is(h1, h2) {

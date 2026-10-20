@@ -5,6 +5,7 @@ require "json"
 require_relative "../registration"
 require_relative "../plan"
 require_relative "apply"
+require_relative "../changes"
 
 module Polispec
   class RegisterCommand
@@ -24,6 +25,7 @@ module Polispec
       return usage unless options[:rest].length == 1
 
       ledger = Ledger.load
+      before = options[:dry_run] ? nil : Changes.epoch
       target = options[:rest].first
       if unregister
         id = target
@@ -39,7 +41,9 @@ module Polispec
       apply = ["ledger", "--from", file]
       apply.push("--confirm", options[:confirm]) if options[:confirm]
       apply << "--json" if @json
-      ApplyCommand.run(apply)
+      status = ApplyCommand.run(apply)
+      Changes.record(kind: "register", subject: { "id" => id }, epoch_before: before) if status == 0
+      status
     rescue Packages::Usage, ArgumentError => e
       warn "polispec: #{e.message}"
       usage

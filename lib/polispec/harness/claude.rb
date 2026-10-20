@@ -30,6 +30,19 @@ module Polispec
       def render_deny(text, _rule_id = nil)
         render(Verdict.new(level: "deny", rule_id: "POLISPEC-INTERNAL", reason: text))
       end
+
+      def with_notice(output, text, event = nil)
+        return render_context(text, event) if output.nil? || output.to_s.strip.empty?
+
+        data = JSON.parse(output.to_s)
+        specific = data.is_a?(Hash) ? data["hookSpecificOutput"] : nil
+        return output unless specific.is_a?(Hash)
+
+        specific["additionalContext"] = [specific["additionalContext"], text].compact.join("\n")
+        JSON.generate(data)
+      rescue JSON::ParserError
+        output
+      end
     end
   end
 end

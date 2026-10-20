@@ -6,6 +6,7 @@ require_relative "../exceptions"
 require_relative "../harness_controls/plane"
 require_relative "../plan"
 require_relative "apply"
+require_relative "../changes"
 
 module Polispec
   class ExceptionsCommand
@@ -225,7 +226,10 @@ module Polispec
       ids = touched.map { |entry| entry["id"] }
       phrase = ids.empty? ? "exceptions #{label}" : "exceptions #{label} #{(label == 'promote' ? proposals : ids).join(' ')}"
       Operator::Tty.confirm!(phrase, prompt: prompt(label, touched, shown))
-      commit_change(source, Exceptions.dump(combined), verb, ids, proposals)
+      before = Changes.epoch
+      status = commit_change(source, Exceptions.dump(combined), verb, ids, proposals)
+      Changes.record(kind: "exceptions.#{label}", subject: { "entry_ids" => ids }, epoch_before: before) if status == 0
+      status
     end
 
     def prompt(label, touched, shown)
