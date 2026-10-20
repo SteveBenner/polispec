@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.34.0] - 2026-10-20
+
+### Added
+
+- `polispec.behavior/v2` (`schemas/behavior.v2.yml`), a superset of v1 selected by its schema id. Directives gain `scope`, `duplicate_of` and `body_ref: {path, sha256}`; a referenced body is checked against its hash at compile time and the compiled form carries `body_sha256`, never the text. New maps `surfaces`, `frames`, `antifeatures`, `controls`, `messages` and `overlays.cutout`. v1 files validate and compile byte for byte as before.
+- `polispec behavior render`, `drift` and `lint`. `render` writes a surface from its template; `drift` exits 1 when a generated target differs from its rendering; `lint` exits 1 when a sentence of 8 or more tokens restates a directive (0.8 token overlap) without naming it. `duplicate_of` exempts only the linked pair from each other.
+- `polispec behavior compile --root DIR`; the v2 compiled form `polispec.behavior.compiled/v2` adds a `surfaces` map with the sha256 of each generated surface, so a consumer without polispec can detect a hand-edited projection. Compile fails, naming the surface, when a surface cannot render.
+- `Polispec::Surfaces` (resolve, render, drift, lint, `when_matches?`) and `AgentsRender.directive_row`/`directive_rows`, which render any directive set in the `[OPCODE] rule d/x ⚙ enforce ⚡ [when]` row format.
+
 ## [0.33.2] - 2026-10-20
 
 ### Fixed

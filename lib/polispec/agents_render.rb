@@ -54,6 +54,15 @@ module Polispec
       "[ENVS] when developing this repo: it serves real users; dev is `#{envs['dev']['branch']}`, test is `#{envs['test']['branch']}`, prod is `#{envs['prod']['branch']}`; run `polispec resolve .` before writing and obey its verdict; table in #{BODY_PATH}   d/ENVS   ⚙ guard:polispec   ⚡ [always]"
     end
 
+    def directive_row(directive)
+      opcode = directive["opcode"] || directive["id"]
+      "[#{opcode}] #{directive['rule']}   d/#{opcode}   ⚙ #{directive['enforce']}   ⚡ [#{Array(directive['when']).join(', ')}]"
+    end
+
+    def directive_rows(directives)
+      directives.map { |directive| directive_row(directive) }
+    end
+
     def body(source)
       sections = [heading(source), table(source.environments), forbids(source.policy), promotion(source.policy), operators(source.environments), data(source.environments)]
       "#{sections.join("\n")}\n"
