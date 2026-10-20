@@ -296,6 +296,20 @@ slices:
     deliverable: "Exceptions verbs in grants and runner, refused under lock."
     acceptance:
       - "In scratch state with a TTY driven by script(1): grant polispec-web --verbs exceptions-add; a runner request [exceptions, add, --command, 'echo *', --global] reaches waiting_phrase with the exact phrase; a request with an extra flag is out_of_scope; under lock the grant is refused"
+  - id: B10-source-follow
+    wave: 2
+    depends_on: []
+    decision_by_sven: "2026-10-20: sourcing an env file stops every subagent with POLISPEC-TOOL-UNKNOWN; follow source and . like script files in 0.34.0, and close the same-line cp/mv rewrite gap for followed scripts."
+    owns_paths: [lib/polispec/classify/shell.rb, lib/polispec/classify/benign.rb, lib/polispec/classify/registry.rb, smoke/scenarios/source-follow.yml]
+    design: "specs/app.yml extension_points.script_files is the contract. Parser#finalize treats source and . with a static operand as a followed file: resolve it against @cwd, take the body from written_body or Shell.read_script with the same bounds and opaque cases as follow_script, parse it in place with a child whose final @vars and @cwd are copied back to the parent (sourcing runs in the current shell), and do not add the source command itself, so Benign::OPAQUE no longer sees it. On any opaque case keep today's behavior exactly: mark_opaque! and add the command, so opaque_commands still names it. Script gains the list of followed paths (both scripts and sourced files, expanded and realpath). After classification, where the registry has the line's write actions, a write action whose path equals a followed path or its realpath makes the line opaque (shape opaque_shell), for scripts and sourced files alike. Same behavior in both editions, as script_files; no settings."
+    acceptance:
+      - "In a scratch live fixture project (dev env): '. /abs/env.sh' and 'cd /abs && source ./env.sh' with env.sh holding only export lines get the verdict of the same export line written inline"
+      - "env.sh sets T to the fixture's protected dir; '. env.sh; rm -rf $T/x' classifies as the same fs.delete as 'T=... ; rm -rf $T/x' and gets its verdict"
+      - "A sourced file holding a deny-tier command gets the verdict of that command inline; nested source inside a sourced file is followed to MAX_DEPTH"
+      - "Still opaque (POLISPEC-TOOL-UNKNOWN, unchanged reason): dynamic operand, missing or unreadable file, a file over 1 MB, depth exhausted, 'echo x > env.sh; . env.sh', and eval"
+      - "Now opaque: 'cp a env.sh; . env.sh', 'mv a env.sh; . env.sh', 'sed -i s/a/b/ env.sh; . env.sh', 'cp evil.sh x.sh; bash x.sh' (the last one is a tightening of 0.32.1 behavior)"
+      - "Replay kit (scratchpad/replay, payloads.jsonl, run.rb with RPLUGIN_POLISPEC_POLISPEC_EDITION for lock) against /home/sven/github/foss/.polispec-wt/base-3103672 in both editions: every differing row is a source or . line now followed, or a same-line rewrite now opaque; list each with old and new verdict"
+      - "Full smoke suite passes; smoke/scenarios/source-follow.yml covers the cases above"
   - id: F0-F8-frontend
     wave: "F0 to F3 in wave 1 against the openapi contract; F4 to F8 in wave 2 after B7"
     spec: specs/web-frontend.impl.yml
