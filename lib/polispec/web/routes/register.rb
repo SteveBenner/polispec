@@ -16,10 +16,12 @@ module Polispec
       end
 
       def dry_run(body)
-        preview, record = Proposals.register_plan(body)
+        preview, record = Proposals.register_plan(body, dry: true)
         blocking = findings(preview[:description]).any? { |item| item["severity"] == "error" }
+        list = findings(preview[:description])
+        list << { "severity" => "warning", "code" => "runtime_behind", "message" => Registration.behind_note } if Registration.runtime_behind?
         out = {
-          "ok" => !blocking, "findings" => findings(preview[:description]), "owner" => Registration.owner,
+          "ok" => !blocking, "findings" => list, "owner" => Registration.owner,
           "registered_by" => Proposals.with_actor { Registration.actor }, "preview" => { "yaml" => preview[:yaml] }, "plan" => Proposals.present(record)
         }
         out["starter"] = { "applied" => false, "reason" => "a starter module is planned on the global shelf after the entry is registered" } if body["starter"]

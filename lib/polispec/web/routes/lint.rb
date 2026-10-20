@@ -98,8 +98,8 @@ module Polispec
         schema_kind = Schema.kind_for(doc) || KIND_MAP.fetch(kind, kind)
         findings = []
         if Schema.kinds.include?(schema_kind)
-          Schema.validate(schema_kind, doc).first(200).each do |error|
-            findings << finding("error", "schema", "#{error.pointer} #{error.message}".strip, position(root, error.pointer))
+          schema_errors(schema_kind, kind, body, text, doc).first(200).each do |error|
+            findings << finding("error", "schema", "#{error['pointer']} #{error['message']}".strip, position(root, error["pointer"]))
           end
         else
           findings << finding("error", "unknown_kind", "no schema kind #{kind}")
@@ -107,6 +107,19 @@ module Polispec
         out = { "findings" => findings, "schema_id" => Schema.kinds.include?(schema_kind) ? Schema.schema_id(schema_kind) : nil }
         description_findings(doc, schema_kind, root, findings, out)
         out
+      end
+
+      def schema_errors(schema_kind, kind, body, text, doc)
+        return Schema.validate(schema_kind, doc).map(&:to_h) unless schema_kind == "policy" && kind == "project"
+
+        if body["id"].is_a?(String)
+          begin
+            return Proposals.policy_errors(Proposals.project_target(body["id"]), text)
+          rescue Polispec::Error
+            nil
+          end
+        end
+        Schema.validate(schema_kind, doc).map(&:to_h).reject { |error| error["pointer"] == "/environments" }
       end
 
       def description_findings(doc, schema_kind, root, findings, out)
