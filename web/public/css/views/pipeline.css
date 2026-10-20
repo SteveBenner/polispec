@@ -1,0 +1,218 @@
+.pipeline .view-header ps-select {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pipeline .view-header ps-select > .ps-native {
+  width: auto;
+  min-width: 168px;
+}
+
+.pipeline .pl-chips {
+  display: inline-flex;
+  align-items: center;
+}
+
+.pipeline ps-data-table .ps-table-scroll {
+  max-height: calc(100dvh - var(--topbar-h) - 120px);
+}
+
+.pipeline ps-data-table tbody tr:not(.ps-detail):not(.ps-state-row):not(.ps-banner-row):not(.ps-spacer) > td {
+  height: 44px;
+}
+
+.pipeline ps-data-table :is(thead th, tbody td):nth-child(2) {
+  position: sticky;
+  inset-inline-start: 28px;
+  background-color: var(--surface);
+  z-index: 1;
+}
+
+.pipeline ps-data-table thead th:nth-child(2) {
+  z-index: calc(var(--z-sticky) + 1);
+}
+
+.pipeline ps-data-table tbody tr:hover > td:nth-child(2) {
+  background-image: linear-gradient(var(--row-hover), var(--row-hover));
+}
+
+.pipeline ps-data-table tbody tr[aria-current="true"] > td:nth-child(2) {
+  background-image: linear-gradient(var(--row-selected), var(--row-selected));
+}
+
+.pipeline ps-data-table .ps-detail > td:first-child {
+  background-color: var(--surface-2);
+}
+
+.pipeline .pl-env {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pipeline .pl-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.pipeline .pl-sha {
+  color: var(--text);
+}
+
+.pipeline .pl-missing {
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+}
+
+.pipeline .pl-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 16px;
+  padding-inline: var(--space-1);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text);
+}
+
+.pipeline .pl-ahead {
+  border: var(--border-w) solid var(--warn);
+}
+
+.pipeline .pl-ahead .ps-icon {
+  color: var(--warn);
+  width: 12px;
+  height: 12px;
+}
+
+.pipeline .pl-step {
+  color: var(--text-faint);
+}
+
+.pipeline .pl-doctor {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.pipeline .pl-count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.pipeline .pl-count[data-kind="error"] .ps-icon {
+  color: var(--danger);
+}
+
+.pipeline .pl-count[data-kind="warning"] .ps-icon {
+  color: var(--warn);
+}
+
+.pipeline .pl-count[data-kind="info"] .ps-icon {
+  color: var(--text-dim);
+}
+
+.pipeline .pl-freeze {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  width: 100%;
+}
+
+.pipeline .pl-freeze .ps-icon {
+  color: var(--text-dim);
+}
+
+.pipeline .pl-detail {
+  position: sticky;
+  inset-inline-start: var(--space-3);
+  display: grid;
+  gap: var(--space-3);
+  inline-size: min(100%, calc(100cqw - 28px - 2 * var(--space-3) - 2 * var(--gutter)));
+  min-inline-size: 280px;
+}
+
+.pipeline .pl-commands {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.pipeline .pl-half {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.pipeline .pl-lists {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.pipeline .pl-list {
+  min-width: 0;
+}
+
+.pipeline .pl-list-title {
+  margin-bottom: var(--space-1);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--weight-medium);
+}
+
+.pipeline .pl-rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pipeline .pl-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 24px;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.pipeline .pl-row[data-severity="error"] .ps-icon,
+.pipeline .pl-row[data-met="false"] .ps-icon {
+  color: var(--danger);
+}
+
+.pipeline .pl-row[data-severity="warning"] .ps-icon {
+  color: var(--warn);
+}
+
+.pipeline .pl-row[data-met="true"] .ps-icon {
+  color: var(--ok);
+}
+
+.pipeline .pl-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pipeline .pl-none {
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 767px) {
+  .pipeline .pl-commands,
+  .pipeline .pl-lists {
+    grid-template-columns: 1fr;
+  }
+}
