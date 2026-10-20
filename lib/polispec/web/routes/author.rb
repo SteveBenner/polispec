@@ -360,6 +360,7 @@ module Polispec
                 when "busy" then fail!(409, "busy", failure["message"], code: code)
                 when "unknown_session" then fail!(409, "conflict", failure["message"], code: code)
                 when "kill_switch", "edition_excluded" then disabled!(code)
+                when "port_unavailable", "adapter_shadowed", "unknown_adapter" then fail!(503, "unavailable", failure["message"], code: code, reason: code)
                 else fail!(502, "author_failed", failure["message"], code: code)
                 end
               end
