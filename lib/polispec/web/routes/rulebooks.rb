@@ -10,7 +10,7 @@ module Polispec
         data = view_call { Views.source(kind, id) }
         tag = %("#{data['digest']}")
         response["ETag"] = tag
-        if r.env["HTTP_IF_NONE_MATCH"].to_s.split(",").map(&:strip).include?(tag)
+        if kind != "project" && r.env["HTTP_IF_NONE_MATCH"].to_s.split(",").map(&:strip).include?(tag)
           response.status = 304
           r.halt
         end

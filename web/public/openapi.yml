@@ -1232,7 +1232,7 @@ components:
           type: string
         reason:
           type: string
-          description: Present when error is disabled.
+          description: Present when error is disabled (the flag reason) and on every 409 conflict, where it is plan_changed, already_applied, requires_destination or base_moved.
         findings:
           type: array
           items:
@@ -1251,8 +1251,11 @@ components:
           nullable: true
     Config:
       type: object
-      required: [version, edition, epoch, theme, operator, owner, home, flags]
+      required: [version, edition, epoch, theme, operator, owner, home, read_only, flags]
       properties:
+        read_only:
+          type: boolean
+          description: True when polispec web runs with --read-only and mounts no mutating route.
         version:
           type: string
         edition:
@@ -1453,6 +1456,20 @@ components:
       properties:
         yaml:
           type: string
+        trust_ref:
+          type: string
+          description: Project rulebooks only. The trust ref and its commit, as ref@sha.
+        ahead:
+          type: integer
+          description: Project rulebooks only. Commits on main, not on the trust ref, that touch the policy directory.
+        ahead_files:
+          type: array
+          description: Project rulebooks only. Paths in the policy directory that differ between the trust ref and main.
+          items:
+            type: string
+        note:
+          type: string
+          description: Present for a registered path with no policy file on the shelf yet.
         schema_id:
           type: string
           nullable: true
@@ -1461,6 +1478,7 @@ components:
           pattern: "^sha256:[0-9a-f]{64}$"
         ref:
           type: string
+          description: For a project, main@sha, since the editable text is main's.
     Verdict:
       type: string
       enum: [allow, warn, deny]
@@ -1493,6 +1511,9 @@ components:
         digest:
           type: string
           nullable: true
+        note:
+          type: string
+          description: Present for a registered path with no policy file on the shelf yet; the baseline applies.
         description:
           type: string
         action_classes:
