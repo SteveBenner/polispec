@@ -32,3 +32,4 @@ rules:
   - { id: TOOL-READ-READ-MANY-FILES, match: { tool: read_many_files, class: [tool.read] }, verdict: allow, overridable: true, reason: "read tool" }
   - { id: TOOL-READ-VIEW-IMAGE, match: { tool: view_image, class: [tool.read] }, verdict: allow, overridable: true, reason: "read tool" }
   - { id: TOOL-OPAQUE-DEVELOPMENT, match: { shape: [opaque_shell], in_development: true }, verdict: allow, overridable: true, reason: "an eval, source or . line in a project in development: every ledger project containing the directory is onboarding, and every command of the line runs in development or in no ledger project" }
+  - { id: G-WEB-AGENT, match: { shape: [web_local] }, verdict: warn, overridable: true, reason: "this call reaches the local polispec web app's mutating API; the person at the browser makes these changes" }

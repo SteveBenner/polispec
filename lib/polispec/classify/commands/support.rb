@@ -90,8 +90,16 @@ module Polispec
         false
       end
 
+      def web_secret_file?(path)
+        base = File.join(State.home, "web")
+        %w[launch.secret delegate.token].any? { |name| File.expand_path(path) == File.join(base, name) }
+      rescue StandardError
+        false
+      end
+
       def write_class(path, input = nil)
         return "policy.edit" if delegate_grants_file?(path)
+        return "policy.edit" if web_secret_file?(path)
         return "policy.edit" if exceptions_file?(path)
         return "policy.edit" if POLICY_PATH.match?(path) || ledger_file?(path) || ENVS_BODY.match?(path)
         return "fs.write" unless File.basename(path) == "AGENTS.md"
