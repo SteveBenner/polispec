@@ -63,6 +63,7 @@ class PsChip extends HTMLElement {
     const entry = KINDS[kind] && KINDS[kind][value];
     const text = this.getAttribute("label") || (entry ? entry.label : this.fallbackText);
     this.textContent = "";
+    this.hidden = kind === "tag" && !text;
     this.setAttribute("data-tone", entry ? entry.tone : "neutral");
     const wrap = entry && entry.command ? document.createElement("button") : document.createElement("span");
     wrap.className = "ps-chip-body";

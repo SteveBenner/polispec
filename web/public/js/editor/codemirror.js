@@ -67,6 +67,8 @@ const theme = cm.EditorView.theme({
     ...markerSurface,
     height: "100%",
     minHeight: "0",
+    minWidth: "0",
+    maxWidth: "100%",
     fontFamily: "var(--font-mono)",
     fontSize: "var(--text-sm)",
     lineHeight: "var(--lh-sm)",

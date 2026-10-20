@@ -145,7 +145,8 @@ class PsDataTable extends HTMLElement {
   }
 
   virtual() {
-    return this.state() === "ready" && this.items.length > VIRTUAL_THRESHOLD;
+    const above = Number(this.getAttribute("virtual-above")) || VIRTUAL_THRESHOLD;
+    return this.state() === "ready" && this.items.length > above;
   }
 
   state() {
@@ -463,6 +464,12 @@ class PsDataTable extends HTMLElement {
     const list = this.displayed || [];
     if (!list.length) return;
     this.selectedIndex = Math.max(0, Math.min(list.length - 1, index));
+    if (scroll && this.virtual()) {
+      const rowH = this.rowHeight();
+      const top = this.selectedIndex * rowH;
+      const view = this.scroller.scrollTop;
+      if (top < view || top + rowH > view + this.scroller.clientHeight) this.scroller.scrollTop = Math.max(0, top - 2 * rowH);
+    }
     this.renderBody();
     const tr = this.tbody.querySelector(`tr[data-index="${this.selectedIndex}"]`);
     if (tr && scroll) tr.scrollIntoView({ block: "nearest" });

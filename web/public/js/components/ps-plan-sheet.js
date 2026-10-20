@@ -208,6 +208,10 @@ function attachTable(host, spec, empty) {
   spec.table.rows = spec.rows;
 }
 
+function explainedConflict(error) {
+  return Boolean(error && error.reason && error.reason !== "plan_changed" && error.message);
+}
+
 class PsPlanSheet extends HTMLElement {
   connectedCallback() {
     if (this.dialog) return;
@@ -317,7 +321,14 @@ class PsPlanSheet extends HTMLElement {
     this.s.status = "error";
     this.s.error = error;
     this.bodyHost.replaceChildren();
-    if (error && error.kind === "conflict") {
+    if (error && error.kind === "conflict" && explainedConflict(error)) {
+      const state = document.createElement("ps-state");
+      state.setAttribute("kind", "error");
+      state.setAttribute("heading", "The plan could not be made");
+      state.setAttribute("body", error.message);
+      state.addEventListener("ps-retry", () => this.load());
+      this.bodyHost.append(state);
+    } else if (error && error.kind === "conflict") {
       const handled = !document.dispatchEvent(new CustomEvent("ps-plan-conflict", { cancelable: true, detail: { request: this.s.request } }));
       if (handled) {
         this.dialog.close();
@@ -593,7 +604,8 @@ class PsPlanSheet extends HTMLElement {
     if (status === "stale") {
       const banner = document.createElement("ps-banner");
       banner.setAttribute("severity", "danger");
-      banner.setAttribute("text", "This plan is out of date. Something changed after it was made.");
+      const own = explainedConflict(this.s.error);
+      banner.setAttribute("text", own ? this.s.error.message : "This plan is out of date. Something changed after it was made.");
       banner.setAttribute("action", "Plan again");
       banner.addEventListener("ps-action", () => this.load());
       notice.append(banner);
@@ -638,6 +650,7 @@ class PsPlanSheet extends HTMLElement {
     button.setAttribute("variant", "primary");
     button.setAttribute("size", "md");
     button.text = "Apply plan";
+    button.setAttribute("write", "");
     if (disabled) {
       button.setAttribute("disabled", "");
       if (reason) button.setAttribute("reason", reason);
@@ -665,6 +678,7 @@ class PsPlanSheet extends HTMLElement {
     button.setAttribute("variant", "primary");
     button.setAttribute("size", "md");
     button.setAttribute("busy-label", "Applying");
+    button.setAttribute("write", "");
     button.text = "Apply plan";
     if (busy) button.setAttribute("busy", "");
     button.addEventListener("click", () => this.apply(""));
@@ -882,6 +896,22 @@ export function planSheet() {
 export function openPlan(request, opener) {
   return planSheet().open(request, opener);
 }
+
+window.addEventListener(
+  "hashchange",
+  (event) => {
+    if (!singleton || !singleton.isConnected || !singleton.dialog || !singleton.dialog.open) return;
+    const confirm = singleton.footerHost.querySelector("ps-confirm");
+    const typing = Boolean(confirm && confirm.value.trim());
+    if (singleton.busy || (typing && !window.confirm("Leave this plan? What you typed is discarded."))) {
+      event.stopImmediatePropagation();
+      if (event.oldURL) history.replaceState(null, "", event.oldURL);
+      return;
+    }
+    singleton.dialog.close();
+  },
+  true,
+);
 
 document.addEventListener("ps-open-plan", (event) => {
   if (event.detail && event.detail.target) openPlan(event.detail, document.activeElement);

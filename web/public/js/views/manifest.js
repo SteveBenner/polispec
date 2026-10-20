@@ -29,6 +29,7 @@ function button(text, options = {}) {
   const node = document.createElement("ps-button");
   if (options.variant) node.setAttribute("variant", options.variant);
   if (options.size) node.setAttribute("size", options.size);
+  if (options.write) node.setAttribute("write", "");
   node.text = text;
   return node;
 }
@@ -256,7 +257,7 @@ class Manifest {
     pane.setAttribute("aria-label", "Generated manifest");
     let action = null;
     if (g.status === "onboarding") {
-      action = button("Make live", { size: "xs" });
+      action = button("Make live", { size: "xs", write: true });
       action.addEventListener("click", () => {
         openPlan({ target: { kind: "ledger", id: "ledger" }, change: { kind: "status", id: g.id || this.id, status: "live" } }, action);
       });

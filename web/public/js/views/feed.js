@@ -117,7 +117,7 @@ export async function render(container, params, signal) {
   verdictSeg.setAttribute("value", filters.verdict);
   verdictSeg.options = VERDICTS;
   const pauseToggle = document.createElement("ps-toggle");
-  pauseToggle.setAttribute("label", "Pause");
+  pauseToggle.setAttribute("label", "Hold");
   const announceToggle = document.createElement("ps-toggle");
   announceToggle.setAttribute("label", "Announce denies");
   if (getPref("feed.announce", false) === true) announceToggle.setAttribute("checked", "");
@@ -165,7 +165,7 @@ export async function render(container, params, signal) {
     },
     { key: "session", label: "Session", width: "112px", render: (row) => (row.tail ? "" : monoSpan(row.session, 12)) },
     { key: "project", label: "Project", width: "120px", render: (row) => (row.tail ? "" : monoSpan(row.project)) },
-    { key: "env", label: "Env", width: "48px", render: (row) => (row.tail ? "" : tagChip(row.env)) },
+    { key: "env", label: "Env", width: "48px", render: (row) => (row.tail ? "" : tagChip(row.env || (row.project ? "" : "global"))) },
     { key: "tool", label: "Tool", mono: true, render: (row) => (row.tail ? "" : monoSpan(row.tool)) },
     { key: "verdict", label: "Verdict", width: "80px", render: (row) => (row.tail ? "" : verdictChip(row.verdict)) },
     { key: "rule", label: "Rule", width: "160px", render: (row) => (row.tail ? "" : monoSpan(row.rule)) },
@@ -387,6 +387,7 @@ export async function render(container, params, signal) {
 
   function thawToTop() {
     pauseToggle.checked = false;
+    pauseToggle.setAttribute("label", "Hold");
     atTop = true;
     table.scroller.scrollTop = 0;
     draw();
@@ -399,7 +400,10 @@ export async function render(container, params, signal) {
     draw();
   });
   pillButton.addEventListener("click", thawToTop);
-  pauseToggle.addEventListener("ps-change", () => draw());
+  pauseToggle.addEventListener("ps-change", () => {
+    pauseToggle.setAttribute("label", pauseToggle.checked ? "Resume" : "Hold");
+    draw();
+  });
   announceToggle.addEventListener("ps-change", () => {
     setPref("feed.announce", announceToggle.checked);
     if (!announceToggle.checked) {

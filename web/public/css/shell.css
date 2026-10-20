@@ -226,6 +226,12 @@ ps-nav ps-tooltip {
     inset 0 -1px 0 var(--warn);
 }
 
+.ps-stage > ps-banner[data-banner="read-only"] {
+  box-shadow:
+    inset 3px 0 0 var(--accent),
+    inset 0 -1px 0 var(--border);
+}
+
 .view-header {
   display: flex;
   flex-wrap: wrap;

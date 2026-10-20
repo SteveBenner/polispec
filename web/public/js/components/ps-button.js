@@ -1,3 +1,5 @@
+import { app, readOnly, READ_ONLY_REASON } from "../core/store.js";
+
 const NS = "http://www.w3.org/2000/svg";
 
 function icon(name) {
@@ -13,10 +15,14 @@ function icon(name) {
 let sequence = 0;
 
 class PsButton extends HTMLElement {
-  static observedAttributes = ["icon", "label", "disabled", "busy", "busy-label", "reason", "type"];
+  static observedAttributes = ["icon", "label", "disabled", "busy", "busy-label", "reason", "type", "write"];
 
   connectedCallback() {
-    if (this.button) return;
+    if (this.button) {
+      this.watch();
+      this.update();
+      return;
+    }
     if (this.visibleText === undefined) this.visibleText = this.textContent.trim();
     sequence += 1;
     this.textContent = "";
@@ -43,12 +49,22 @@ class PsButton extends HTMLElement {
       },
       true,
     );
+    this.watch();
     this.update();
+  }
+
+  watch() {
+    if (this.unsubscribe) return;
+    this.unsubscribe = app.subscribe(() => {
+      if (this.hasAttribute("write")) this.update();
+    });
   }
 
   disconnectedCallback() {
     clearInterval(this.busyTimer);
     this.busyTimer = 0;
+    if (this.unsubscribe) this.unsubscribe();
+    this.unsubscribe = null;
   }
 
   attributeChangedCallback(name) {
@@ -71,7 +87,11 @@ class PsButton extends HTMLElement {
   }
 
   blocked() {
-    return this.hasAttribute("disabled") || this.hasAttribute("busy");
+    return this.hasAttribute("disabled") || this.hasAttribute("busy") || this.locked();
+  }
+
+  locked() {
+    return this.hasAttribute("write") && readOnly();
   }
 
   syncBusyTimer() {
@@ -85,7 +105,8 @@ class PsButton extends HTMLElement {
   update() {
     const busy = this.hasAttribute("busy");
     if (busy && !this.busyTimer) this.syncBusyTimer();
-    const disabled = this.hasAttribute("disabled");
+    const locked = this.locked();
+    const disabled = this.hasAttribute("disabled") || locked;
     const label = this.getAttribute("label");
     let text = this.visibleText;
     if (busy) {
@@ -112,7 +133,7 @@ class PsButton extends HTMLElement {
     else this.button.removeAttribute("aria-disabled");
     if (busy) this.button.setAttribute("aria-busy", "true");
     else this.button.removeAttribute("aria-busy");
-    const reason = this.getAttribute("reason");
+    const reason = locked ? READ_ONLY_REASON : this.getAttribute("reason");
     const tip = disabled && reason ? reason : !text && label ? label : "";
     if (tip) this.tooltip.setAttribute("text", tip);
     else this.tooltip.removeAttribute("text");

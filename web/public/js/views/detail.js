@@ -246,6 +246,7 @@ export async function render(container, params, signal) {
     rulesTable.classList.add("ps-rules-table");
     rulesTable.setAttribute("caption", "Rules");
     rulesTable.setAttribute("expandable", "");
+    rulesTable.setAttribute("virtual-above", "200");
     rulesTable.keyBy = "id";
     rulesPanel.append(rulesTable);
 

@@ -53,6 +53,17 @@ function stashStatic() {
   }
 }
 
+function showLoading() {
+  const section = document.createElement("section");
+  section.className = "view loading";
+  section.setAttribute("role", "status");
+  section.setAttribute("aria-label", "Loading");
+  const skeleton = document.createElement("ps-skeleton");
+  skeleton.setAttribute("lines", "4");
+  section.append(skeleton);
+  container.replaceChildren(section);
+}
+
 function renderFallback(title, message) {
   const section = document.createElement("section");
   const heading = document.createElement("h1");
@@ -68,6 +79,7 @@ async function renderRoute(route, params, signal, name) {
   if (route.static) {
     const element = staticViews.get(name);
     if (!element) throw new Error("No static view for " + name);
+    element.setAttribute("data-shown", "");
     container.replaceChildren(element);
     return;
   }
@@ -115,6 +127,7 @@ async function mount() {
 export function start(target) {
   container = target;
   stashStatic();
+  showLoading();
   window.addEventListener("hashchange", mount);
   return mount();
 }

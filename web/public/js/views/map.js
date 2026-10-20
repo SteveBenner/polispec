@@ -12,6 +12,7 @@ import { endpoints, get, put } from "../core/api.js";
 import { loadView, readView, getPref, setPref } from "../core/cache.js";
 import { currentRoute, navigate } from "../core/router.js";
 import { toast } from "../core/announce.js";
+import { readOnly } from "../core/store.js";
 import { buildModel } from "../map/layout.js";
 
 const WINDOWS = [
@@ -84,6 +85,7 @@ export async function render(container, params, signal) {
   const reset = document.createElement("ps-button");
   reset.setAttribute("variant", "ghost");
   reset.text = "Reset layout";
+  reset.setAttribute("write", "");
   reset.setAttribute("disabled", "");
   reset.setAttribute("reason", "No card has a saved position");
   const zoomGroup = node("div", "ps-map-zoom");
@@ -180,6 +182,7 @@ export async function render(container, params, signal) {
     state.saveTimer = 0;
     if (!state.pendingSave) return;
     state.pendingSave = false;
+    if (readOnly()) return;
     try {
       await put(endpoints.state("layout"), { positions: state.positions });
     } catch (error) {

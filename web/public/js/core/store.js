@@ -37,3 +37,10 @@ export function flag(name) {
 export function descriptionAllowed() {
   return flag("description");
 }
+
+export const READ_ONLY_REASON = "Read-only. This server was started with --read-only; changes are made from a terminal.";
+
+export function readOnly() {
+  const config = app.get().config;
+  return Boolean(config && config.read_only === true);
+}
