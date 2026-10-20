@@ -1,0 +1,35 @@
+schema: polispec.vendor/v1
+source: rubygems.org
+gems:
+  - name: rack
+    version: 3.1.22
+    license: MIT
+    license_file: MIT-LICENSE
+    sha256: db116c1462fd32dec8b942a808ebedd4e1dbf1fcd0b24c481ae32ee99ca1ebe0
+    released: "2026-08-13"
+    required_ruby_version: ">= 2.4.0"
+    files: [lib/, MIT-LICENSE]
+  - name: rackup
+    version: 2.2.1
+    license: MIT
+    license_file: license.md
+    sha256: f737191fd5c5b348b7f0a4412a3b86383f88c43e13b8217b63d4c8d90b9e798d
+    released: "2024-11-13"
+    required_ruby_version: ">= 2.5"
+    files: [lib/, license.md]
+  - name: roda
+    version: 3.108.0
+    license: MIT
+    license_file: MIT-LICENSE
+    sha256: a209acc5c885c7c9cfe703ad985b343026f79f67949932dd739b83e5a129ffbd
+    released: "2026-09-14"
+    required_ruby_version: ">= 1.9.2"
+    files: [lib/, MIT-LICENSE]
+  - name: webrick
+    version: 1.9.2
+    license: Ruby AND BSD-2-Clause
+    license_file: LICENSE.txt
+    sha256: beb4a15fc474defed24a3bda4ffd88a490d517c9e4e6118c3edce59e45864131
+    released: "2025-11-26"
+    required_ruby_version: ">= 2.4.0"
+    files: [lib/, LICENSE.txt]
