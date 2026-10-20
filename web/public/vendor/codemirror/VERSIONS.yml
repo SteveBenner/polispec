@@ -1,0 +1,26 @@
+bundle: codemirror.js
+format: esm
+sha256: 0c3065fd33417fd0508aacfb7f151a2b9aedeb49c7cc14047c4141dde7fe59b1
+bytes: 390383
+gzip_bytes: 127138
+built_with: {tool: esbuild, version: 0.28.2, flags: '--bundle --format=esm --minify --legal-comments=none --target=es2022'}
+entry: 'named re-exports of the packages below; the entry file is not committed'
+exports: [EditorState, Compartment, StateEffect, StateField, EditorSelection, EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, placeholder, Decoration, history, defaultKeymap, historyKeymap, undo, redo, foldGutter, foldKeymap, bracketMatching, syntaxHighlighting, HighlightStyle, indentOnInput, indentUnit, lintGutter, setDiagnostics, lintKeymap, search, searchKeymap, highlightSelectionMatches, yaml, tags]
+license_file: LICENSE
+packages:
+  - {package: '@codemirror/state', version: 6.7.6, license: MIT, direct: true}
+  - {package: '@codemirror/view', version: 6.43.13, license: MIT, direct: true}
+  - {package: '@codemirror/commands', version: 6.11.1, license: MIT, direct: true}
+  - {package: '@codemirror/language', version: 6.12.4, license: MIT, direct: true}
+  - {package: '@codemirror/lint', version: 6.9.7, license: MIT, direct: true}
+  - {package: '@codemirror/search', version: 6.7.2, license: MIT, direct: true}
+  - {package: '@codemirror/lang-yaml', version: 6.1.3, license: MIT, direct: true}
+  - {package: '@lezer/highlight', version: 1.2.5, license: MIT, direct: true}
+  - {package: '@codemirror/autocomplete', version: 6.20.3, license: MIT, direct: false}
+  - {package: '@lezer/common', version: 1.5.3, license: MIT, direct: false}
+  - {package: '@lezer/lr', version: 1.4.10, license: MIT, direct: false}
+  - {package: '@lezer/yaml', version: 1.0.4, license: MIT, direct: false}
+  - {package: '@marijn/find-cluster-break', version: 1.0.4, license: MIT, direct: false}
+  - {package: 'style-mod', version: 4.1.4, license: MIT, direct: false}
+  - {package: 'w3c-keyname', version: 2.2.8, license: MIT, direct: false}
+  - {package: 'crelt', version: 1.0.7, license: MIT, direct: false}
