@@ -82,6 +82,7 @@ module Polispec
       key = key.to_s
       return nil if key == "polispec.edition"
       return "POLISPEC_OPERATOR_NAME" if key == "polispec.operator"
+      return "POLISPEC_AUTHOR" if key == "polispec.author.enabled"
 
       "POLISPEC_#{key.sub(/\Apolispec\./, '').upcase.gsub(/[^A-Z0-9]+/, '_')}"
     end
