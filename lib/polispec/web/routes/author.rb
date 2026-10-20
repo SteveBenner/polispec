@@ -98,9 +98,17 @@ module Polispec
         end
       end
 
-      Body = Struct.new(:session, :start, :alive) do
+      class Body
+        def initialize(session, start, alive)
+          @session = session
+          @start = start
+          @alive = alive
+        end
+
         def call(stream)
-          index = start
+          session = @session
+          alive = @alive
+          index = @start
           beat = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           stream.write(": ready\n\n")
           loop do
@@ -373,7 +381,7 @@ module Polispec
               token = current_session.token
               start = r.env["HTTP_LAST_EVENT_ID"].to_s.match?(/\A\d{1,9}\z/) ? r.env["HTTP_LAST_EVENT_ID"].to_i : 0
               body = AuthorHub::Body.new(session, start, -> { !auth.lookup(token).nil? })
-              headers = response.headers.to_h.merge("Content-Type" => "text/event-stream", "Cache-Control" => "no-store", "X-Request-Id" => request_id, "X-Accel-Buffering" => "no")
+              headers = response.headers.to_h.merge("Content-Type" => "text/event-stream", "Cache-Control" => "no-store", "X-Request-Id" => request_id, "X-Accel-Buffering" => "no", "Content-Security-Policy" => App::CSP, "X-Content-Type-Options" => "nosniff", "Referrer-Policy" => "no-referrer")
               r.halt([200, headers, body])
             end
             fail!(405, "method_not_allowed", "unsupported method")
