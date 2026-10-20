@@ -1,0 +1,134 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/hook pretool|session
+summary: when polispec gives no verdict the launcher denies every non-read call with the harness's fixed reply, passes reads, stops waiting at its deadline, records each failure in launcher.jsonl, denies byte for byte what the Ruby hook denies, and the hook judges a 70 KiB write but denies one over 8 MiB with the size reason
+fixture:
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+steps:
+  - name: link the candidate binary and write a failing and a sleeping stand-in outside the launcher directory
+    run: [sh, -c, 'mkdir -p "$1/real" "$1/fail" "$1/slow" && ln -sfn "$2" "$1/real/polispec" && printf "#!/bin/sh\nexit 1\n" > "$1/fail/polispec" && printf "#!/bin/sh\nsleep 20\n" > "$1/slow/polispec" && chmod +x "$1/fail/polispec" "$1/slow/polispec"', sh, "{{files}}", "{{polispec}}"]
+    expect: { exit: 0 }
+  - name: a failing binary denies a Bash call for claude with the fixed reply and logs it
+    run: [sh, -c, "out=$(printf \"%s\" \"$3\" | \"$0\" pretool --harness \"$1\"); rc=$?; printf \"%s\\n\" \"$out\"; grep -q \"\\\"harness\\\":\\\"$2\\\",\\\"mode\\\":\\\"pretool\\\",\\\"cause\\\":\\\"$5\\\",\\\"decision\\\":\\\"$6\\\"\" \"$4\" || exit 9; exit $rc", "{{tree}}/bin/polispec-guard", claude, claude, "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-claude\"}", "{{scratch}}/state/launcher.jsonl", exit_1, deny]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    expect:
+      exit: 0
+      stdout_includes: ["\"permissionDecision\":\"deny\"","guard unavailable; call denied."]
+  - name: a failing binary denies a Bash call for claude-code with the fixed reply and logs it
+    run: [sh, -c, "out=$(printf \"%s\" \"$3\" | \"$0\" pretool --harness \"$1\"); rc=$?; printf \"%s\\n\" \"$out\"; grep -q \"\\\"harness\\\":\\\"$2\\\",\\\"mode\\\":\\\"pretool\\\",\\\"cause\\\":\\\"$5\\\",\\\"decision\\\":\\\"$6\\\"\" \"$4\" || exit 9; exit $rc", "{{tree}}/bin/polispec-guard", claude-code, claude, "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-claude-code\"}", "{{scratch}}/state/launcher.jsonl", exit_1, deny]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    expect:
+      exit: 0
+      stdout_includes: ["\"permissionDecision\":\"deny\"","guard unavailable; call denied."]
+  - name: a failing binary denies a Bash call for codex with the fixed reply and logs it
+    run: [sh, -c, "out=$(printf \"%s\" \"$3\" | \"$0\" pretool --harness \"$1\"); rc=$?; printf \"%s\\n\" \"$out\"; grep -q \"\\\"harness\\\":\\\"$2\\\",\\\"mode\\\":\\\"pretool\\\",\\\"cause\\\":\\\"$5\\\",\\\"decision\\\":\\\"$6\\\"\" \"$4\" || exit 9; exit $rc", "{{tree}}/bin/polispec-guard", codex, codex, "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-codex\"}", "{{scratch}}/state/launcher.jsonl", exit_1, deny]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    expect:
+      exit: 0
+      stdout_includes: ["\"permissionDecision\":\"deny\"","guard unavailable; call denied."]
+  - name: a failing binary denies a terminal call for hermes with the fixed reply and logs it
+    run: [sh, -c, "out=$(printf \"%s\" \"$3\" | \"$0\" pretool --harness \"$1\"); rc=$?; printf \"%s\\n\" \"$out\"; grep -q \"\\\"harness\\\":\\\"$2\\\",\\\"mode\\\":\\\"pretool\\\",\\\"cause\\\":\\\"$5\\\",\\\"decision\\\":\\\"$6\\\"\" \"$4\" || exit 9; exit $rc", "{{tree}}/bin/polispec-guard", hermes, hermes, "{\"hook_event_name\":\"pre_tool_call\",\"tool_name\":\"terminal\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-hermes\"}", "{{scratch}}/state/launcher.jsonl", exit_1, deny]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    expect:
+      exit: 2
+      stdout_includes: ["\"action\":\"block\"","guard unavailable; call denied."]
+  - name: a failing binary denies a Bash call for antigravity with the fixed reply and logs it
+    run: [sh, -c, "out=$(printf \"%s\" \"$3\" | \"$0\" pretool --harness \"$1\"); rc=$?; printf \"%s\\n\" \"$out\"; grep -q \"\\\"harness\\\":\\\"$2\\\",\\\"mode\\\":\\\"pretool\\\",\\\"cause\\\":\\\"$5\\\",\\\"decision\\\":\\\"$6\\\"\" \"$4\" || exit 9; exit $rc", "{{tree}}/bin/polispec-guard", antigravity, antigravity, "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-antigravity\"}", "{{scratch}}/state/launcher.jsonl", exit_1, deny]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    expect:
+      exit: 0
+      stdout_includes: ["\"decision\":\"deny\"","guard unavailable; call denied."]
+  - name: a failing binary denies a Bash call for pi with the fixed reply and logs it
+    run: [sh, -c, "out=$(printf \"%s\" \"$3\" | \"$0\" pretool --harness \"$1\"); rc=$?; printf \"%s\\n\" \"$out\"; grep -q \"\\\"harness\\\":\\\"$2\\\",\\\"mode\\\":\\\"pretool\\\",\\\"cause\\\":\\\"$5\\\",\\\"decision\\\":\\\"$6\\\"\" \"$4\" || exit 9; exit $rc", "{{tree}}/bin/polispec-guard", pi, pi, "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-pi\"}", "{{scratch}}/state/launcher.jsonl", exit_1, deny]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    expect:
+      exit: 0
+      stdout_includes: ["\"decision\":\"block\"","guard unavailable; call denied."]
+  - name: a failing binary denies a Bash call for deepseek with the fixed reply and logs it
+    run: [sh, -c, "out=$(printf \"%s\" \"$3\" | \"$0\" pretool --harness \"$1\"); rc=$?; printf \"%s\\n\" \"$out\"; grep -q \"\\\"harness\\\":\\\"$2\\\",\\\"mode\\\":\\\"pretool\\\",\\\"cause\\\":\\\"$5\\\",\\\"decision\\\":\\\"$6\\\"\" \"$4\" || exit 9; exit $rc", "{{tree}}/bin/polispec-guard", deepseek, deepseek, "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-deepseek\"}", "{{scratch}}/state/launcher.jsonl", exit_1, deny]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    expect:
+      exit: 0
+      stdout_includes: ["\"decision\":\"block\"","guard unavailable; call denied."]
+  - name: a failing binary denies a Bash call for deepseek-tui with the fixed reply and logs it
+    run: [sh, -c, "out=$(printf \"%s\" \"$3\" | \"$0\" pretool --harness \"$1\"); rc=$?; printf \"%s\\n\" \"$out\"; grep -q \"\\\"harness\\\":\\\"$2\\\",\\\"mode\\\":\\\"pretool\\\",\\\"cause\\\":\\\"$5\\\",\\\"decision\\\":\\\"$6\\\"\" \"$4\" || exit 9; exit $rc", "{{tree}}/bin/polispec-guard", deepseek-tui, deepseek, "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-deepseek-tui\"}", "{{scratch}}/state/launcher.jsonl", exit_1, deny]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    expect:
+      exit: 0
+      stdout_includes: ["\"decision\":\"block\"","guard unavailable; call denied."]
+  - name: a failing binary lets a Read call through and logs the pass
+    run: [sh, -c, "out=$(printf \"%s\" \"$3\" | \"$0\" pretool --harness \"$1\"); rc=$?; printf \"%s\\n\" \"$out\"; grep -q \"\\\"harness\\\":\\\"$2\\\",\\\"mode\\\":\\\"pretool\\\",\\\"cause\\\":\\\"$5\\\",\\\"decision\\\":\\\"$6\\\"\" \"$4\" || exit 9; exit $rc", "{{tree}}/bin/polispec-guard", claude, claude, "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"/etc/hostname\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-read\"}", "{{scratch}}/state/launcher.jsonl", exit_1, pass]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    expect:
+      exit: 0
+      stdout_excludes: ["deny", "block"]
+  - name: a failing binary lets a Hermes read_file call through
+    run: [sh, -c, "out=$(printf \"%s\" \"$3\" | \"$0\" pretool --harness \"$1\"); rc=$?; printf \"%s\\n\" \"$out\"; grep -q \"\\\"harness\\\":\\\"$2\\\",\\\"mode\\\":\\\"pretool\\\",\\\"cause\\\":\\\"$5\\\",\\\"decision\\\":\\\"$6\\\"\" \"$4\" || exit 9; exit $rc", "{{tree}}/bin/polispec-guard", hermes, hermes, "{\"hook_event_name\":\"pre_tool_call\",\"tool_name\":\"read_file\",\"tool_input\":{\"path\":\"/etc/hostname\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-hread\"}", "{{scratch}}/state/launcher.jsonl", exit_1, pass]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    expect:
+      exit: 0
+      stdout_excludes: ["deny", "block"]
+  - name: a binary that sleeps past the deadline is denied within the step timeout
+    run: [sh, -c, "out=$(printf \"%s\" \"$3\" | \"$0\" pretool --harness \"$1\"); rc=$?; printf \"%s\\n\" \"$out\"; grep -q \"\\\"harness\\\":\\\"$2\\\",\\\"mode\\\":\\\"pretool\\\",\\\"cause\\\":\\\"$5\\\",\\\"decision\\\":\\\"$6\\\"\" \"$4\" || exit 9; exit $rc", "{{tree}}/bin/polispec-guard", claude, claude, "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-slow\"}", "{{scratch}}/state/launcher.jsonl", timeout, deny]
+    env: { POLISPEC_BIN: "{{files}}/slow/polispec", POLISPEC_GUARD_DEADLINE: "2" }
+    timeout: 12
+    expect:
+      exit: 0
+      stdout_includes: ['"permissionDecision":"deny"', "guard unavailable; call denied."]
+  - name: the launcher read-tool list equals the lower-cased READ_TOOLS of the hook
+    run: [sh, -c, 'a=$("$1" --read-tools | sort) && b=$(ruby -I"$2/lib" -e "require %q(polispec); require %q(polispec/harness/base); puts Polispec::Harness::Base::READ_TOOLS.map(&:downcase)" | sort) && test -n "$a" && test "$a" = "$b"', sh, "{{tree}}/bin/polispec-guard", "{{tree}}"]
+    expect: { exit: 0 }
+  - name: the launcher deny equals the hook's own fixed denial for claude
+    run: [sh, -c, 'a=$(printf "%s" "$3" | "$0" pretool --harness "$1"; echo "rc=$?") && b=$(printf "" | "$2" hook pretool --harness "$1"; echo "rc=$?") && test -n "$a" && test "$a" = "$b"', "{{tree}}/bin/polispec-guard", claude, "{{polispec}}", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-par-claude\"}"]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    expect: { exit: 0 }
+  - name: the launcher deny equals the hook's own fixed denial for codex
+    run: [sh, -c, 'a=$(printf "%s" "$3" | "$0" pretool --harness "$1"; echo "rc=$?") && b=$(printf "" | "$2" hook pretool --harness "$1"; echo "rc=$?") && test -n "$a" && test "$a" = "$b"', "{{tree}}/bin/polispec-guard", codex, "{{polispec}}", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-par-codex\"}"]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    expect: { exit: 0 }
+  - name: the launcher deny equals the hook's own fixed denial for hermes
+    run: [sh, -c, 'a=$(printf "%s" "$3" | "$0" pretool --harness "$1"; echo "rc=$?") && b=$(printf "" | "$2" hook pretool --harness "$1"; echo "rc=$?") && test -n "$a" && test "$a" = "$b"', "{{tree}}/bin/polispec-guard", hermes, "{{polispec}}", "{\"hook_event_name\":\"pre_tool_call\",\"tool_name\":\"terminal\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-par-hermes\"}"]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    expect: { exit: 0 }
+  - name: the launcher deny equals the hook's own fixed denial for antigravity
+    run: [sh, -c, 'a=$(printf "%s" "$3" | "$0" pretool --harness "$1"; echo "rc=$?") && b=$(printf "" | "$2" hook pretool --harness "$1"; echo "rc=$?") && test -n "$a" && test "$a" = "$b"', "{{tree}}/bin/polispec-guard", antigravity, "{{polispec}}", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-par-antigravity\"}"]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    expect: { exit: 0 }
+  - name: the launcher deny equals the hook's own fixed denial for pi
+    run: [sh, -c, 'a=$(printf "%s" "$3" | "$0" pretool --harness "$1"; echo "rc=$?") && b=$(printf "" | "$2" hook pretool --harness "$1"; echo "rc=$?") && test -n "$a" && test "$a" = "$b"', "{{tree}}/bin/polispec-guard", pi, "{{polispec}}", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-par-pi\"}"]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    expect: { exit: 0 }
+  - name: the launcher deny equals the hook's own fixed denial for deepseek
+    run: [sh, -c, 'a=$(printf "%s" "$3" | "$0" pretool --harness "$1"; echo "rc=$?") && b=$(printf "" | "$2" hook pretool --harness "$1"; echo "rc=$?") && test -n "$a" && test "$a" = "$b"', "{{tree}}/bin/polispec-guard", deepseek, "{{polispec}}", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-par-deepseek\"}"]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    expect: { exit: 0 }
+  - name: an unknown harness name is denied with exit 2 and a stderr reason
+    run: ["{{tree}}/bin/polispec-guard", pretool, --harness, nonesuch]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    stdin: "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-unknown\"}"
+    expect:
+      exit: 2
+      stderr_includes: ["guard unavailable; call denied."]
+  - name: session mode with a failing binary exits 0 with no stdout
+    run: ["{{tree}}/bin/polispec-guard", session, --harness, claude]
+    env: { POLISPEC_BIN: "{{files}}/fail/polispec" }
+    stdin: "{\"hook_event_name\":\"SessionStart\",\"cwd\":\"{{project.shop}}\",\"session_id\":\"fc-session\"}"
+    expect:
+      exit: 0
+      stdout_excludes: ["{", "deny"]
+  - name: a 70 KiB Write through the launcher is judged normally
+    run: [sh, -c, 'ruby -rjson -e ''print JSON.generate({"hook_event_name"=>"PreToolUse","tool_name"=>"Write","session_id"=>"fc-70k","cwd"=>ARGV[0],"tool_input"=>{"file_path"=>File.join(ARGV[0],"notes.txt"),"content"=>"a"*71680}})'' "$2" | "$1" pretool --harness claude', sh, "{{tree}}/bin/polispec-guard", "{{project.shop}}"]
+    env: { POLISPEC_BIN: "{{files}}/real/polispec" }
+    expect:
+      exit: 0
+      stdout_excludes: ["guard unavailable", "exceeds"]
+  - name: a 9 MiB Write through the launcher is denied with the size reason
+    run: [sh, -c, 'ruby -rjson -e ''print JSON.generate({"hook_event_name"=>"PreToolUse","tool_name"=>"Write","session_id"=>"fc-9m","cwd"=>ARGV[0],"tool_input"=>{"file_path"=>File.join(ARGV[0],"notes.txt"),"content"=>"a"*9437184}})'' "$2" | "$1" pretool --harness claude', sh, "{{tree}}/bin/polispec-guard", "{{project.shop}}"]
+    env: { POLISPEC_BIN: "{{files}}/real/polispec" }
+    expect:
+      exit: 0
+      stdout_includes: ["\"permissionDecision\":\"deny\"", "hook input exceeds 8 MiB"]

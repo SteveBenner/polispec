@@ -1,6 +1,6 @@
 schema: polispec.package/v1
 name: environment-control
-version: 1.0.0
+version: 1.1.0
 summary: Scaffold environments, policy and roster for a component, point its manifest, ledger the repository and render the [ENVS] row.
 params:
   serves:

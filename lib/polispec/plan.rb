@@ -103,6 +103,7 @@ module Polispec
       @diffs = []
       @probes = []
       @journal = []
+      @notes = []
     end
 
     def plan_id
@@ -128,6 +129,10 @@ module Polispec
       out.puts "classification: #{@data['classification']}; needs_confirm: #{@data['needs_confirm']}"
       @data["reasons"].first(12).each { |reason| out.puts "  #{reason}" }
       out.puts "  ... #{@data['reasons'].length - 12} more (--json lists all)" if @data["reasons"].length > 12
+      unless @data["notes"].empty?
+        out.puts "notes:"
+        @data["notes"].each { |note| out.puts "  #{note}" }
+      end
       out.puts "files:"
       @data["files"].each do |file|
         out.puts "  #{file['action']} #{file['path']}"
@@ -180,7 +185,7 @@ module Polispec
       @data = {
         "schema" => SCHEMA, "target" => parts[:target], "plan_id" => id, "files" => parts[:files] || [], "ledger" => parts[:ledger],
         "policy_diff" => @diffs, "probes" => probes, "journal" => journal, "classification" => classification, "needs_confirm" => needs,
-        "reasons" => reasons, "steps" => parts[:steps]
+        "reasons" => reasons, "steps" => parts[:steps], "notes" => @notes.uniq
       }
     end
 
@@ -422,6 +427,7 @@ module Polispec
       local = from == "worktree" ? Layers.local_source(project, "file:#{File.join(repo, project.policy)}") : Layers.local_source(project, "bootstrap:#{from}:plan")
       after = Probes.compose(project, ledger, proposed_files[policy_name], proposed_files[env_name], source: from == "worktree" ? "file:#{File.join(repo, project.policy)}" : "bootstrap:#{from}:plan", local: local)
       compare(project.id, before, after, journal_rows_for(project.id))
+      @notes.concat(Operator::Gates.unreachable_errors(after.policy).map { |message| "#{project.id}: #{message}" })
       files = file_rows(current_files, proposed_files, dir.empty? ? "" : "#{dir}/")
       @artifacts.merge!(project: project, repo: repo, dir: dir, from: from, proposed_files: proposed_files, files: files)
       {

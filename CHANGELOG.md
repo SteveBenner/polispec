@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.33.2] - 2026-10-20
+
+### Fixed
+
+- The guard launcher fails closed. `bin/polispec-guard` denies every non-read call when polispec is missing, exits with an unexpected status, or runs past the launcher deadline. Each harness gets the reply the hook's own internal failure gives: Claude Code, Codex, Antigravity, Pi and DeepSeek exit 0 with their deny or block JSON, Hermes exits 2 with its block, and an unknown harness name gets the reason on stderr and exit 2. Read tools (`polispec-guard --read-tools` lists them) and session start still pass, and an exit 0 with no output is still an allow. The 0.33.1 fallback denied only shell calls that matched a prod-shaped pattern and let every other call through. Each failure appends one line to `launcher.jsonl` in the state directory: ts, tool, session, harness, mode, cause (`no_binary`, `timeout` or `exit_<status>`) and decision.
+- The launcher runs the hook under an 8 s deadline (`POLISPEC_GUARD_DEADLINE`, an integer from 1 to 9), through `timeout -k 1` or, where `timeout(1)` is missing, a bash watchdog. The hook's own budget drops from 9.5 s to 7 s, so polispec answers before the harnesses' 10 s hook timeout cuts it off.
+- A hook call composes each project's policy once. For every path in a command the engine recomposed each live project's policy: `Atlas#lookup` cached per locator and `Envs.spec_owner` not at all. On this host one ordinary Bash call composed policies 2,101 times, ran out the 9.5 s budget and was denied as an internal failure, and a five-word command composed 1,570 times. `PolicySource.memoize` keeps each composed policy for the length of one hook call and gives every caller its own copy. The same two commands now take about 0.7 s with nine compositions.
+- Hook input up to 8 MiB is judged. The cap was 64 KiB, so a Write or Edit of a larger file was denied as "guard unavailable". Input over 8 MiB is denied with "[POLISPEC internal] hook input exceeds 8 MiB; call denied. Split the change into smaller calls." The launcher reads at most one byte past the cap.
+- The launcher maps the harness name `deepseek-tui` to `deepseek`, as it maps `claude-code` to `claude`.
+- `polispec smoke run` runs each scenario file once when the tree is reached through a symlink. It deduplicated files by `File.expand_path`, so with `--live` a scenario found both through `--scenarios <symlinked tree>/smoke/live` and through the tree's real path ran twice. The second fixture build then failed `git commit` with nothing to commit. Every rplugin store reaches its release through such a link (`~/.rplugins/polispec`). It now deduplicates by `File.realpath`.
+
+### Added
+
+- Finding `gate_unreachable`. Some promotion setups can never pass: a gate that needs a passing deploy of an environment with no `deploy:` (`G-TESTED`, or any `sha_ran_on`, `sha_ran_on_test` or `soaked` gate), or an `after:` step that deploys such an environment. `polispec doctor` reports each one as blocking, and `polispec status` shows it as the project's finding. `polispec validate policy` reports it at `/promotion`, and `polispec plan project:<id>` lists it under notes without changing the classification or the plan id. `promote` and `deploy` are unchanged.
+- environment-control 1.1.0. The distributed variant declares placeholder deploy blocks for test and prod, as the service variant does, so a project applied from it no longer starts with unreachable gates.
+- Smoke scenarios `guard-failclosed`, `gate-unreachable` and `policy-memo`. `examples/environments.widget.yml` declares deploy blocks for test and prod.
+
 ## [0.33.1] - 2026-10-20
 
 ### Fixed

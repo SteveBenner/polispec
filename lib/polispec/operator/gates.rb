@@ -4,6 +4,7 @@
 require "io/console"
 require "securerandom"
 require "find"
+require "shellwords"
 require_relative "git"
 require_relative "../validate_profiles"
 
@@ -388,7 +389,10 @@ module Polispec
       end
 
       def effective_gates(project, to)
-        listed = Array(project.promotion["to_#{to}"]["gates"])
+        with_required_gates(Array(project.promotion["to_#{to}"]["gates"]), to)
+      end
+
+      def with_required_gates(listed, to)
         return listed unless to == "stable"
 
         required = [
@@ -397,6 +401,43 @@ module Polispec
         ]
         present = listed.map { |gate| gate["builtin"] }
         required.reject { |gate| (gate["alias"] & present).any? }.map { |gate| gate.reject { |key, _| key == "alias" } } + listed
+      end
+
+      def unreachable_errors(policy)
+        return [] unless policy.is_a?(Hash) && policy["promotion"].is_a?(Hash)
+
+        environments = policy["environments"].is_a?(Hash) ? policy["environments"] : {}
+        deployable = lambda do |name|
+          config = environments[env_key(name)]
+          config.is_a?(Hash) && config["deploy"].is_a?(Hash)
+        end
+        errors = []
+        policy["promotion"].each do |key, config|
+          match = key.to_s.match(/\Ato_(.+)\z/)
+          next unless match && config.is_a?(Hash)
+
+          hop = match[1]
+          gates = with_required_gates(Array(config["gates"]).select { |gate| gate.is_a?(Hash) }, hop)
+          gates.each do |gate|
+            next unless %w[sha_ran_on sha_ran_on_test soaked].include?(gate["builtin"])
+
+            name = gate["builtin"] == "sha_ran_on_test" ? "test" : (gate["env"] || "test").to_s
+            next unless name == "prod" || ENV_NAME.match?(name)
+            next if deployable.call(name)
+
+            errors << "promotion #{key}: gate #{gate['id']} needs a passing #{name} deploy, but environment #{name} declares no deploy; the gate can never pass"
+          end
+          Array(config["after"]).each do |entry|
+            words = Shellwords.split(entry.to_s) rescue next
+            next unless words.length >= 4 && words[0] == "polispec" && words[1] == "deploy"
+
+            name = words[3]
+            next if deployable.call(name)
+
+            errors << "promotion #{key}: after step '#{entry}' deploys #{name}, which declares no deploy; the step fails no_deploy"
+          end
+        end
+        errors
       end
 
       def run_all(gates, context, waive: [])

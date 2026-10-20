@@ -1,0 +1,58 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/status, digest, doctor
+summary: a policy whose promotion gates and after steps need a deploy in an environment without a deploy block is reported as gate_unreachable by doctor, status and validate, promote still runs its gates as before, and the finding disappears once the environments declare their deploys
+fixture:
+  global: example
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+      files:
+        "lib/app.rb": "puts 1\n"
+        "VERSION": "0.1.0\n"
+steps:
+  - name: the committed environments lose their deploy blocks and stable is published
+    run: [sh, -c, 'cp specs/polispec/environments.yml "$1" && sed -i "/^    deploy:$/,/^        run: /d" specs/polispec/environments.yml && git add specs/polispec/environments.yml && git commit -q -m nodeploy -- specs/polispec/environments.yml && git push -q origin main main:stable && git fetch -q origin && git branch -f stable origin/stable && echo 0.2.0 > VERSION && git add VERSION && git commit -q -m bump -- VERSION && git push -q origin main', sh, "{{scratch}}/environments.orig.yml"]
+    cwd: "{{project.shop}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+  - name: doctor reports gate_unreachable for the gate and for the after steps
+    run: ["{{polispec}}", doctor, --json]
+    expect:
+      exit: 1
+      stdout_includes: ['"project":"shop","kind":"gate_unreachable"', "promotion to_stable: gate G-TESTED needs a passing test deploy, but environment test declares no deploy", "promotion to_test: after step 'polispec deploy {project} test' deploys test, which declares no deploy", "promotion to_stable: after step 'polispec deploy {project} stable --tag v{VERSION}' deploys stable, which declares no deploy"]
+  - name: status as json carries the finding
+    run: ["{{polispec}}", status, shop, --json]
+    expect:
+      exit: 0
+      json: { projects: [{ id: shop, finding: { kind: gate_unreachable } }] }
+  - name: validate policy names the promotion pointer
+    run: [sh, -c, 'mkdir -p "$1" && git show stable:specs/polispec/policy.yml > "$1/policy.yml" && git show stable:specs/polispec/environments.yml > "$1/environments.yml" && "$0" validate policy "$1/policy.yml"', "{{polispec}}", "{{scratch}}/validate"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 1
+      stdout_includes: ["/promotion", "can never pass"]
+  - name: a dry-run promote to test still runs its gates
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run]
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+      stdout_includes: ["dry run: shop to test at ", "gate G-CLEAN: pass", "gate G-VHOMES: pass"]
+  - name: the environments gain their deploy blocks again on stable
+    run: [sh, -c, 'git checkout -q stable && cp "$1" specs/polispec/environments.yml && git add specs/polispec/environments.yml && git commit -q -m deploy -- specs/polispec/environments.yml && git checkout -q main', sh, "{{scratch}}/environments.orig.yml"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+  - name: doctor no longer reports gate_unreachable
+    run: ["{{polispec}}", doctor, --json]
+    expect:
+      exit: [0, 1]
+      stdout_excludes: ["gate_unreachable"]
+  - name: status no longer carries the finding
+    run: ["{{polispec}}", status, shop, --json]
+    expect:
+      exit: 0
+      json: { projects: [{ id: shop, finding: null }] }
