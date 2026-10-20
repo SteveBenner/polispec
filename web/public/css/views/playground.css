@@ -1,0 +1,183 @@
+.playground .pg-input {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 880px;
+  margin-bottom: var(--space-3);
+}
+
+.playground .pg-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.playground .pg-hint {
+  color: var(--text-faint);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+}
+
+.playground .pg-note {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.playground .pg-results {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+@media (min-width: 1440px) {
+  .playground .pg-results:has(.pg-trace:not([hidden])) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.playground .pg-pane {
+  min-width: 0;
+}
+
+.playground .pg-record {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+.playground .pg-record[data-match="true"] > .ps-icon {
+  color: var(--ok);
+}
+
+.playground .pg-record[data-match="false"] > .ps-icon {
+  color: var(--warn);
+}
+
+.playground .pg-match {
+  color: var(--text-dim);
+}
+
+.playground ps-data-table .ps-table-scroll {
+  max-height: calc(100dvh - var(--topbar-h) - 280px);
+}
+
+.playground ps-data-table :is(thead th, tbody td):nth-child(1) {
+  position: sticky;
+  inset-inline-start: 0;
+  background-color: var(--surface);
+  z-index: 1;
+}
+
+.playground ps-data-table thead th:nth-child(1) {
+  z-index: calc(var(--z-sticky) + 1);
+}
+
+.playground ps-data-table :is(thead th, tbody td):is(:nth-child(2), :nth-child(3), :nth-child(4)) {
+  text-align: center;
+}
+
+.playground .pg-cell {
+  display: flex;
+  justify-content: center;
+}
+
+.playground .pg-cellbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-xs);
+  padding: 0 var(--space-1);
+  border: var(--border-w) solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.playground .pg-cellbtn:hover {
+  background: var(--row-hover);
+}
+
+.playground .pg-cellbtn[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--row-selected);
+}
+
+.playground .pg-none {
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+}
+
+.playground .pg-trace-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-md);
+  line-height: var(--lh-md);
+  font-weight: var(--weight-medium);
+}
+
+.playground .pg-steps-scroll {
+  max-height: 360px;
+  overflow: auto;
+  background: var(--surface);
+}
+
+.playground .pg-steps {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.playground .pg-step {
+  display: grid;
+  grid-template-columns: 28px auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row);
+  padding-inline: var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  box-shadow: inset 0 -1px var(--border);
+}
+
+.playground .pg-step[aria-current="true"] {
+  background: var(--row-selected);
+}
+
+.playground .pg-num {
+  color: var(--text-dim);
+}
+
+.playground .pg-rule {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playground .pg-matched {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+}
+
+.playground .pg-reason {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-md);
+  line-height: var(--lh-md);
+  max-width: var(--measure);
+}
+
+@media (max-width: 767px) {
+  .playground .pg-step {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+  }
+}

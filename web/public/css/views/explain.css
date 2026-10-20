@@ -1,0 +1,127 @@
+.explain .ex-input {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  max-width: 880px;
+  margin-bottom: var(--space-4);
+}
+
+.explain .ex-input ps-textarea {
+  width: 100%;
+}
+
+.explain .ex-idle {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+.explain .ex-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+@media (min-width: 1024px) {
+  .explain .ex-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.explain .ex-panel {
+  min-width: 0;
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.explain .ex-head {
+  display: flex;
+  align-items: center;
+  min-height: var(--control-md);
+  padding-inline: var(--space-3);
+  box-shadow: inset 0 -1px var(--border);
+}
+
+.explain .ex-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  font-weight: var(--weight-medium);
+}
+
+.explain .ex-body {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.explain .ex-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.explain .ex-ruleid {
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.explain .ex-prose {
+  margin: 0;
+  max-width: var(--measure);
+  font-size: var(--text-md);
+  line-height: var(--lh-md);
+}
+
+.explain .ex-meta {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.explain .ex-editor {
+  min-height: 160px;
+  max-height: 320px;
+  overflow: auto;
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.explain .ex-actions {
+  display: flex;
+  margin-top: var(--space-2);
+}
+
+.explain .ex-tab {
+  padding-top: var(--space-2);
+}
+
+.explain .ex-nomatch-line {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-md);
+  line-height: var(--lh-md);
+}
+
+.explain .ex-tried-title {
+  margin: 0 0 var(--space-1);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+}
+
+.explain .ex-tried {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-xs);
+}
+
+.explain .ex-loading {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 880px;
+}
