@@ -126,9 +126,12 @@ class PsTooltip extends HTMLElement {
   }
 
   place() {
+    const margin = 8;
+    this.style.left = "0px";
+    this.style.top = "0px";
+    this.style.maxWidth = `${Math.min(320, window.innerWidth - margin * 2)}px`;
     const anchor = this.attached.getBoundingClientRect();
     const own = this.getBoundingClientRect();
-    const margin = 4;
     const gap = 6;
     let top = anchor.top - own.height - gap;
     let side = "above";
@@ -136,6 +139,7 @@ class PsTooltip extends HTMLElement {
       top = anchor.bottom + gap;
       side = "below";
     }
+    top = Math.max(margin, Math.min(top, window.innerHeight - own.height - margin));
     let left = anchor.left + anchor.width / 2 - own.width / 2;
     left = Math.max(margin, Math.min(left, window.innerWidth - own.width - margin));
     this.style.left = `${Math.round(left)}px`;

@@ -70,7 +70,10 @@ class PsDataTable extends HTMLElement {
   attributeChangedCallback(name, oldValue, value) {
     if (!this.scroller) return;
     if (name === "state") this.applyState(value);
-    else this.renderAll();
+    else {
+      this.measuredRow = 0;
+      this.renderAll();
+    }
   }
 
   get columns() {
@@ -79,6 +82,7 @@ class PsDataTable extends HTMLElement {
 
   set columns(list) {
     this.cols = list;
+    this.measuredRow = 0;
     if (this.scroller) this.renderAll();
   }
 
@@ -135,6 +139,7 @@ class PsDataTable extends HTMLElement {
   }
 
   rowHeight() {
+    if (this.measuredRow) return this.measuredRow;
     const name = this.hasAttribute("compact") ? "--row-compact" : "--row";
     return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)) || 28;
   }
@@ -293,7 +298,7 @@ class PsDataTable extends HTMLElement {
     return tr;
   }
 
-  renderBody() {
+  renderBody(remeasured) {
     const top = this.scroller.scrollTop;
     const viewHeight = Math.max(this.scroller.clientHeight, 480);
     const rowH = this.rowHeight();
@@ -355,6 +360,16 @@ class PsDataTable extends HTMLElement {
       this.renderRow(list[index], index);
     }
     if (this.virtual()) this.tbody.append(this.spacer((list.length - end) * rowH));
+    if (this.virtual() && !remeasured) this.remeasure(rowH);
+  }
+
+  remeasure(used) {
+    const first = this.tbody.querySelector("tr[data-index]");
+    if (!first) return;
+    const height = first.getBoundingClientRect().height;
+    if (!height || Math.abs(height - used) < 0.5) return;
+    this.measuredRow = height;
+    this.renderBody(true);
   }
 
   spacer(height) {

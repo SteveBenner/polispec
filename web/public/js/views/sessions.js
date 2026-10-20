@@ -114,7 +114,7 @@ function detailRow(session) {
   if ((session.badges || []).includes("reload_needed")) {
     const command = document.createElement("ps-command");
     command.setAttribute("command", "/reload-plugins");
-    command.setAttribute("why", "Run in that Claude Code session.");
+    command.setAttribute("who", "Run in that Claude Code session.");
     wrap.append(command);
   }
   return wrap;

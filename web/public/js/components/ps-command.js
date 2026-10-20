@@ -12,7 +12,7 @@ function icon(name) {
 }
 
 class PsCommand extends HTMLElement {
-  static observedAttributes = ["command", "operator", "why"];
+  static observedAttributes = ["command", "operator", "why", "who"];
 
   connectedCallback() {
     if (this.block) return;
@@ -43,6 +43,15 @@ class PsCommand extends HTMLElement {
     clearTimeout(this.resetTimer);
   }
 
+  get who() {
+    return this.hasAttribute("who") ? this.getAttribute("who") : null;
+  }
+
+  set who(value) {
+    if (value == null) this.removeAttribute("who");
+    else this.setAttribute("who", String(value));
+  }
+
   attributeChangedCallback() {
     if (this.block) this.update();
   }
@@ -50,8 +59,10 @@ class PsCommand extends HTMLElement {
   update() {
     const operator = this.hasAttribute("operator");
     const why = this.getAttribute("why") || "";
-    const who = operator ? "Operator only. Run in a terminal." : "Run in a terminal.";
-    this.whoLine.textContent = why ? `${who} ${why}` : who;
+    const fallback = operator ? "Operator only. Run in a terminal." : "Run in a terminal.";
+    const who = this.hasAttribute("who") ? this.getAttribute("who").trim() : fallback;
+    this.whoLine.textContent = [who, why].filter(Boolean).join(" ");
+    this.whoLine.hidden = !this.whoLine.textContent;
     this.lead.replaceChildren(icon(operator ? "lock" : "terminal"));
     this.code.textContent = this.getAttribute("command") || "";
     this.block.setAttribute("data-operator", operator ? "true" : "false");
