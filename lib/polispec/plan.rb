@@ -96,6 +96,10 @@ module Polispec
       new(spec, options).tap(&:build)
     end
 
+    def self.compare_refs(repo, file, from, to)
+      new(SPEC.new(kind: "compare")).send(:refs_changes, File.expand_path(repo.to_s), file.to_s, from.to_s, to.to_s)
+    end
+
     def initialize(spec, options = {})
       @spec = spec
       @options = options
@@ -275,6 +279,118 @@ module Polispec
     ensure
       previous.nil? ? ENV.delete("POLISPEC_GLOBAL") : ENV["POLISPEC_GLOBAL"] = previous
       Layers.reset!
+    end
+
+    KIND_OF_SECTION = { "rules" => "rule", "gates" => "gate", "freezes" => "freeze", "modules" => "module" }.freeze
+    VERDICT_RANK = { "allow" => 0, "warn" => 1, "deny" => 2 }.freeze
+
+    def refs_changes(repo, file, from, to)
+      ledger = Ledger.load
+      project = ledger.projects.find { |entry| entry.status != "retired" && File.expand_path(entry.repo) == repo && entry.policy == file }
+      before, after, probes = Probes.silently do
+        sides = project ? project_ref_sides(project, ledger, repo, file, from, to) : document_ref_sides(repo, file, from, to)
+        [sides[0], sides[1], ref_probe_rows(sides[0], sides[1])]
+      end
+      entry = diff_sides(file, before, after)
+      { "from" => from, "to" => to, "changes" => ref_change_rows(entry, before, after, probes) }
+    end
+
+    def ref_probe_rows(before, after)
+      reference = after || before
+      return [] unless reference && reference.cwd
+
+      actions = Probes.generate(reference.policy, reference.cwd)
+      Probes.compare(actions, Probes.outcomes(before, actions), Probes.outcomes(after, actions))
+    end
+
+    def project_ref_sides(project, ledger, repo, file, from, to)
+      env_file = Environments.path_for(file)
+      [from, to].map do |ref|
+        text = Environments.git(repo, "show", "#{ref}:#{file}")
+        next nil if text.nil?
+
+        source = "bootstrap:#{ref}:plan"
+        Probes.compose(project, ledger, text, Environments.git(repo, "show", "#{ref}:#{env_file}"), source: source, local: Layers.local_source(project, source))
+      end
+    end
+
+    def document_ref_sides(repo, file, from, to)
+      [from, to].map do |ref|
+        text = Environments.git(repo, "show", "#{ref}:#{file}")
+        next nil if text.nil?
+
+        doc = Schema::Document.parse(text, "#{ref}:#{file}")
+        doc = {} unless doc.is_a?(Hash)
+        document_side(doc, text, repo)
+      end
+    end
+
+    def document_side(doc, text, repo)
+      gates = doc["gates"].is_a?(Hash) ? doc["gates"] : {}
+      promotion = %w[to_test to_stable].to_h { |key| [key, { "gates" => Array(gates[key]) }] }
+      policy = { "rules" => Array(doc["rules"]), "freezes" => Array(doc["freezes"]), "promotion" => promotion }
+      modules = Array(doc["includes"]).map { |entry| entry.is_a?(Hash) ? entry["module"].to_s : entry.to_s }
+      layer = Layers::Layer.new(name: "repo", rules: Array(doc["rules"]), modules: modules)
+      chain = Layers::Chain.new(layers: [layer], errors: [], profile: nil, applied: [])
+      Probes::Side.new(id: "document", policy: policy, digest: Packages.sha(text), cwd: nil, chain: chain)
+    end
+
+    def ref_change_rows(entry, before, after, probes)
+      rows = []
+      %w[modules rules gates freezes].each do |section|
+        old = item_map(section, before)
+        new = item_map(section, after)
+        kind = KIND_OF_SECTION.fetch(section)
+        {
+          "added" => entry[section]["added"], "removed" => entry[section]["removed"], "changed" => entry[section]["changed"]
+        }.each do |change, keys|
+          keys.each do |key|
+            rows << ref_change_row(kind, change, key, old[key], new[key], probes)
+          end
+        end
+      end
+      rows
+    end
+
+    def ref_change_row(kind, change, key, old, new, probes)
+      id = key.sub(%r{\Arepo/}, "")
+      classification = case change
+                       when "added" then "tightening"
+                       when "removed" then "loosening"
+                       else ref_classification(kind, id, old, new, probes)
+                       end
+      { "kind" => kind, "change" => change, "id" => id, "classification" => classification, "summary" => ref_summary(kind, change, id, old, new), "before" => ref_text(old), "after" => ref_text(new) }
+    end
+
+    def ref_classification(kind, id, old, new, probes)
+      if kind == "rule" && old.is_a?(Hash) && new.is_a?(Hash) && old["verdict"] != new["verdict"]
+        return VERDICT_RANK.fetch(new["verdict"].to_s, 0) > VERDICT_RANK.fetch(old["verdict"].to_s, 0) ? "tightening" : "loosening"
+      end
+
+      short = id.split(%r{[/:]}).last
+      related = probes.select { |row| [row["before"], row["after"]].any? { |text| text.to_s.split(" ", 2).last == short } }
+      moved = related.map { |row| row["change"] }.reject { |value| value == "same" }
+      return "neutral" if moved.empty?
+
+      moved.include?("loosen") ? "loosening" : "tightening"
+    end
+
+    def ref_summary(kind, change, id, old, new)
+      label = "#{kind.capitalize} #{id}"
+      return "#{label} added" if change == "added"
+      return "#{label} removed" if change == "removed"
+      if kind == "rule" && old.is_a?(Hash) && new.is_a?(Hash) && old["verdict"] != new["verdict"]
+        return "#{label} verdict #{old['verdict']} to #{new['verdict']}"
+      end
+
+      "#{label} changed"
+    end
+
+    def ref_text(value)
+      return nil if value.nil?
+      return value if value.is_a?(String)
+
+      YAML.dump(value).sub(/\A---\n/, "")
     end
 
     def item_map(section, side)
