@@ -1,0 +1,184 @@
+ps-data-table {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  contain: inline-size;
+}
+
+ps-data-table .ps-table-scroll {
+  position: relative;
+  max-width: 100%;
+  overflow: auto;
+  background: var(--surface);
+}
+
+ps-data-table[data-virtual] .ps-table-scroll {
+  max-height: 480px;
+}
+
+ps-data-table table {
+  width: 100%;
+  table-layout: fixed;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+ps-data-table caption {
+  text-align: start;
+  padding-block: var(--space-1);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+ps-data-table caption.visually-hidden {
+  position: absolute;
+}
+
+ps-data-table thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--z-sticky);
+  height: var(--row);
+  padding: 0 var(--space-2);
+  background: var(--surface);
+  box-shadow: inset 0 -1px var(--border);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+ps-data-table th[data-align="end"] {
+  text-align: end;
+}
+
+ps-data-table .ps-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  min-width: var(--control-xs);
+  min-height: var(--control-xs);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+ps-data-table .ps-sort:hover {
+  color: var(--text);
+}
+
+ps-data-table th[data-align="end"] .ps-sort {
+  justify-content: flex-end;
+}
+
+ps-data-table tbody td {
+  height: var(--row);
+  padding: 0 var(--space-2);
+  border-bottom: var(--border-w) solid var(--border);
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+ps-data-table[compact] tbody td,
+ps-data-table[compact] thead th {
+  height: var(--row-compact);
+}
+
+ps-data-table tbody tr:hover > td {
+  background: var(--row-hover);
+}
+
+ps-data-table tbody tr[aria-current="true"] > td {
+  background: var(--row-selected);
+}
+
+ps-data-table tbody tr[aria-current="true"] > td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+ps-data-table :is(thead th, tbody td):first-child {
+  position: sticky;
+  inset-inline-start: 0;
+  background-color: var(--surface);
+}
+
+ps-data-table thead th:first-child {
+  z-index: calc(var(--z-sticky) + 1);
+}
+
+ps-data-table tbody td:first-child {
+  z-index: 1;
+}
+
+ps-data-table tbody tr:hover > td:first-child {
+  background-image: linear-gradient(var(--row-hover), var(--row-hover));
+}
+
+ps-data-table tbody tr[aria-current="true"] > td:first-child {
+  background-image: linear-gradient(var(--row-selected), var(--row-selected));
+}
+
+ps-data-table .ps-lead {
+  padding: 0;
+  text-align: center;
+}
+
+ps-data-table .ps-open {
+  max-width: 100%;
+  min-height: var(--control-xs);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  text-align: start;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+ps-data-table .ps-open:hover {
+  color: var(--accent-hover);
+}
+
+ps-data-table .ps-detail > td {
+  height: auto;
+  padding: var(--space-2) var(--space-3);
+  white-space: normal;
+  background: var(--surface-2);
+}
+
+ps-data-table .ps-state-row > td,
+ps-data-table .ps-banner-row > td {
+  height: auto;
+  padding: 0;
+  white-space: normal;
+}
+
+ps-data-table .ps-state-row:hover > td,
+ps-data-table .ps-banner-row:hover > td {
+  background: transparent;
+}
+
+ps-data-table .ps-skeleton-row > td {
+  padding-block: 0;
+}
+
+ps-data-table .ps-spacer > td {
+  height: inherit;
+  padding: 0;
+  border: 0;
+}

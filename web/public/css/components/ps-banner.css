@@ -1,0 +1,40 @@
+ps-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--control-md);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 0 var(--banner-edge, var(--accent));
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+ps-banner[data-severity="ok"] {
+  --banner-edge: var(--ok);
+}
+
+ps-banner[data-severity="warn"] {
+  --banner-edge: var(--warn);
+}
+
+ps-banner[data-severity="danger"] {
+  --banner-edge: var(--danger);
+}
+
+ps-banner .ps-lead {
+  display: inline-flex;
+  flex: none;
+  color: var(--banner-edge, var(--accent));
+}
+
+ps-banner .ps-message {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+ps-banner ps-button[hidden] {
+  display: none;
+}

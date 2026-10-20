@@ -1,0 +1,57 @@
+ps-confirm {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  min-width: 0;
+}
+
+ps-confirm .ps-intro {
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+ps-confirm ps-chip[kind="tag"] {
+  max-width: 100%;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  user-select: text;
+}
+
+ps-confirm ps-chip[kind="tag"] .ps-chip-label {
+  user-select: all;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+ps-confirm .ps-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+ps-confirm ps-text-field {
+  width: min(100%, 360px);
+}
+
+ps-confirm .ps-row > ps-button {
+  margin-top: calc(var(--lh-xs) + var(--space-1));
+}
+
+ps-confirm .ps-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+ps-confirm .ps-status[data-match="true"] {
+  color: var(--text);
+}
+
+ps-confirm .ps-status[data-match="true"] .ps-icon {
+  color: var(--ok);
+}

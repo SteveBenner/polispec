@@ -1,0 +1,12 @@
+ps-kbd {
+  display: inline-block;
+  padding: 0 var(--space-1);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  white-space: nowrap;
+  vertical-align: baseline;
+}

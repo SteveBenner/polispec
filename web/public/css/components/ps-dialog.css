@@ -1,0 +1,103 @@
+ps-dialog {
+  display: contents;
+}
+
+ps-dialog > .ps-native {
+  --dialog-w: min(640px, 100vw - 32px);
+  width: var(--dialog-w);
+  max-width: none;
+  max-height: min(88vh, 900px);
+  padding: 0;
+  overflow: hidden;
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  transform: scale(0.98);
+  transition:
+    opacity var(--dur) var(--ease),
+    transform var(--dur) var(--ease),
+    display var(--dur) allow-discrete,
+    overlay var(--dur) allow-discrete;
+}
+
+ps-dialog[size="sm"] > .ps-native {
+  --dialog-w: min(440px, 100vw - 32px);
+}
+
+ps-dialog[size="lg"] > .ps-native {
+  --dialog-w: min(960px, 100vw - 32px);
+}
+
+ps-dialog > .ps-native[open] {
+  opacity: 1;
+  transform: none;
+}
+
+@starting-style {
+  ps-dialog > .ps-native[open] {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+ps-dialog > .ps-native::backdrop {
+  background: var(--scrim);
+}
+
+ps-dialog .ps-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: min(88vh, 900px);
+}
+
+ps-dialog .ps-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-bottom: var(--border-w) solid var(--border);
+}
+
+ps-dialog .ps-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--space-3);
+  overflow: auto;
+}
+
+ps-dialog .ps-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--border-w) solid var(--border);
+}
+
+ps-dialog .ps-footer[hidden] {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  ps-dialog > .ps-native {
+    --dialog-w: 100vw;
+    inset: 0;
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+  }
+
+  ps-dialog .ps-panel {
+    height: 100%;
+    max-height: none;
+  }
+}

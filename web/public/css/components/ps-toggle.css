@@ -1,0 +1,64 @@
+ps-toggle {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+ps-toggle .ps-native {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-xs);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  text-align: start;
+  cursor: pointer;
+}
+
+ps-toggle .ps-track {
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 16px;
+  border-radius: var(--radius-pill);
+  background: var(--control-border);
+}
+
+ps-toggle .ps-thumb {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-start: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+ps-toggle .ps-native[aria-checked="true"] .ps-track {
+  background: var(--accent);
+}
+
+ps-toggle .ps-native[aria-checked="true"] .ps-thumb {
+  background: var(--accent-contrast);
+  transform: translateX(12px);
+}
+
+ps-toggle .ps-native[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+ps-toggle .ps-native[aria-disabled="true"] .ps-track {
+  opacity: 0.5;
+}
+
+ps-toggle .ps-native[aria-disabled="true"] .ps-text {
+  color: var(--text-dim);
+}
+
+ps-toggle .ps-text:empty {
+  display: none;
+}
