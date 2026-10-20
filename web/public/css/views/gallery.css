@@ -1,0 +1,196 @@
+.view.gallery .gl-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+
+.view.gallery .gl-controls ps-text-field {
+  width: 240px;
+  max-width: 100%;
+}
+
+.view.gallery .gl-body {
+  container-type: inline-size;
+  container-name: gallery;
+  min-width: 0;
+}
+
+.view.gallery .gl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
+  justify-content: start;
+  align-items: start;
+  min-width: 0;
+}
+
+.view.gallery .gl-grid[data-empty] {
+  display: block;
+}
+
+@container gallery (max-width: 559px) {
+  .view.gallery .gl-grid:not([data-empty]) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.view.gallery .gl-grid > ps-card {
+  height: 132px;
+  overflow: hidden;
+}
+
+.view.gallery .gl-card {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: var(--space-1);
+  height: 100%;
+  min-width: 0;
+}
+
+.view.gallery .gl-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.view.gallery .gl-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  font-weight: var(--weight-strong);
+}
+
+.view.gallery .gl-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.view.gallery .gl-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  max-height: calc(var(--lh-xs) * 3);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.view.gallery .gl-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.view.gallery .gl-skeleton {
+  height: 132px;
+  padding: var(--space-2);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 var(--border-w) var(--border);
+}
+
+.view.gallery .gl-drawer-body {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.view.gallery .gl-kind {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.view.gallery .gl-drawer-summary {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.view.gallery .gl-drawer-desc {
+  max-width: var(--measure);
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  overflow-wrap: anywhere;
+}
+
+.view.gallery .gl-h3 {
+  margin: 0 0 var(--space-2);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  font-weight: var(--weight-medium);
+}
+
+.view.gallery .gl-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.view.gallery .gl-form .gl-h3 {
+  margin: 0;
+}
+
+.view.gallery .gl-field {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.view.gallery .gl-field-label {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.view.gallery .gl-list-field,
+.view.gallery .gl-list-rows {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.view.gallery .gl-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.view.gallery .gl-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.view.gallery .gl-quiet {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+}
+
+.view.gallery .gl-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}

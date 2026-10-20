@@ -47,6 +47,10 @@
 @import url("views/playground.css") layer(views);
 @import url("views/explain.css") layer(views);
 @import url("views/history.css") layer(views);
+@import url("views/gallery.css") layer(views);
+@import url("views/exceptions.css") layer(views);
+@import url("views/manifest.css") layer(views);
+@import url("views/register.css") layer(views);
 
 @layer flourish {
   [data-theme="apple-noir"] :is(h1, h2) {
