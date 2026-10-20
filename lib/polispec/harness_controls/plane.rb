@@ -4,6 +4,7 @@
 require_relative "authority"
 require_relative "../operator/tty"
 require_relative "../operator/gates"
+require_relative "../editions"
 
 module Polispec
   module HarnessControls
@@ -113,7 +114,7 @@ module Polispec
         raise Authority::Failure.new("broken_plane", "sealed plane is broken", plane["findings"]) if plane["status"] == "broken"
         floor = build_edition
         if plane["status"] == "active"
-          raise Authority::Failure.new("edition_mismatch", "lock build cannot use a standard plane") if floor == "lock" && plane["edition"] != "lock"
+          raise Authority::Failure.new("edition_mismatch", "lock build cannot use a standard plane") if Editions.lock?(floor) && !Editions.lock?(plane["edition"])
           return plane["edition"]
         end
 
@@ -123,7 +124,7 @@ module Polispec
                        "standard"
                      end
         raise Authority::Failure.new("invalid_edition", "polispec.edition must be standard or lock") unless EDITIONS.include?(configured)
-        floor == "lock" ? "lock" : configured
+        Editions.lock?(floor) ? "lock" : configured
       end
 
       def operator!(operation)
@@ -146,7 +147,7 @@ module Polispec
           prerequisites << "protected runtime launch provenance" unless certification["runtime_provenance"] == "verified"
           prerequisites << "required native harness evidence" unless certification["native_evidence"] == "verified"
           prerequisites << "OS containment evidence" unless certification["os_containment"] == "verified"
-          prerequisites << "lock-capable harness set" if plane["edition"] == "lock" && certification["lock_eligible"] != true
+          prerequisites << "lock-capable harness set" if Editions.lock?(plane["edition"]) && certification["lock_eligible"] != true
         else
           prerequisites << "active sealed generation"
         end

@@ -6,6 +6,7 @@ require "yaml"
 require "digest"
 require "shellwords"
 require_relative "../../harness/base"
+require_relative "../../editions"
 
 module Polispec
   module HarnessControls
@@ -188,7 +189,7 @@ module Polispec
             capability(nil, "hermes.filesystem_restriction", "unsupported", "Path restrictions remain callback-only because no equivalent native Hermes allowlist is emitted."),
             capability(nil, "hermes.network_restriction", "unsupported", "Network restrictions remain callback-only because no equivalent native Hermes allowlist is emitted."),
             capability(nil, "hermes.process_boundary", "unverified", "Configuration does not prove containment of nested Hermes processes."),
-            capability(nil, "hermes.lock", edition == "lock" ? "unsupported" : "unavailable", "Hermes configuration and callback ancestry are not certified as a sealed authority.")
+            capability(nil, "hermes.lock", Editions.lock?(edition) ? "unsupported" : "unavailable", "Hermes configuration and callback ancestry are not certified as a sealed authority.")
           ])
         end
         private_class_method :capabilities_for
@@ -201,7 +202,7 @@ module Polispec
             rows << finding("hermes_managed_event_replacement", "Managed pre_tool_call hooks replace the corresponding user hook list for that event.", nil, "hermes.configuration", "Review the complete managed event fragment before installation.")
             rows << finding("hermes_managed_consent_pending", "Managed configuration does not auto-consent to hooks; the exact polispec command remains subject to Hermes consent.", nil, "hermes.hook_consent", "Approve only the exact reviewed callback command through Hermes native consent.")
           end
-          rows << finding("hermes_lock_uncertified", "Hermes lock cannot be certified without protected runtime ancestry and native behavioral evidence.", nil, "hermes.lock", "Use a protected process boundary and verify every required axis.") if edition == "lock"
+          rows << finding("hermes_lock_uncertified", "Hermes lock cannot be certified without protected runtime ancestry and native behavioral evidence.", nil, "hermes.lock", "Use a protected process boundary and verify every required axis.") if Editions.lock?(edition)
           rows
         end
         private_class_method :base_findings

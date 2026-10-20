@@ -1,5 +1,6 @@
 require "timeout"
 require "tmpdir"
+require_relative "../editions"
 
 module Polispec
   module HarnessControls
@@ -94,8 +95,8 @@ module Polispec
         capability_ok = Array(receipt["capabilities"]).all? { |row| %w[supported generated].include?(row["disposition"]) }
         certified = receipt["protected"] == true && files["integrity"] && files["ownership"] && plane_ok && native_ok && capability_ok && environment["lock_eligible"] == true
         requested = receipt["edition"]
-        effective = requested == "lock" && !certified ? "standard" : requested
-        if requested == "lock" && !certified
+        effective = Editions.lock?(requested) && !certified ? "standard" : requested
+        if Editions.lock?(requested) && !certified
           findings << finding("lock_inactive", "Lock was requested but required protected and native evidence is incomplete; standard enforcement remains active and root_guard is forced.", receipt["harness"], "lock", "Resolve every unavailable or unverified axis and verify again.")
         end
         {
@@ -103,7 +104,7 @@ module Polispec
           "actual_version" => installed_version(receipt["harness"]),
           "integrity" => files["integrity"], "ownership" => files["ownership"], "probes" => probes,
           "requested_edition" => requested, "effective_edition" => effective,
-          "root_guard" => environment["root_guard"] == true || requested == "lock",
+          "root_guard" => environment["root_guard"] == true || !Editions.allowed?("root_guard.optional", requested),
           "plane" => { "status" => plane["status"], "generation" => plane["generation"] },
           "certified" => certified, "findings" => findings, "checked_at" => Time.now.utc.iso8601
         }

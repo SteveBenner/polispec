@@ -30,6 +30,14 @@ module Polispec
       ROOT_GUARD_KEY = "polispec.root_guard"
       EXCEPTIONS_KEY = "polispec.exceptions"
       RELAX_DEV_KEY = "polispec.relax.dev"
+      DESCRIPTION_STRICT_KEY = "polispec.description.strict"
+      WEB_BIND_KEY = "polispec.web.bind"
+      WEB_PORT_KEY = "polispec.web.port"
+      WEB_THEME_KEY = "polispec.web.theme"
+      WEB_THEMES = %w[system light dark apple-noir apple-austere tronwave].freeze
+      AUTHOR_ENABLED_KEY = "polispec.author.enabled"
+      AUTHOR_ADAPTER_KEY = "polispec.author.adapter"
+      NOTICE_KEY = "polispec.notice"
       module_function
 
       def argv(key)
@@ -69,6 +77,47 @@ module Polispec
 
       def relax_dev?
         text(RELAX_DEV_KEY, "on").downcase != "off"
+      rescue StandardError
+        false
+      end
+
+      def description_strict?
+        text(DESCRIPTION_STRICT_KEY, "off").downcase == "on"
+      rescue StandardError
+        false
+      end
+
+      def web_bind
+        text(WEB_BIND_KEY, "127.0.0.1")
+      end
+
+      def web_port
+        port = Integer(text(WEB_PORT_KEY, "7421"), 10)
+        port.between?(0, 65_535) ? port : 7421
+      rescue ArgumentError
+        7421
+      end
+
+      def web_theme
+        theme = text(WEB_THEME_KEY, "system").downcase
+        WEB_THEMES.include?(theme) ? theme : "system"
+      end
+
+      def author_enabled?
+        forced = ENV["POLISPEC_AUTHOR"].to_s.strip
+        return forced.downcase != "off" if !forced.empty? && plane_settings.nil?
+
+        text(AUTHOR_ENABLED_KEY, "on").downcase != "off"
+      rescue StandardError
+        false
+      end
+
+      def author_adapter
+        text(AUTHOR_ADAPTER_KEY, "harness-cli")
+      end
+
+      def notice?
+        text(NOTICE_KEY, "on").downcase != "off"
       rescue StandardError
         false
       end

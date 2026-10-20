@@ -87,3 +87,4 @@ features:
     lock: included
     since: 0.34.0
     code: lib/polispec/effect
+    note: "The pretool hook adds the in-band epoch notice once per session per epoch in both editions."

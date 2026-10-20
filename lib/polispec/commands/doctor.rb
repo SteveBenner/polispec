@@ -5,6 +5,7 @@ require_relative "../validate_profiles"
 require_relative "../packages"
 require_relative "../native_pin"
 require_relative "../exceptions"
+require_relative "../editions"
 
 module Polispec
   class DoctorCommand
@@ -12,6 +13,7 @@ module Polispec
     FILE_LIMIT = 1_048_576
     GIT_LIMIT = 65_536
     GIT_TIMEOUT = 5
+    NONBLOCKING = %w[info warn].freeze
     OID = /\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/
     GitResult = Struct.new(:stdout, :stderr, :status)
 
@@ -34,7 +36,8 @@ module Polispec
       check_plane(findings)
       check_judgments(findings)
       check_exceptions(findings)
-      blocking = findings.reject { |item| item["severity"] == "info" }
+      check_editions(findings)
+      blocking = findings.reject { |item| NONBLOCKING.include?(item["severity"]) }
       json ? puts(JSON.generate("ok" => blocking.empty?, "runtime" => runtime_info, "findings" => findings)) : print_text(findings)
       blocking.empty? ? 0 : 1
     end
@@ -223,7 +226,7 @@ module Polispec
         committed_file!(head, "VERSION", File.binread(File.join(ROOT, "VERSION"), FILE_LIMIT + 1))
         committed_file!(head, "polispec.rplugin.yml", File.binread(File.join(ROOT, "polispec.rplugin.yml"), FILE_LIMIT + 1))
       end
-      edition == "lock" ? check_lock_provenance(head) : check_standard_provenance(head)
+      Editions.lock?(edition) ? check_lock_provenance(head) : check_standard_provenance(head)
     rescue GitFailure, SystemCallError => error
       kind = error.message.start_with?("invalid:") ? "edition_provenance_invalid" : "edition_provenance_unavailable"
       findings << finding(nil, kind, error.message.sub(/\Ainvalid:\s*/, ""))
@@ -419,6 +422,15 @@ module Polispec
       findings << finding(nil, "exceptions_invalid", "#{error.class}: #{error.message}")
     end
 
+    def check_editions(findings)
+      Editions.check.each do |item|
+        where = item.line ? "#{item.file}:#{item.line}" : item.file
+        findings << finding(nil, "editions_drift", "#{item.kind} #{where} #{item.detail}").merge("severity" => "warn")
+      end
+    rescue StandardError => error
+      findings << finding(nil, "editions_drift", "#{error.class}: #{error.message}").merge("severity" => "warn")
+    end
+
     def finding(project, kind, detail)
       { "project" => project, "kind" => kind, "detail" => detail }
     end
@@ -429,13 +441,13 @@ module Polispec
 
     def print_text(findings)
       puts "runtime: #{Runtime.kind}#{Runtime.release_kind == 'native' ? ' (native)' : ''} #{Runtime.commit ? Runtime.commit[0, 12] : '-'} #{Runtime.root}"
-      blocking = findings.reject { |item| item["severity"] == "info" }
+      blocking = findings.reject { |item| NONBLOCKING.include?(item["severity"]) }
       if findings.empty?
         puts "polispec doctor: 0 findings"
       else
         notes = findings.length - blocking.length
         puts "polispec doctor: #{findings.length} finding#{'s' unless findings.length == 1}#{" (#{blocking.length} blocking, #{notes} info)" if notes.positive?}"
-        findings.each { |item| puts "  #{item['project'] || '-'}  #{item['kind']}#{item['severity'] == 'info' ? ' (info)' : ''}  #{item['detail']}" }
+        findings.each { |item| puts "  #{item['project'] || '-'}  #{item['kind']}#{NONBLOCKING.include?(item['severity']) ? " (#{item['severity']})" : ''}  #{item['detail']}" }
       end
     end
 
