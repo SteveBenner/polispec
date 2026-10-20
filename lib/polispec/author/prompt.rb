@@ -34,7 +34,7 @@ module Polispec
         parts = []
         parts << "You draft polispec rulebooks. Output exactly one fenced yaml block containing one document of schema #{id || 'the schema named by the request'}, then a section headed Rationale that explains each choice."
         parts << "Read the project and the shelf with Read, Grep and Glob using absolute paths; you may not run commands or write files."
-        parts << "The description field, when the schema has one, must pass these rules:\n#{LINT_RULES.map { |rule| "- #{rule}" }.join("\n")}"
+        parts << "The document must carry a top-level description: field, and it must pass these rules:\n#{LINT_RULES.map { |rule| "- #{rule}" }.join("\n")}"
         parts << "Never invent rule ids that collide with ones already listed in the project or the shelf."
         modules = Array(context[:shelf_modules]).map(&:to_s)
         parts << "Shelf modules available to include: #{modules.join(', ')}." unless modules.empty?

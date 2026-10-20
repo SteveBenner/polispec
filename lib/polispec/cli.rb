@@ -14,17 +14,21 @@ module Polispec
     @all_loaded = false
 
     class Validate
-      USAGE = "usage: polispec validate <policy|environments|roster|ledger|behavior|global|module|profiles|control|smoke|judgment|auto> <file> [--json]"
+      USAGE = "usage: polispec validate <policy|environments|roster|ledger|behavior|global|module|profiles|control|smoke|judgment|auto> <file> [--json] [--semantic]"
 
       def run(args)
         json = args.delete("--json")
+        semantic = args.delete("--semantic")
         kind, file = args
         return usage unless file && args.length == 2 && (Schema::KINDS + ["auto"]).include?(kind)
 
         result = merged_result(kind, file) || validated(kind, file)
         result = with_semantics(result, kind, file)
-        json ? puts(JSON.generate(result.to_h)) : print_text(result, file)
-        result.ok ? 0 : 1
+        extra = result.ok ? description_report(kind, file, semantic) : {}
+        warnings = extra.fetch("warnings", [])
+        failed = !result.ok || (!warnings.empty? && Engine::Settings.description_strict?)
+        json ? puts(JSON.generate(result.to_h.merge(json_extra(extra, failed)))) : print_text(result, file, extra)
+        failed ? 1 : 0
       end
 
       private
@@ -85,17 +89,49 @@ module Polispec
         end
       end
 
+      def description_report(kind, file, semantic)
+        require_relative "description"
+        data = @merged || Schema::Document.load(file)
+        kind = Schema.kind_for(data).to_s if kind == "auto"
+        return {} unless Description::KINDS.include?(kind) && data.is_a?(Hash)
+
+        report = { "warnings" => Description.warnings(data, kind) }
+        report["semantic"] = Description.semantic(data, kind) if semantic
+        report
+      rescue Schema::Document::ParseError
+        {}
+      end
+
+      def json_extra(extra, failed)
+        out = {}
+        out["warnings"] = extra["warnings"] unless extra.fetch("warnings", []).empty?
+        out["semantic"] = extra["semantic"] if extra["semantic"]
+        out["ok"] = false if failed
+        out
+      end
+
       def usage
         warn USAGE
         2
       end
 
-      def print_text(result, file)
+      def print_text(result, file, extra = {})
         if result.ok
           puts "#{file}: ok (#{result.schema})"
         else
           puts "#{file}: invalid#{" (#{result.schema})" if result.schema}"
           result.errors.each { |error| puts "  #{error.pointer.empty? ? '/' : error.pointer}  #{error.message}" }
+        end
+        strict = Engine::Settings.description_strict?
+        extra.fetch("warnings", []).each { |item| puts "  #{strict ? 'error' : 'warning'}: #{item['code']}: #{item['message']}" }
+        print_semantic(extra["semantic"]) if extra["semantic"]
+      end
+
+      def print_semantic(semantic)
+        if semantic["status"] == "judged"
+          puts "  semantic: #{semantic['choice']} (probability #{format('%.2f', semantic['probability'].to_f)})"
+        else
+          puts "  semantic: #{semantic['note']}"
         end
       end
     end
@@ -173,7 +209,7 @@ module Polispec
         load_all
         io.puts "polispec #{Polispec.version}: spec-based policy guardrails"
         io.puts
-        io.puts "  validate <policy|environments|roster|ledger|behavior|global|module|profiles|control|smoke|auto> <file> [--json]   check a file against its schema"
+        io.puts "  validate <policy|environments|roster|ledger|behavior|global|module|profiles|control|smoke|auto> <file> [--json] [--semantic]   check a file against its schema"
         @commands.values.reject { |entry| entry.name == "validate" }.sort_by(&:name).each do |entry|
           io.puts format("  %-12s %s", entry.name, entry.summary)
         end

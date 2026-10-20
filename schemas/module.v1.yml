@@ -8,6 +8,7 @@ properties:
   schema: { const: polispec.module/v1 }
   name: { $ref: "#/$defs/module_name" }
   summary: { type: string, minLength: 1 }
+  description: { type: string, minLength: 1, maxLength: 4000 }
   includes:
     type: array
     items: { $ref: "#/$defs/include_item" }

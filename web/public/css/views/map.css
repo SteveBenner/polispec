@@ -11,7 +11,7 @@ main:has(> .view.map) {
   min-height: 0;
 }
 
-.ps-map-toolbar {
+.view.map .ps-map-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -19,21 +19,21 @@ main:has(> .view.map) {
   min-width: 0;
 }
 
-.ps-map-toolbar ps-select {
+.view.map .ps-map-toolbar ps-select {
   width: 176px;
 }
 
-.ps-map-zoom[hidden] {
+.view.map .ps-map-zoom[hidden] {
   display: none;
 }
 
-.ps-map-zoom {
+.view.map .ps-map-zoom {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
 }
 
-.ps-map-inspector {
+.view.map .ps-map-inspector {
   flex: none;
   height: var(--control-xs);
   line-height: var(--control-xs);
@@ -43,16 +43,16 @@ main:has(> .view.map) {
   white-space: nowrap;
 }
 
-.ps-map-banner {
+.view.map .ps-map-banner {
   flex: none;
   margin-block-end: var(--space-2);
 }
 
-.ps-map-banner[hidden] {
+.view.map .ps-map-banner[hidden] {
   display: none;
 }
 
-.ps-map-stage {
+.view.map .ps-map-stage {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -92,14 +92,14 @@ ps-map:focus-visible {
   outline-offset: calc(var(--focus-w) * -1);
 }
 
-.ps-map-inner {
+.view.map .ps-map-inner {
   position: absolute;
   inset-block-start: 0;
   inset-inline-start: 0;
   transform-origin: 0 0;
 }
 
-.ps-map-edges {
+.view.map .ps-map-edges {
   position: absolute;
   z-index: 1;
   inset-block-start: 0;
@@ -108,35 +108,35 @@ ps-map:focus-visible {
   pointer-events: none;
 }
 
-.ps-edge {
+.view.map .ps-edge {
   stroke: var(--edge);
   stroke-width: 1px;
   transition: stroke var(--dur-fast), stroke-width var(--dur-fast);
 }
 
-.ps-edge[data-hot] {
+.view.map .ps-edge[data-hot] {
   stroke: var(--edge-hot);
   stroke-width: 2px;
 }
 
-.ps-edge-partial {
+.view.map .ps-edge-partial {
   stroke-dasharray: 4 3;
 }
 
-.ps-edge-blast {
+.view.map .ps-edge-blast {
   stroke-width: 2px;
   stroke-dasharray: 6 4;
 }
 
-.ps-edge-blast[data-tone="stricter"] {
+.view.map .ps-edge-blast[data-tone="stricter"] {
   stroke: var(--danger);
 }
 
-.ps-edge-blast[data-tone="looser"] {
+.view.map .ps-edge-blast[data-tone="looser"] {
   stroke: var(--warn);
 }
 
-.ps-edge-pulse {
+.view.map .ps-edge-pulse {
   animation: ps-pulse 900ms ease-in-out 3;
 }
 
@@ -151,7 +151,7 @@ ps-map:focus-visible {
   }
 }
 
-.ps-band {
+.view.map .ps-band {
   position: absolute;
   z-index: 0;
   box-sizing: border-box;
@@ -160,7 +160,7 @@ ps-map:focus-visible {
   border-radius: var(--radius);
 }
 
-.ps-band-label {
+.view.map .ps-band-label {
   position: absolute;
   inset-block: 0;
   inset-inline-start: 0;
@@ -181,18 +181,18 @@ ps-map:focus-visible {
   cursor: default;
 }
 
-.ps-band-label[data-related] {
+.view.map .ps-band-label[data-related] {
   box-shadow: inset 0 0 0 var(--focus-w) var(--edge-hot);
 }
 
-.ps-band-count {
+.view.map .ps-band-count {
   color: var(--text-dim);
   font-size: var(--text-2xs);
   line-height: var(--lh-2xs);
   font-weight: var(--weight-regular);
 }
 
-.ps-band-toggle {
+.view.map .ps-band-toggle {
   position: absolute;
   inset-block-end: var(--space-1);
   inset-inline-start: var(--space-3);
@@ -209,13 +209,13 @@ ps-map:focus-visible {
   cursor: pointer;
 }
 
-.ps-band[data-skeleton] ps-skeleton {
+.view.map .ps-band[data-skeleton] ps-skeleton {
   position: absolute;
   inset-block-start: calc(50% - 8px);
   inset-inline-start: var(--space-3);
 }
 
-.ps-mod {
+.view.map .ps-mod {
   position: absolute;
   z-index: 2;
   display: block;
@@ -238,15 +238,15 @@ ps-map:focus-visible {
   transition: border-color var(--dur-fast);
 }
 
-.ps-mod:hover {
+.view.map .ps-mod:hover {
   color: var(--text);
 }
 
-.ps-mod[data-related] {
+.view.map .ps-mod[data-related] {
   border-color: var(--edge-hot);
 }
 
-.ps-group-label {
+.view.map .ps-group-label {
   position: absolute;
   z-index: 2;
   display: flex;
@@ -257,11 +257,11 @@ ps-map:focus-visible {
   font-weight: var(--weight-medium);
 }
 
-.ps-map-empty {
+.view.map .ps-map-empty {
   position: absolute;
 }
 
-.ps-map-overlay {
+.view.map .ps-map-overlay {
   width: min(560px, 90vw);
   margin: var(--space-6);
 }
@@ -452,7 +452,7 @@ ps-map-card .ps-foot ps-digest {
 }
 
 ps-map-card .ps-counts,
-.ps-tree-counts {
+.view.map .ps-tree-counts {
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -460,7 +460,7 @@ ps-map-card .ps-counts,
 }
 
 ps-map-card .ps-count,
-.ps-tree-counts .ps-count {
+.view.map .ps-tree-counts .ps-count {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -468,15 +468,15 @@ ps-map-card .ps-count,
   line-height: var(--lh-xs);
 }
 
-.ps-count[data-verdict="allow"] .ps-icon {
+.view.map .ps-count[data-verdict="allow"] .ps-icon {
   color: var(--verdict-allow);
 }
 
-.ps-count[data-verdict="warn"] .ps-icon {
+.view.map .ps-count[data-verdict="warn"] .ps-icon {
   color: var(--verdict-warn);
 }
 
-.ps-count[data-verdict="deny"] .ps-icon {
+.view.map .ps-count[data-verdict="deny"] .ps-icon {
   color: var(--verdict-deny);
 }
 
@@ -502,7 +502,7 @@ ps-map-card .ps-matched {
   line-height: var(--lh-xs);
 }
 
-.ps-skeleton-card {
+.view.map .ps-skeleton-card {
   position: absolute;
   box-sizing: border-box;
   padding: var(--space-2);
