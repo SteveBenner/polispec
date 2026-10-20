@@ -1,0 +1,124 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.manifest/v1
+title: Polispec manifest
+type: object
+additionalProperties: false
+required: [schema, id, kind, status, owner, description, host, edition, enforce, environments, layers, roster, promotions, findings, badge_url, declared]
+properties:
+  schema: { const: polispec.manifest/v1 }
+  id: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }
+  kind: { enum: [project, path] }
+  path_kind: { enum: [software, directory, system] }
+  path: { type: string, minLength: 1 }
+  status: { enum: [onboarding, live, retired] }
+  owner:
+    anyOf:
+      - { type: "null" }
+      - { $ref: "#/$defs/owner" }
+  description: { type: [string, "null"] }
+  host: { type: string, minLength: 1 }
+  edition: { type: string, minLength: 1 }
+  enforce: { type: string, minLength: 1 }
+  policy:
+    type: object
+    additionalProperties: false
+    required: [source, digest, trust_ref]
+    properties:
+      source: { type: [string, "null"] }
+      digest: { type: [string, "null"] }
+      trust_ref: { type: [string, "null"] }
+  environments:
+    type: object
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required: [branch, tier, policy_digest]
+      properties:
+        branch: { type: [string, "null"] }
+        tier: { type: [string, "null"] }
+        policy_digest: { type: [string, "null"] }
+  layers:
+    type: object
+    additionalProperties: false
+    required: [profile, effective_digest, layers, packages]
+    properties:
+      profile: { type: [string, "null"] }
+      effective_digest: { type: [string, "null"] }
+      layers:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [layer, source, digest, rules, modules]
+          properties:
+            layer: { type: [string, "null"] }
+            source: { type: [string, "null"] }
+            digest: { type: [string, "null"] }
+            rules: { type: integer }
+            modules:
+              type: array
+              items: { type: string }
+      packages:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [name, version, variant, applied_at]
+          properties:
+            name: { type: [string, "null"] }
+            version: { type: [string, "null"] }
+            variant: { type: [string, "null"] }
+            applied_at: { type: [string, "null"] }
+  roster:
+    type: object
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      properties:
+        harness: { type: [string, "null"] }
+        model: { type: [string, "null"] }
+        effort: { type: [string, "null"] }
+  promotions:
+    type: object
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required: [tag, sha, at, actor]
+      properties:
+        tag: { type: [string, "null"] }
+        sha: { type: [string, "null"] }
+        at: { type: [string, "null"] }
+        actor: { type: [string, "null"] }
+  findings:
+    type: object
+    additionalProperties: false
+    required: [error, warn, info]
+    properties:
+      error: { $ref: "#/$defs/finding_list" }
+      warn: { $ref: "#/$defs/finding_list" }
+      info: { $ref: "#/$defs/finding_list" }
+  badge_url: { type: string, minLength: 1 }
+  declared:
+    anyOf:
+      - { type: "null" }
+      - { type: object }
+  declared_errors:
+    type: array
+    items: { type: string }
+$defs:
+  owner:
+    type: object
+    additionalProperties: false
+    required: [uid, name]
+    properties:
+      uid: { type: [integer, "null"] }
+      name: { type: string, minLength: 1 }
+  finding_list:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [kind, detail]
+      properties:
+        kind: { type: string, minLength: 1 }
+        detail: { type: [string, "null"] }
