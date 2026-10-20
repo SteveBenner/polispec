@@ -387,14 +387,58 @@ module Polispec
         return false unless shelf && shelf.global_doc
 
         doc = shelf.global_doc
-        !Array(doc["rules"]).empty? || !Array(doc["includes"]).empty? || !shelf.profiles_map.empty?
+        !Array(doc["rules"]).empty? || !Array(doc["includes"]).empty? || !shelf.profiles_map.empty? || !live_path_entries(safe_ledger).empty?
+      end
+
+      def live_path_entries(ledger)
+        ledger ? ledger.paths.select { |entry| entry.status == "live" } : []
+      end
+
+      def path_layers(shelf, ledger, errors)
+        live_path_entries(ledger).filter_map { |entry| path_layer(shelf, entry, errors) }
+      end
+
+      def path_layer(shelf, entry, errors)
+        text = shelf.read(entry.policy)
+        if text.nil?
+          note(errors, "path #{entry.id}: #{entry.policy} not found in #{shelf.source.describe}")
+          return nil
+        end
+        data = Schema::Document.parse(text, entry.policy)
+        raw = build_raw(data.is_a?(Hash) ? data["name"].to_s : "", data, text, :global)
+        if raw.is_a?(String)
+          note(errors, "path #{entry.id}: #{entry.policy}: #{raw}")
+          return nil
+        end
+        mod = instantiate(raw, {}, errors)
+        return nil unless mod
+
+        Layer.new(
+          name: "path:#{entry.id}", source: "#{shelf.source.describe}:#{entry.policy}", digest: sha("#{entry.path}\n#{mod.instance_text}"),
+          rules: Array(mod.doc["rules"]).flat_map { |rule| scope_rule(rule, entry) }, modules: [mod.label], extras: extras_of([mod.doc])
+        )
+      rescue Schema::Document::ParseError => e
+        note(errors, "path #{entry.id}: #{e.message}")
+        nil
+      end
+
+      def scope_rule(rule, entry)
+        root = entry.path.sub(%r{/+\z}, "")
+        root = File.expand_path(root)
+        match = rule["match"].is_a?(Hash) ? rule["match"] : {}
+        own = match["path"].to_s
+        return [rule.merge("match" => match.merge("path" => root)), rule.merge("match" => match.merge("path" => "#{root}/**/*"))] if own.empty?
+
+        relative = own.sub(%r{\A/+}, "")
+        [rule.merge("match" => match.merge("path" => File.join(root, relative)))]
       end
 
       def fingerprint
         shelf = store
         return "" unless shelf
 
-        sha([shipped_layer([])&.digest.to_s, shelf.source.key.inspect, shelf.global_text.to_s, shelf.profiles_text.to_s].join("\n--\n"))
+        scoped = live_path_entries(safe_ledger).map { |entry| [entry.id, entry.path, shelf.read(entry.policy).to_s].join("\n") }
+        sha([shipped_layer([])&.digest.to_s, shelf.source.key.inspect, shelf.global_text.to_s, shelf.profiles_text.to_s, *scoped].join("\n--\n"))
       end
 
       def fallback_rules
@@ -418,6 +462,7 @@ module Polispec
           errors.concat(gstore.errors)
           layer = global_layer(gstore, profile, ledger, errors)
           layers << layer if layer
+          layers.concat(path_layers(gstore, ledger, errors)) if project.nil?
         end
         if policy.is_a?(Hash)
           src = local == :auto ? local_source(project, policy_source) : local
