@@ -44,6 +44,12 @@ function tag(label) {
   return chip;
 }
 
+function layerTag(label) {
+  const chip = tag(label);
+  chip.setAttribute("kind", "tag");
+  return chip;
+}
+
 function verdictCell(env, verdict) {
   const cell = node("span", "ps-vcell");
   if (!verdict) {
@@ -277,7 +283,7 @@ export async function render(container, params, signal) {
     const ruleColumns = (wide) => {
       const columns = [
         { key: "id", label: "Rule", width: "180px", mono: true, render: (row) => dim(row, row.id) },
-        { key: "layer", label: "Layer", width: "112px", render: (row) => tag(layerName(row.layer)) },
+        { key: "layer", label: "Layer", width: "112px", render: (row) => layerTag(layerName(row.layer)) },
         ...ENVS.map((env) => ({ key: "v_" + env, label: env, width: "44px", render: (row) => verdictCell(env, row.verdicts[env]) })),
         { key: "applies_to", label: "Applies to", render: (row) => dim(row, (row.applies_to || []).join(", ")) },
         {
@@ -319,7 +325,7 @@ export async function render(container, params, signal) {
 
     modulesTable.columns = [
       { key: "name", label: "Module", mono: true, width: "220px" },
-      { key: "layer", label: "Layer", width: "140px", render: (row) => tag(row.layerName) },
+      { key: "layer", label: "Layer", width: "140px", render: (row) => layerTag(row.layerName) },
       { key: "kind", label: "Kind", width: "100px" },
       { key: "params", label: "Params", width: "80px", align: "end", render: (row) => String(Object.keys(row.params || {}).length) },
       { key: "rules", label: "Rules contributed", width: "140px", align: "end", render: (row) => String(row.rules || 0) },

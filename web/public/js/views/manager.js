@@ -337,6 +337,14 @@ class Manager {
     on(document, "ps-author-draft", (event) => this.loadAuthorDraft(event.detail));
     on(document, "ps-panel-open", () => this.authorButton.setAttribute("pressed", "true"));
     on(document, "ps-panel-close", () => this.authorButton.setAttribute("pressed", "false"));
+    this.handlers.push(
+      router.addRouteGuard((next) => {
+        if (!this.dirty || this.leaving) return false;
+        if (next.startsWith(`#/manager/${this.kind}/${this.id}`)) return false;
+        this.askLeave(next);
+        return true;
+      }),
+    );
     on(
       document,
       "click",
@@ -753,6 +761,7 @@ class Manager {
     stay.addEventListener("click", () => dialog.close());
     leave.addEventListener("click", () => {
       this.persist();
+      this.leaving = true;
       dialog.close();
       window.location.hash = target;
     });

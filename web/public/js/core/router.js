@@ -8,6 +8,28 @@ let notFound = { title: "Not found", module: "views/not-found.js" };
 let defaultRoute = "map";
 let firstRender = true;
 let current = null;
+let settledHash = "";
+const guards = new Set();
+
+export function addRouteGuard(guard) {
+  guards.add(guard);
+  return () => guards.delete(guard);
+}
+
+function onHashChange() {
+  const next = window.location.hash;
+  if (next.startsWith("#k=") || next === settledHash) {
+    mount();
+    return;
+  }
+  for (const guard of Array.from(guards)) {
+    if (guard(next, settledHash) === true) {
+      window.history.replaceState(window.history.state, "", settledHash || "#/");
+      return;
+    }
+  }
+  mount();
+}
 
 export function defineRoutes(table, options = {}) {
   routes.clear();
@@ -99,6 +121,7 @@ function focusHeading() {
 async function mount() {
   const parsed = parseHash(window.location.hash);
   if (window.location.hash.startsWith("#k=")) return;
+  settledHash = window.location.hash;
   if (controller) controller.abort();
   controller = new AbortController();
   const signal = controller.signal;
@@ -130,12 +153,12 @@ export function start(target) {
   container = target;
   stashStatic();
   showLoading();
-  window.addEventListener("hashchange", mount);
+  window.addEventListener("hashchange", onHashChange);
   return mount();
 }
 
 export function stop() {
-  window.removeEventListener("hashchange", mount);
+  window.removeEventListener("hashchange", onHashChange);
   if (controller) controller.abort();
   controller = null;
   firstRender = true;
