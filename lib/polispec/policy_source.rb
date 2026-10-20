@@ -21,7 +21,25 @@ module Polispec
         [found.policy, found.source, found.digest]
       end
 
+      def memoize
+        previous = Thread.current[:polispec_policy_memo]
+        Thread.current[:polispec_policy_memo] ||= {}
+        yield
+      ensure
+        Thread.current[:polispec_policy_memo] = previous
+      end
+
       def resolve(project, ledger: nil)
+        memo = Thread.current[:polispec_policy_memo]
+        return resolve_uncached(project, ledger) unless memo
+
+        key = [project.id, project.repo, project.trust_ref, project.policy]
+        memo[key] ||= resolve_uncached(project, ledger)
+        stored = memo[key]
+        Loaded.new(policy: Marshal.load(Marshal.dump(stored.policy)), source: stored.source, digest: stored.digest, finding: stored.finding)
+      end
+
+      def resolve_uncached(project, ledger)
         ledger ||= Ledger.load
         outcome = lookup(project, project.policy, "policy")
         if outcome.is_a?(Blob) && outcome.errors.nil?

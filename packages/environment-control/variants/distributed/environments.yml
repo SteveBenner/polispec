@@ -18,6 +18,10 @@ environments:
     audience: [operator]
     exposure: none
     data_classes: [synthetic, operational]
+    deploy:
+      steps: ["true"]
+      health:
+        run: polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml
     operators: [agent, operator]
   prod:
     branch: stable
@@ -27,5 +31,9 @@ environments:
     audience: [users]
     exposure: none
     data_classes: [operational]
+    deploy:
+      steps: ["true"]
+      health:
+        run: polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml
     operators: [operator]
     rollback: "polispec deploy {{project}} stable --tag vPREV"

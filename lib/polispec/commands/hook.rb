@@ -31,12 +31,14 @@ module Polispec
   end
   Events.singleton_class.prepend(DeferredEvents)
 
+  class InputTooLarge < Polispec::Error; end
+
   class HookCommand
     HARNESSES = %w[claude codex hermes pi deepseek antigravity].freeze
     ADAPTERS = { "claude" => :Claude, "codex" => :Codex, "hermes" => :Hermes, "antigravity" => :Antigravity }.freeze
     SESSION_LIMIT = 1200
-    INPUT_LIMIT = 65_536
-    HOOK_BUDGET = 9.5
+    INPUT_LIMIT = 8_388_608
+    HOOK_BUDGET = 7.0
     AUTH_MATERIAL_LIMIT = 262_144
     FIXED_DENIALS = {
       "claude" => ["{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[POLISPEC internal] guard unavailable; call denied.\"}}\n", 0],
@@ -46,6 +48,7 @@ module Polispec
       "pi" => ["{\"decision\":\"block\",\"reason\":\"[POLISPEC internal] guard unavailable; call denied.\"}\n", 0],
       "deepseek" => ["{\"decision\":\"block\",\"reason\":\"[POLISPEC internal] guard unavailable; call denied.\"}\n", 0]
     }.freeze
+    OVERSIZE_REASON = "hook input exceeds 8 MiB; call denied. Split the change into smaller calls."
     USAGE = "usage: polispec hook pretool|session --harness <claude|codex|hermes|pi|deepseek|antigravity>\n       polispec hook git <pre-commit|pre-push|reference-transaction|install|uninstall> [args...]"
 
     def self.run(args)
@@ -69,7 +72,7 @@ module Polispec
       @deadline = clock + HOOK_BUDGET
       adapter = Harness.const_get(ADAPTERS.fetch(harness, :Generic)).new(harness)
       DeferredEvents.active = true
-      sub == "pretool" ? pretool(adapter, options) : within_budget { session(adapter) }
+      PolicySource.memoize { sub == "pretool" ? pretool(adapter, options) : within_budget { session(adapter) } }
     rescue StandardError, ScriptError => error
       hard_deny(@native_harness, error)
     ensure
@@ -325,7 +328,7 @@ module Polispec
       bytes = +""
       loop do
         chunk = $stdin.readpartial(4096)
-        raise Polispec::Error, "hook input exceeds #{INPUT_LIMIT} bytes" if chunk.bytesize > INPUT_LIMIT - bytes.bytesize
+        raise Polispec::InputTooLarge, "hook input exceeds #{INPUT_LIMIT} bytes" if chunk.bytesize > INPUT_LIMIT - bytes.bytesize
         bytes << chunk
       end
     rescue EOFError
@@ -336,6 +339,7 @@ module Polispec
     def hard_deny(harness, error)
       return usage unless @subcommand == "pretool" && HARNESSES.include?(harness)
       bytes, status = FIXED_DENIALS.fetch(harness)
+      bytes = bytes.sub("guard unavailable; call denied.", OVERSIZE_REASON) if error.is_a?(Polispec::InputTooLarge)
       $stdout.write(bytes)
       record_failure(harness, error, bytes)
       status
