@@ -537,6 +537,7 @@ Today polispec governs where an agent may act and how code travels to users. Wit
 - [`rules/polispec-stewardship.md`](rules/polispec-stewardship.md): the rule agents follow when they install, change, or repair polispec and its rulebooks.
 - [`docs/operator.md`](docs/operator.md): sealed authority, protected allow-once, promote, deploy, pause, and host wiring.
 - [`docs/harness-controls.md`](docs/harness-controls.md): grammar, native installation, authority ceilings, editions, and verification limits.
+- [`docs/effect.md`](docs/effect.md): when a change reaches running Claude Code and Codex sessions, what needs a reload, and how to confirm it landed.
 - [`docs/roster.md`](docs/roster.md): the roster resolver.
 - [`docs/behavior.md`](docs/behavior.md): behavioral policy.
 - [`docs/code-specs.md`](docs/code-specs.md): code specs.
