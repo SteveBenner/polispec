@@ -1,0 +1,37 @@
+@layer vendor, reset, tokens, themes, base, components, shell, views, flourish;
+
+@import url("reset.css") layer(reset);
+@import url("tokens.css") layer(tokens);
+@import url("themes.css") layer(themes);
+@import url("base.css") layer(base);
+
+@layer flourish {
+  [data-theme="apple-noir"] :is(h1, h2) {
+    font-family: var(--font-display);
+    font-weight: 500;
+    letter-spacing: -0.005em;
+  }
+
+  [data-theme="apple-noir"] ps-topbar {
+    border-bottom: 1px solid var(--border-strong);
+    box-shadow: inset 0 1px 0 var(--accent-soft);
+  }
+
+  [data-theme="apple-noir"] :is(ps-card, ps-panel) {
+    box-shadow: none;
+  }
+
+  [data-theme="apple-noir"] ::selection {
+    background: var(--accent);
+    color: var(--accent-contrast);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(html) :where(*, *::before, *::after) {
+    transition-property: opacity;
+    transition-duration: var(--dur-fast);
+    animation: none;
+    scroll-behavior: auto;
+  }
+}
