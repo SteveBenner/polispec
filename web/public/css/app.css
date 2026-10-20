@@ -36,6 +36,11 @@
 @import url("components/ps-theme-switcher.css") layer(components);
 @import url("views/map.css") layer(views);
 @import url("views/detail.css") layer(views);
+@import url("views/pipeline.css") layer(views);
+@import url("views/sessions.css") layer(views);
+@import url("views/timeline.css") layer(views);
+@import url("views/feed.css") layer(views);
+@import url("views/heatmap.css") layer(views);
 
 @layer flourish {
   [data-theme="apple-noir"] :is(h1, h2) {
