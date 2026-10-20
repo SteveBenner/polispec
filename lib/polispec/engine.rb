@@ -429,6 +429,23 @@ module Polispec
         home ? home.project : named_owner(hint, ledger)
       end
 
+      def path_entry(action, ledger, cwd)
+        return nil if ledger.paths.empty?
+
+        hint = hint_of(action)
+        return nil if hint["project"]
+
+        paths = paths_of(hint)
+        candidates = paths.empty? ? [cwd.to_s] : paths.map { |path| absolute(path, cwd) }
+        candidates.each do |path|
+          next if path.empty?
+
+          found = ledger.locate(path, paths: true)
+          return found.entry if found && found.kind == :path && found.entry.status == "live"
+        end
+        nil
+      end
+
       def paths_of(hint)
         hint.flat_map do |key, value|
           if value.is_a?(Hash)
@@ -1170,7 +1187,7 @@ module Polispec
       end
 
       def unowned?(target)
-        target.project == "global" && target.policy_source == "global"
+        (target.project == "global" && target.policy_source == "global") || target.policy_source == "path"
       end
 
       def cleared(verdict, action, env, target, ctx)

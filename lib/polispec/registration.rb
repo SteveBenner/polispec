@@ -99,14 +99,32 @@ module Polispec
       File.file?(ledger.path) ? File.read(ledger.path) : Ledger.starter_text
     end
 
+    def runtime_behind?
+      Description.ahead_of_runtime?
+    end
+
+    def runtime_behind_failure
+      release = Description.installed_release
+      Operator::Failure.new("runtime_behind", "the installed polispec release is #{release ? release.join('.') : 'unknown'}, older than 0.34.0, and rejects a ledger carrying paths, owner or registered_by; install 0.34.0 first", "installed" => release && release.join("."), "required" => "0.34.0")
+    end
+
+    def refuse_behind!
+      raise runtime_behind_failure if runtime_behind?
+    end
+
+    def behind_note
+      "note: #{runtime_behind_failure.message}; this dry run previews only and the apply will be refused"
+    end
+
     def refuse_restricted!
       return unless Editions.value("register.path") == "restricted"
 
       raise Operator::Failure.new("edition_restricted", "registering a governed path is restricted in this edition; the protected ledger the sealed plane names is the only way to add one")
     end
 
-    def propose_register(ledger, path, id:, kind:, description:)
+    def propose_register(ledger, path, id:, kind:, description:, dry: false)
       refuse_restricted!
+      refuse_behind! unless dry
       raise Operator::Failure.new("kind_invalid", "kind must be one of #{KINDS.join(', ')}") unless KINDS.include?(kind)
 
       absolute = File.expand_path(path)
@@ -131,7 +149,8 @@ module Polispec
       [id, text]
     end
 
-    def propose_unregister(ledger, id)
+    def propose_unregister(ledger, id, dry: false)
+      refuse_behind! unless dry
       entry = ledger.path_entry(id)
       raise Operator::Failure.new("path_unknown", "#{id} is not a registered path") unless entry
       raise Operator::Failure.new("already_retired", "#{id} is already retired") if entry.status == "retired"
