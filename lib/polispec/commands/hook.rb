@@ -11,6 +11,9 @@ require_relative "../harness_controls/authorizations"
 require_relative "../judgments"
 require_relative "../exceptions"
 require_relative "../editions"
+require_relative "../effect"
+require_relative "../sessions"
+require_relative "../notice"
 
 module Polispec
   module DeferredEvents
@@ -226,8 +229,18 @@ module Polispec
 
     def decide(adapter, input, started, options)
       @judged = { "targets" => [], "raw" => nil, "control" => nil, "fastpath_key" => nil, "governed" => false, "mode" => nil, "verdict" => nil, "error" => nil }
+      @rule_lifts = []
       output = judge(adapter, input, options)
+      output = noticed(adapter, input, output)
       record_judgment(adapter, input, started, output)
+      output
+    end
+
+    def noticed(adapter, input, output)
+      @epoch = Effect.epoch(@ledger)
+      line = Notice.line_for(input.session_id, @epoch)
+      line ? adapter.with_notice(output, line, input.event) : output
+    rescue StandardError, ScriptError
       output
     end
 
@@ -242,6 +255,7 @@ module Polispec
         @exception_asks = []
         @exception_entries = nil
         ledger = Ledger.load
+        @ledger = ledger
         actions = calls.flat_map { |tool, data| Array(Classify.call(tool, data, cwd)) }
         baseline = Layers.baseline?
         option_applies = options["controls_file"] && (!options["controls_project"] || project_applies?(options["controls_project"], cwd, actions))
@@ -635,13 +649,16 @@ module Polispec
         raw = row.action.raw
         next nil unless row.verdict.warn? && raw.is_a?(String) && Exceptions.canonical_tool(input.tool_name) == "Bash"
 
-        Exceptions.covers(exception_entries, kind: "rule", tool: "Bash", command: raw, rule: row.verdict.rule_id, cwd: cwd)
+        id = Exceptions.covers(exception_entries, kind: "rule", tool: "Bash", command: raw, rule: row.verdict.rule_id, cwd: cwd)
+        @rule_lifts << [row.action, id] if id && @rule_lifts
+        id
       end
     end
 
     def stamp_exceptions(control)
       used = (Array(control["exceptions"]) + Array(@exceptions_used)).flatten.compact.uniq
       @judged["exceptions"] = used unless used.empty?
+      Array(control["exceptions"]).flatten.compact.uniq.each { |id| (@judged["exception_rows"] ||= []) << { "row" => -1, "entry" => id } }
     end
 
     def propose_exceptions(worst, outcomes, input, cwd)
@@ -763,8 +780,23 @@ module Polispec
     end
 
     def note_target(target, outcome, context)
+      offset = @judged["targets"].sum { |entry| Array(entry["rows"]).length }
       @judged["targets"] << Judgments.target(target, outcome, context)
+      note_exception_rows(outcome, offset)
       @judged["raw"] ||= Array(outcome.rows).map { |row| row.action.raw.to_s }.find { |text| !text.empty? }
+    rescue StandardError
+      nil
+    end
+
+    def note_exception_rows(outcome, offset)
+      return if @rule_lifts.nil? || @rule_lifts.empty?
+
+      Array(outcome.rows).each_with_index do |row, index|
+        found = @rule_lifts.index { |action, _| action.equal?(row.action) }
+        next unless found
+
+        (@judged["exception_rows"] ||= []) << { "row" => offset + index, "entry" => @rule_lifts.delete_at(found).last }
+      end
     rescue StandardError
       nil
     end
@@ -784,7 +816,7 @@ module Polispec
           "targets" => Array(judged["targets"]), "control" => judged["control"],
           "engine" => Judgments.engine(judged["mode"], plane: @plane, fastpath_key: judged["fastpath_key"]),
           "outcome" => Judgments.outcome(judged["verdict"], enforced: judged["mode"] == "enforce", rendered: Judgments.rendered(output), governed: judged["governed"], error: judged["error"], duration_ms: ((clock - started) * 1000).round(2))
-        }.tap { |record| record["exceptions"] = judged["exceptions"] if judged["exceptions"].is_a?(Array) && !judged["exceptions"].empty? }.tap { |record| record["relaxed"] = judged["relaxed"] if judged["relaxed"].is_a?(Array) && !judged["relaxed"].empty? }
+        }.tap { |record| record["exceptions"] = judged["exceptions"] if judged["exceptions"].is_a?(Array) && !judged["exceptions"].empty? }.tap { |record| record["relaxed"] = judged["relaxed"] if judged["relaxed"].is_a?(Array) && !judged["relaxed"].empty? }.tap { |record| record["epoch"] = @epoch if @epoch }.tap { |record| record["exception_rows"] = judged["exception_rows"] if judged["exception_rows"].is_a?(Array) && !judged["exception_rows"].empty? }
       end
     end
 
@@ -799,7 +831,7 @@ module Polispec
           "targets" => Array(judged["targets"]), "control" => judged["control"],
           "engine" => Judgments.engine(judged["mode"], plane: @plane, fastpath_key: judged["fastpath_key"]),
           "outcome" => Judgments.outcome(verdict, enforced: true, rendered: Judgments.rendered(bytes), governed: true, error: error.class.name, duration_ms: @started ? ((clock - @started) * 1000).round(2) : nil)
-        }
+        }.tap { |record| (epoch = Effect.epoch(@ledger)) && record["epoch"] = epoch }
       end
     end
 
@@ -843,13 +875,24 @@ module Polispec
       cwd = input.cwd.to_s.empty? ? Dir.pwd : input.cwd.to_s
       ledger = Ledger.load
       located = ledger.locate(cwd)
-      return 0 unless located && located.project.status == "live"
+      live = located && located.project.status == "live"
+      text = live ? SessionText.new(ledger, located.project, input, cwd, enforce_mode).to_s : ""
+      note_session(adapter, input, ledger, located, cwd, text)
+      return 0 unless live
 
-      text = SessionText.new(ledger, located.project, input, cwd, enforce_mode).to_s
       $stdout.write(adapter.render_session(text, input.event)) unless text.empty?
       0
     rescue Errno::EPIPE, IOError, Polispec::Error
       1
+    end
+
+    def note_session(adapter, input, ledger, located, cwd, text)
+      return unless %w[SessionStart SubagentStart].include?(input.event.to_s)
+
+      Sessions.record(session_id: input.session_id, harness: adapter.name, event: input.event, agent_type: input.agent_type, cwd: cwd,
+                      project: located ? located.project.id : nil, epoch: Effect.epoch(ledger), text: text)
+    rescue StandardError, ScriptError
+      nil
     end
 
     def session_input(_adapter, raw)

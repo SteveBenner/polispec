@@ -3,6 +3,7 @@
 
 require "json"
 require_relative "../native_install"
+require_relative "../changes"
 
 module Polispec
   class InstallCommand
@@ -19,9 +20,11 @@ module Polispec
 
       plans = []
       status = 0
+      before = options[:dry_run] ? nil : Changes.epoch
       options[:harnesses].each do |harness|
         begin
           plans << perform(harness, options)
+          record_change(plans.last, before) unless options[:dry_run] || plans.last.changes.empty?
         rescue Polispec::Error => e
           warn "polispec: #{e.message}"
           status = 1
@@ -32,6 +35,10 @@ module Polispec
     end
 
     private
+
+    def record_change(plan, before)
+      Changes.record(kind: "install", subject: { "harness" => plan.harness, "scope" => plan.scope }, epoch_before: before)
+    end
 
     def perform(harness, options)
       NativeInstall.install(harness, scope: options[:scope], project: options[:project], force: options[:force], dry_run: options[:dry_run])

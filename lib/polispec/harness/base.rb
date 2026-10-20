@@ -95,6 +95,10 @@ module Polispec
         JSON.generate("hookSpecificOutput" => { "hookEventName" => event.to_s.empty? ? "PreToolUse" : event, "additionalContext" => text.to_s })
       end
 
+      def with_notice(output, _text, _event = nil)
+        output
+      end
+
       def reason_text(verdict)
         head = verdict.warn? ? "[POLISPEC #{verdict.rule_id}] WARNING" : "[POLISPEC #{verdict.rule_id}] DENIED"
         text = "#{head}: #{verdict.reason}."
