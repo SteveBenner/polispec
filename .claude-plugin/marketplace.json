@@ -9,7 +9,7 @@
       "name": "polispec",
       "source": "./",
       "description": "Spec-based policy guardrails for agentic development and operations: committed environment policies and deterministic harness controls, with explicit backend capabilities and enforcement limits.",
-      "version": "0.35.0"
+      "version": "0.35.1"
     }
   ]
 }

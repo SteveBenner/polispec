@@ -268,8 +268,7 @@ module Polispec
       after = JSON.pretty_generate(hooks)
       plan.show(before, after)
       write_file(plan, path, "#{JSON.pretty_generate(data)}\n")
-      skills = plan.scope == "user" ? File.join(Stewardship.claude_home, "skills", "polispec") : File.join(project, ".claude", "skills", "polispec")
-      place_link(plan, skills, File.join(plan.wired_root, "skills", "polispec"))
+      skill_links(plan, project).each { |path, source| place_link(plan, path, source) }
       if plan.scope == "user"
         RULE_NAMES.each { |name| place_link(plan, File.join(Stewardship.claude_home, "rules", "polispec", name), File.join(plan.wired_root, "rules", name)) }
       else
@@ -307,7 +306,7 @@ module Polispec
         end
       plan.show(original[codex_block_pattern].to_s.sub(/\A\n/, ""), block)
       write_file(plan, path, updated)
-      place_link(plan, File.join(codex_home, "skills", "polispec"), File.join(plan.wired_root, "skills", "polispec")) if plan.scope == "user"
+      skill_links(plan, nil).each { |path, source| place_link(plan, path, source) }
       plan.say(TRUST_NOTE)
     end
 
@@ -359,14 +358,25 @@ module Polispec
       plan
     end
 
-    def expected_links(plan, project)
-      if plan.harness == "claude"
-        links = [plan.scope == "user" ? File.join(Stewardship.claude_home, "skills", "polispec") : File.join(project, ".claude", "skills", "polispec")]
-        links += RULE_NAMES.map { |name| File.join(Stewardship.claude_home, "rules", "polispec", name) } if plan.scope == "user"
-        links
-      else
-        plan.scope == "user" ? [File.join(codex_home, "skills", "polispec")] : []
+    def skill_links(plan, project)
+      base =
+        if plan.harness == "claude"
+          plan.scope == "user" ? File.join(Stewardship.claude_home, "skills") : File.join(project, ".claude", "skills")
+        elsif plan.scope == "user"
+          File.join(codex_home, "skills")
+        end
+      return [] unless base
+
+      Dir.glob(File.join(plan.wired_root, "skills", "*", "SKILL.md")).sort.map do |file|
+        source = File.dirname(file)
+        [File.join(base, File.basename(source)), source]
       end
+    end
+
+    def expected_links(plan, project)
+      links = skill_links(plan, project).map(&:first)
+      links += RULE_NAMES.map { |name| File.join(Stewardship.claude_home, "rules", "polispec", name) } if plan.harness == "claude" && plan.scope == "user"
+      links
     end
 
     def remove_links(plan, paths, record)
