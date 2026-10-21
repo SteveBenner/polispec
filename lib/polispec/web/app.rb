@@ -100,11 +100,11 @@ module Polispec
       end
 
       def set_session_cookie(token)
-        response["Set-Cookie"] = "#{Auth::COOKIE}=#{token}; HttpOnly; SameSite=Strict; Path=/"
+        response["Set-Cookie"] = "#{Auth::COOKIE}=#{token}; HttpOnly; SameSite=Strict; Path=/#{'; Secure' if Web.context.public_origin}"
       end
 
       def clear_session_cookie
-        response["Set-Cookie"] = "#{Auth::COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
+        response["Set-Cookie"] = "#{Auth::COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0#{'; Secure' if Web.context.public_origin}"
       end
 
       def config_payload
@@ -170,6 +170,10 @@ module Polispec
         return false unless match
 
         context = Web.context
+        if context.public_origin
+          public_uri = URI.parse(context.public_origin)
+          return true if match[1].downcase == public_uri.host.downcase && (match[2] || "443").to_i == public_uri.port
+        end
         return false unless (match[2] || "80").to_i == context.port
 
         name = match[1].downcase
@@ -197,6 +201,8 @@ module Polispec
       end
 
       def allowed_origin?(origin)
+        return origin.to_s == Web.context.public_origin if Web.context.public_origin
+
         match = %r{\Ahttp://(.+)\z}.match(origin.to_s)
         !match.nil? && allowed_host?(match[1])
       end

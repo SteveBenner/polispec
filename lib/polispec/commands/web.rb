@@ -167,7 +167,8 @@ module Polispec
       code = Web::Auth.mint(File.read(secret_file).strip)
       host = info["bind"].to_s.include?(":") ? "[#{info['bind']}]" : info["bind"]
       host = "127.0.0.1" if ["0.0.0.0", "[::]"].include?(host)
-      link = "http://#{host}:#{info['port']}/#k=#{code}"
+      origin = Web.public_origin(info["public_origin"])
+      link = "#{origin || "http://#{host}:#{info['port']}"}/#k=#{code}"
       @json ? puts(JSON.generate("url" => link, "bind" => info["bind"], "port" => info["port"], "pid" => info["pid"])) : puts(link)
       0
     end

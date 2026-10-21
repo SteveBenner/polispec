@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.37.0] - 2026-10-20
+
+### Added
+- Optional `polispec.web.public_origin` for serving the existing web UI through an external HTTPS proxy while retaining a loopback backend. Initial and fresh links use the origin recorded by the running server, cookies carry Secure, and Host and Origin checks admit only the configured public authority.
+- Agent web API classification recognizes the configured and running HTTPS origins as well as existing loopback endpoints. Routing and supervision remain external; the standalone plugin requires neither rStack nor Tailscale.
+
 ## [0.36.0] - 2026-10-20
 
 ### Added

@@ -3,6 +3,7 @@
 
 require "json"
 require "securerandom"
+require "uri"
 require_relative "editions"
 require_relative "state"
 
@@ -22,7 +23,7 @@ module Polispec
     autoload :Server, File.join(__dir__, "web", "server")
 
     Route = Struct.new(:prefix, :mutating, :block)
-    Context = Struct.new(:bind, :port, :read_only, :exposed, :auth, :logger, keyword_init: true)
+    Context = Struct.new(:bind, :port, :read_only, :exposed, :auth, :logger, :public_origin, keyword_init: true)
 
     @routes = {}
     @stop_hooks = []
@@ -34,6 +35,22 @@ module Polispec
 
       def context=(value)
         @context = value
+      end
+
+      def public_origin(value)
+        text = value.to_s
+        return nil if text.empty?
+
+        uri = URI.parse(text)
+        valid = uri.is_a?(URI::HTTPS) && uri.host && !uri.host.empty? &&
+                uri.userinfo.nil? && uri.query.nil? && uri.fragment.nil? &&
+                ["", "/"].include?(uri.path) && uri.port.between?(1, 65_535)
+        raise URI::InvalidURIError unless valid
+
+        port = uri.port == 443 ? "" : ":#{uri.port}"
+        "https://#{uri.host.downcase}#{port}"
+      rescue URI::InvalidURIError, URI::InvalidComponentError, ArgumentError
+        raise Polispec::Error, "polispec.web.public_origin must be an HTTPS origin without credentials, a path, a query, or a fragment"
       end
 
       def route(prefix, mutating: false, &block)

@@ -30,11 +30,11 @@ module Polispec
         end
 
         def classify(cmd)
-          url = cmd.args.map(&:to_s).find { |arg| LOCAL_URL.match?(arg) }
+          url = cmd.args.map(&:to_s).find { |arg| web_url?(arg) }
           return [] unless url
 
           uri = parse(url)
-          return [] unless uri && local_port?(uri.port)
+          return [] unless uri
 
           path = uri.path.to_s.empty? ? "/" : uri.path
           action(cmd.text, uri, path, mutating?(cmd, url) || guarded?(path))
@@ -42,8 +42,8 @@ module Polispec
 
         def web_tool(tool_name, tool_input)
           url = Support.dig(tool_input, "url", "uri").to_s
-          uri = LOCAL_URL.match?(url) ? parse(url) : nil
-          return [] unless uri && local_port?(uri.port)
+          uri = web_url?(url) ? parse(url) : nil
+          return [] unless uri
 
           path = uri.path.to_s.empty? ? "/" : uri.path
           guarded?(path) ? action(tool_name.to_s, uri, path, true) : []
@@ -68,6 +68,30 @@ module Polispec
           return false if port.nil?
 
           [configured_port, running_port].compact.include?(port)
+        end
+
+        def web_url?(text)
+          return false unless LOCAL_URL.match?(text) || text.match?(%r{\Ahttps://}i)
+
+          uri = parse(text)
+          return false unless uri
+          return true if LOCAL_URL.match?(text) && local_port?(uri.port)
+
+          configured = Engine::Settings.web_public_origin
+          [configured, running_origin].compact.any? do |origin|
+            public_uri = parse(origin)
+            public_uri && public_uri.scheme == "https" && uri.scheme == public_uri.scheme &&
+              uri.host.to_s.downcase == public_uri.host.to_s.downcase && uri.port == public_uri.port
+          end
+        rescue StandardError
+          false
+        end
+
+        def running_origin
+          data = JSON.parse(File.read(File.join(State.home, "web", "server.json")))
+          data.is_a?(Hash) ? data["public_origin"] : nil
+        rescue SystemCallError, JSON::ParserError
+          nil
         end
 
         def configured_port

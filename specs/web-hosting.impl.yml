@@ -1,0 +1,29 @@
+schema: polispec.implementation/v1
+feature: web-https-hosting
+intent: Complete the existing operator web app's private HTTPS hosting support.
+scope:
+  - Accept one configured HTTPS origin with exact Host and Origin checks.
+  - Preserve loopback defaults and existing CSRF, session, and mutation checks.
+  - Mark cookies Secure when configured for HTTPS, including logout cookies.
+  - Persist the effective origin so fresh links match the running server.
+  - Keep routing and supervision outside the standalone plugin.
+dependencies:
+  - Ruby URI standard library; no external service required.
+  - Optional external reverse proxy; no forwarded headers are trusted.
+verification:
+  - Run the existing web smoke journey with synthetic state.
+  - Exercise HTTPS-origin session exchange and rejection paths with synthetic state.
+  - Verify a rendered browser journey before claiming hosting complete.
+constraints:
+  - No production service changes or operator-only authorization redemption.
+  - No new test files.
+  - No frontend design changes.
+evidence:
+  candidate_smoke: 44/44
+  installed_pin_differences: 58
+  difference_review: Version and runtime provenance, generated identifiers, fixture paths, and clone versus immutable pin protection; no change to existing web journey.
+  https_origin: Login and logout return 200 with Secure cookies; wrong Host and Origin return 403.
+  sdk: Package and check report zero findings.
+  browser: Unverified; the computer-use provider reports no available browsers.
+  hosting: Wrapper registered disabled; endpoint leased at 1341; readiness has 15 OK, zero warnings, and zero errors.
+  routing: Personal wiring directive and live switcher describe per-app proxies while the current stack guide assigns publication to rStack; existing mappings untouched.
