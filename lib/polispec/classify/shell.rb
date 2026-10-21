@@ -50,7 +50,7 @@ module Polispec
         end
       end
 
-      Command = Struct.new(:argv, :cwd, :redirects, :env, :pipeline, :index, :text, :sudo, :host, :xargs, keyword_init: true) do
+      Command = Struct.new(:argv, :cwd, :redirects, :env, :pipeline, :index, :text, :sudo, :host, :xargs, :syntax_only, keyword_init: true) do
         def name
           File.basename(argv.first.to_s)
         end
@@ -111,8 +111,13 @@ module Polispec
 
       def embedded_sources(cmd)
         bodies = cmd.redirects.select(&:here?).map { |redirect| redirect.op == "<<<" ? redirect.target : redirect.body }.compact
+        return [] if cmd.syntax_only && bodies.none? { |body| body.match?(/\$\(|`/) }
         return bodies if SHELLS.include?(cmd.name)
         return [] unless INTERPRETERS.include?(cmd.name)
+        operand = cmd.args.first
+        if operand && !operand.start_with?("-") && !(operand.respond_to?(:dynamic?) && operand.dynamic?) && File.file?(File.expand_path(operand, cmd.cwd))
+          return []
+        end
 
         (inline_code(cmd) + bodies).flat_map { |code| shell_strings(code) }
       end
@@ -162,6 +167,41 @@ module Polispec
         File.file?(path) && File.size(path) <= MAX_SQL_FILE ? File.read(path) : nil
       rescue SystemCallError
         nil
+      end
+
+      def syntax_invocation(words)
+        return nil unless %w[bash sh dash].include?(File.basename(words.first.to_s))
+
+        rest = words.drop(1)
+        noexec = false
+        code = false
+        stdin = false
+        until rest.empty?
+          arg = rest.first
+          return nil if arg.respond_to?(:dynamic?) && arg.dynamic?
+          if arg == "--"
+            rest.shift
+            break
+          end
+          break if arg == "-" || !arg.start_with?("-", "+")
+
+          rest.shift
+          if %w[-o +o].include?(arg)
+            return nil unless rest.shift == "noexec"
+
+            noexec = arg == "-o"
+          elsif arg.match?(/\A[-+][neuxvfcs]+\z/)
+            flags = arg[1..]
+            noexec = arg.start_with?("-") if flags.include?("n")
+            code = true if flags.include?("c") && arg.start_with?("-")
+            stdin = true if flags.include?("s") && arg.start_with?("-")
+          else
+            return nil
+          end
+        end
+        return nil unless noexec
+
+        { file: code || stdin ? nil : rest.first }
       end
 
       def script_operand(args)
@@ -616,6 +656,7 @@ module Polispec
           xargs = false
           loop do
             return if words.empty?
+            break if syntax_invocation(words, env)
 
             handler = Wrappers.handler_for(words)
             break unless handler
@@ -635,9 +676,17 @@ module Polispec
 
           return if follow_source(words, redirects, env, sudo, xargs)
 
-          host = follow_script(words) == :followed
+          syntax = syntax_invocation(words, env)
+          host = !syntax && follow_script(words) == :followed
           added = add_command(words, redirects, env, text, sudo, xargs)
           added.host = true if host && added
+          added.syntax_only = true if syntax && added
+        end
+
+        def syntax_invocation(words, env)
+          return nil unless (env.keys & %w[BASH_ENV ENV SHELLOPTS BASHOPTS]).empty?
+
+          Shell.syntax_invocation(words)
         end
 
         def follow_script(words)

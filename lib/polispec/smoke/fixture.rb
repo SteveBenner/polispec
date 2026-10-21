@@ -71,6 +71,7 @@ module Polispec
           "XDG_STATE_HOME" => File.join(scratch, "xdg-state"),
           "RPLUGINS_HOME" => File.join(scratch, "rplugins"),
           "POLISPEC_DATA_HOME" => File.join(scratch, "polispec-data"),
+          "CODEX_HOME" => File.join(self.home, ".codex"),
           "POLISPEC_SMOKE" => File.join(scratch, "smoke.yml"),
           "POLISPEC_SPECS_REPO" => File.join(scratch, "specs-repo"),
           ENFORCE_ENV => enforce,
@@ -104,6 +105,9 @@ module Polispec
         layout = Layout.new(scratch: scratch, tree: tree, polispec: polispec, out: out, enforce: spec["enforce"] || "enforce",
                             project_ids: projects.map { |item| item["id"] }, checkout_ids: projects.select { |item| item["checkouts"] }.map { |item| item["id"] })
         [layout.scratch, layout.home, layout.files, layout.global, layout.state, File.join(scratch, "projects"), File.join(scratch, "polispec-home")].each { |dir| FileUtils.mkdir_p(dir) }
+        codex_home = File.join(layout.home, ".codex")
+        FileUtils.mkdir_p(codex_home)
+        File.write(File.join(codex_home, "config.toml"), "")
         File.write(layout.gitconfig, "[user]\n\tname = smoke\n\temail = smoke@example.invalid\n[init]\n\tdefaultBranch = main\n[protocol \"file\"]\n\tallow = always\n")
         seed_ledger(layout, tree)
         write_global(layout, spec)
