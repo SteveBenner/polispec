@@ -440,10 +440,10 @@ shell:
     layout: 'Replaces the shell content; one centered panel width min(480px, 100vw - 32px), padding var(--space-5), density regular. The only centered panel in the app.'
     states:
       exchanging: 'Title "Opening polispec web"; static hourglass; text "Checking the one-time link."'
-      link_used_or_expired: 'Title "This link has already been used or has expired"; body "Each link printed by polispec web works once. Start a new session in a terminal."; ps-command "polispec web --open".'
-      no_session: 'Title "No session"; body "Open the link polispec web printed in your terminal."; same ps-command.'
-      session_ended: 'Title "Session ended"; body names the cause when known (signed out, origin mismatch, CSRF token rejected); same ps-command.'
-      server_unreachable: 'Title "polispec web is not running"; body "Start it again in a terminal. Cached views are shown when you reopen the link."; same ps-command; Retry button.'
+      link_used_or_expired: 'Title "This link has already been used or has expired"; body "Each link works once. Get a new one in a terminal."; ps-command "polispec web url".'
+      no_session: 'Title "No session"; body "Run polispec web url in a terminal and open the link it prints."; ps-command "polispec web url".'
+      session_ended: 'Title "Session ended"; body names the cause when known (signed out, origin mismatch, CSRF token rejected) followed by "Get a new link in a terminal."; ps-command "polispec web url".'
+      server_unreachable: 'Title "polispec web is not running"; body "Start it again in a terminal. Cached views are shown when you reopen the link."; ps-command "polispec web --open"; Retry button.'
   offline_banner:
     element: ps-banner
     when: 'Any API call fails as offline after a session exists.'

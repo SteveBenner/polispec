@@ -4,7 +4,6 @@ import { app } from "../core/store.js";
 import { bootSession } from "../core/session.js";
 
 const NS = "http://www.w3.org/2000/svg";
-const COMMAND = "polispec web --open";
 
 const GATES = {
   exchanging: {
@@ -14,26 +13,26 @@ const GATES = {
   },
   link_used_or_expired: {
     title: "This link has already been used or has expired",
-    body: () => "Each link printed by polispec web works once. Start a new session in a terminal.",
-    command: true,
+    body: () => "Each link works once. Get a new one in a terminal.",
+    command: "polispec web url",
   },
   no_session: {
     title: "No session",
-    body: () => "Open the link polispec web printed in your terminal.",
-    command: true,
+    body: () => "Run polispec web url in a terminal and open the link it prints.",
+    command: "polispec web url",
   },
   session_ended: {
     title: "Session ended",
     body: (cause) => {
       const reason = String(cause || "").trim().replace(/[.\s]+$/, "");
-      return reason ? `${reason}. Start a new session in a terminal.` : "Start a new session in a terminal.";
+      return reason ? `${reason}. Get a new link in a terminal.` : "Get a new link in a terminal.";
     },
-    command: true,
+    command: "polispec web url",
   },
   server_unreachable: {
     title: "polispec web is not running",
     body: () => "Start it again in a terminal. Cached views are shown when you reopen the link.",
-    command: true,
+    command: "polispec web --open",
     retry: true,
   },
 };
@@ -101,7 +100,7 @@ class PsSessionGate extends HTMLElement {
     children.push(body);
     if (spec.command) {
       const command = document.createElement("ps-command");
-      command.setAttribute("command", COMMAND);
+      command.setAttribute("command", spec.command);
       children.push(command);
     }
     if (spec.retry) {
