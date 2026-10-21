@@ -204,7 +204,7 @@
   }
 
   .mgr-panel .mgr-tab-lint ps-data-table colgroup > col:nth-child(3) {
-    width: 0 !important;
+    display: none;
   }
 
   .mgr-panel .mgr-tab-lint ps-data-table tbody td:last-child {

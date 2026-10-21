@@ -118,7 +118,7 @@ slices:
         change: sessions.js renders a text-faint dash for an empty Agent or Runtime cell.
         accept: empty Agent and Runtime cells contain a dash.
       - id: P6
-        change: Not implemented. specs/web-frontend.impl.yml line 48 and specs/webapp.impl.yml line 354 forbid the word pause in any web control name, so the feed toggle keeps Hold.
+        change: Dropped (reserved word, Sven 2026-10-20). specs/web-frontend.impl.yml line 48 and specs/webapp.impl.yml line 354 forbid the word pause in any web control name, so the feed toggle keeps Hold.
         accept: toggle label unchanged.
 
 verification:
