@@ -431,6 +431,16 @@ The plugin brings the hooks and the skill. It runs from the harness's plugin cac
 
 polispec starts in `advise` mode: it logs every verdict and blocks nothing. When the rulebook is ready, `polispec settings set polispec.enforce enforce`. Check the result any time with `polispec doctor`.
 
+## Agent skills
+
+The plugin packages three skills for AI models:
+
+- [`polispec`](skills/polispec/SKILL.md) locates the installed CLI, resolves the target environment and governing layers, explains verdicts, and routes operational tasks.
+- [`polispec-specs`](skills/polispec-specs/SKILL.md) creates and modifies specs through the appropriate validation, planning, approval, and release workflow. It distinguishes environment rulebooks, application behavioral policies, code-spec packs, and ordinary application contracts.
+- [`polispec-register`](skills/polispec-register/SKILL.md) registers software or directories outside governed repositories without editing the ledger or shelf directly.
+
+Skills refer to the installed plugin's documentation and schemas, preserve the user's authorization boundaries, and distinguish a validated draft from the trusted policy in effect. They ship through the plugin installers; no personal skill-directory copy is required.
+
 ## Quick start
 
 ```sh

@@ -12,6 +12,8 @@ description: >
 
 A path entry in the ledger brings something that has no git repository under polispec's guard. The registration only ever adds an `onboarding` entry, which changes no verdict until an operator makes it `live`, so it is safe to propose.
 
+Use [polispec](../polispec/SKILL.md) to find the installed CLI and inspect its version, runtime, and target environment first. Registration requires 0.35.0 or later. Read the installed plugin's `rules/polispec-stewardship.md`; for shelf modules or ledger changes beyond registration, follow [polispec-specs](../polispec-specs/SKILL.md). Resolve the actual ledger and shelf through polispec, not a hard-coded personal path.
+
 ## When to use it
 
 - The user names a directory, a program, a data folder, or "my machine" or "my home directory" and wants agents held to rules there.
@@ -20,7 +22,7 @@ A path entry in the ledger brings something that has no git repository under pol
 
 ## How to do it
 
-1. Interview first. Ask what it is, who it serves, what must never happen to it, and who else uses the machine. Do not guess the answers.
+1. Establish what it is, who it serves, what must never happen to it, and who else uses the machine. Use facts and choices the user already supplied; ask only for missing decisions through the available question tool. Do not guess the answers or repeat an approval already given for this exact registration.
 2. Pick the kind from the answers: `directory` (the default) for a folder, `software` for an installed program or tool tree, `system` for the home directory only (any other path is refused).
 3. Pick an `--id` (lowercase letters, digits and hyphens, at most 41 characters, unique across projects and paths) and write a `--description` of two to eight sentences and at least 20 words that names what the entry governs and states an effect in words (allow, ask, warn, deny, refuse, promote or freeze). `polispec validate` and `polispec doctor` lint it; a description that repeats a summary or names nothing is reported.
 4. Dry run first. This prints the plan and writes nothing to the ledger:
@@ -30,7 +32,7 @@ A path entry in the ledger brings something that has no git repository under pol
    ```
 
    Read the plan. It should classify as `tightening` and say it adds the path with status `onboarding`. The entry records the owner (your uid and login name) and `registered_by` (`POLISPEC_ACTOR`, else `cli`), so another user on the machine sees whose it is.
-5. After the person says yes, run the same command without `--dry-run`. A tightening plan applies; a plan that needs confirmation prints its plan id, and the operator runs `--confirm PLAN_ID`.
+5. When the registration is within the user's authorized task and the reviewed plan is tightening, run the same command without `--dry-run`. A plan requiring confirmation needs the user's explicit yes to that exact plan id and reasons before `--confirm PLAN_ID`; authenticated operator-only changes remain the operator's. Re-plan if the proposal changes, and never invent consent or self-confirm.
 6. Offer a starter module. The entry's rules live in `paths/<id>.yml` on the global shelf (schema `polispec.module/v1`), for example a `fs.delete` deny scoped to the directory. Propose it as a file, validate it with `polispec validate module <file>`, and give the person `polispec plan global` and `polispec apply global` to run; never edit the ledger or the shelf by hand. The entry stays inert until the operator sets it `live` through a confirmed ledger plan.
 7. `polispec unregister <id>` retires an entry; it is a loosening, so it needs `--confirm PLAN_ID` from the plan it prints.
 

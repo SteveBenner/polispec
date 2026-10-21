@@ -1,7 +1,13 @@
 schema_version: 1
 name: polispec
-version: 0.35.0
+version: 0.35.1
 kind: plugin
+agent_skills:
+  discovery: "Packaged skills are declared under contents.skills in polispec.rplugin.yml and generated into each native harness package by rplugin package. They locate the installed CLI and plugin-root documentation, inspect version and authority, resolve the target environment, and preserve the user's approvals and operator boundaries. Product skills ship in the plugin repository, not a machine-specific copy."
+  operations: "skills/polispec/SKILL.md routes installed CLI operation, verdict explanation, validation, test promotion, harness controls, spec authoring, and path registration. It distinguishes the host runtime from a development candidate and generated artifacts from observed enforcement."
+  authoring: "skills/polispec-specs/SKILL.md distinguishes environment policy and composition, global and ledger proposals, application behavioral policies and canonical surfaces, code-spec packs, and application implementation contracts. It requires schema validation, composition planning, exact-plan approval when required, canonical-source edits, explicit candidate refs, rollout compatibility, and honest reporting of the trust ref actually in effect."
+  registration: "skills/polispec-register/SKILL.md uses the operation skill's discovery path and the spec skill's shelf workflow, carries forward supplied context and approvals, and never widens the requested scope or writes the ledger or shelf directly."
+  standalone_delivery: "NativeInstall discovers shipped skills/*/SKILL.md directories and links each for Claude Code user/project scope and Codex user scope. Uninstall uses the same discovered paths together with receipt-owned links and preserves foreign files, directories, and symlinks. Repeated installation is idempotent."
 purpose: "Spec-based policy guardrails for agentic development and operations. Every live project carries a versioned policy and, beside it, an environment manifest (main, test, stable), both read from the trust ref; the policy declares what agents may do in each environment, how code is promoted, what data and secrets each environment may hold, when it is frozen, and which harness, model and effort each agent role gets."
 ports:
   required: [state, events]

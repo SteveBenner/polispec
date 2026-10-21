@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.35.1] - 2026-10-20
+
+### Added
+
+- The packaged `polispec-specs` agent skill: how to identify, draft, validate, plan, and safely apply environment policies, modules, rosters, ledger proposals, behavioral policies, and code-spec packs; it explains candidate refs, generated surfaces, exact-plan approvals, runtime compatibility, and operator promotion boundaries.
+
+### Changed
+
+- The main agent skill now locates the installed CLI and plugin-relative documentation, resolves the target environment, explains actual hook calls, and routes spec authoring and registration to dedicated skills. Corrected the obsolete claim that harness controls ship disabled.
+- Registration guidance reuses supplied context and authorization, and routes shelf and ledger modifications through the spec-authoring workflow.
+
+### Fixed
+
+- Standalone installation and removal cover every shipped skill directory for Claude Code user/project scope and Codex user scope, preserving foreign links and receipt ownership. Previously only the main skill was installed.
+- Description-lint documentation names the supported strict setting rather than a nonexistent `validate --strict` flag.
+
 ## [0.35.0] - 2026-10-20
 
 ### Fixed
@@ -20,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `polispec web`, a local web app over the files polispec already keeps: the map of projects and governed paths with their layers, project detail, the rulebook manager with a CodeMirror editor, live lint and blast radius, plans and applies through the same plan and apply path as the CLI, pipeline, sessions, timeline, feed and heatmap views, the playground and explainer, history, the gallery, exceptions, manifest and register views, six themes through one switcher, and a command palette. Loopback by default, one-time exchange links (`polispec web url`), session cookie plus CSRF for every mutating route, `--read-only`, and `G-WEB-AGENT` classifying an agent's call to it as `policy.edit`. Routes are glob-loaded from `lib/polispec/web/routes/*.rb`; the contract is `web/public/openapi.yml`. No database: browser storage caches views and `web/state/*.yml` keeps layout, pins and saved playground calls.
 - The `author` port: `polispec author draft <kind> --intent TEXT` drafts a rulebook or description, validated and planned before anyone sees it, and writes nothing. The standalone adapter runs a read-only harness CLI session (Read, Grep and Glob only, one Read rule per root, scratch `POLISPEC_*` variables stripped); rplugin extensions add adapters through the declared port (`polispec.rplugin.yml` `ports.declared: [author]`, rplugin 1.17.0 or later).
-- `description` on every rulebook and ledger entry, with a deterministic lint (`missing`, `too_short`, `too_long`, `restates_summary`, `names_nothing`, `states_no_effect`), warnings in `polispec validate`, `--strict` to fail on them, `--semantic` to judge a description against the rules (`matches`, `partial`, `contradicts`), and the doctor finding `description_ahead_of_runtime`.
+- `description` on every rulebook and ledger entry, with a deterministic lint (`missing`, `too_short`, `too_long`, `restates_summary`, `names_nothing`, `states_no_effect`), warnings in `polispec validate`, `POLISPEC_DESCRIPTION_STRICT=on` to fail on them, `--semantic` to judge a description against the rules (`matches`, `partial`, `contradicts`), and the doctor finding `description_ahead_of_runtime`.
 - Governed path entries: `polispec register <path> --kind software|directory|system` and `polispec unregister <id>` plan and apply a `paths` entry in the ledger with owner stamping, so software, a directory or the system scope that is not a git repository with branches can be governed; judgments on a path entry are labelled with it.
 - Effect tracking: the policy epoch, chained change records, session records, `polispec changes list|show|await|verify`, `polispec sessions list|show`, and a once-per-epoch notice line on the next pretool call after a change.
 - `polispec manifest` and `manifest index`: a per-project `polispec.manifest.json` and badge, committed on main with `--write`, and a publishable index (`POLISPEC_INDEX_DIR`).
