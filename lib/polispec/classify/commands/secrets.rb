@@ -24,6 +24,8 @@ module Polispec
         end
 
         def candidates(cmd)
+          return [Shell.syntax_invocation(cmd.argv)[:file]].compact if cmd.syntax_only
+
           return Support.split_args(cmd.args, Fs::COMPRESSOR_VALUE).first.reject { |arg| arg == "-" } if Fs.to_stdout?(cmd)
           return [] unless NAMES.include?(cmd.name) || ALSO_READS.include?(cmd.name)
 

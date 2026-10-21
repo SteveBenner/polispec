@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.37.1] - 2026-10-21
+
+### Fixed
+- Recognize static noninteractive shell noexec checks without classifying the checked script as executed. Retain caller redirects, substitutions, privilege, and surrounding commands, and classify the script operand as a read. Unsupported option combinations stay conservative.
+- Treat stdin supplied to an interpreter with a literal existing script operand as data, rather than extracting shell commands from its JSON input.
+- Detect Codex guard bridges launched through known interpreters instead of inspecting only the interpreter binary. Wiring discovery still makes no trust or enforcement claim.
+- Keep smoke runs on their own Codex home with an empty configuration, so doctor findings and hook discovery do not depend on the operator's running harness configuration.
+- Refuse judgment appends on an unreadable tail or divergent head and detect short writes before advancing the anchor. Verification takes the append lock in shared mode and names malformed archive records without altering historical evidence.
+
 ## [0.37.0] - 2026-10-20
 
 ### Added

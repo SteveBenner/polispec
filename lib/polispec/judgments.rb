@@ -195,7 +195,11 @@ module Polispec
         head = read_head
         rotate! if File.file?(path) && File.size(path) > ROTATE_BYTES
         entry = seal(body.merge("prev" => head && head["digest"]))
-        File.open(path, File::WRONLY | File::APPEND | File::CREAT, 0o600) { |file| file.syswrite("#{JSON.generate(entry)}\n") }
+        line = "#{JSON.generate(entry)}\n"
+        File.open(path, File::WRONLY | File::APPEND | File::CREAT, 0o600) do |file|
+          written = file.syswrite(line)
+          raise Polispec::Error, "judgment append was incomplete; the head anchor was not advanced" unless written == line.bytesize
+        end
         write_head("digest" => entry["digest"], "count" => (head ? head["count"].to_i : 0) + 1, "file" => File.basename(path))
         rotate_skips
         entry
@@ -205,12 +209,13 @@ module Polispec
     def read_head
       stored = head_file
       tail = tail_digest
+      raise Polispec::Error, "judgment journal tail is unreadable; preserve the journal and investigate before appending" if tail.nil? && files.last && File.size(files.last).positive?
       return stored if stored && (tail.nil? || tail == stored["digest"])
       return nil unless tail
       return { "digest" => tail, "count" => count_records, "file" => File.basename(path) } unless stored
 
       ahead = ahead_of(stored["digest"])
-      return stored if ahead.empty?
+      raise Polispec::Error, "judgment head diverges from journal tail; preserve the journal and investigate before appending" if ahead.empty?
 
       { "digest" => ahead.last["digest"], "count" => stored["count"].to_i + ahead.length, "file" => File.basename(path) }
     end
@@ -309,11 +314,11 @@ module Polispec
       rotated + (File.file?(skips_path) ? [skips_path] : [])
     end
 
-    def each_record
+    def each_record(include_malformed: false)
       files.each do |file|
-        File.foreach(file) do |line|
+        File.foreach(file).with_index(1) do |line, number|
           parsed = State.parse_line(line)
-          yield parsed, file if parsed
+          yield parsed, file, number if parsed || include_malformed
         end
       end
     end
@@ -350,6 +355,15 @@ module Polispec
     end
 
     def verify(schema: true)
+      return verify_snapshot(schema: schema) unless File.file?(lock_path)
+
+      File.open(lock_path, File::RDONLY) do |lock|
+        lock.flock(File::LOCK_SH)
+        verify_snapshot(schema: schema)
+      end
+    end
+
+    def verify_snapshot(schema: true)
       findings = []
       interrupted = []
       previous = nil
@@ -357,7 +371,11 @@ module Polispec
       seen = {}
       count = 0
       last = nil
-      each_record do |entry, _|
+      each_record(include_malformed: true) do |entry, file, number|
+        unless entry
+          findings << finding("malformed_record", nil, "#{File.basename(file)}:#{number} is not a JSON object; historical bytes were preserved")
+          next
+        end
         count += 1
         id = entry["id"]
         Schema.validate("judgment", entry).each { |error| findings << finding("schema", id, "#{error.pointer.empty? ? '/' : error.pointer} #{error.message}") } if schema

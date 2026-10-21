@@ -1,0 +1,40 @@
+schema: rstack.blueprint/v1
+task: specstory-capture-unblock
+intent: Correct syntax-only shell classification and interpreter-wrapped Codex hook discovery, and refuse a divergent judgment head without rewriting historical evidence.
+authorization: Sven approved repairing the issues after the concrete denial and doctor findings were explained.
+ownership:
+  implementer: primary Astra session
+  isolated_worktree: /tmp/polispec-specstory-repair
+  branch: fix/specstory-capture-unblock
+changes:
+  syntax_only:
+    - Recognize only proven noexec invocations, respecting option order, end of options, command strings, stdin, and interactive overrides.
+    - Do not follow file, inline, or heredoc bodies when noexec is effective.
+    - Classify script operands as reads and retain caller substitutions, redirects, environment, privilege, and surrounding commands.
+    - Execution, disabled noexec, dynamic or unsupported options, and interactive invocation remain conservatively classified.
+    - Interpreter-file invocations consume heredoc stdin as data; retain conservative embedded parsing when the command does not positively identify a literal file operand.
+  codex_discovery:
+    - Inspect bounded literal script operands after known interpreters, rather than inspecting only the first absolute path.
+    - Preserve hook trust and runtime enforcement uncertainty; a reference proves wiring only.
+  judgment_integrity:
+    - Refuse to append when stored head and tail disagree without a contiguous recoverable forward path.
+    - Preserve historical bytes and their doctor findings. No rehashing or suppression.
+    - Diagnose malformed JSON with its archived file and line. Check full append length before advancing the head, and verify under the append lock's shared mode.
+  deployment_gates:
+    - Diagnose intent and committed deployment contracts per project before proposing policy changes.
+    - Never touch stable, weaken a gate, or apply an unreviewed policy proposal.
+verification:
+  - Run Ruby syntax checks and the native classifier and explainer on the concrete command.
+  - Exercise neighboring executing and interactive shell forms and surrounding side effects.
+  - Run native Codex wiring diagnosis on the actual hook definition without changing it.
+  - Exercise native judgment append against scratch state and preserve the live log.
+  - Run existing smoke scenarios with an isolated ledger and state, comparing against the installed release.
+shipping:
+  - Update the contract, feature register, changelog, and patch release metadata.
+  - Verify, merge to main, release, promote to test, and install through rplugin.
+  - Return to the authorized SpecStory capture fix after the corrected guard is installed.
+constraints:
+  - Do not edit the pinned runtime, host enforcement settings, ledger, shelf, or historical judgment logs.
+  - Do not author tests; native smoke machinery may be run as shipped.
+  - No new rStack service wire, agent, service, or hook registration.
+  - rhomeostasis is disabled.

@@ -3,6 +3,7 @@
 
 require "digest"
 require "json"
+require "shellwords"
 require_relative "canonical"
 require_relative "hook_memo"
 
@@ -300,12 +301,20 @@ module Polispec
         text = command.to_s
         return true if NEEDLES.any? { |needle| text.include?(needle) }
 
-        token = text.split(/\s+/).find { |part| part.start_with?("/", "~/") }
-        return false unless token
+        tokens = Shellwords.split(text)
+        interpreter = File.basename(tokens.first.to_s)
+        candidates = if %w[python python3 ruby bash sh].include?(interpreter)
+                       tokens.drop(1).take_while { |token| !%w[-c -e --command].include?(token) }.select { |token| token.start_with?("/", "~/") }.first(4)
+                     else
+                       tokens.first(1)
+                     end
+        candidates.any? do |token|
+          next false unless token.start_with?("/", "~/")
 
-        file = File.expand_path(token)
-        File.file?(file) && File.size(file) <= READ_LIMIT && (NEEDLES + ["polispec-guard.sh"]).any? { |needle| File.read(file).include?(needle) }
-      rescue SystemCallError
+          file = File.expand_path(token)
+          File.file?(file) && File.size(file) <= READ_LIMIT && (NEEDLES + ["polispec-guard.sh"]).any? { |needle| File.read(file).include?(needle) }
+        end
+      rescue SystemCallError, ArgumentError
         false
       end
 

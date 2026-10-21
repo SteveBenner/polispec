@@ -1,6 +1,11 @@
 schema_version: 1
 name: polispec
-version: 0.37.0
+version: 0.37.1
+capture_repair:
+  syntax_only_shell: "Recognized static noninteractive bash, sh, and dash noexec invocations classify script operands as reads. The parser does not follow their file, inline, or stdin bodies. Caller-side substitutions, redirects, privilege, and surrounding commands remain visible. Unknown options, startup-environment overrides, interactive mode, and disabled noexec retain conservative classification. Stdin bodies with possible caller substitutions remain conservatively inspected."
+  interpreter_stdin: "A literal existing script operand passed directly to an interpreter makes its stdin data, not code. Without that positive evidence, embedded-code inspection remains conservative."
+  codex_wiring: "Doctor recognizes bounded literal script operands following known interpreters, including the shared Codex bridge launched with /usr/bin/python3. Finding a reference proves wiring only, not trust or enforcement in an already running session."
+  judgment_integrity: "Appends refuse an unreadable journal tail or an unconnected head instead of continuing from a stale anchor, and advance the anchor only after a complete write. Verification holds the shared append lock and reports malformed JSON objects by archive and line. Historical malformed bytes and chain findings remain visible; they are never rewritten or rehashed."
 kind: plugin
 agent_skills:
   discovery: "Packaged skills are declared under contents.skills in polispec.rplugin.yml and generated into each native harness package by rplugin package. They locate the installed CLI and plugin-root documentation, inspect version and authority, resolve the target environment, and preserve the user's approvals and operator boundaries. Product skills ship in the plugin repository, not a machine-specific copy."

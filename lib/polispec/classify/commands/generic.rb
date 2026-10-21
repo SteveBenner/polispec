@@ -19,7 +19,7 @@ module Polispec
 
       class << self
         def classify(cmd)
-          return nil if cmd.argv.empty? || claimed?(cmd.name)
+          return nil if cmd.argv.empty? || cmd.syntax_only || claimed?(cmd.name)
 
           Support.act("fs.write", cmd.text, "path" => cmd.cwd, "unknown" => true, "command" => cmd.name)
         end
