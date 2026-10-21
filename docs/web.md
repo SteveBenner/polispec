@@ -1,6 +1,6 @@
 # polispec web
 
-`polispec web` serves a local web app over the files polispec already keeps. It reads the ledger, the rulebooks, the judgment stream, the change records and the session records through the same library the command line uses, and it changes a rulebook only by creating a plan and applying it through the same apply path as `polispec apply`. It has no database. Since 0.34.0.
+`polispec web` serves a local web app over the files polispec already keeps. It reads the ledger, the rulebooks, the judgment stream, the change records and the session records through the same library the command line uses, and it changes a rulebook only by creating a plan and applying it through the same apply path as `polispec apply`. It has no database. Since 0.35.0.
 
 - [Starting it](#starting-it)
 - [Sessions, CSRF and the Origin check](#sessions-csrf-and-the-origin-check)

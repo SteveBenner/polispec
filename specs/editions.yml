@@ -13,7 +13,7 @@ features:
   - id: exceptions.delegate_promote
     standard: included
     lock: excluded
-    since: 0.34.0
+    since: 0.35.0
     code: lib/polispec/delegate
     note: "The web app relays the typed phrase of exceptions add, promote and remove through the delegate runner. Never included in polispec-lock by operator direction on 2026-10-20."
   - id: relax.dev
@@ -67,31 +67,31 @@ features:
   - id: web
     standard: included
     lock: excluded
-    since: 0.34.0
+    since: 0.35.0
     code: lib/polispec/web
     note: "polispec web refuses to start under lock (edition_excluded). Decided 2026-10-20."
   - id: author
     standard: included
     lock: excluded
-    since: 0.34.0
+    since: 0.35.0
     code: lib/polispec/author
     note: "No AI drafting under lock."
   - id: register.path
     standard: included
     lock: restricted
-    since: 0.34.0
+    since: 0.35.0
     code: lib/polispec/commands/register.rb
     note: "Under lock a governed path entry is added only through the protected ledger the sealed plane names."
   - id: manifest.index_publish
     standard: included
     lock: excluded
-    since: 0.34.0
+    since: 0.35.0
     code: lib/polispec/manifest.rb
     note: "a machine-wide index discloses governed paths and owners to every local user"
   - id: epoch_notice
     standard: included
     lock: included
-    since: 0.34.0
+    since: 0.35.0
     code: lib/polispec/effect
     note: "The pretool hook adds the in-band epoch notice once per session per epoch in both editions."
   - id: controls.sandbox_prerequisite_finding

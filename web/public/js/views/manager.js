@@ -611,13 +611,13 @@ class Manager {
     this.planButton.text = global ? "Plan global" : "Plan";
     let reason = "";
     if (!this.dirty && !this.structural) reason = "There are no changes to plan";
-    else if (this.descriptionBlocked()) reason = "Readers of this rulebook run a polispec older than 0.34.0";
+    else if (this.descriptionBlocked()) reason = "Readers of this rulebook run a polispec older than 0.35.0";
     this.planButton.toggleAttribute("disabled", !this.tools || Boolean(reason));
     if (reason) this.planButton.setAttribute("reason", reason);
     else this.planButton.removeAttribute("reason");
     const blocked = this.descriptionBlocked();
     if (blocked) {
-      this.noteBanner("Readers of this rulebook run a polispec older than 0.34.0; a description makes it invalid there.", "warn", "description");
+      this.noteBanner("Readers of this rulebook run a polispec older than 0.35.0; a description makes it invalid there.", "warn", "description");
     } else {
       this.clearBanner("description");
     }
@@ -909,7 +909,7 @@ class Manager {
       list.push({
         severity: "error",
         code: "description_not_allowed",
-        message: "Readers of this rulebook run a polispec older than 0.34.0; a description makes it invalid there.",
+        message: "Readers of this rulebook run a polispec older than 0.35.0; a description makes it invalid there.",
         line,
         col: 1,
       });

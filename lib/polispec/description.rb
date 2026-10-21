@@ -20,7 +20,7 @@ module Polispec
       "partial" => "the description is true but omits or overstates part of what the rules do",
       "contradicts" => "the description states an effect that a rule reverses or does not carry"
     }.freeze
-    RUNTIME_FLOOR = [0, 34, 0].freeze
+    RUNTIME_FLOOR = [0, 35, 0].freeze
     KINDS = %w[policy environments roster global module package spec].freeze
     GIT_ENV = { "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_OPTIONAL_LOCKS" => "0" }.freeze
 
@@ -276,6 +276,13 @@ module Polispec
       rescue StandardError, LoadError
         nil
       end
+      begin
+        require_relative "stewardship"
+        store = Stewardship.store_link
+        candidates << File.join(File.realpath(store), "VERSION") if File.directory?(store)
+      rescue StandardError, LoadError
+        nil
+      end
       candidates << File.join(Runtime.root, "VERSION") if Runtime.pinned?
       candidates.each do |file|
         next unless File.file?(file)
@@ -322,7 +329,7 @@ module Polispec
       release = installed_release
       if used && ahead_of_runtime?(release)
         findings << { "project" => nil, "kind" => "description_ahead_of_runtime", "severity" => "warn",
-                      "detail" => "a trust ref, the shelf or the ledger uses description but the installed release is #{release.join('.')}, older than 0.34.0; that runtime rejects the field (additionalProperties false) and would judge by fallback_rules" }
+                      "detail" => "a trust ref, the shelf or the ledger uses description but the installed release is #{release.join('.')}, older than 0.35.0; that runtime rejects the field (additionalProperties false) and would judge by fallback_rules" }
       end
       findings
     rescue StandardError => e

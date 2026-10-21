@@ -137,7 +137,7 @@ module Polispec
       def description_flag
         strict = Engine::Settings.description_strict?
         if Polispec::Description.ahead_of_runtime?
-          { "allowed" => false, "reason" => "the installed release is older than 0.34.0; readers of a rulebook with a description would reject it", "strict" => strict }
+          { "allowed" => false, "reason" => "the installed release is older than 0.35.0; readers of a rulebook with a description would reject it", "strict" => strict }
         else
           { "allowed" => true, "reason" => nil, "strict" => strict }
         end

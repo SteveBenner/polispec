@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: polispec web
-  version: 0.34.0
+  version: 0.35.0
   description: The JSON API of polispec web, served under /api/v1 on a loopback address. Every route except POST /session needs the ps_session cookie. Every mutating route also needs the X-Polispec-CSRF header, an Origin equal to the server, and is limited to 30 a minute per session.
 servers:
   - url: http://127.0.0.1:7421/api/v1

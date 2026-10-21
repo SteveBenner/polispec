@@ -1032,7 +1032,7 @@ class PsAuthorPanel extends HTMLElement {
     if (item.refused) {
       const banner = document.createElement("ps-banner");
       banner.setAttribute("severity", "warn");
-      banner.setAttribute("text", "Not added: readers of this rulebook run polispec older than 0.34.0.");
+      banner.setAttribute("text", "Not added: readers of this rulebook run polispec older than 0.35.0.");
       card.append(banner);
     }
     if (item.rationale) {

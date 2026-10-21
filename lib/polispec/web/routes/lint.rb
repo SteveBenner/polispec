@@ -73,7 +73,7 @@ module Polispec
         doc = { "description" => text }
         findings = Description.lint(doc, nil).map { |item| finding(lint_severity, "description_#{item[:code]}", item[:message]) }
         if Description.ahead_of_runtime? && !text.strip.empty?
-          findings << finding("error", "description_ahead_of_runtime", "readers of this rulebook run a polispec older than 0.34.0; a description makes it invalid there")
+          findings << finding("error", "description_ahead_of_runtime", "readers of this rulebook run a polispec older than 0.35.0; a description makes it invalid there")
         end
         { "findings" => findings, "schema_id" => nil, "description" => counts(text) }
       end
@@ -131,7 +131,7 @@ module Polispec
           findings << finding(lint_severity, "description_#{item[:code]}", item[:message], place)
         end
         if Description.ahead_of_runtime?
-          findings << finding("error", "description_ahead_of_runtime", "readers of this rulebook run a polispec older than 0.34.0; a description makes it invalid there", place)
+          findings << finding("error", "description_ahead_of_runtime", "readers of this rulebook run a polispec older than 0.35.0; a description makes it invalid there", place)
         end
         out["description"] = counts(doc["description"])
       end

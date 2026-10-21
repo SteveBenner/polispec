@@ -166,8 +166,8 @@ Names the live projects of the host. The file is resolved in order from the `POL
 | `schema`, `host` | | Document type and machine name. |
 | `envs_root` | path | Where `test` and `stable` checkouts live. |
 | `defaults.rules[]` | list | The fail-closed policy for a ledgered project whose stable policy is missing or invalid. Each rule has `match` (`env`, `ref`, `class`), `verdict`, optional `id` and `reason`. |
-| `projects[]` | list | `id`, `status` (`live`, `onboarding`, `retired`), `repo`, `remote`, `worktree_globs`, `trust_ref`, `policy`, `roster`, `related`, `onboarded`, `profile` (`personal`, `service` or `live`; default `personal`), `packages` (see below), and since 0.34.0 `owner`, `registered_by` and `description` (see below). |
-| `paths[]` | list | Since 0.34.0. Governed software, directories and the system scope that are not git repositories. Each entry has `id`, `kind` (`software`, `directory`, `system`), `path`, `status` (`onboarding`, `live`, `retired`) and optionally `owner`, `registered_by`, `description` and `policy`. The id matches the project id pattern and must be unique across projects and paths. |
+| `projects[]` | list | `id`, `status` (`live`, `onboarding`, `retired`), `repo`, `remote`, `worktree_globs`, `trust_ref`, `policy`, `roster`, `related`, `onboarded`, `profile` (`personal`, `service` or `live`; default `personal`), `packages` (see below), and since 0.35.0 `owner`, `registered_by` and `description` (see below). |
+| `paths[]` | list | Since 0.35.0. Governed software, directories and the system scope that are not git repositories. Each entry has `id`, `kind` (`software`, `directory`, `system`), `path`, `status` (`onboarding`, `live`, `retired`) and optionally `owner`, `registered_by`, `description` and `policy`. The id matches the project id pattern and must be unique across projects and paths. |
 | `paths[].policy` | path | The module that governs the entry, relative to the global shelf; defaults to `paths/<id>.yml`. Its schema is `polispec.module/v1`. |
 | `owner` | object | `{ uid, name }` of the person who registered the entry: the process uid and its login name (`uid<N>` when the name cannot be read). Present on projects the environment-control package adds and on every entry `polispec register` adds. |
 | `registered_by` | string | The actor that registered the entry: `POLISPEC_ACTOR` when set, else `cli`. |
@@ -182,18 +182,18 @@ projects:
 
 A path entry changes nothing until it is `live`; an `onboarding` entry is listed and judged by nothing. A live entry is judged like a path no project owns, with one extra layer composed after the global layer: the module at the entry's `policy` path on the global shelf. Each rule of that module is scoped to the entry: a rule without `match.path` applies to the entry's directory and everything under it, and a rule with its own `match.path` has that path read relative to the entry's directory. A missing or invalid module file is a `layers_invalid` finding and the global layer alone applies. A path inside a ledgered project's repository or worktree belongs to that project and cannot be registered. The judgment record of an action inside a live path entry names the entry as its project (`project` is the entry id and `policy_source` is `path`); the layer appears as `path:<id>` in the verdict text.
 
-Since 0.34.0 a ledger that carries `paths`, `owner`, `registered_by` or a `description` is rejected by an installed polispec older than 0.34.0 (every object rejects unknown keys). `polispec doctor` reports `ledger_ahead_of_runtime` when that holds, and `polispec register`, `unregister` and the environment-control package refuse with `runtime_behind` until 0.34.0 is installed. See [the rollout order](operator.md#rolling-out-0340).
+Since 0.35.0 a ledger that carries `paths`, `owner`, `registered_by` or a `description` is rejected by an installed polispec older than 0.35.0 (every object rejects unknown keys). `polispec doctor` reports `ledger_ahead_of_runtime` when that holds, and `polispec register`, `unregister` and the environment-control package refuse with `runtime_behind` until 0.35.0 is installed. See [the rollout order](operator.md#rolling-out-0340).
 
 ## Description
 
-Since 0.34.0 every rulebook can say in prose what it does. `description` is an optional string of 1 to 4000 characters on a policy, an environments file, a roster, a global document, a module, a package, a spec, a behavior document, and on each ledger project and path entry. It is documentation: the guard never reads it for a verdict.
+Since 0.35.0 every rulebook can say in prose what it does. `description` is an optional string of 1 to 4000 characters on a policy, an environments file, a roster, a global document, a module, a package, a spec, a behavior document, and on each ledger project and path entry. It is documentation: the guard never reads it for a verdict.
 
 `polispec validate` lints it for the kinds policy, environments, roster, global, module, package and spec, and reports each finding as a warning (an error when the setting `polispec.description.strict` is `on`; the default is `off`):
 
 - `description_missing`: the rulebook carries no description.
 - `description_invalid`, with one or more of these codes: `too_short` (fewer than 2 sentences or 20 words), `too_long` (more than 8 sentences or 400 words), `restates_summary` (it repeats the `summary` instead of adding to it), `names_nothing` (it names nothing the rulebook declares: an action class, environment, path, tool, module, gate, rule, role or package) and `states_no_effect` (it states no effect in words such as allow, ask, warn, deny, refuse, promote or freeze).
 
-`validate --semantic` additionally asks the decide port whether the description matches what the rules do (`matches`, `partial` or `contradicts`); it needs a configured model and prints a note when none answers. `polispec doctor` reports `description_missing` (info) for a live project's rulebooks and the shelf, `description_invalid` (warn), `description_ahead_of_runtime` (warn) when a description is in use while the installed release is older than 0.34.0, and `description_unchecked` (info) when the check itself failed.
+`validate --semantic` additionally asks the decide port whether the description matches what the rules do (`matches`, `partial` or `contradicts`); it needs a configured model and prints a note when none answers. `polispec doctor` reports `description_missing` (info) for a live project's rulebooks and the shelf, `description_invalid` (warn), `description_ahead_of_runtime` (warn) when a description is in use while the installed release is older than 0.35.0, and `description_unchecked` (info) when the check itself failed.
 
 ## Editions: `specs/editions.yml`, `polispec.editions/v1`
 
@@ -217,7 +217,7 @@ Lives in the polispec state home and is written only by `polispec delegate grant
 | `schema`, `grants[]` | | Document type and the list of grants. |
 | `grants[].app` | string | The application, `^[a-z][a-z0-9_-]{0,31}$`. |
 | `grants[].token_sha256` | string | SHA-256 of the token shown once at grant time. |
-| `grants[].verbs` | list | `promote`, `deploy`, and since 0.34.0 `exceptions-add`, `exceptions-promote`, `exceptions-remove`. |
+| `grants[].verbs` | list | `promote`, `deploy`, and since 0.35.0 `exceptions-add`, `exceptions-promote`, `exceptions-remove`. |
 | `grants[].projects`, `targets` | lists | Ledger project ids, and `test` and or `stable`. |
 | `grants[].flags` | list | A subset of `--dry-run`, `--json`, `--tag`, `--waive-soak`, `--skip-drain`. |
 | `grants[].granted_at` | string | UTC timestamp. |
