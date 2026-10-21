@@ -1,10 +1,12 @@
 require_relative "../behavior"
+require_relative "../packages"
 require_relative "../surfaces"
 
 module Polispec
   class BehaviorCommand
     USAGE = <<~TEXT.freeze
       usage: polispec behavior compile FILE [--out json] [--root DIR]
+             polispec behavior export-package NAME
              polispec behavior decide FILE EVENT FACTS.json
              polispec behavior render FILE --surface ID [--root DIR] [--write]
              polispec behavior drift FILE [--root DIR] [--surface ID]... [--json]
@@ -15,6 +17,11 @@ module Polispec
       args = args.dup
       operation = args.shift
       path = args.shift
+      if operation == "export-package"
+        return usage unless path && args.empty?
+
+        return export_package(path)
+      end
       return usage unless path && %w[compile decide render drift lint].include?(operation)
 
       options = parse(args)
@@ -79,6 +86,19 @@ module Polispec
       return usage unless options[:positional].empty?
 
       emit(compiled_for(path, options))
+      0
+    end
+
+    def export_package(name)
+      package = Packages.find(name)
+      text = package.read("behavior.yml")
+      raise Polispec::Error, "package #{name} has no behavior.yml" unless text
+
+      data = Schema::Document.parse(text, "packages/#{name}/behavior.yml")
+      if Behavior.v2?(data) && (Array(data["directives"]).any? { |entry| entry.key?("body_ref") } || !data.fetch("surfaces", {}).empty?)
+        raise Polispec::Error, "export-package does not support behavior v2 body references or surfaces"
+      end
+      emit(Behavior.compile(data))
       0
     end
 

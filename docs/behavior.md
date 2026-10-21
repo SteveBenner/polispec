@@ -30,3 +30,40 @@ Updating an application policy requires compiling it, regenerating its readable 
 - `polispec behavior drift FILE [--root DIR] [--surface ID]... [--json]` lists generated targets whose bytes differ from their rendering and exits 1 on any. Surfaces that share a target (a stub and a full rules file behind a toggle) are checked one at a time with `--surface`.
 - `polispec behavior lint FILE [--root DIR] [--corpus GLOB]... [--json]` exits 1 when a sentence of 8 or more tokens in a surface template, a message, another directive or a corpus file overlaps a directive's rule or body by 0.8 or more without naming its id or opcode. `duplicate_of` exempts only the linked pair from each other; a surface that restates either still has to name it.
 - `Polispec::Surfaces.when_matches?(directive, event)` evaluates `always`, `task:`, `event:`, `path:` (a glob) and `tool:Name` or `tool:Name(pattern)` against an event hash, so a consumer's hook can inject a directive's body when its condition fires. Consumers port the predicate rather than depend on polispec at runtime.
+
+## Exporting a behavior package
+
+`polispec behavior export-package NAME` finds a shipped or global package by
+name, reads its `behavior.yml`, validates and compiles it, then prints the
+compiled JSON to standard output. The command is read-only: it does not apply
+the package, create a project ledger entry, or change host state. Packages
+without a `behavior.yml` cannot be exported this way. The result is deterministic
+for identical source policy and does not include a build timestamp.
+Behavior v2 packages with body references or generated surfaces are refused
+because export does not resolve paths outside the package's own source.
+
+The shipped `guided-learner` package provides six public learner-presentation
+directives and a bounded set of static detectors. Its package plan contains a
+single `files` step and writes `specs/polispec/guided-learner.yml`; it does not
+modify the project's development policy, environments, or roster. Exporting
+that package emits `polispec.behavior.compiled/v1` for an application adapter
+and does not apply it anywhere.
+
+The presentation parameters bound reply input to 65,536 bytes, event input to
+131,072 bytes, and corrective rewrites to one. The adapter should only inspect
+the documented final assistant reply field. Missing or unavailable reply text
+is unreviewable, not a clean result. At a display boundary, it may show the
+original reply only after review; otherwise it shows the configured fallback.
+The recovery instruction preserves relevant privacy, consent, grade, submission,
+and support information. Static patterns identify selected explicit forms
+such as code fences, common terminal handoffs, developer paths, and architecture
+terms such as backend, frontend, and software or web framework.
+They recognize panel-versus-backend and slice-versus-backend phrasing without
+flagging panel or slice alone, so ordinary references such as a solar panel, a
+pizza slice, or a class of customers remain ordinary language. The patterns do
+not establish semantic compliance, catch every paraphrase, or claim complete
+multilingual coverage. Replies shown outside the reviewed
+display boundary, including transcript, verbose, and tool output, are not
+covered by that boundary. The package recognizes common command-line tools;
+application-specific executable names belong in the consuming adapter's
+detectors. This keeps the shared package independent of any one application.

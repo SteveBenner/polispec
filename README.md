@@ -596,6 +596,12 @@ Today polispec governs where an agent may act and how code travels to users. Wit
 - [`examples/`](examples/): the `clinic` (booking app with nested modules), `shop` (web service), and `widget` (distributed plugin) projects, harness controls, and an example ledger.
 - [`specs/app.yml`](specs/app.yml): the contract.
 
+## Guided learner policies
+
+The optional `guided-learner` catalog package defines six policies for nontechnical learning workflows: no code in replies, no terminal handoffs, no implementation disclosures, released-assignment scope, plain-language coaching, and truthful essential disclosures. `polispec plan guided-learner --repo PATH` previews a files-only installation. It changes no development environment policy, ledger entry, or host enforcement setting.
+
+`polispec behavior export-package guided-learner` exports the compiled policy for a consuming application's own adapter. That adapter owns native hook integration and reports display replacement, after-display correction, and advisory coverage honestly. The package itself does not intercept replies or establish semantic compliance. See [behavior policy](docs/behavior.md) for the contract and limitations.
+
 ## License
 
 MIT. See `LICENSE`.
