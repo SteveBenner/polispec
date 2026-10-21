@@ -33,7 +33,23 @@ module Polispec
 
       private
 
+      def behavior_v2(kind, file)
+        return nil unless %w[behavior auto].include?(kind)
+
+        require_relative "behavior"
+        data = Schema::Document.load(file)
+        return nil unless Behavior.v2?(data)
+
+        errors = Behavior.validate(data)
+        Schema::Result.new(errors.empty?, Behavior::V2, errors)
+      rescue Schema::Document::ParseError
+        nil
+      end
+
       def validated(kind, file)
+        v2 = behavior_v2(kind, file)
+        return v2 if v2
+
         result = Schema.validate_file(kind, file)
         return result if result.ok
 
