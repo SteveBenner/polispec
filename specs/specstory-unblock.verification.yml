@@ -1,0 +1,45 @@
+schema: rstack.verification/v1
+task: specstory-capture-unblock
+candidate_code_commit: f68b3c7
+date: 2026-10-21
+status: verified candidate, not installed
+checks:
+  ruby_syntax: pass for all changed Ruby files
+  package: zero stale generated files
+  rplugin_check: zero findings through the matching polispec directory alias
+  existing_suite:
+    result: 44 of 44 scenarios passed
+    evidence: /tmp/polispec-specstory-final-smoke.json
+    reports: /tmp/polispec-smoke/20261021T214634Z-458cf8
+    against: installed pinned 0.37.0
+    comparison_exit: 1 because 58 comparison differences remain; no scenario failed
+    differences:
+      - Version and shipped-layer identifiers change from 0.37.0 to 0.37.1.
+      - Clone versus immutable pin changes runtime paths, release provenance, available Git metadata, and expected runtime protection verdicts.
+      - Generated session, installation, operation, commit, and epoch identities differ between isolated runs.
+      - Seal previews enumerate the candidate's changed release payload sizes and digests.
+      - Doctor and stewardship output reflect clone provenance and the candidate version relative to its commit during the initial comparison.
+  postcommit_doctor:
+    result: both gate-unreachable and status-digest-doctor scenarios pass
+    evidence: /tmp/polispec-specstory-postcommit-smoke.json
+    reports: /tmp/polispec-smoke/20261021T215236Z-424a37
+  operator_classifier_probe:
+    reason: The installed guard denied the agent-run probe; it was not retried through an alternative execution shape.
+    source: Sven's terminal result supplied in this session
+    input: bash -n /tmp/specstory-reliability/subagent-specstory.sh
+    cwd: /home/sven/github/foss/rEach
+    output_classes: [secrets.read]
+    output_path: /tmp/specstory-reliability/subagent-specstory.sh
+    writes_deletes_or_opaque_actions: none
+historical_integrity:
+  file: judgments.20261020T144034633Z.jsonl
+  malformed_lines: [5001, 5011]
+  observation: Each malformed line contains two judgment record markers; the following valid record has a disconnected predecessor.
+  exact_interruption_cause: not established
+  action: Historical bytes were not rewritten, deleted, or rehashed.
+remaining:
+  - Release, test promotion, supported installation, and installed checks.
+  - Resume the separate prepared SpecStory dependency-recovery fix.
+  - Per-project deploy contracts are required to resolve the unrelated gate-unreachable findings. The rdemo project plan was neutral with unchanged files and reproduced all three unreachable-gate findings.
+  - No claim of privileged authorization-plane or native enforcement verification.
+  - No new test scenario was authored; the smoke runner's Codex-home isolation was repaired.
