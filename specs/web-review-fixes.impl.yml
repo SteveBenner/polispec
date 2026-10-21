@@ -1,0 +1,135 @@
+schema: is.v1
+metadata:
+  name: polispec web, rendered review fixes, first pass
+  slug: web-review-fixes
+  version: 0.1.0
+  created: '2026-10-20'
+  status: ready
+  author: primary
+  base_commit: 107f4be
+  base_version: 0.33.2
+  intended_release: 0.34.0
+  parent: specs/web-frontend.impl.yml
+  source_review: /home/sven/.cache/claude-code-tmp/claude-1000/-home-sven-github-foss-polispec/a698e0c4-35a4-4304-93d8-e43a3fa9155e/scratchpad/chris-review/report.md
+  worker: {harness: claude-code, model: sonnet, effort: medium, role: coding-worker}
+  reviewer: {persona: chris, harness: claude-code, model: opus, effort: high, mode: rendered re-review as a separate subagent}
+
+scope:
+  owns:
+    - web/public/js/views/sessions.js
+    - web/public/js/views/map.js
+    - web/public/js/views/gallery.js
+    - web/public/js/views/manager.js
+    - web/public/js/views/exceptions.js
+    - web/public/js/views/detail.js
+    - web/public/js/views/heatmap.js
+    - web/public/js/views/history.js
+    - web/public/js/map/pan.js
+    - web/public/js/core/router.js
+    - web/public/js/components
+    - web/public/css
+    - lib/polispec/web/views.rb (build_map only)
+  does_not_own:
+    - web/public/openapi.yml unless the shipped band shape changes, which it must not
+    - any preference item in the review; those are Sven's call
+  constraints:
+    - No comments in code (AGENTS.md Part Q).
+    - Tokens only; no raw px outside tokens.css except where the parent spec already allows it.
+    - Every theme switches through the one theme switcher; no per-theme rule added outside themes.css.
+    - No new dependency; no tests written (Part S).
+
+slices:
+  - id: S1_blocking
+    items:
+      - id: R1
+        defect: Sessions header puts the controls above the h1 at every width and theme.
+        change: In sessions.js render the h1 first in the header; in sessions.css lay the header out with the h1 leading and the controls trailing, collapsing the segmented control to a ps-select through a container query on the header element, not a viewport media query.
+        accept: h1 top < controls top at 375, 1024 and 1600; at 375 the select replaces the segmented control.
+      - id: R2
+        defect: Pipeline env cells clip the policy digest (169px content in a 144px cell).
+        change: pipeline.css widens env columns to 176px and gives the digest overflow hidden, text-overflow ellipsis, white-space nowrap, with the full digest in its title.
+        accept: no env cell has scrollWidth > clientWidth at 1024 typical.
+      - id: R3
+        defect: Manager lint table spills out of its panel at 1024 to 1439.
+        change: manager.css sets the lint table to table-layout fixed and width 100%; a container query on the lint region below 400px moves Code under Message.
+        accept: table right edge <= region right edge at 1024, 1280 and 1439; empty-state row unclipped.
+      - id: R4
+        defect: Manifest Authored pane overflows its column by 19px.
+        change: manifest.css grid tracks become minmax(0, 1fr); ps-state body and ps-command text get overflow-wrap anywhere.
+        accept: every child right edge <= content edge at 1024 typical on manifest for every project.
+      - id: R5
+        defect: Path entries render an empty focusable digest copy button when the digest is null.
+        change: map.js renders a text-faint span reading No policy instead of the copy button when the env digest is null.
+        accept: no button with an empty or trailing-space accessible name on map; media-vault and sandbox-notes show No policy.
+      - id: R6
+        defect: Empty map state sits inside the zoom transform (button 22.8px, misaligned with its command block).
+        change: map.js mounts the empty ps-state outside .ps-map-inner so it is never scaled, and aligns its actions with the command block.
+        accept: on the empty fixture the button is >= 24px tall and its top equals the command block top.
+      - id: R7
+        defect: Nav current item and document title lag until the route's data loads.
+        change: router.js mount() dispatches a ps-route-start event with the route before awaiting renderRoute; ps-nav and the document title update on ps-route-start; ps-route-change keeps firing after render.
+        accept: immediately after a nav click to a slow route the nav current item and document.title already name the new route.
+      - id: R8
+        defect: Gallery cards carry a 48px empty band when the catalog item has no description.
+        change: gallery.js omits the .gl-desc element when the description is empty and lets the summary clamp to 4 lines instead.
+        accept: no gallery card contains an empty .gl-desc; card heights in a track stay equal.
+      - id: R9
+        defect: Overflowing map is clipped on the right only at default zoom.
+        change: pan.js, when the fit scale on an axis falls below the 0.5 floor, centres the grid on that axis at the floor scale.
+        accept: on the overflowing fixture at 1024 the left and right overflow differ by <= 1px at default zoom.
+  - id: S2_non_blocking
+    items:
+      - id: R10
+        change: Data-table rows, heatmap rows and the plan tray size to 28, 24 and 40px including the border (box-sizing border-box or height minus --border-w) in ps-data-table.css, heatmap.css and shell.css.
+      - id: R11
+        change: Manager toolbar Valid chip matches the 28px control height; at 375 the author toggle stays on the toolbar row and the banner icon stays inline with its text.
+      - id: R12
+        change: Exceptions Add exception button uses size sm (28px).
+      - id: R13
+        change: Detail Layer column renders ps-chip kind=tag, as the heatmap does.
+      - id: R14
+        change: ps-button.css gives a ghost button with aria-disabled=true color var(--text-faint).
+      - id: R15
+        change: manager.js guards unsaved edits on every route change by hooking the router (palette, g shortcuts, Back and hash navigation included), not only link clicks.
+      - id: R16
+        change: History scrubber region padding-top uses the nearest spacing-scale token instead of 14px.
+      - id: R17
+        change: Heatmap Age column fits its unknown fallback without truncation.
+  - id: S3_backend_d16
+    items:
+      - id: D16
+        change: build_map in lib/polispec/web/views.rb seeds the shipped band with every module of the shipped layer (reaches empty) before projects and paths add their reaches, so layers.shipped is never empty while polispec ships modules. Use the chain already loaded for paths or Layers.shipped_store; the band shape {id, name, reaches} is unchanged.
+        accept: GET /api/v1/map on the empty fixture lists the shipped modules with reaches []; typical and overflowing keep their reaches.
+  - id: S4_preferences
+    items:
+      - id: P1
+        change: playground.css gives the input-kind ps-segmented justify-self start so it keeps its intrinsic width.
+        accept: segmented width well under the 792px content width at 1024.
+      - id: P2
+        change: ps-plan-sheet.js omits the plan reasons that restate a probe (tighten or loosen lines naming a probe), leaving the Probes tab as the only probe list; other reasons stay.
+        accept: no probe line in the plan sheet outside the Probes tab.
+      - id: P3
+        change: detail.js renders a not-found ps-state with an Open map action when the composition request answers 404; any other failure keeps The rulebook did not compose.
+        accept: detail/project/nonexistent shows No project named nonexistent.
+      - id: P4
+        change: map.js hides the Reset layout control in list mode.
+        accept: Reset layout hidden at map/list, visible at map.
+      - id: P5
+        change: sessions.js renders a text-faint dash for an empty Agent or Runtime cell.
+        accept: empty Agent and Runtime cells contain a dash.
+      - id: P6
+        change: Dropped (reserved word, Sven 2026-10-20). specs/web-frontend.impl.yml line 48 and specs/webapp.impl.yml line 354 forbid the word pause in any web control name, so the feed toggle keeps Hold.
+        accept: toggle label unchanged.
+
+verification:
+  serve: >-
+    The fixture states live in /home/sven/.cache/claude-code-tmp/claude-1000/-home-sven-github-foss-polispec/fb26c1d0-2e8c-4b6a-b009-3d98e3dd4912/scratchpad/v1/fixtures
+    (README.md there). serve.sh is hard-wired to the webapp worktree, so serve this tree with a copy of serve.sh kept in the
+    worker's own scratch directory that runs /home/sven/github/foss/.polispec-wt/f11-review-fixes/bin/polispec instead, on
+    ports 7611 to 7613. One server per state; stop yours when done.
+  measure: >-
+    Re-run the reviewer's Playwright probes in the source_review directory (run.js, probe*.js) against your ports, writing
+    results to your own scratch directory. Each item's accept line must hold. Report numbers.
+  smoke: >-
+    POLISPEC_STATE_HOME=<scratch> bin/polispec smoke run --unit web --no-record, then the full suite, must stay 44/44.
+  commit: One commit per slice on webapp/f11-review-fixes, imperative subject, no attribution.

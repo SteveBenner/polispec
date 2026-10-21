@@ -179,6 +179,7 @@ export async function render(container, params, signal) {
     {
       key: "added",
       label: "Age",
+      width: "96px",
       render: (row) => {
         const stamp = Date.parse(row.added);
         return Number.isFinite(stamp) ? formatDuration(Date.now() - stamp) : "unknown";

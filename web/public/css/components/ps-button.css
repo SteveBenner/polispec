@@ -32,6 +32,7 @@ ps-button[variant="ghost"] {
   --btn-fill-hover: transparent;
   --btn-line: transparent;
   --btn-ink: var(--text-dim);
+  --btn-ink-disabled: var(--text-faint);
 }
 
 ps-button[variant="danger"] {

@@ -185,6 +185,7 @@ module Polispec
         rescue StandardError
           nil
         end
+        seed_shipped_chips(chips, path_chain)
         current.projects.each do |project|
           entries << project_entry(current, project, counts)
           next if project.status == "retired"
@@ -202,6 +203,21 @@ module Polispec
         add_exception_chips(chips, current, live_ids)
         layers = chips.transform_values { |list| list.values.map { |chip| { "id" => chip["id"], "name" => chip["name"], "reaches" => chip["reaches"].uniq } } }
         { "epoch" => stamp, "window" => label, "layers" => layers, "entries" => entries }
+      end
+
+      def seed_shipped_chips(chips, chain)
+        layer = chain&.layers&.find { |entry| entry.name == "shipped" }
+        layer ||= begin
+          Layers.shipped_layer([])
+        rescue StandardError
+          nil
+        end
+        return unless layer
+
+        layer.modules.each do |mod|
+          name = module_name(mod)
+          chips["shipped"][name] ||= { "id" => name, "name" => name, "reaches" => [] }
+        end
       end
 
       def project_chain(current, project)

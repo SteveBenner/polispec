@@ -77,6 +77,19 @@
   line-height: var(--lh-xs);
 }
 
+.view.gallery .gl-card[data-no-desc] {
+  grid-template-rows: auto 1fr auto;
+}
+
+.view.gallery .gl-card[data-no-desc] .gl-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  max-height: calc(var(--lh-xs) * 4);
+  white-space: normal;
+}
+
 .view.gallery .gl-desc {
   display: -webkit-box;
   overflow: hidden;
