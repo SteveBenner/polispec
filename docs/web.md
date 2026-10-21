@@ -24,6 +24,7 @@ polispec web unit [--json]
 ```
 
 - `--bind ADDR` and `--port N` override the settings `polispec.web.bind` (default `127.0.0.1`) and `polispec.web.port` (default `7421`). `--port 0` asks the system for a free port and prints the one it got. A port setting outside 0 to 65535 falls back to 7421.
+- `polispec.web.public_origin` optionally names one HTTPS origin, such as `https://policy.example.net:8443`, for an external reverse proxy. Keep the backend on loopback and have the proxy preserve that Host header. The setting does not create a proxy, a certificate, or a network mapping. Credentials, paths, queries, fragments, and non-HTTPS schemes are refused at startup. Initial links and `web url` use the origin captured by the running server; restart after changing it. Sessions use Secure cookies and mutations require that exact HTTPS Origin. HTTP loopback remains available for unauthenticated probes. Forwarded headers do not establish trust. Leave the setting empty for the existing local HTTP flow.
 - A bind address that is not a loopback address needs `--expose`, a terminal, and the typed phrase `expose polispec web`. Without `--expose` the command exits 2 with `expose_required`; without a terminal it exits 3 with `not_tty`. Anyone holding a link can change policy, so only expose it on a network you trust.
 - `--open` hands the link to `xdg-open` or `open` when one is on `PATH`; otherwise it prints a note and you open the link by hand.
 - `--read-only` starts the server so that every route that writes answers 405 `read_only` (see [The limiter](#the-limiter) for the routes that stay open), and `config.read_only` tells the browser, which shows a Read-only banner and disables every write control with that reason. Use it when you only want to look.
@@ -55,6 +56,8 @@ At the first start the server creates a launch secret, 32 random bytes in hex, a
 4. **CSRF.** Every request that is not `GET` or `HEAD` must carry `X-Polispec-CSRF` equal to the session's token, or it answers 403 `forbidden`.
 5. **The Origin check.** Every such request must also carry an `Origin` that names this server (`http://localhost:<port>`, the bind address, or, when exposed on a wildcard bind, an IP literal), or it answers 403. `POST /session` accepts a request with no `Origin` and refuses one whose `Origin` is another site.
 6. **The Host check.** Every request, static files included, must carry a `Host` header that names this server with this server's port, or it answers 403. This is what keeps a page on another site from reaching the server through DNS rebinding.
+
+When `polispec.web.public_origin` is configured, its exact host and effective HTTPS port are additionally admitted by the Host check, and only that origin passes the Origin check. Login and logout cookies carry `Secure`. The existing cookie, CSRF, session expiry, and mutation limits still apply. The agent API classifier also recognizes this origin, including the one recorded by a running server.
 
 A request body larger than 2 MiB answers 413. Every response carries `X-Request-Id`, and every error is `{"error", "message", "request_id"}` plus fields specific to the error. API responses are `Cache-Control: no-store`; the static files are served with an ETag and `no-cache`. A content security policy restricts the page to its own origin.
 

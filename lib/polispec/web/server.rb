@@ -87,6 +87,7 @@ module Polispec
         @port = port
         @read_only = read_only
         @exposed = exposed
+        @public_origin = Web.public_origin(Engine::Settings.web_public_origin)
         @stopping = false
       end
 
@@ -97,7 +98,7 @@ module Polispec
         auth = Auth.new(secret: secret)
         @log = LogFile.new(File.join(Web.dir, "server.log"))
         logger = ::WEBrick::Log.new(@log, ::WEBrick::Log::INFO)
-        Web.context = Context.new(bind: @bind, port: @port, read_only: @read_only, exposed: @exposed, auth: auth, logger: logger)
+        Web.context = Context.new(bind: @bind, port: @port, read_only: @read_only, exposed: @exposed, auth: auth, logger: logger, public_origin: @public_origin)
         serve(logger, auth, &on_ready)
       rescue Errno::EADDRINUSE
         raise Refused.new("port_in_use", "#{@bind}:#{@port} is already in use")
@@ -126,12 +127,12 @@ module Polispec
           write_info(port)
           install_traps
           Events.emit("polispec.web", event: "start", bind: @bind, port: port, read_only: @read_only)
-          on_ready&.call(Info.new(@bind, port, Process.pid, auth))
+          on_ready&.call(Info.new(@bind, port, Process.pid, auth, @public_origin))
         end
         Events.emit("polispec.web", event: "stop", bind: @bind, port: Web.context.port)
       end
 
-      Info = Struct.new(:bind, :port, :pid, :auth) do
+      Info = Struct.new(:bind, :port, :pid, :auth, :public_origin) do
         def host
           bind.to_s.include?(":") ? "[#{bind}]" : bind
         end
@@ -141,7 +142,7 @@ module Polispec
         end
 
         def url(code = auth.mint)
-          "http://#{url_host}:#{port}/#k=#{code}"
+          "#{public_origin || "http://#{url_host}:#{port}"}/#k=#{code}"
         end
       end
 
@@ -182,7 +183,7 @@ module Polispec
       def write_info(port)
         path = self.class.info_path
         temp = "#{path}.#{Process.pid}.tmp"
-        record = { "pid" => Process.pid, "port" => port, "bind" => @bind, "started_at" => Time.now.utc.iso8601 }
+        record = { "pid" => Process.pid, "port" => port, "bind" => @bind, "public_origin" => @public_origin, "started_at" => Time.now.utc.iso8601 }
         File.open(temp, File::WRONLY | File::CREAT | File::TRUNC, 0o600) { |file| file.write(JSON.generate(record)) }
         File.rename(temp, path)
       end

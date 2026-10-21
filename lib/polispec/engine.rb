@@ -35,6 +35,7 @@ module Polispec
       WEB_BIND_KEY = "polispec.web.bind"
       WEB_PORT_KEY = "polispec.web.port"
       WEB_THEME_KEY = "polispec.web.theme"
+      WEB_PUBLIC_ORIGIN_KEY = "polispec.web.public_origin"
       WEB_THEMES = %w[system light dark apple-noir apple-austere tronwave].freeze
       AUTHOR_ENABLED_KEY = "polispec.author.enabled"
       AUTHOR_ADAPTER_KEY = "polispec.author.adapter"
@@ -90,6 +91,10 @@ module Polispec
 
       def web_bind
         text(WEB_BIND_KEY, "127.0.0.1")
+      end
+
+      def web_public_origin
+        text(WEB_PUBLIC_ORIGIN_KEY, "")
       end
 
       def web_port
