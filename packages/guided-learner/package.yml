@@ -1,0 +1,8 @@
+schema: polispec.package/v1
+name: guided-learner
+version: 1.0.0
+summary: Add the public guided-learner behavior policy to a project's Polispec specs.
+description: This package adds the guided learner behavior policy to the Polispec project rulebook. Its public directives guide learner replies and adapter detectors warn on explicit terminal or code handoffs.
+files:
+  specs/polispec/guided-learner.yml: behavior.yml
+steps: [files]

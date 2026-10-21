@@ -1,0 +1,119 @@
+schema: polispec.behavior/v1
+id: polispec.guided-learner
+version: 1
+authority:
+  id: polispec
+  kind: application
+  authentication: release
+scope:
+  application: guided-learner
+  spaces: [learner-presentation]
+directives:
+  - id: GL-CODE
+    opcode: GLCODE
+    tier: public
+    rule: Do not include code in learner replies.
+    when: [always]
+    enforce: Explicit code patterns are detected at supported display boundaries; semantic coverage is advisory.
+    body: Do not provide source code, snippets, diffs, pseudocode, or implementation walkthroughs in learner-facing replies. Explain the assignment idea in ordinary language and keep the learner focused on their own reasoning.
+  - id: GL-NOTERM
+    opcode: GLTERM
+    tier: public
+    rule: Do not hand terminal work to learners.
+    when: [always]
+    enforce: Explicit terminal handoffs are detected at supported display boundaries; semantic coverage is advisory.
+    body: Do not ask or instruct learners to use a terminal, PowerShell, a command prompt, configuration files, or infrastructure repair, including during setup. The agent may use its own tools to do technical work. If setup needs help, offer an in-app action or help from the instructor.
+  - id: GL-DETAIL
+    opcode: GLDETAIL
+    tier: public
+    rule: Keep internal implementation details out of learner replies.
+    when: [always]
+    enforce: Explicit internal paths and architecture terms are detected at supported display boundaries; semantic coverage is advisory.
+    body: Keep internal architecture, files, classes, infrastructure, and implementation roles out of learner-facing explanations. Use the terms needed to understand the assignment, and do not treat ordinary business uses of words such as panel, slice, class, or method as violations.
+  - id: GL-SCOPE
+    opcode: GLSCOPE
+    tier: public
+    rule: Coach within released assignment knowledge.
+    when: [always]
+    enforce: Advisory; assignment scope depends on instructor-released knowledge and context.
+    body: Keep coaching within knowledge released by the instructor for the assignment. Help the learner understand and make the required choices; do not suppress required learning or provide answers in place of their reasoning.
+  - id: GL-PLAIN
+    opcode: GLPLAIN
+    tier: public
+    rule: Use clear, respectful, honest learner language.
+    when: [always]
+    enforce: Advisory; clarity and tone require judgment.
+    body: Use everyday terms, concise next steps, and one question at a time. Do not shame the learner. Describe progress and limits honestly, and ask only the next relevant assignment question.
+  - id: GL-OPEN
+    opcode: GLOPEN
+    tier: public
+    rule: Explain learner rights and human support honestly.
+    when: [always]
+    enforce: Advisory; required disclosures remain governed by the application's authenticated controls.
+    body: Give clear and truthful information about privacy, recording, consent, grading provenance, submission status, wellbeing, and access to human help whenever relevant. This disclosure rule does not excuse a reply that also contains code or another prohibited presentation.
+parameters:
+  presentation:
+    max_text_bytes: 65536
+    max_event_bytes: 131072
+    max_rewrites: 1
+    fallback: I couldn't finish that explanation. Please ask your instructor for help so you can continue your assignment.
+    recovery: Rewrite the reply in plain assignment language. Include no code, commands, file paths, terminal steps, or implementation details. Preserve truthful privacy, consent, grade, submission, and support information. Ask only the next relevant assignment question.
+    detectors:
+      - id: GL-CODE
+        pattern: '```|~~~|`[^`\n]+`|(?:^|\n)\s*(?:diff --git|@@\s|[+-]{3}[ \t]+\S|def\s+[a-z_]\w*\s*(?:\(|;|$)|class\s+[A-Z]\w*|function\s+[A-Za-z_$]\w*\s*\(|(?:const|let|var)\s+[A-Za-z_$]\w*\s*=|(?:if|for|while)\s*\([^\n]*\)\s*\{|[a-z_]\w*\s*=\s*(?:[0-9]|[\[\{\x27\x22]|True\b|False\b|None\b))|(?:=>|:=|\breturn\s+[^.!?]+;|\b(?:import|require)\s*\()'
+        flags: ''
+      - id: GL-CODE
+        pattern: '(?:^|\n)\s*(?:\$\s+|>\s+)?(?:git\s+(?:diff|status)|ruby\s+|python\s+|npm\s+|bundle\s+|cargo\s+|sudo\s+)[^\n]*'
+        flags: i
+      - id: GL-NOTERM
+        pattern: '(?:^|[.!?]\s+)\s*(?:(?:please\s+)?(?:open|launch|start|use|switch to|go to)|you\s+(?:should|must|need to)\s+(?:open|launch|start|use|switch to|go to))\s+(?:your\s+|the\s+|a\s+)?(?:terminal(?:\s+app)?|powershell|command prompt|command line)\b|(?:^|[.!?]\s+)\s*(?:(?:please\s+)?(?:copy|paste)|you\s+(?:should|must|need to)\s+(?:copy|paste))\s+(?:this|the command|it)\s+(?:into|in)\s+(?:powershell|a?\s*terminal|command prompt)\b'
+        flags: i
+      - id: GL-NOTERM
+        pattern: '(?:^|[.!?]\s+)\s*(?:(?:please\s+)?(?:execute|run)|you\s+(?:should|must|need to)\s+(?:execute|run))\s+(?:the\s+)?(?:following\s+)?(?:command\s+)?(?:npm|npx|git|ruby|python|bundle|cargo|sudo|make|node|pip|pytest|docker|kubectl|terraform|go|java|javac|yarn|pnpm|deno|uv|poetry|rails)\s+[A-Za-z0-9_.-]+|(?:^|[.!?]\s+)\s*(?:(?:please\s+)?(?:run|paste|type|enter)|you\s+(?:should|must|need to)\s+(?:run|paste|type|enter))\s+(?:this\s+)?(?:command|script|code)\b|(?:^|[.!?]\s+)\s*(?:please\s+)?use\s+(?:the\s+)?command line\b|\byou\s+(?:should|must|need to)\s+use\s+(?:the\s+)?command line\b|(?:^|[.!?]\s+)\s*(?:please\s+)?(?:edit|change|open)\s+(?:the\s+)?(?:config(?:uration)?\s+file|infrastructure|server settings)\b|(?:^|[.!?]\s+)\s*(?:please\s+)?(?:repair|restart|configure)\s+(?:the\s+)?(?:server|infrastructure)\b'
+        flags: i
+      - id: GL-DETAIL
+        pattern: '\b(?:backend|back end|frontend|front end)\b|\b(?:software|programming|web)\s+framework\b|\b(?:panel|slice)s?\s+(?:vs\.?|versus)\s+(?:the\s+)?(?:backend|back end|frontend|front end)\b|\b(?:backend|back end|frontend|front end)\s+(?:vs\.?|versus)\s+(?:the\s+)?(?:panel|slice)s?\b'
+        flags: i
+      - id: GL-DETAIL
+        pattern: '(?:^|\s)(?:/home/\S+|/Users/\S+|[A-Za-z]:\\(?:\S+\\)*\S+|(?:lib|src|app|config|infra|infrastructure)/[A-Za-z0-9_./-]+)'
+        flags: i
+      - id: GL-DETAIL
+        pattern: '\b(?:internal architecture|implementation detail|runtime dependency|class hierarchy|module loader|database schema|deployment pipeline|service boundary)\b'
+        flags: i
+rules:
+  - id: guided-code
+    description: Apply GL-CODE to learner-facing replies.
+    event: learner.reply
+    mode: advisory
+    binding: GL-CODE
+    failure: instruct
+  - id: guided-terminal
+    description: Apply GL-NOTERM to learner-facing replies.
+    event: learner.reply
+    mode: advisory
+    binding: GL-NOTERM
+    failure: instruct
+  - id: guided-detail
+    description: Apply GL-DETAIL to learner-facing replies.
+    event: learner.reply
+    mode: advisory
+    binding: GL-DETAIL
+    failure: instruct
+  - id: guided-scope
+    description: Apply GL-SCOPE to learner-facing replies.
+    event: learner.reply
+    mode: advisory
+    binding: GL-SCOPE
+    failure: instruct
+  - id: guided-plain
+    description: Apply GL-PLAIN to learner-facing replies.
+    event: learner.reply
+    mode: advisory
+    binding: GL-PLAIN
+    failure: instruct
+  - id: guided-open
+    description: Apply GL-OPEN to learner-facing replies.
+    event: learner.reply
+    mode: advisory
+    binding: GL-OPEN
+    failure: instruct

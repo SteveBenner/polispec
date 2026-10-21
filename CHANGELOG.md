@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.36.0] - 2026-10-20
+
+### Added
+
+- Optional guided-learner catalog package with six canonical public presentation policies and bounded explicit-violation detector data. Applying it writes only its behavior source, without changing environments, the ledger, or host enforcement.
+- Read-only `polispec behavior export-package NAME` for consumers that ship compiled policy through their own adapters without a runtime Polispec dependency. Unsupported external body references are refused.
+
+
 ## [0.35.1] - 2026-10-20
 
 ### Added
