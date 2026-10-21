@@ -306,7 +306,7 @@ The same idea runs through [code specs](docs/code-specs.md). A spec is a tree of
 
 **Roster.** `specs/polispec/roster.yml` assigns harness, model, and effort per role. Session and subagent start inject the values ([roster](docs/roster.md)).
 
-**Behavioral policy.** A separate contract for an application's own directives, parameters, and enforcement bindings. It is compiled to data that the application's adapter consumes, with no running polispec service ([behavior](docs/behavior.md)).
+**Behavioral policy.** A separate contract for an application's own directives, parameters, and enforcement bindings. It is compiled to data that the application's adapter consumes, with no running polispec service ([behavior](docs/behavior.md)). Since 0.34.0 a v2 document also owns every surface a rule reaches (rows, rules files, stubs, persona and skill files, messages), renders them, and fails on drift or on a rule restated without its id.
 
 **Code specs.** When an agent writes a file, polispec detects the language and applies the code specs from the code specs repository (`~/.polispec/specs`, read from its `stable` branch). The spec chain is injected before the first write. MUST violations on changed lines are refused; SHOULD violations are reported. Agent-judged policies are reviewed at task end, and a ratchet baseline keeps legacy code from blocking new work ([code specs](docs/code-specs.md)).
 
@@ -471,7 +471,7 @@ The ledger is the list of projects polispec governs on this host. `polispec inst
 | `polispec agents render <project\|repo>` | Write the `[ENVS]` directive from the trusted rulebook |
 | `polispec hook git install <project> <env>` | Install git hooks that apply the same rules outside a harness |
 | `polispec roster resolve\|check` | Resolve and check role assignments |
-| `polispec behavior compile\|decide` | Compile and evaluate a behavioral policy |
+| `polispec behavior compile\|decide\|render\|drift\|lint` | Compile and evaluate a behavioral policy; render its surfaces, check them for drift, and lint for restated rules (v2) |
 | `polispec code …` / `polispec specs …` | Code specs: detect, chain, check, baseline, controls; link and promote the specs repository |
 | `polispec harness …` / `seal` / `plane` / `authorizations` | Harness controls and the sealed authority plane |
 | `polispec smoke record\|list\|show\|verify\|coverage\|run` | The smoke ledger and the bundled suite |
