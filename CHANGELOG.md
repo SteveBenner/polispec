@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.37.2] - 2026-10-21
+
+### Fixed
+- The web UI session gates for no session, a used or expired link, and an ended session now name `polispec web url`, which mints a fresh one-time link for the server already running. They previously named `polispec web --open`, which a supervised server refuses with `already_running`. The not-running gate keeps `polispec web --open` (`web/public/js/components/ps-session-gate.js`, `web/public/js/app.js`, `specs/web-frontend.impl.yml`).
+
 ## [0.37.1] - 2026-10-21
 
 ### Fixed
