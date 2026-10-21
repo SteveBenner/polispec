@@ -427,7 +427,7 @@ The plugin brings the hooks and the skill. It runs from the harness's plugin cac
 
 **As a gem.** `gem build polispec.gemspec && gem install polispec-*.gem` from a clone gives you `polispec`; then `polispec pin` and `polispec install` as above.
 
-**With rplugin.** If you already use the rplugin SDK for agent-harness plugins (1.15.0 or later): `rplugin install polispec`, then `rplugin doctor polispec`. This is the path for Hermes, Pi, the DeepSeek TUI and Antigravity CLI as well. `rplugin install <polispec clone> --ref v<version>` pins a release. On an rplugin host, `polispec steward` pins and links through rplugin as before.
+**With rplugin.** If you already use the [rplugin SDK](https://github.com/SteveBenner/rplugin) for agent-harness plugins (1.17.0 or later): `rplugin install polispec`, then `rplugin doctor polispec`. This is the path for Hermes, Pi, the DeepSeek TUI, and Antigravity CLI as well. `rplugin install <polispec clone> --ref v<version>` pins a release. On an rplugin host, `polispec steward` pins and links through rplugin as before.
 
 polispec starts in `advise` mode: it logs every verdict and blocks nothing. When the rulebook is ready, `polispec settings set polispec.enforce enforce`. Check the result any time with `polispec doctor`.
 

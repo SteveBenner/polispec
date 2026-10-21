@@ -5,6 +5,34 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.35.0] - 2026-10-20
+
+### Fixed
+
+- The edition registry's epoch notice entry points to `lib/polispec/effect.rb`, so `polispec editions --check` can verify its implementation.
+
+### Upgrade and rollback
+
+- 0.35.0 adds keys that every earlier release rejects as unknown: `description` on every rulebook and ledger entry, and `paths`, `owner` and `registered_by` in the ledger. A ledger or trust ref that uses them is invalid to 0.34.0 and older, and a guard running such a release judges the affected projects by their fallback rules. Pin 0.35.0 on every host that reads a ledger or trust ref before writing these keys into it. Writers check the installed release first (`Description::RUNTIME_FLOOR`, read from the native pin, the rplugin store or the pinned runtime) and refuse with `runtime_behind`.
+- To roll back after 0.35.0 has written the ledger, restore the ledger backup that `apply ledger` left beside it (or remove `paths`, `owner`, `registered_by` and `description` by hand through `polispec plan ledger --from FILE` on 0.35.0) before reinstalling 0.34.0.
+
+### Added
+
+- `polispec web`, a local web app over the files polispec already keeps: the map of projects and governed paths with their layers, project detail, the rulebook manager with a CodeMirror editor, live lint and blast radius, plans and applies through the same plan and apply path as the CLI, pipeline, sessions, timeline, feed and heatmap views, the playground and explainer, history, the gallery, exceptions, manifest and register views, six themes through one switcher, and a command palette. Loopback by default, one-time exchange links (`polispec web url`), session cookie plus CSRF for every mutating route, `--read-only`, and `G-WEB-AGENT` classifying an agent's call to it as `policy.edit`. Routes are glob-loaded from `lib/polispec/web/routes/*.rb`; the contract is `web/public/openapi.yml`. No database: browser storage caches views and `web/state/*.yml` keeps layout, pins and saved playground calls.
+- The `author` port: `polispec author draft <kind> --intent TEXT` drafts a rulebook or description, validated and planned before anyone sees it, and writes nothing. The standalone adapter runs a read-only harness CLI session (Read, Grep and Glob only, one Read rule per root, scratch `POLISPEC_*` variables stripped); rplugin extensions add adapters through the declared port (`polispec.rplugin.yml` `ports.declared: [author]`, rplugin 1.17.0 or later).
+- `description` on every rulebook and ledger entry, with a deterministic lint (`missing`, `too_short`, `too_long`, `restates_summary`, `names_nothing`, `states_no_effect`), warnings in `polispec validate`, `--strict` to fail on them, `--semantic` to judge a description against the rules (`matches`, `partial`, `contradicts`), and the doctor finding `description_ahead_of_runtime`.
+- Governed path entries: `polispec register <path> --kind software|directory|system` and `polispec unregister <id>` plan and apply a `paths` entry in the ledger with owner stamping, so software, a directory or the system scope that is not a git repository with branches can be governed; judgments on a path entry are labelled with it.
+- Effect tracking: the policy epoch, chained change records, session records, `polispec changes list|show|await|verify`, `polispec sessions list|show`, and a once-per-epoch notice line on the next pretool call after a change.
+- `polispec manifest` and `manifest index`: a per-project `polispec.manifest.json` and badge, committed on main with `--write`, and a publishable index (`POLISPEC_INDEX_DIR`).
+- The edition registry `specs/editions.yml` and `polispec editions [--check]`, which list every feature that differs between the standard and lock editions; lock comparisons now go through it.
+- Delegate grants may name `exceptions-add`, `exceptions-promote` and `exceptions-remove`; refused under lock.
+
+### Changed
+
+- The shell parser follows `source` and `.` files as it follows scripts, bounded in commands and time, and treats a same-line rewrite of a followed file as opaque, so a sourced file's commands are judged instead of asking `POLISPEC-TOOL-UNKNOWN`.
+- Hook latency: plane, ledger, settings and shelf reads, ownership, location and canonical-path resolution are memoized within one hook or explain process, and classifier modules are preloaded.
+- `polispec smoke run` gives every scenario a scratch `RPLUGINS_HOME` and `POLISPEC_DATA_HOME`, so a scenario no longer reads the host's rplugin store or native pin.
+
 ## [0.34.0] - 2026-10-20
 
 ### Added
