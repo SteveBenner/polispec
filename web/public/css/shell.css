@@ -260,7 +260,7 @@ ps-plan-tray .ps-bar {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-3);
-  min-height: var(--tray-h);
+  min-height: calc(var(--tray-h) - var(--border-w));
   padding-inline: var(--gutter);
 }
 

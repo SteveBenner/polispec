@@ -165,7 +165,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  block-size: var(--row-compact);
+  block-size: calc(var(--row-compact) - var(--border-w));
   padding-inline: var(--space-2);
 }
 
@@ -236,9 +236,13 @@
   outline-offset: calc(-1 * var(--focus-w));
 }
 
+.heatmap .hm-grid td:has(> .hm-open) {
+  overflow: visible;
+}
+
 .heatmap .hm-open {
   inline-size: 100%;
-  block-size: 100%;
+  block-size: calc(100% + var(--border-w));
   padding: 0;
   border: 0;
   background: transparent;

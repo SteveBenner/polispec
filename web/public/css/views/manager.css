@@ -45,6 +45,10 @@
   cursor: pointer;
 }
 
+.mgr-validation ps-chip {
+  height: var(--control-sm);
+}
+
 .mgr-validation:hover {
   background: var(--row-hover);
 }
@@ -79,6 +83,10 @@
   color: var(--text-dim);
   font-size: var(--text-xs);
   line-height: var(--lh-xs);
+}
+
+.mgr-banners ps-banner .ps-message {
+  flex: 1 1 0;
 }
 
 .mgr-banners ps-banner ps-button {
@@ -170,6 +178,52 @@
 .mgr[data-small] .mgr-editor {
   min-height: 320px;
   height: 100%;
+}
+
+.mgr-panel .mgr-tab-lint {
+  container-type: inline-size;
+}
+
+.mgr-panel .mgr-tab-lint ps-data-table table {
+  width: 100%;
+  min-width: 0 !important;
+  table-layout: fixed;
+}
+
+.mgr-panel .mgr-tab-lint ps-data-table colgroup > col:last-child {
+  width: auto !important;
+}
+
+.mgr-lint-code {
+  display: none;
+}
+
+@container (max-width: 399px) {
+  .mgr-panel .mgr-tab-lint ps-data-table :is(thead th, tbody td):nth-child(3) {
+    display: none;
+  }
+
+  .mgr-panel .mgr-tab-lint ps-data-table colgroup > col:nth-child(3) {
+    display: none;
+  }
+
+  .mgr-panel .mgr-tab-lint ps-data-table tbody td:last-child {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .mgr-lint-msg {
+    display: grid;
+    gap: var(--space-1);
+    padding-block: var(--space-1);
+  }
+
+  .mgr-lint-code {
+    display: block;
+    color: var(--text-dim);
+    font-size: var(--text-xs);
+    line-height: var(--lh-xs);
+  }
 }
 
 .mgr-quiet {
@@ -394,6 +448,19 @@
 }
 
 @media (max-width: 767px) {
+  .mgr-toolbar {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+  }
+
+  .mgr-toolbar-left {
+    flex: 1 1 0;
+  }
+
+  .mgr-toolbar > ps-icon-button {
+    flex: none;
+  }
+
   .mgr-sidebyside {
     grid-template-columns: minmax(0, 1fr);
   }

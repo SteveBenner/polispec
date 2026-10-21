@@ -45,6 +45,22 @@
   background-color: var(--surface-2);
 }
 
+.pipeline ps-data-table colgroup > col:nth-child(n + 3):nth-child(-n + 5) {
+  width: 176px !important;
+}
+
+.pipeline .pl-line ps-digest {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pipeline .pl-line ps-digest .ps-native {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pipeline .pl-env {
   display: grid;
   gap: 2px;

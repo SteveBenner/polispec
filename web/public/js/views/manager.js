@@ -337,6 +337,14 @@ class Manager {
     on(document, "ps-author-draft", (event) => this.loadAuthorDraft(event.detail));
     on(document, "ps-panel-open", () => this.authorButton.setAttribute("pressed", "true"));
     on(document, "ps-panel-close", () => this.authorButton.setAttribute("pressed", "false"));
+    this.handlers.push(
+      router.addRouteGuard((next) => {
+        if (!this.dirty || this.leaving) return false;
+        if (next.startsWith(`#/manager/${this.kind}/${this.id}`)) return false;
+        this.askLeave(next);
+        return true;
+      }),
+    );
     on(
       document,
       "click",
@@ -753,6 +761,7 @@ class Manager {
     stay.addEventListener("click", () => dialog.close());
     leave.addEventListener("click", () => {
       this.persist();
+      this.leaving = true;
       dialog.close();
       window.location.hash = target;
     });
@@ -933,7 +942,17 @@ class Manager {
       },
       { key: "pos", label: "Line:Col", align: "end", width: "72px", render: (row) => `${row.line || 1}:${row.col || 1}` },
       { key: "code", label: "Code", mono: true, width: "136px" },
-      { key: "message", label: "Message", width: "200px" },
+      {
+        key: "message",
+        label: "Message",
+        width: "200px",
+        render: (row) => {
+          const holder = el("span", "mgr-lint-msg");
+          holder.append(el("span", "mgr-lint-text", row.message || ""));
+          if (row.code) holder.append(el("span", "mono mgr-lint-code", row.code));
+          return holder;
+        },
+      },
     ];
     this.lintTable.addEventListener("ps-row-open", (event) => {
       const row = event.detail.row;

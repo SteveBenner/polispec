@@ -7,7 +7,7 @@ ps-scrubber {
 ps-scrubber .ps-region {
   overflow-x: auto;
   overflow-y: hidden;
-  padding-top: var(--lh-2xs);
+  padding-top: var(--space-4);
   scrollbar-width: thin;
 }
 

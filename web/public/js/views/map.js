@@ -5,6 +5,7 @@ import "../components/ps-button.js";
 import "../components/ps-banner.js";
 import "../components/ps-dialog.js";
 import "../components/ps-state.js";
+import "../components/ps-command.js";
 import "../components/ps-skeleton.js";
 import "../components/ps-map.js";
 import "../components/ps-map-tree.js";
@@ -155,6 +156,7 @@ export async function render(container, params, signal) {
       if (mapMode && state.payload) button.removeAttribute("disabled");
       else button.setAttribute("disabled", "");
     }
+    reset.hidden = !mapMode;
     const saved = Object.keys(state.positions).length;
     if (saved > 0 && mapMode) {
       reset.removeAttribute("disabled");
@@ -323,6 +325,9 @@ export async function render(container, params, signal) {
         empty.setAttribute("heading", "No projects are governed yet");
         empty.setAttribute("body", "Put a git repository under polispec in a terminal.");
         empty.setAttribute("action", "Register a path");
+        const command = document.createElement("ps-command");
+        command.setAttribute("command", "polispec apply environment-control --repo <path> --variant service");
+        empty.append(command);
         empty.addEventListener("ps-action", () => navigate("register"));
         stage.append(empty);
       }

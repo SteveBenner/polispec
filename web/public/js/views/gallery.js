@@ -247,12 +247,16 @@ class Gallery {
     top.append(name, tag);
     const summary = el("div", "gl-summary", item.summary || "");
     summary.title = item.summary || "";
-    const description = el("div", "gl-desc", item.description || "");
+    const description = item.description ? el("div", "gl-desc", item.description) : null;
     const foot = el("div", "gl-foot");
     const params = el("span", "num", `${formatCount(item.params.length)} ${item.params.length === 1 ? "param" : "params"}`);
     const used = el("span", "num", `Used by ${formatCount(item.usedN)}`);
     foot.append(params, used);
-    wrap.append(top, summary, description, foot);
+    if (description) wrap.append(top, summary, description, foot);
+    else {
+      wrap.setAttribute("data-no-desc", "");
+      wrap.append(top, summary, foot);
+    }
     card.append(wrap);
     card.addEventListener("click", () => this.openDrawer(item, card));
     return card;

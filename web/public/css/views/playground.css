@@ -181,3 +181,7 @@
     grid-template-columns: 24px minmax(0, 1fr) auto;
   }
 }
+
+.playground .pg-input > ps-segmented {
+  justify-self: start;
+}

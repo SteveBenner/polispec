@@ -259,6 +259,25 @@ ps-map:focus-visible {
 
 .view.map .ps-map-empty {
   position: absolute;
+  z-index: 2;
+  width: min(960px, calc(100% - 2 * var(--space-6)));
+}
+
+.view.map .ps-map-empty ps-state .ps-actions {
+  align-items: flex-start;
+}
+
+.view.map .ps-map-empty ps-state ps-command {
+  flex: 1 1 240px;
+}
+
+.view.map .ps-map-empty ps-state ps-command .ps-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.view.map .ps-map-empty ps-state ps-button {
+  margin-block-start: calc(var(--lh-xs) + var(--space-1));
 }
 
 .view.map .ps-map-overlay {
@@ -594,4 +613,11 @@ ps-map-tree .ps-tree-secondary {
 
 ps-map-tree .ps-tree-counts {
   margin-inline-start: auto;
+}
+
+ps-map-card .ps-nopolicy {
+  padding-inline: var(--space-1);
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
 }
