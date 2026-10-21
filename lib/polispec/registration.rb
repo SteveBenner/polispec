@@ -105,7 +105,7 @@ module Polispec
 
     def runtime_behind_failure
       release = Description.installed_release
-      Operator::Failure.new("runtime_behind", "the installed polispec release is #{release ? release.join('.') : 'unknown'}, older than 0.34.0, and rejects a ledger carrying paths, owner or registered_by; install 0.34.0 first", "installed" => release && release.join("."), "required" => "0.34.0")
+      Operator::Failure.new("runtime_behind", "the installed polispec release is #{release ? release.join('.') : 'unknown'}, older than 0.35.0, and rejects a ledger carrying paths, owner or registered_by; install 0.35.0 first", "installed" => release && release.join("."), "required" => "0.35.0")
     end
 
     def refuse_behind!

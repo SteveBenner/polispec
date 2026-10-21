@@ -453,7 +453,7 @@ module Polispec
       release = Description.installed_release
       return unless Description.ahead_of_runtime?(release)
 
-      findings << finding(nil, "ledger_ahead_of_runtime", "the ledger uses #{keys.join(', ')} but the installed release is #{release.join('.')}, older than 0.34.0; that runtime rejects the ledger (additionalProperties false); install 0.34.0 first").merge("severity" => "warn")
+      findings << finding(nil, "ledger_ahead_of_runtime", "the ledger uses #{keys.join(', ')} but the installed release is #{release.join('.')}, older than 0.35.0; that runtime rejects the ledger (additionalProperties false); install 0.35.0 first").merge("severity" => "warn")
     rescue StandardError => error
       findings << finding(nil, "ledger_ahead_of_runtime", "#{error.class}: #{error.message}").merge("severity" => "info")
     end

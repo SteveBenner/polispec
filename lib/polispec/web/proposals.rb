@@ -286,7 +286,7 @@ module Polispec
           old = old_text ? (parse_yaml(old_text) rescue {}) : {}
           return if old["description"] == doc["description"]
 
-          raise Operator::Failure.new("description_not_allowed", "readers of this rulebook run a polispec older than 0.34.0; a description makes it invalid there")
+          raise Operator::Failure.new("description_not_allowed", "readers of this rulebook run a polispec older than 0.35.0; a description makes it invalid there")
         end
 
         def base_gate!(target, change)

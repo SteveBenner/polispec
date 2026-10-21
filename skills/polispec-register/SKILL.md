@@ -38,7 +38,7 @@ A path entry in the ledger brings something that has no git repository under pol
 
 - A missing path (`path_missing`), a path inside a ledgered project (`inside_project`), a repeated id (`id_collision`) and an already registered path (`path_registered`).
 - Under the lock edition, every governed path (`edition_restricted`): only the protected ledger the sealed plane names can add one.
-- With `runtime_behind` while the installed polispec release is older than 0.34.0, because that runtime rejects a ledger with `paths`, `owner` or `registered_by`. Tell the person to install 0.34.0 first; a dry run still previews.
+- With `runtime_behind` while the installed polispec release is older than 0.35.0, because that runtime rejects a ledger with `paths`, `owner` or `registered_by`. Tell the person to install 0.35.0 first; a dry run still previews.
 
 ## Publishing the index (opt-in)
 
