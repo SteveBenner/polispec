@@ -44,6 +44,8 @@ Each environment:
 - `deploy.steps`: commands `polispec deploy` runs.
 - `deploy.health`: a `url` or a `run` command, plus `expect_version` and `timeout_s`.
 - `host`: the machine the environment runs on.
+
+Since 0.37.4 an agent may read release code in a prod checkout: a read of a path under a prod `checkout` that matches none of the environment's `data.dirs`, `unit_files`, `env_files` or `secrets`, is tracked by git there and is unmodified (git status, ignored files included) is allowed by `POLISPEC-RELEASE-READ` before the policy's rules. Any other read in prod stays `secrets.read`: data dirs, unit and env files, declared secrets, and untracked, ignored, modified or missing files in the checkout.
 - `audience`: who uses it (`customers`, `staff`, `operator`, `none` and so on); at least one entry.
 - `exposure`: `none`, `loopback`, `tailnet`, `funnel` or `public`.
 - `operators`: who may promote or deploy into it.

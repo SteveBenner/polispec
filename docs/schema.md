@@ -59,7 +59,7 @@ The guard reads it from the project's trust ref (the committed blob on `stable`)
 | `deploy.health.url`, `.expect_version`, `.timeout_s` | string, bool, integer | Health check that must report the deployed version. |
 | `deploy.strategy` | `in_place` or `release_dirs` | Default `in_place`: the stage checkout is updated where it stands. `release_dirs` builds each release in `<envs_root>/<project>/releases/<tag>` and points `<envs_root>/<project>/<env>` at it by an atomic symlink swap, with automatic rollback. |
 | `deploy.activate` | list of commands | `release_dirs` only: the restarts, run after the symlink swap and again after a rollback. Default none. |
-| `deploy.drain.pause`, `.wait`, `.resume` | string | Quiesce hooks around the swap. `pause` and `resume` run once; `wait` repeats until exit 0. All optional. |
+| `deploy.drain.pause`, `.wait`, `.resume` | string | Quiesce hooks around the swap. `pause` runs once and `resume` up to four times until it exits 0 (since 0.37.4); `wait` repeats until exit 0. All optional. |
 | `deploy.drain.timeout_s` | integer | How long `wait` may run (default 300; polled every 5 s). |
 | `deploy.drain.checks` | list of commands | Run after pause and wait, before the swap or first step; a failure aborts with `drain_check_failed`. |
 | `deploy.drain.run_in`, `.env_from` | `repo` or `active`; env name | Where drain commands run (default `active`) and whose `env_files` they load (default the env being deployed). |

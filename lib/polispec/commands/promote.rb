@@ -74,6 +74,7 @@ module Polispec
         puts "  record #{result['record_id']}; release #{result.dig('release', 'status')}"
         result["deploys"].each do |deploy|
           puts "  deploy #{deploy['env']}: health #{deploy.dig('health', 'status')}, #{deploy['steps'].length} steps" if deploy.key?("env")
+          puts "  WARNING: #{deploy['queues_paused']}" if deploy["queues_paused"]
         end
       end
     end

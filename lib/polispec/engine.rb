@@ -655,6 +655,42 @@ module Polispec
         by_spec_paths(abs, policy) || by_policy_checkout(abs, policy, ctx) || dev_location(abs, policy, ctx)
       end
 
+      def release_read?(action, target, ctx)
+        return false unless action.action_class == "secrets.read"
+
+        hint = hint_of(action)
+        path = hint["path"]
+        return false unless hint["candidate"] && path.is_a?(String) && !path.empty? && !Polispec::Engine.store_ref?(path)
+
+        policy = target.policy
+        abs = canonical(absolute(path, ctx[:cwd]))
+        return false if environments(policy).any? { |_name, spec| spec.is_a?(Hash) && spec_path_hit?(abs, spec) }
+
+        root = release_root(abs, policy, ctx)
+        root ? clean_tracked?(root, abs) : false
+      end
+
+      def release_root(abs, policy, ctx)
+        environments(policy).each_value do |spec|
+          next unless spec.is_a?(Hash)
+
+          root = checkout_root(spec, ctx)
+          return root if root && under?(abs, root)
+        end
+        nil
+      end
+
+      def clean_tracked?(root, abs)
+        rel = abs == root ? "." : abs.delete_prefix("#{root}/")
+        tracked, listed = Open3.capture2(PolicySource::GIT_ENV, "git", "-C", root, "ls-files", "-z", "--", rel, err: File::NULL)
+        return false unless listed.success? && !tracked.empty?
+
+        dirty, status = Open3.capture2(PolicySource::GIT_ENV, "git", "-C", root, "status", "--porcelain", "--ignored", "-z", "--", rel, err: File::NULL)
+        status.success? && dirty.empty?
+      rescue SystemCallError
+        false
+      end
+
       def by_spec_paths(abs, policy)
         ENV_NAMES.each do |name|
           spec = environments(policy)[name]
@@ -1081,6 +1117,7 @@ module Polispec
       test_git: "Ask %<operator>s; no polispec project owns this path, so `polispec promote --to test` does not apply to it."
     }.freeze
     GIT_CLASSES = %w[git.commit git.push git.tag git.merge git.rewrite git.branch release.publish].freeze
+    RELEASE_READ_ID = "POLISPEC-RELEASE-READ"
 
     class << self
       def evaluate(actions, target, ctx = {})
@@ -1136,8 +1173,14 @@ module Polispec
 
       def judge(action, target, ctx)
         env = Envs.for_action(action, target, ctx)
+        return Row.new(action, env, release_read(action, env, target)) if env == "prod" && Envs.release_read?(action, target, ctx)
+
         verdict = frozen(action, env, target, ctx) || stricter_runtime(action, env, target, ctx)
         Row.new(action, env, cleared(verdict, action, env, target, ctx))
+      end
+
+      def release_read(action, env, target)
+        build("release code tracked and unmodified in the #{env} checkout is not a secret", RELEASE_READ_ID, "allow", action, env, target)
       end
 
       def stricter_runtime(action, env, target, ctx)

@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.37.4] - 2026-10-22
+
+### Changed
+- Reads of release code in a prod checkout are allowed (loosening, approved by Sven). A read candidate (`secrets.read` with hint `candidate`, from Read and the shell read classifiers) that resolves to a prod tier is allowed by the new `POLISPEC-RELEASE-READ` row before policy rules when its path lies under an environment's declared `checkout`, matches none of the policy's `data.dirs`, `unit_files`, `env_files` or `secrets`, is tracked by git there and `git status --porcelain --ignored` reports it unmodified (`Engine::Envs.release_read?`, `Engine.judge`, `lib/polispec/engine.rb`). Before, every such read took the env of the checkout and `R-PROD-SECRET` denied it, so an agent could not read the code it was asked to diagnose. Modified, untracked, ignored and missing paths, directories holding any of them, prod data dirs (student records), env and unit files, declared secrets, and a command that also reads one of those stay denied.
+
+### Fixed
+- A failing `drain.resume` is no longer silent. It is retried up to three more times (2, 4 and 8 s apart); the deploy record keeps the drain log (each pause, wait, check and resume attempt with its exit, and for a failed resume its directory and output tail); when the resume still fails, the record detail, the result's `queues_paused`, the deploy and promote text output and a failed deploy's error payload say the queues are still paused and name the exact resume command and directory; and `polispec doctor` reports `drain_resume_failed` (warn) for each project and env whose latest recorded resume failed until a later deploy's resume succeeds (`lib/polispec/operator/deploy.rb`, `lib/polispec/commands/deploy.rb`, `lib/polispec/commands/promote.rb`, `lib/polispec/commands/doctor.rb`). On 2026-10-20 a Teach stable deploy failed a drain check while the disk was full; its resume left no trace and grading stayed paused for seven hours.
+
 ## [0.37.3] - 2026-10-22
 
 ### Fixed
