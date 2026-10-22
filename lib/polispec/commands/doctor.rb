@@ -33,6 +33,7 @@ module Polispec
       check_ledger(ledger, findings) if ledger
       check_ledger_runtime(ledger, findings) if ledger
       check_descriptions(ledger, findings) if ledger
+      check_drain_resume(findings)
       check_runtime(findings)
       check_release(findings)
       check_plane(findings)
@@ -103,6 +104,19 @@ module Polispec
       end
     rescue Polispec::Error, SystemCallError
       nil
+    end
+
+    def check_drain_resume(findings)
+      last = {}
+      State.read_jsonl("deploys").each do |row|
+        resumes = Array(row["drain"]).select { |entry| entry.is_a?(Hash) && entry["phase"] == "resume" }
+        last[[row["project"], row["env"]]] = [row, resumes.last] unless resumes.empty?
+      end
+      last.each do |(project, env), (row, resume)|
+        next if resume["exit"].to_i.zero?
+
+        findings << finding(project, "drain_resume_failed", "#{env} queues still paused since deploy #{row['id']} at #{row['at']}: resume exited #{resume['exit']} after #{resume['attempt'] || 1} attempts; run `#{resume['command']}` in #{resume['dir'] || 'the active checkout'}; the next deploy whose resume succeeds clears this").merge("severity" => "warn")
+      end
     end
 
     def info(project, kind, detail)

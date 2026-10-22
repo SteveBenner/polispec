@@ -58,6 +58,7 @@ module Polispec
         result["steps"].each { |step| puts "  step #{step['command']}: exit #{step['exit']}" }
         puts "  health: #{result.dig('health', 'status')} (#{result.dig('health', 'detail')})"
         puts "  pinned_behind: #{result['pinned_behind']}"
+        puts "  WARNING: #{result['queues_paused']}" if result["queues_paused"]
       end
     end
   end

@@ -17,6 +17,7 @@ module Polispec
       STATE_KEY = "deployments"
       DRAIN_TIMEOUT = 300
       DRAIN_POLL = 5
+      RESUME_BACKOFF = [2, 4, 8].freeze
       RETAIN = 3
 
       module_function
@@ -60,10 +61,13 @@ module Polispec
         end
         health = guard&.violation ? { "status" => "failed", "detail" => guard.violation } : run[:health]
         pinned = config["tier"] == "prod" ? pinned_behind?(run[:git], run[:tag]) : false
-        record = State.append_jsonl("deploys", record_for(project, name, run[:sha], run[:tag], health, pinned, record_id, run[:detail], skipped))
+        paused = paused_note(resume_failure(run[:drain]))
+        detail = [run[:detail], paused].compact.join("; ")
+        record = State.append_jsonl("deploys", record_for(project, name, run[:sha], run[:tag], health, pinned, record_id, detail.empty? ? nil : detail, skipped, run[:drain]))
         result = result_for(project, name, run[:dir], run[:sha], run[:tag], run[:version], run[:outcome][:steps], health, pinned, actor, record, started)
         result["strategy"] = settings["strategy"] || "in_place"
         result["drain"] = skipped ? "skipped" : run[:drain] if skipped || run[:drain]
+        result["queues_paused"] = paused if paused
         result["activate"] = run[:activate] if run[:activate]
         result["retention"] = run[:retention] if run[:retention]
         result["hermetic"] = guard_summary if guard_summary
@@ -299,8 +303,30 @@ module Polispec
 
         run = drain_ctx(ctx, drain)
         argv = Gates.argv_for(drain["resume"], run[:vars])
-        execution = Gates.exec(argv, chdir: run[:dir], env: run[:env], timeout: STEP_TIMEOUT)
-        log << { "phase" => "resume", "command" => argv.join(" "), "exit" => execution.code }
+        (RESUME_BACKOFF.length + 1).times do |attempt|
+          execution = Gates.exec(argv, chdir: run[:dir], env: run[:env], timeout: STEP_TIMEOUT)
+          entry = { "phase" => "resume", "command" => argv.join(" "), "dir" => run[:dir].to_s, "exit" => execution.code, "attempt" => attempt + 1 }
+          entry["output_tail"] = execution.tail unless execution.ok?
+          log << entry
+          break if execution.ok? || attempt == RESUME_BACKOFF.length
+
+          sleep RESUME_BACKOFF[attempt]
+        end
+      end
+
+      def resume_failure(drain)
+        return nil unless drain.is_a?(Array)
+
+        last = drain.reverse.find { |entry| entry["phase"] == "resume" }
+        return nil if last.nil? || last["exit"].to_i.zero?
+
+        last.slice("command", "dir", "exit", "attempt", "output_tail")
+      end
+
+      def paused_note(failure)
+        return nil unless failure
+
+        "queues still paused: drain resume failed after #{failure['attempt']} attempts (exit #{failure['exit']}); run `#{failure['command']}` in #{failure['dir']}"
       end
 
       def retain(releases, project_dir, keep)
@@ -525,10 +551,10 @@ module Polispec
         git.tag_version(tag) < git.tag_version(latest)
       end
 
-      def record_for(project, name, sha, tag, health, pinned, id = Gates.new_id("dpl"), detail = nil, skipped = false)
+      def record_for(project, name, sha, tag, health, pinned, id = Gates.new_id("dpl"), detail = nil, skipped = false, drain = nil)
         {
           "id" => id, "project" => project.id, "env" => name, "sha" => sha, "tag" => tag, "health" => health["status"],
-          "pinned_behind" => pinned, "at" => Time.now.utc.iso8601, "detail" => detail, "drain" => (skipped ? "skipped" : nil),
+          "pinned_behind" => pinned, "at" => Time.now.utc.iso8601, "detail" => detail, "drain" => (skipped ? "skipped" : drain),
           "via" => Polispec::Delegate.via
         }.compact
       end
@@ -574,7 +600,7 @@ module Polispec
       end
 
       def raise_failure(outcome, health, result)
-        base = { "env" => result["env"], "sha" => result["sha"], "record_id" => result["record_id"] }
+        base = { "env" => result["env"], "sha" => result["sha"], "record_id" => result["record_id"], "queues_paused" => result["queues_paused"] }
         raise Failure.new(outcome[:code], outcome[:detail], base.merge("health" => health)) if outcome[:code]
 
         if outcome[:failed]

@@ -11,7 +11,7 @@ Every tool call in a live project gets one verdict from the policy: `allow`, `wa
 - Run git against the `stable` branch, or push, tag, or reset `test` or `stable` directly.
 - Start, stop, restart, enable, or edit a live service unit.
 - Edit files in a production checkout.
-- Read or write production secrets.
+- Read or write production secrets. Release code in a prod checkout (tracked and unmodified) is readable; prod data, env files and declared secrets are not.
 - Copy data between environments. Test holds de-identified data only.
 
 ## Warn handling
