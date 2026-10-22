@@ -1,6 +1,6 @@
 schema_version: 1
 name: polispec
-version: 0.37.2
+version: 0.37.3
 capture_repair:
   syntax_only_shell: "Recognized static noninteractive bash, sh, and dash noexec invocations classify script operands as reads. The parser does not follow their file, inline, or stdin bodies. Caller-side substitutions, redirects, privilege, and surrounding commands remain visible. Unknown options, startup-environment overrides, interactive mode, and disabled noexec retain conservative classification. Stdin bodies with possible caller substitutions remain conservatively inspected."
   interpreter_stdin: "A literal existing script operand passed directly to an interpreter makes its stdin data, not code. Without that positive evidence, embedded-code inspection remains conservative."
