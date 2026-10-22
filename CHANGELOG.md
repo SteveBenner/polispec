@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.37.3] - 2026-10-22
+
+### Fixed
+- The fast path re-stamps when a watched file is newer. `Fastpath.stale?` now treats any watched file (the ledger, a global shelf ref or packed-refs, the rplugin settings, the native settings file, `/etc/polispec/active.json`) with a modification time later than `fastpath.txt` as stale, so `refresh` re-stamps even when the content key is unchanged and read tools skip the launcher again after a shelf commit or a ledger write (`lib/polispec/fastpath.rb`).
+
 ## [0.37.2] - 2026-10-21
 
 ### Fixed

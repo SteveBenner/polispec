@@ -72,6 +72,9 @@ module Polispec
       return true unless File.file?(path) && File.file?(tools_path)
       return true if ledger.path && File.file?(ledger.path) && File.mtime(ledger.path) > File.mtime(path)
 
+      stamp = File.mtime(path)
+      return true if watched(ledger).any? { |file| (File.mtime(file) > stamp rescue false) }
+
       File.open(path, &:gets).to_s.chomp != key(ledger, context)
     end
 
