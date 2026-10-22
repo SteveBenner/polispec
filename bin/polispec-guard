@@ -113,6 +113,100 @@ case "$mode" in
   pretool | session) ;;
   *) exit 0 ;;
 esac
+launcher_note() {
+  session=""
+  if [[ $input =~ \"session_id\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then session="${BASH_REMATCH[1]}"; fi
+  safe_tool="${tool//[\\\"]/_}"
+  safe_session="${session//[\\\"]/_}"
+  safe_harness="${harness//[\\\"]/_}"
+  umask 077
+  TZ=UTC printf '{"ts":"%(%Y-%m-%dT%H:%M:%SZ)T","tool":"%s","session":"%s","harness":"%s","mode":"%s","cause":"%s","decision":"pass"}\n' -1 "$safe_tool" "$safe_session" "$safe_harness" "$mode" "$1" >> "$state/launcher.jsonl" 2>/dev/null
+}
+judge_spawn() {
+  stamp="$state/judge.spawn"
+  last=0
+  if [ -f "$stamp" ]; then { IFS= read -r last || true; } < "$stamp"; fi
+  [[ $last =~ ^[0-9]+$ ]] || last=0
+  [ $(( EPOCHSECONDS - last )) -ge 30 ] || return 0
+  umask 077
+  [ -d "$state" ] || mkdir -p -m 700 "$state" 2>/dev/null || return 0
+  printf '%s\n' "$EPOCHSECONDS" > "$stamp" 2>/dev/null || return 0
+  if command -v setsid >/dev/null 2>&1; then
+    POLISPEC_JUDGE_RUNTIME="$bindir" setsid -f "$bin" judge serve </dev/null >/dev/null 2>&1
+  else
+    ( POLISPEC_JUDGE_RUNTIME="$bindir" "$bin" judge serve </dev/null >/dev/null 2>&1 & )
+  fi
+  return 0
+}
+judge_left() {
+  now_us="${EPOCHREALTIME/./}"
+  left_us=$(( judge_deadline - now_us ))
+  [ "$left_us" -gt 0 ] || return 1
+  printf -v rem '%d.%06d' $(( left_us / 1000000 )) $(( left_us % 1000000 ))
+}
+judge_attempt() {
+  jfile="$state/judge.json"
+  if [ ! -r "$jfile" ]; then judge_cause=judge_absent; return 1; fi
+  jtext=""
+  { IFS= read -r -d '' jtext || true; } < "$jfile"
+  if [[ $jtext =~ \"port\":([0-9]+) ]]; then jport="${BASH_REMATCH[1]}"; else judge_cause=judge_malformed; return 1; fi
+  if [[ $jtext =~ \"token\":\"([0-9a-f]{32})\" ]]; then jtoken="${BASH_REMATCH[1]}"; else judge_cause=judge_malformed; return 1; fi
+  budget="${POLISPEC_JUDGE_BUDGET:-0.5}"
+  if [[ $budget =~ ^([0-9]+)(\.([0-9]{1,6}))?$ ]]; then
+    frac="${BASH_REMATCH[3]}000000"
+    budget_us=$(( 10#${BASH_REMATCH[1]} * 1000000 + 10#${frac:0:6} ))
+  else
+    budget_us=500000
+  fi
+  [ "$budget_us" -gt 0 ] || { judge_cause=judge_budget; return 1; }
+  judge_deadline=$(( ${EPOCHREALTIME/./} + budget_us ))
+  trap '' PIPE
+  if ! { exec 3<>"/dev/tcp/127.0.0.1/$jport"; } 2>/dev/null; then judge_cause=judge_refused; return 1; fi
+  payload_bytes="${#input}"
+  if ! printf '%s\n%s' "POLISPEC/1 $jtoken $mode $harness $bindir $payload_bytes" "$input" >&3 2>/dev/null; then exec 3>&-; judge_cause=judge_refused; return 1; fi
+  jhead=""
+  if ! judge_left; then exec 3>&-; judge_cause=judge_timeout; return 1; fi
+  if ! read -t "$rem" -r -u 3 jhead; then
+    exec 3>&-
+    judge_cause=judge_timeout
+    return 1
+  fi
+  if ! [[ $jhead =~ ^POLISPEC/1\ (stale|busy|error|[0-9]+)\ ([0-9]+)$ ]]; then exec 3>&-; judge_cause=judge_malformed; return 1; fi
+  jstatus="${BASH_REMATCH[1]}"
+  jlen="${BASH_REMATCH[2]}"
+  jbody=""
+  if [ "$jlen" -gt 0 ] && [ "$jstatus" != stale ] && [ "$jstatus" != busy ] && [ "$jstatus" != error ]; then
+    if ! judge_left || ! read -t "$rem" -r -N "$jlen" -u 3 jbody; then exec 3>&-; judge_cause=judge_timeout; return 1; fi
+  fi
+  exec 3>&-
+  case "$jstatus" in
+    stale | busy | error) judge_cause="judge_$jstatus"; return 1 ;;
+  esac
+  jbody="${jbody%"${jbody##*[!$'\n']}"}"
+  if [ "$jstatus" = 0 ]; then
+    [ -n "$jbody" ] && printf '%s\n' "$jbody"
+    exit 0
+  fi
+  if [ "$jstatus" = 2 ] && [ "$mode" = pretool ] && [ "${jbody:0:1}" = "{" ]; then
+    printf '%s\n' "$jbody"
+    exit 2
+  fi
+  judge_cause="judge_exit_$jstatus"
+  return 1
+}
+if [ "${POLISPEC_JUDGE:-on}" != off ]; then
+  bindir="$(cd "$(dirname "$bin")" 2>/dev/null && pwd -P)"
+  saved_lc="${LC_ALL-}"
+  saved_lc_set="${LC_ALL+x}"
+  LC_ALL=C
+  judge_cause=""
+  if ! judge_attempt; then
+    if [ -n "$saved_lc_set" ]; then LC_ALL="$saved_lc"; else unset LC_ALL; fi
+    trap - PIPE
+    launcher_note "$judge_cause"
+    case "$judge_cause" in judge_absent | judge_refused | judge_stale) judge_spawn ;; esac
+  fi
+fi
 if command -v timeout >/dev/null 2>&1; then
   out="$(printf '%s' "$input" | timeout -k 1 "$deadline" "$bin" hook "$mode" --harness "$harness" 2>/dev/null)"
   rc=$?
