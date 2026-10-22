@@ -85,6 +85,32 @@ module Polispec
       flush_events
     end
 
+    def judge_request(mode, harness, raw)
+      raise Polispec::Error, "unknown hook mode #{mode}" unless %w[pretool session].include?(mode)
+      raise Polispec::Error, "unknown harness #{harness}" unless HARNESSES.include?(harness)
+
+      @subcommand = mode
+      @native_harness = harness
+      @deadline = clock + HOOK_BUDGET
+      adapter = Harness.const_get(ADAPTERS.fetch(harness, :Generic)).new(harness)
+      DeferredEvents.active = true
+      within_budget do
+        if mode == "pretool"
+          output, status = pretool_result(adapter, { "controls_file" => nil, "controls_project" => nil }, raw)
+          [status, output.to_s]
+        else
+          begin
+            text, status = session_result(adapter, raw)
+            [status, text.to_s]
+          rescue Errno::EPIPE, IOError, Polispec::Error
+            [1, ""]
+          end
+        end
+      end
+    ensure
+      flush_events
+    end
+
     private
 
     def usage
@@ -220,16 +246,20 @@ module Polispec
 
     def pretool(adapter, options)
       within_budget do
-        started = clock
-        @started = started
-        raw = bounded_input
-        input = adapter.parse(raw)
-        @input = input
-        @diagnostic_read = diagnostic_input?(adapter, input)
-        output = decide(adapter, input, started, options)
+        output, status = pretool_result(adapter, options, bounded_input)
         $stdout.write(output) if output
-        adapter.exit_status.to_i
+        status
       end
+    end
+
+    def pretool_result(adapter, options, raw)
+      started = clock
+      @started = started
+      input = adapter.parse(raw)
+      @input = input
+      @diagnostic_read = diagnostic_input?(adapter, input)
+      output = decide(adapter, input, started, options)
+      [output, adapter.exit_status.to_i]
     end
 
     def decide(adapter, input, started, options)
@@ -879,19 +909,24 @@ module Polispec
     end
 
     def session(adapter)
-      input = session_input(adapter, bounded_input)
+      text, status = session_result(adapter, bounded_input)
+      $stdout.write(text) if text
+      status
+    rescue Errno::EPIPE, IOError, Polispec::Error
+      1
+    end
+
+    def session_result(adapter, raw)
+      input = session_input(adapter, raw)
       cwd = input.cwd.to_s.empty? ? Dir.pwd : input.cwd.to_s
       ledger = Ledger.load
       located = ledger.locate(cwd)
       live = located && located.project.status == "live"
       text = live ? SessionText.new(ledger, located.project, input, cwd, enforce_mode).to_s : ""
       note_session(adapter, input, ledger, located, cwd, text)
-      return 0 unless live
+      return [nil, 0] unless live
 
-      $stdout.write(adapter.render_session(text, input.event)) unless text.empty?
-      0
-    rescue Errno::EPIPE, IOError, Polispec::Error
-      1
+      [text.empty? ? nil : adapter.render_session(text, input.event), 0]
     end
 
     def note_session(adapter, input, ledger, located, cwd, text)

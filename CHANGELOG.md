@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.38.0] - 2026-10-22
+
+### Added
+- Resident judge. `polispec judge serve|status|stop` runs one Ruby process on `127.0.0.1` that answers pretool and session calls from memory through `HookCommand#judge_request`, the code the cold path runs, with the same flocked, hash-chained journal record. It records its port and a per-start token in `judge.json` (mode 0600), reloads the ledger, the global shelf and each live project's policy only when a content key changes (ledger bytes, both settings files, `/etc/polispec/active.json`, the shelf's files or ref commit, each live project's trust-ref commit, the runtime version), and exits after `POLISPEC_JUDGE_IDLE` seconds idle (default 1800) or after answering a request from another runtime directory (`lib/polispec/judge.rb`, `lib/polispec/commands/judge.rb`).
+- `bin/polispec-guard` asks the judge through bash's `/dev/tcp` after the fast-path skip test and binary resolution, within `POLISPEC_JUDGE_BUDGET` seconds (default 0.5, so that budget, the 8 second deadline and the margin stay below the hook's 10 second timeout), and falls back to the unchanged cold path with a `launcher.jsonl` row (`judge_<reason>`, decision `pass`) on any other outcome; a detached judge is started at most once per 30 seconds. `POLISPEC_JUDGE=off` skips it.
+
+### Changed
+- No verdict changes. `HookCommand` splits `pretool` and `session` into `pretool_result` and `session_result`, which return the reply instead of writing it; the cold path writes it exactly as before.
+- A request that overruns the launcher's budget after the judge started judging can be journaled twice, once by the judge and once by the cold path.
+
 ## [0.37.4] - 2026-10-22
 
 ### Changed
