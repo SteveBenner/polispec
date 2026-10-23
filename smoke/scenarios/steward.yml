@@ -17,13 +17,13 @@ steps:
       exit: 1
       stdout_includes: ["stewardship_1: missing ", "would run rplugin install ", "stewardship_2: ok R-POLISPEC-RUNTIME protects ", "stewardship_3: "]
       files_absent: ["{{scratch}}/steward-host/store/polispec"]
-  - name: steward --check as json lists the three steps and is not ok
+  - name: steward --check as json lists the four steps and is not ok
     run: ["{{polispec}}", steward, --check, --json]
     env: { RPLUGIN_BIN: "{{scratch}}/steward-host/bin/rplugin", RPLUGINS_HOME: "{{scratch}}/steward-host/store", RPLUGIN_CLAUDE_HOME: "{{scratch}}/steward-host/claude", CLAUDE_CONFIG_DIR: "{{scratch}}/steward-host/claude" }
     home: true
     expect:
       exit: 1
-      json: { ok: false, steps: [{ step: stewardship_1, status: missing }, { step: stewardship_2, status: ok }, { step: stewardship_3 }] }
+      json: { ok: false, steps: [{ step: stewardship_1, status: missing }, { step: stewardship_2, status: ok }, { step: stewardship_3 }, { step: stewardship_4 }] }
   - name: an unknown argument is a usage error
     run: ["{{polispec}}", steward, --bogus]
     expect:

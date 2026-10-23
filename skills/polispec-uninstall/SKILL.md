@@ -16,7 +16,7 @@ polispec records every place it is deployed in one manifest. `polispec uninstall
 
 1. Show what is deployed: `polispec deployments --scan --json`. The scan adds entries for installs that predate the manifest. Summarise by class: wiring (hooks, skill and rule links, git hook shims, harness-control overlays), pins (the current link and the `~/.local/bin` link), rplugin (the store link), data (ledger, settings file, state home).
 2. Preview the removal: `polispec uninstall --all --dry-run`. It writes nothing. Show the backup id it would use, every file it would copy, every step in order, and the restore command.
-3. Explain the classes. `--keep wiring,pins,rplugin,data` leaves a class alone; the default keeps nothing. Release directories under the data home are never removed, they are the rollback. A marketplace plugin is reported with the harness command that removes it and is not touched.
+3. Explain the classes. `--keep wiring,pins,rplugin,data` leaves a class alone; the default keeps nothing. Release directories under the data home are never removed, they are the rollback. A marketplace plugin is reported with the harness command that removes it and is not touched. A ledger or settings file that lives inside the global shelf or any git repository is kept and reported, and the global shelf and the rulebooks committed in governed repositories are never touched.
 4. Hand the person the exact command to run in their own terminal: `polispec uninstall --all` (add `--keep ...` when they chose one). It asks for the phrase `uninstall polispec`. If the person asks you to run it, say that an agent shell cannot (`not_tty`) and do not try to get around that.
 5. After they ran it, show the backup directory and the restore command from its output.
 
