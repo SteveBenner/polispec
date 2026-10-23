@@ -15,6 +15,7 @@ module Polispec
       ENVS_ROW = "[ENVS]"
       EDIT_KEYS = %w[old_string new_string old_str new_str old_text new_text oldText newText].freeze
       CONTENT_KEYS = %w[content file_text text contents].freeze
+      BYTES_KEYS = %w[content file_text text new_string new_str new_source contents].freeze
 
       module_function
 
@@ -137,7 +138,17 @@ module Polispec
       def write_action(path, raw, extra = {}, input = nil)
         return nil if discard?(path)
 
-        act(write_class(path, input), raw, extra.merge("path" => path))
+        klass = write_class(path, input)
+        bytes = klass == "fs.write" ? write_bytes(input) : nil
+        act(klass, raw, extra.merge("path" => path, "bytes" => bytes))
+      end
+
+      def write_bytes(input)
+        return nil unless input.is_a?(Hash)
+
+        entries = [input] + (dig(input, "edits").is_a?(Array) ? dig(input, "edits").grep(Hash) : [])
+        strings = entries.flat_map { |entry| BYTES_KEYS.map { |key| dig(entry, key) } }.grep(String)
+        strings.empty? ? nil : strings.sum(&:bytesize)
       end
 
       def read_action(path, raw)
