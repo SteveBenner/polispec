@@ -536,7 +536,7 @@ module Polispec
       project, env = authorization_target(target_pairs, documents)
       action_material = canonical_value({
         "tool" => input.tool_name.to_s, "arguments" => input.tool_input, "cwd" => canonical_path(cwd),
-        "actions" => actions.map(&:to_h), "asks" => ask_set, "policy_digests" => policy_digests,
+        "actions" => actions.map { |action| material_action(action) }, "asks" => ask_set, "policy_digests" => policy_digests,
         "control_digest" => control_digest, "harness" => adapter.name, "session" => session,
         "governed_targets" => target_pairs
       })
@@ -581,6 +581,12 @@ module Polispec
       raise Polispec::Error, "governed authorization targets exceed their bounded representation" if bytes.bytesize > AUTH_MATERIAL_LIMIT
       digest = Digest::SHA256.hexdigest(bytes)
       ["multi_#{digest}", "multi_#{digest}"]
+    end
+
+    def material_action(action)
+      row = action.to_h
+      hint = row["env_hint"]
+      row.merge("env_hint" => hint.is_a?(Hash) ? hint.reject { |key, _| %w[text text_truncated].include?(key.to_s) } : hint)
     end
 
     def authorization_denial(rule_id, reason)

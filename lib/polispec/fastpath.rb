@@ -112,6 +112,12 @@ module Polispec
       rules.map { |rule| rule.is_a?(Hash) ? (rule["match"] || {}) : {} }
     end
 
+    def text_rules?
+      global_rules.any? { |match| match.key?("text_matches") }
+    rescue StandardError
+      false
+    end
+
     def reads_governed?(read_tools = declared_tools[1])
       global_rules.any? do |match|
         classes = match["class"]
@@ -130,10 +136,11 @@ module Polispec
       root = File.expand_path(ledger.envs_root)
       live = ledger.projects.select { |project| project.status == "live" }
       baseline = Layers.baseline?
-      return [] if live.empty? && !baseline
+      tools = baseline || text_rules?
+      return [] if live.empty? && !tools
 
       list = [root, File.join(File.basename(File.dirname(root)), File.basename(root))]
-      list.concat(tool_needles) if baseline
+      list.concat(tool_needles) if tools
       live.each do |project|
         list << project.id << File.basename(project.repo.to_s)
         list.concat(roots(project.repo))

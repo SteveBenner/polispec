@@ -6,6 +6,7 @@ require_relative "classify/shell"
 require_relative "layers"
 require_relative "predicates"
 require_relative "scratch_cap"
+require_relative "text_match"
 require_relative "native_settings"
 require_relative "hook_memo"
 
@@ -1032,7 +1033,7 @@ module Polispec
 
     module Match
       EXTENSIONS = %w[server operation domain tool role path].freeze
-      KEYS = (%w[env class ref crosses destructive shape] + EXTENSIONS + Predicates::NAMES + ScratchCap::KEYS).freeze
+      KEYS = (%w[env class ref crosses destructive shape] + EXTENSIONS + Predicates::NAMES + ScratchCap::KEYS + [TextMatch::KEY]).freeze
 
       module_function
 
@@ -1042,7 +1043,7 @@ module Polispec
 
         env_ok?(match, env) && class_ok?(match, action) && extensions_ok?(match, action, ctx) && ref_ok?(match, action, env, target, ctx) && crosses_ok?(match, action, target, ctx) &&
           destructive_ok?(match, action, ctx) && shape_ok?(match, action) && predicates_ok?(match, action, ctx) &&
-          ScratchCap.holds?(match, action, ctx)
+          ScratchCap.holds?(match, action, ctx) && TextMatch.holds?(match, action, ctx)
       end
 
       def extensions_ok?(match, action, ctx)

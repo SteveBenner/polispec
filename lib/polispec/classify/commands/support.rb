@@ -16,6 +16,7 @@ module Polispec
       EDIT_KEYS = %w[old_string new_string old_str new_str old_text new_text oldText newText].freeze
       CONTENT_KEYS = %w[content file_text text contents].freeze
       BYTES_KEYS = %w[content file_text text new_string new_str new_source contents].freeze
+      TEXT_LIMIT = 262_144
 
       module_function
 
@@ -139,16 +140,23 @@ module Polispec
         return nil if discard?(path)
 
         klass = write_class(path, input)
-        bytes = klass == "fs.write" ? write_bytes(input) : nil
-        act(klass, raw, extra.merge("path" => path, "bytes" => bytes))
+        strings = klass == "fs.write" ? write_strings(input) : []
+        bytes = strings.empty? ? nil : strings.sum(&:bytesize)
+        text, truncated = strings.empty? ? [nil, nil] : clip(strings.join("\n"))
+        act(klass, raw, extra.merge("path" => path, "bytes" => bytes, "text" => text, "text_truncated" => truncated))
       end
 
-      def write_bytes(input)
-        return nil unless input.is_a?(Hash)
+      def write_strings(input)
+        return [] unless input.is_a?(Hash)
 
         entries = [input] + (dig(input, "edits").is_a?(Array) ? dig(input, "edits").grep(Hash) : [])
-        strings = entries.flat_map { |entry| BYTES_KEYS.map { |key| dig(entry, key) } }.grep(String)
-        strings.empty? ? nil : strings.sum(&:bytesize)
+        entries.flat_map { |entry| BYTES_KEYS.map { |key| dig(entry, key) } }.grep(String)
+      end
+
+      def clip(text)
+        return [text, nil] if text.bytesize <= TEXT_LIMIT
+
+        [text.byteslice(0, TEXT_LIMIT).scrub(""), true]
       end
 
       def read_action(path, raw)

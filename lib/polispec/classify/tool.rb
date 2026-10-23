@@ -27,7 +27,7 @@ module Polispec
           patch_changes(tool_input).flat_map do |change|
             rows = []
             rows << Support.act("fs.delete", "#{name} #{Support.abs(change["old"], cwd)}", "path" => Support.abs(change["old"], cwd)) if change["delete"]
-            rows << write(change["new"], name, cwd) if change["new"]
+            rows << write(change["new"], name, cwd, change["added"] ? { "new_string" => change["added"].join("\n") } : nil) if change["new"]
             rows.compact
           end
         elsif READ_TOOLS.include?(name)
@@ -76,11 +76,13 @@ module Polispec
           if (match = PATCH_FILE.match(line))
             kind = match[1]
             path = match[2]
-            current = { "old" => kind == "Add" ? nil : path, "new" => kind == "Delete" ? nil : path, "delete" => kind == "Delete" }
+            current = { "old" => kind == "Add" ? nil : path, "new" => kind == "Delete" ? nil : path, "delete" => kind == "Delete", "added" => [], "kind" => kind }
             changes << current
           elsif current && (match = PATCH_MOVE.match(line))
             current["new"] = match[1]
             current["delete"] = true
+          elsif current && current["kind"] != "Delete" && line.start_with?("+")
+            current["added"] << line[1..].chomp
           end
         end
         if changes.empty?

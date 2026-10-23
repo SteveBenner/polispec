@@ -163,11 +163,13 @@ module Polispec
           if (match = line.match(/^\*\*\* (Update|Add|Delete) File: (.+)$/))
             kind = match[1]
             path = match[2].strip
-            current = { "old" => kind == "Add" ? nil : path, "new" => kind == "Delete" ? nil : path, "delete" => kind == "Delete" }
+            current = { "old" => kind == "Add" ? nil : path, "new" => kind == "Delete" ? nil : path, "delete" => kind == "Delete", "added" => [], "kind" => kind }
             calls << current
           elsif current && (match = line.match(/^\*\*\* Move to: (.+)$/))
             current["new"] = match[1].strip
             current["delete"] = true
+          elsif current && current["kind"] != "Delete" && line.start_with?("+")
+            current["added"] << line[1..].chomp
           end
         end
         return [["Edit", data]] if calls.empty? && (data["file_path"] || data["path"])
@@ -175,7 +177,7 @@ module Polispec
         calls.flat_map do |change|
           rows = []
           rows << ["Delete", { "file_path" => change["old"] }] if change["delete"] && change["old"]
-          rows << ["Edit", { "file_path" => change["new"] }] if change["new"]
+          rows << ["Edit", { "file_path" => change["new"], "new_string" => change["added"].join("\n") }] if change["new"]
           rows
         end
       end
