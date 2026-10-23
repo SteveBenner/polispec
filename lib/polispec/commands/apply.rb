@@ -3,6 +3,7 @@
 
 require_relative "../plan"
 require_relative "../stewardship"
+require_relative "../deployments"
 require_relative "../changes"
 
 module Polispec
@@ -53,6 +54,7 @@ module Polispec
 
     def steward(parsed)
       @stewardship = Stewardship.ensure!(quiet: @json)
+      Deployments.refresh_stewardship
     end
 
     def refuse_sealed(spec)

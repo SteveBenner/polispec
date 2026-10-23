@@ -49,6 +49,7 @@ contents:
     - { id: polispec, path: skills/polispec/SKILL.md }
     - { id: polispec-register, path: skills/polispec-register/SKILL.md }
     - { id: polispec-specs, path: skills/polispec-specs/SKILL.md }
+    - { id: polispec-uninstall, path: skills/polispec-uninstall/SKILL.md }
   agents: []
   specs:
     - { path: specs/app.yml }

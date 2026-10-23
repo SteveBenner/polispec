@@ -1,0 +1,26 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.deployments/v1
+title: Polispec deployments manifest
+type: object
+additionalProperties: false
+required: [schema, entries]
+properties:
+  schema: { const: polispec.deployments/v1 }
+  entries:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [id, kind, target, class, details, source, recorded_at, updated_at, status]
+      properties:
+        id: { type: string, pattern: "^dep_[0-9a-f]{12}$" }
+        kind: { enum: [hooks, controls, git_hooks, pin, rplugin, plugin, ledger, settings, state] }
+        target: { type: string, minLength: 1 }
+        class: { enum: [wiring, pins, rplugin, data] }
+        details: { type: object }
+        source: { enum: [install, scan, restore] }
+        recorded_at: { type: string, minLength: 1 }
+        updated_at: { type: string, minLength: 1 }
+        status: { enum: [active, removed] }
+        removed_at: { type: string, minLength: 1 }
+        backup_id: { type: string, pattern: "^bkp_[0-9a-f]{12}$" }

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 require_relative "classify/commands/support"
+require_relative "deployments"
 
 module Polispec
   class GitHook
@@ -204,14 +205,14 @@ module Polispec
     end
 
     class Installer
-      def initialize(project_id, scope, out: $stdout)
+      def initialize(project_id, scope, out: $stdout, resolve_policy: true)
         @out = out
         @ledger = Ledger.load
         @project = @ledger.project(project_id) || raise(Polispec::Error, "#{project_id} is not in the ledger")
         raise Polispec::Error, "scope must be dev, test, prod or all" unless (ENVIRONMENTS + ["all"]).include?(scope)
 
         @names = scope == "all" ? ENVIRONMENTS : [scope]
-        @policy = PolicySource.resolve(@project, ledger: @ledger).policy
+        @policy = PolicySource.resolve(@project, ledger: @ledger).policy if resolve_policy
       end
 
       def install(dry: false)
@@ -224,12 +225,24 @@ module Polispec
         0
       end
 
+      def checkout_path(name)
+        checkout(name)
+      end
+
       private
+
+      def policy
+        @policy ||= PolicySource.resolve(@project, ledger: @ledger).policy
+      end
+
+      def record_deployment(name, dir)
+        Deployments.record(kind: "git_hooks", target: shim_dir(name), details: { "project" => @project.id, "env" => name, "checkout" => dir })
+      end
 
       def checkout(name)
         return File.expand_path(@project.repo) if name == "dev"
 
-        spec = (@policy["environments"] || {})[name] || {}
+        spec = (policy["environments"] || {})[name] || {}
         value = spec["checkout"].to_s
         value.empty? || value == "repo" ? File.expand_path(@project.repo) : File.expand_path(value)
       end
@@ -271,11 +284,13 @@ module Polispec
         write_shims(shims, previous)
         if current == shims
           @out.puts "unchanged #{name}: #{dir} already uses #{shims}"
+          record_deployment(name, dir)
           return
         end
 
         git(dir, "config", "polispec.previousHooksPath", previous)
         git(dir, "config", "core.hooksPath", shims)
+        record_deployment(name, dir)
         @out.puts "installed #{name}: #{dir} hooks #{shims} (previous #{previous})"
       end
 
@@ -293,6 +308,7 @@ module Polispec
           git(dir, "config", "core.hooksPath", previous)
         end
         git(dir, "config", "--unset", "polispec.previousHooksPath")
+        Deployments.retire(kind: "git_hooks", target: shim_dir(name))
         @out.puts "uninstalled #{name}: #{dir}"
       end
 
