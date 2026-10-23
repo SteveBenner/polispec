@@ -6,6 +6,7 @@ require_relative "../packages"
 require_relative "../native_pin"
 require_relative "../exceptions"
 require_relative "../editions"
+require_relative "../personal_defaults"
 
 module Polispec
   class DoctorCommand
@@ -41,6 +42,7 @@ module Polispec
       check_exceptions(findings)
       check_editions(findings)
       check_effect(findings)
+      check_personal_defaults(ledger, findings)
       blocking = findings.reject { |item| NONBLOCKING.include?(item["severity"]) }
       json ? puts(JSON.generate("ok" => blocking.empty?, "runtime" => runtime_info, "findings" => findings)) : print_text(findings)
       blocking.empty? ? 0 : 1
@@ -447,6 +449,14 @@ module Polispec
       end
     rescue StandardError => error
       findings << finding(nil, "editions_drift", "#{error.class}: #{error.message}").merge("severity" => "warn")
+    end
+
+    def check_personal_defaults(ledger, findings)
+      PersonalDefaults.findings(ledger: ledger).each do |hit|
+        findings << finding(nil, "personal_default", "#{hit['file']}:#{hit['line']} names #{hit['token']} (#{hit['source']})").merge("severity" => "warn")
+      end
+    rescue StandardError => error
+      findings << finding(nil, "personal_default", "#{error.class}: #{error.message}").merge("severity" => "info")
     end
 
     def check_descriptions(ledger, findings)

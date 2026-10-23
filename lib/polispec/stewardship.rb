@@ -3,6 +3,7 @@
 
 require_relative "operator/git"
 require_relative "native_pin"
+require_relative "personal_defaults"
 
 module Polispec
   module Stewardship
@@ -35,13 +36,21 @@ module Polispec
       File.join(plugins_home, PLUGIN_ID)
     end
 
+    def personal_step(number, check: false)
+      hits = PersonalDefaults.findings
+      return Step.new(number, "ok", "shipped defaults carry no host-personal policy (scanned #{Runtime.root})") if hits.empty?
+
+      first = hits.first(3).map { |hit| "#{hit['file']}:#{hit['line']} names #{hit['token']} (#{hit['source']})" }.join("; ")
+      Step.new(number, check ? "missing" : "warn", "shipped defaults carry host-personal policy, #{hits.length} hit#{'s' unless hits.length == 1}: #{first}")
+    end
+
     def rplugin?
       File.executable?(rplugin_bin)
     end
 
     def ensure!(out: $stdout, quiet: false)
       steps = []
-      [[1, method(:rule_step)], [2, method(:runtime_step)], [3, method(:pin_step)]].each do |number, action|
+      [[1, method(:rule_step)], [2, method(:runtime_step)], [3, method(:pin_step)], [4, method(:personal_step)]].each do |number, action|
         step = action.call(number)
         steps << step
         out.puts step.line unless quiet
@@ -53,7 +62,7 @@ module Polispec
     end
 
     def check
-      [rule_step(1, check: true), runtime_step(2), pin_step(3, check: true)]
+      [rule_step(1, check: true), runtime_step(2), pin_step(3, check: true), personal_step(4, check: true)]
     end
 
     def rule_shipped?(root)
