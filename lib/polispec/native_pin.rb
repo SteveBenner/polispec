@@ -146,7 +146,18 @@ module Polispec
       swap_current(commit) unless dry_run
 
       result["bin_link"] = link_bin!(result["notes"], steps, dry_run)
+      record_deployment(result, given) unless dry_run
       result
+    end
+
+    def record_deployment(result, source)
+      require_relative "deployments"
+      version = begin
+        JSON.parse(File.read(File.join(result["release"], Runtime::NATIVE_RELEASE_FILE)))["version"]
+      rescue StandardError
+        nil
+      end
+      Deployments.record(kind: "pin", target: current_link, details: { "commit" => result["commit"], "release" => result["release"], "ref" => result["ref"], "source" => source, "version" => version, "bin_link" => result["bin_link"] })
     end
 
     def resolve(path, ref)

@@ -416,7 +416,7 @@ bin/polispec pin                        # read-only copy of this release; links 
 polispec install --harness claude       # or codex, or all; --scope project for one repository; --dry-run to preview
 ```
 
-`polispec install` adds three hooks (before every tool call, at session start, at subagent start) to `~/.claude/settings.json` or `~/.codex/config.toml`, links the skill and the rules, backs up every file it changes beside the original, and keeps every hook that is not its own. `polispec uninstall --harness <name>` takes out exactly what it added. Codex asks you to trust new hooks the next time it starts.
+`polispec install` adds three hooks (before every tool call, at session start, at subagent start) to `~/.claude/settings.json` or `~/.codex/config.toml`, links the skill and the rules, backs up every file it changes beside the original, and keeps every hook that is not its own. `polispec uninstall --harness <name>` takes out exactly what it added. To remove everything polispec put on the host, run `polispec uninstall --all` (or [`uninstall.sh`](uninstall.sh)): it lists every deployment in the manifest (`polispec deployments`), backs up each file it changes under `~/.local/share/polispec/backups/`, removes the hooks, links, git hook shims, rplugin install and pins, moves the ledger, settings file and state home into the backup, and prints the `polispec restore <id>` command that puts it back. `--dry-run` previews it; the real run asks for a typed phrase on a terminal. Codex asks you to trust new hooks the next time it starts.
 
 **As a Claude Code or Codex plugin.**
 
@@ -468,6 +468,8 @@ The ledger is the list of projects polispec governs on this host. `polispec inst
 |---|---|
 | `polispec pin [--ref <tag>] [--source <repo>] [--dry-run]` | Install a read-only copy of one release under `~/.local/share/polispec/releases/` and point `current` and `~/.local/bin/polispec` at it; older releases stay as the rollback |
 | `polispec install` / `uninstall --harness claude\|codex\|all [--scope user\|project] [--dry-run]` | Wire the guard hooks, the skill and the rules into Claude Code or Codex without rplugin, with in-place backups and a receipt; uninstall removes only what install added |
+| `polispec deployments [--scan] [--json]` | List every place polispec is deployed (hooks, controls, git hook shims, pin, rplugin, plugins, ledger, settings, state) with a live status; `--scan` backfills the manifest from what exists |
+| `polispec uninstall --all [--keep wiring,pins,rplugin,data] [--dry-run]` / `restore <id> [--mode rewire\|bytes] [--dry-run]` / `restore --list` | Remove every deployment after a backup, and put it back from that backup; the real runs need a terminal and a typed phrase |
 | `polispec ledger init [--dry-run]` | Create a starter ledger (no projects, default rules) at the resolved ledger path when the host has none; never overwrites one, and refuses on a sealed host |
 | `polispec settings list\|get\|set\|unset` | Show and change settings without rplugin, in `~/.config/polispec/settings.yml`; rplugin's settings and environment variables still win where present |
 | `polispec steward [--check]` | Protect the host: the stewardship rule installed, the runtime protected, the runtime pinned; `--check` only reports |

@@ -135,8 +135,40 @@ module Polispec
             raise Failure.new(status, "installation failed and #{status.tr('_', ' ')}: #{error.class}: #{error.message}", data: recovery, exit_status: status == "recovery_required" ? 3 : 1)
           end
         end
+        record_controls(installation_id, result)
         result
       end
+
+      def owned_installations(port_set: nil)
+        return [] if Process.euid.zero?
+        state = state_adapter(false, nil, port_set, read_only: true)
+        records = read_records(state, nil)
+        records.map { |row| row["installation_id"] }.compact.uniq.sort.filter_map do |installation_id|
+          committed = begin
+            active_installation(records, installation_id)
+          rescue Failure
+            nil
+          end
+          next unless committed
+          receipt = stringify(committed["receipt"])
+          next unless receipt["protected"] == false && %w[user project].include?(receipt["scope"]) && receipt["owner_uid"] == Process.euid
+          { "installation_id" => installation_id, "harness" => receipt["harness"], "scope" => receipt["scope"], "artifacts" => receipt.fetch("artifact_digests", {}).keys.sort, "receipt" => receipt }
+        end
+      end
+
+      def record_controls(installation_id, result)
+        receipt = result.is_a?(Hash) ? stringify(result) : {}
+        return unless receipt["protected"] == false
+        require_relative "../deployments"
+        Deployments.record(kind: "controls", target: installation_id, details: { "installation_id" => installation_id, "harness" => receipt["harness"], "scope" => receipt["scope"], "artifacts" => receipt.fetch("artifact_digests", {}).keys.sort })
+      end
+      private_class_method :record_controls
+
+      def retire_controls(installation_id)
+        require_relative "../deployments"
+        Deployments.retire(kind: "controls", target: installation_id)
+      end
+      private_class_method :retire_controls
 
       def verify(installation_id, port_set: nil, runner: nil)
         Verifier.verify(installation_id, port_set: port_set, runner: runner)
@@ -151,17 +183,24 @@ module Polispec
           plane = resolve_plane
           bind_operator_plane!(identity, plane)
           profile = OwnerHandoff.profile(owner: owner, scope: scope, project: project, state_home: state_home, plane: plane)
-          return OwnerHandoff.run(profile) do |selected, ports|
+          outcome = OwnerHandoff.run(profile) do |selected, ports|
             state = state_adapter(false, nil, ports, read_only: dry_run)
             uninstall_from_state(installation_id, state, ports, nil, dry_run, selected, plane)
           end
+          retire_controls(installation_id) unless dry_run
+          return outcome
         end
         raise Failure.new("owner_required", "scope, project, and state_home require an explicit owner", exit_status: 3) if selectors.any?
         own = uninstall_own_overlay(installation_id, port_set, schedule_port_set, dry_run)
-        return own if own
+        if own
+          retire_controls(installation_id)
+          return own
+        end
         identity = dry_run ? nil : operator_identity!("harness.uninstall")
         state = state_adapter(true, identity, nil, read_only: dry_run)
-        uninstall_from_state(installation_id, state, schedule_port_set, identity, dry_run, nil, {})
+        outcome = uninstall_from_state(installation_id, state, schedule_port_set, identity, dry_run, nil, {})
+        retire_controls(installation_id) unless dry_run
+        outcome
       end
 
       def uninstall_own_overlay(installation_id, port_set, schedule_port_set, dry_run)

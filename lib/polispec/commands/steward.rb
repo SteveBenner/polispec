@@ -3,6 +3,7 @@
 
 require "json"
 require_relative "../stewardship"
+require_relative "../deployments"
 
 module Polispec
   class StewardCommand
@@ -25,6 +26,7 @@ module Polispec
         report(steps, json)
       else
         steps = Stewardship.ensure!(quiet: json)
+        Deployments.refresh_stewardship
         report(steps, json) if json
       end
       steps.all? { |step| %w[ok installed].include?(step.status) } ? 0 : 1

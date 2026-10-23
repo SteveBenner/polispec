@@ -1,0 +1,67 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.backup/v1
+title: Polispec uninstall backup
+type: object
+required: [schema, id, created_at, polispec_version, runtime_root, keep, entries, files, data, steps, restore_command]
+properties:
+  schema: { const: polispec.backup/v1 }
+  id: { type: string, pattern: "^bkp_[0-9a-f]{12}$" }
+  created_at: { type: string, minLength: 1 }
+  polispec_version: { type: string, minLength: 1 }
+  runtime_root: { type: string, minLength: 1 }
+  keep:
+    type: array
+    items: { enum: [wiring, pins, rplugin, data] }
+  entries:
+    type: array
+    items: { type: object }
+  files:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [entry, original, stored, kind, mode, sha256_before, sha256_after]
+      properties:
+        entry: { type: string, pattern: "^dep_[0-9a-f]{12}$" }
+        original: { type: string, minLength: 1 }
+        stored: { type: string, minLength: 1 }
+        kind: { enum: [file, symlink] }
+        link_target: { type: string }
+        mode: { type: integer, minimum: 0 }
+        sha256_before: { type: string, minLength: 1 }
+        sha256_after:
+          anyOf:
+            - { type: "null" }
+            - { type: string, minLength: 1 }
+  data:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [entry, original, stored, kind, method]
+      properties:
+        entry: { type: string, pattern: "^dep_[0-9a-f]{12}$" }
+        original: { type: string, minLength: 1 }
+        stored: { type: string, minLength: 1 }
+        kind: { enum: [file, dir] }
+        method: { enum: [rename, copy_aside] }
+  steps:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [entry, kind, target, status, detail]
+      properties:
+        entry: { type: string, pattern: "^dep_[0-9a-f]{12}$" }
+        kind: { type: string, minLength: 1 }
+        target: { type: string, minLength: 1 }
+        status: { enum: [ok, gone, failed, skipped, reported] }
+        detail: { type: string }
+  restore_command: { type: string, minLength: 1 }
+  restored_at:
+    anyOf:
+      - { type: "null" }
+      - { type: string, minLength: 1 }
+  restore_results:
+    type: array
+    items: { type: object }

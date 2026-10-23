@@ -8,6 +8,7 @@ require "time"
 require_relative "native_pin"
 require_relative "operator/git"
 require_relative "stewardship"
+require_relative "deployments"
 
 module Polispec
   module NativeInstall
@@ -230,8 +231,16 @@ module Polispec
       plan.say("note: polispec is not pinned; run polispec pin so the hooks point at a read-only release") if pinned_note?
       harness == "claude" ? install_claude(plan, project, force) : install_codex(plan, project, force)
       ensure_ledger(plan) if scope == "user"
-      write_receipt(plan) unless dry_run
+      unless dry_run
+        write_receipt(plan)
+        record_deployment(plan)
+      end
       plan
+    end
+
+    def record_deployment(plan)
+      project = plan.scope == "project" ? File.dirname(File.dirname(plan.target)) : nil
+      Deployments.record(kind: "hooks", target: plan.target, details: { "harness" => plan.harness, "scope" => plan.scope, "project" => project, "receipt" => receipt_path(plan.harness, plan.scope, plan.target), "wired_root" => plan.wired_root })
     end
 
     def ensure_ledger(plan)
@@ -355,6 +364,7 @@ module Polispec
       elsif File.file?(receipt)
         plan.change(receipt, "rename to .uninstalled")
       end
+      Deployments.retire(kind: "hooks", target: plan.target) unless dry_run
       plan
     end
 

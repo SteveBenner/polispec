@@ -76,6 +76,8 @@ module Polispec
         return { "path" => path, "created" => false }
       end
       File.rename(temp, path)
+      require_relative "deployments"
+      Deployments.record(kind: "ledger", target: path, details: {})
       { "path" => path, "created" => true }
     end
 
