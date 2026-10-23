@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.1] - 2026-10-23
+
+### Fixed
+- `personal_default` matched the ledger host as a substring, so a host named after an ordinary word reported every shipped sentence containing it: the smoke fixture's host `smoke` flagged `polispec smoke run` in the stewardship rule and the polispec skill, which changed the `status-digest-doctor` counts and failed the 0.41.0 test deploy's health check. The host is now matched only as an exact YAML scalar, like project ids, and path tokens need a boundary before them as well as after.
+
 ## [0.41.0] - 2026-10-23
 
 ### Added

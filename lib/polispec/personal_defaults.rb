@@ -66,7 +66,7 @@ module Polispec
         forms(project.repo, home).each { |form| tokens << Token.new(form, "ledger repo of #{id}", :substring) }
       end
       host = ledger.host.to_s
-      tokens << Token.new(host, "ledger host", :substring) unless host.empty?
+      tokens << Token.new(host, "ledger host", :scalar) unless host.empty?
       tokens
     rescue StandardError
       []
@@ -155,7 +155,7 @@ module Polispec
       if token.kind == :word
         Regexp.new("(?<![A-Za-z0-9_])#{escaped}(?![A-Za-z0-9_])", Regexp::IGNORECASE)
       else
-        Regexp.new("#{escaped}#{BOUNDARY}")
+        Regexp.new("(?<![A-Za-z0-9_.-])#{escaped}#{BOUNDARY}")
       end
     end
 
