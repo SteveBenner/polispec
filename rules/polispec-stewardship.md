@@ -44,3 +44,4 @@ Every change to a rulebook is planned first and applied through polispec:
 - Remove, rename or bypass a gate, freeze, rule or module to get a change through.
 - Run `git worktree remove --force`, `rm -r`, `git clean` or `find -delete` on polispec trees, releases or backups. Back up in place first.
 - Delete a pinned release; older releases are the rollback.
+- Put personal policy (a host's own paths, project ids, hostnames or operator name) into the shipped `modules/`, `packages/` or `config/`; it belongs on the global shelf or in the ledger unless the operator chose to ship it. `polispec doctor` and `polispec steward --check` report it as `personal_default`.
