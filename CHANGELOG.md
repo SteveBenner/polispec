@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.0] - 2026-10-23
+
+### Added
+- Deployments manifest. `<state home>/deployments.json` (`polispec.deployments/v1`, `schemas/deployments.v1.yml`) records every place polispec is deployed: harness hooks, harness-control overlays, git hook shims, the native pin, the rplugin install, marketplace plugins, the ledger, the settings file and the state home. `install`, `uninstall`, `harness install` and `uninstall`, `hook git install` and `uninstall`, `pin`, `ledger init`, `steward` and `apply --with-stewardship` record or retire their entry; recording never fails an installer, and the guard hook never writes it.
+- `polispec deployments [--scan] [--json]` lists every entry with a live status (present, drifted, gone, removed); `--scan` backfills the manifest from the receipts, links, shims and files that already exist. A receipt whose target no longer exists is listed as gone, never hidden.
+- `polispec uninstall --all [--keep wiring,pins,rplugin,data] [--dry-run] [--json]` backs up the manifest and every file it will change to `<data home>/backups/<bkp_ id>/` (`polispec.backup/v1`, `schemas/backup.v1.yml`), then removes every deployment through its own uninstaller: hooks and links, own harness-control overlays (an overlay that needs the operator is skipped and reported), git hook shims, `rplugin uninstall polispec`, the current and bin links (release directories are kept), and moves the ledger, settings file and state home into the backup. A ledger or settings file inside the global shelf or any git working tree is kept, not moved. Gone receipts are retired. Marketplace plugins are reported with their harness command. The real run needs a TTY and the typed phrase `uninstall polispec`; it prints the restore command with the path of a release that survives the uninstall.
+- `polispec restore <bkp_id> [--mode rewire|bytes] [--dry-run] [--json]` and `restore --list`. Data is copied back to absent paths only; `rewire` (default) runs each installer again at its recorded target, `bytes` copies the backed-up files back and refuses any file edited since the uninstall. Harness-control overlays are reported manual. Needs the typed phrase `restore polispec`.
+- `uninstall.sh`, beside `install.sh`, and the `polispec-uninstall` skill.
+- Personal defaults. `Polispec::PersonalDefaults` reports a shipped default (modules, packages, config, rules, skills) that names a token taken from this host: a ledger project id, a ledger repo path or host, the global shelf's directory or git toplevel, or a non-default operator name. `doctor` reports each as `personal_default` (warn); `steward --check` reports step 4 and exits 1 on a hit; `steward` reports it and continues. The stewardship rule says personal policy belongs on the shelf or in the ledger.
+- Change kinds `uninstall` and `restore` (`schemas/change.v1.yml`).
+
+### Changed
+- `modules/delete-guard.yml` no longer ships `~/.ai` as a protected tree: it is one host's AI home, not a path every polispec user has. A host that wants it lists it in its global shelf's `delete_protected` (the release host does). Every other entry is unchanged.
+- `steward` counts a step that only warns as passing for its exit status.
+- `GitHook::Installer` takes `resolve_policy:` so a scan can locate a checkout without composing its policy.
+
 ## [0.40.0] - 2026-10-23
 
 ### Added
