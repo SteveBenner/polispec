@@ -29,7 +29,7 @@ module Polispec
         Deployments.refresh_stewardship
         report(steps, json) if json
       end
-      steps.all? { |step| %w[ok installed].include?(step.status) } ? 0 : 1
+      steps.all? { |step| %w[ok installed warn].include?(step.status) } ? 0 : 1
     rescue Operator::Failure => e
       e.report(json: json)
       1
@@ -39,7 +39,7 @@ module Polispec
 
     def report(steps, json)
       if json
-        ok = steps.all? { |step| %w[ok installed].include?(step.status) }
+        ok = steps.all? { |step| %w[ok installed warn].include?(step.status) }
         puts JSON.generate({ "runtime" => { "kind" => Runtime.kind, "commit" => Runtime.commit, "root" => Runtime.root }, "steps" => steps.map(&:to_h), "ok" => ok })
       else
         steps.each { |step| puts step.line }

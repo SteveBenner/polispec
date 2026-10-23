@@ -1,6 +1,9 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require "open3"
+require "yaml"
+
 module Polispec
   module PersonalDefaults
     DIRS = %w[modules packages config rules skills].freeze

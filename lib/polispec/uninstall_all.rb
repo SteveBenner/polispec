@@ -129,7 +129,9 @@ module Polispec
       when "rplugin" then "rplugin: rplugin uninstall polispec (#{entry['target']})"
       when "pin" then "pin: remove the current link #{entry['target']} and a bin link into the data home; release directories stay"
       when "plugin" then "plugin: #{plugin_command(entry)}"
-      else "#{entry['kind']}: move #{entry['target']} into the backup"
+      else
+        reason = kept_reason(entry["target"].to_s)
+        reason ? "#{entry['kind']}: keep #{entry['target']} (#{reason})" : "#{entry['kind']}: move #{entry['target']} into the backup"
       end
     end
 
@@ -356,11 +358,37 @@ module Polispec
       statuses[state_item["entry"]["id"]] = move_one(state_item["entry"], backup, dir) if state_item
     end
 
+    def shelf_dir
+      source = Layers.source
+      return nil unless source
+
+      File.expand_path(source.kind == :dir ? source.root : File.join(source.repo, source.path.to_s))
+    rescue StandardError
+      nil
+    end
+
+    def kept_reason(path)
+      expanded = File.expand_path(path)
+      shelf = shelf_dir
+      return "it lies in the global shelf #{shelf}" if shelf && (expanded == shelf || expanded.start_with?("#{shelf}/"))
+
+      dir = File.directory?(expanded) ? expanded : File.dirname(expanded)
+      out, status = Open3.capture2({ "GIT_DIR" => nil, "GIT_WORK_TREE" => nil }, "git", "-C", dir, "rev-parse", "--show-toplevel", err: File::NULL)
+      status.success? ? "it lies in the git working tree #{out.strip}" : nil
+    rescue SystemCallError
+      nil
+    end
+
     def move_one(entry, backup, dir)
       source = entry["target"]
       unless present?(source)
         backup["steps"] << { "entry" => entry["id"], "kind" => entry["kind"], "target" => source, "status" => "gone", "detail" => "nothing to move" }
         return "gone"
+      end
+      reason = kept_reason(source)
+      if reason
+        backup["steps"] << { "entry" => entry["id"], "kind" => entry["kind"], "target" => source, "status" => "kept", "detail" => "not moved: #{reason}" }
+        return "kept"
       end
       stored = File.join("data", source.sub(%r{\A/}, ""))
       destination = File.join(dir, stored)
@@ -384,7 +412,7 @@ module Polispec
     end
 
     def report(backup, dir, json)
-      failed = backup["steps"].reject { |step| %w[ok gone reported].include?(step["status"]) }
+      failed = backup["steps"].reject { |step| %w[ok gone reported kept].include?(step["status"]) }
       ok = failed.empty?
       if json
         puts JSON.generate({ "ok" => ok, "backup_id" => backup["id"], "backup_dir" => dir, "keep" => backup["keep"], "steps" => backup["steps"], "restore_command" => backup["restore_command"] })
@@ -557,7 +585,7 @@ module Polispec
           GitHook::Installer.new(details["project"], details["env"], out: StringIO.new).install
           ["ok", "installed git hooks for #{details['project']} #{details['env']}"]
         else
-          ["manual", "reinstall with: polispec harness install --installation #{entry['target']} (from the control document you installed it with)"]
+          ["manual", "reinstall #{entry['target']} with: polispec harness install <the control document you installed it from> --harness #{details['harness']} --scope #{details['scope']}#{details['project'] ? " --project #{details['project']}" : ''}"]
         end
       end
 
