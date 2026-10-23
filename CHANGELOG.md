@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.40.0] - 2026-10-23
+
+### Added
+- Text rules. A `match.text_matches` key, valid in policy, module and global documents: a Ruby regular expression tested against an action's new `text` hint. polispec ships no rule; a host adds them with `plan global` and `apply global`. A runtime older than 0.40.0 rejects the key, so apply such a rule only after the host is pinned at 0.40.0 or later.
+- Action hint `text`: on every action of a shell command, the command's text followed by the body of each of its heredocs; on a write tool's `fs.write`, its content strings (per `edits` entry for a MultiEdit-style input), and for `apply_patch` each file's added lines or an Add File's whole body. Cut to 262,144 bytes on a character boundary, with `text_truncated` true.
+- `polispec validate` reports a `text_matches` source that does not compile as an error naming the rule. At runtime, an uncompilable source, a match over its 0.25 s timeout (Ruby 3.2 and later) or a bad encoding does not hold and records a `text_matches` finding.
+- `specs/text-match.impl.yml`, the blueprint, and the `text_match` section of `specs/app.yml`.
+
+### Changed
+- `apply_patch` write actions now carry `bytes` (and `text`), so `bytes_over` rules see Codex patches; before, the live path dropped the patch text.
+- The fast path adds the tool needles whenever a composed shelf rule uses `text_matches`, so a call outside every ledger project still reaches the judge.
+- The protected-authorization material leaves `text` and `text_truncated` out of each action. The tool input they come from is already bound, and keeping them would double a write's share of the 256 KiB material limit. Judgment records never carried hints beyond path and shape, so no written content reaches a log.
+- No other verdict changes. Smoke against the pinned 0.39.0: 43 of 44 scenarios pass, as 0.39.0 did against 0.38.0; the one failure, `status-digest-doctor`, and the diffs are runtime kind (clone against pinned), ids and timestamps. Hook latency with one `text_matches` rule on a 200 KiB Write is within run-to-run noise over 200 calls.
+
 ## [0.39.0] - 2026-10-22
 
 ### Added

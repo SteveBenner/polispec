@@ -110,6 +110,7 @@ $defs:
         properties:
           marker: { type: string, minLength: 1, maxLength: 4096 }
           bytes: { type: integer, minimum: 0 }
+      text_matches: { type: string, minLength: 1, maxLength: 4096 }
       delete_protected: { const: true }
       delete_protected_file: { const: true }
       supervised: { const: true }

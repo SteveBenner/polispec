@@ -23,9 +23,11 @@ module Polispec
         by_text = Hash.new { |hash, key| hash[key] = [] }
         hints = Hash.new { |hash, key| hash[key] = {} }
         extra = []
+        bodies = Hash.new { |hash, key| hash[key] = [] }
         script.commands.each do |cmd|
           by_text[cmd.text].concat(command_shapes(cmd))
           hints[cmd.text].merge!(command_hints(cmd))
+          bodies[cmd.text].concat(heredoc_bodies(cmd))
           extra.concat(kill_actions(cmd))
         end
         limits = file_size_limits(script)
@@ -33,8 +35,18 @@ module Polispec
         (actions + extra).each do |action|
           apply(action, by_text.fetch(action.raw, []).uniq, chained)
           merge_hints(action, hints.fetch(action.raw, {}))
+          merge_hints(action, text_hints(action.raw, bodies.fetch(action.raw, [])))
           merge_hints(action, "fsize_blocks" => limits[action.raw]) if action.action_class == "fs.write" && limits.key?(action.raw)
         end
+      end
+
+      def heredoc_bodies(cmd)
+        Array(cmd.redirects).select { |redirect| %w[<< <<-].include?(redirect.op) && redirect.body.is_a?(String) }.map(&:body)
+      end
+
+      def text_hints(raw, bodies)
+        text, truncated = Support.clip(([raw] + bodies).join("\n"))
+        { "text" => text, "text_truncated" => truncated }.compact
       end
 
       def file_size_limits(script)

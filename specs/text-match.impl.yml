@@ -1,0 +1,115 @@
+schema: is.v1
+metadata:
+  name: polispec text match key
+  slug: text-match
+  version: 0.1.0
+  created: '2026-10-23'
+  status: accepted
+  base_commit: 32a878f
+  base_version: 0.39.0
+  intended_release: 0.40.0
+  contract: specs/app.yml#text_match
+  worker: {harness: claude-code, agent: coding-worker, note: "AGENTS.md Part T: the primary wrote this blueprint and verifies; the worker implements every slice"}
+  decisions_by_sven:
+    - "Agent limits are enforced by polispec rules, never a new Claude hook; when polispec cannot express one, extend polispec."
+    - "2026-10-23: warn when an agent hand-builds a browser measurement rig and point it at the ratelier audit, covering inline Bash (heredocs, node -e) as well as written script files, by extending polispec rather than settling for write-time detection only."
+vision:
+  problem: >-
+    Chris's 119 review runs read 1.47 billion cached tokens, much of it building a Playwright rig by hand in every run:
+    386 rig actions, of which 213 were inline Bash (heredoc bodies, node -e), 74 ran a script file and 99 wrote one.
+    ratelier 0.13.0 now renders and measures a surface in one call, but nothing steers an agent to it. polispec cannot
+    match on what a call says: a Bash action's raw text omits heredoc bodies, and a write tool's action carries only a
+    byte count, never the content.
+  outcome: >-
+    polispec gains one match key, text_matches, a regular expression tested against a bounded text hint that the
+    classifier now carries: for a shell action, its command text plus the bodies of that command's heredocs; for a write
+    tool action, the written strings. polispec ships no rule; a global shelf rule applied later carries the rig pattern.
+    Verdicts change only for rules that use the new key, and for apply_patch write actions, which now carry bytes.
+  non_goals:
+    - Any shipped rule, any new setting, any new verb, any change to the judgment record schema.
+    - Harness-control language keys: text_matches is not added to MATCH_KEYS or DYNAMIC_MATCH_KEYS in harness_controls/language.rb or to control.v1.yml.
+    - Matching file contents on disk, or the text of a script that a command runs by path.
+    - A smoke scenario (AGENTS.md Part S); verification is by running, below.
+constraints:
+  - Ruby standard library only. Keep the two-line header (shebang, SPDX) every lib file carries.
+  - No comments or docstrings in code (AGENTS.md Part Q). No test files and no smoke scenario (AGENTS.md Part S).
+  - Work only in /home/sven/github/foss/.polispec-wt/text-match (branch text-match). Never touch the pinned runtime, ~/.ai, the live clone /home/sven/github/foss/polispec, other worktrees under /home/sven/github/foss/.polispec-wt, or the real ledger and shelf.
+  - Every verification run sets POLISPEC_STATE_HOME, POLISPEC_LEDGER, POLISPEC_HOME and POLISPEC_GLOBAL to scratch paths; never redirect XDG_STATE_HOME.
+  - Judge commands only through bin/polispec explain, classify or hook pretool with JSON on stdin. Never run a probe command for real.
+  - Do not bump versions, edit CHANGELOG.md, FEATURES.md, TODO.md, specs/app.yml, .rproject/, smoke.yml or anything under smoke/; the primary does those.
+surfaces:
+  code:
+    - lib/polispec/classify/commands/support.rb (the text hint on write actions; a shared TEXT_LIMIT)
+    - lib/polispec/classify/tool.rb (passes the tool input through, as it already does for bytes)
+    - lib/polispec/classify/shell.rb and lib/polispec/classify/shapes.rb (heredoc bodies onto the text hint of the command's actions)
+    - lib/polispec/harness/base.rb (patch_calls carries the added lines of each file)
+    - lib/polispec/text_match.rb (new: the key)
+    - lib/polispec/engine.rb (Match: KEYS, rule?, one call into TextMatch)
+    - lib/polispec/fastpath.rb (tool needles when a layer rule uses text_matches)
+    - lib/polispec/validate or wherever polispec validate checks a match (a pattern that does not compile is a validation error)
+    - lib/polispec/description.rb (match_terms names the key, if it enumerates keys)
+  contract:
+    - schemas/policy.v1.yml, schemas/module.v1.yml, schemas/global.v1.yml (text_matches beside tree_over)
+  doc:
+    - docs/schema.md (one match row, and the text hint in the hints paragraph under rules[])
+    - README.md (where it lists what polispec can stop)
+design:
+  key:
+    text_matches: "string, minLength 1, maxLength 4096: a Ruby regular expression source. Flags go inline, for example (?i). Holds when env_hint['text'] is a String and the compiled pattern matches it. An action without the hint never holds."
+    compile: "TextMatch compiles each distinct source once per process into a Hash cache. On Ruby with Regexp.new's timeout: keyword (3.2 and later) it compiles with timeout: 0.25; on older Ruby without it. A source that fails to compile, or a match that raises Regexp::TimeoutError, does not hold and appends the finding 'text_matches: <reason>' through Predicates.record(Predicates::Result.new(false, nil, finding), ctx), once per source per call."
+    matching: "In Engine::Match, KEYS gains text_matches; rule? calls TextMatch.holds?(match, action, ctx) last in its && chain, after ScratchCap.holds?, and it returns true when the key is absent."
+    validation: "polispec validate (policy, module and global) reports a text_matches source that Regexp.new rejects as an error naming the rule id and the reason. The schema alone cannot say this."
+  hint:
+    limit: "Support::TEXT_LIMIT = 262_144 bytes. A text longer than the limit is cut to its first TEXT_LIMIT bytes on a character boundary (String#byteslice then scrub), and env_hint 'text_truncated' is true."
+    write_tools: "Support.write_action sets env_hint 'text' on the fs.write action to the strings found under the bytes keys (content, file_text, text, new_string, new_str, new_source, contents) at the top level and inside each edits entry, joined with a newline, in input order. Same scope as bytes: not on policy.edit actions; a MultiEdit entry with its own file_path gives that path's action only its own strings. Zero strings means no 'text' key."
+    apply_patch: "Harness::Base#patch_calls gives each Edit call it builds a 'new_string' holding that file's added lines (the lines starting with '+' inside its hunks, without the '+', joined with a newline), and an Add File's whole body. The Edit then carries bytes and text like any Edit. Delete calls are unchanged."
+    shell: "Every action produced from one parsed shell command carries env_hint 'text' = cmd.text, followed by a newline and the body of each heredoc redirect of that command (Redirect#body, in order), cut to TEXT_LIMIT. Set it in Shapes.annotate (or wherever command hints merge), after the Registry hints, so no family has to know. A here-string (<<<) body is part of cmd.text already."
+    no_action_commands: "A command that no family turns into an action stays without one; text_matches cannot see it. Name in the report which of these produce an action today, and with what class: node -e '...', node script.mjs, node --input-type=module <<'JS' ... JS, python3 - <<'PY' ... PY, python3 -c '...', npx playwright test, bash <<'SH' ... SH."
+  fastpath:
+    rule: "Fastpath.needles includes tool_needles when Layers.baseline? is true (as now) or when any rule in the composed global shelf or its modules carries text_matches. Otherwise a Bash or Write call outside every ledger project would skip the judge and the rule would never be read."
+    check: "Report what Layers.baseline? is on a host shelf with one plain global rule, and confirm the fast-path file is re-stamped when such a rule appears (the key hashes Layers.fingerprint)."
+slices:
+  - id: contract-and-schemas
+    owns_paths: [schemas/policy.v1.yml, schemas/module.v1.yml, schemas/global.v1.yml]
+    deliverable: text_matches as a match property (string, minLength 1, maxLength 4096) in the three documents, beside tree_over
+    acceptance: "bin/polispec validate global <S>/shelf/global.yml prints ok for the probe shelf below; every YAML under examples/ and smoke/ that validated before still validates"
+  - id: classify
+    owns_paths: [lib/polispec/classify/commands/support.rb, lib/polispec/classify/tool.rb, lib/polispec/classify/shell.rb, lib/polispec/classify/shapes.rb, lib/polispec/harness/base.rb]
+    depends_on: [contract-and-schemas]
+    deliverable: the text hint for write tools, apply_patch and shell actions, and TEXT_LIMIT
+    acceptance: see verification.classify
+  - id: engine
+    owns_paths: [lib/polispec/text_match.rb, lib/polispec/engine.rb, lib/polispec/fastpath.rb, lib/polispec/description.rb]
+    depends_on: [classify]
+    deliverable: TextMatch, the Match hook-up, the validation error and the fast-path needles
+    acceptance: see verification.verdicts
+  - id: docs
+    owns_paths: [docs/schema.md, README.md]
+    depends_on: [engine]
+    deliverable: docs as listed
+    acceptance: "text_matches, the text hint, text_truncated, TEXT_LIMIT and the apply_patch bytes change are each named once in docs/schema.md in the style of the tree_over row; README says a rule can match what a command or a write says"
+verification:
+  setup: "Scratch dir S under the session scratchpad. S/ledger.yml minimal (no projects). POLISPEC_LEDGER=S/ledger.yml, POLISPEC_GLOBAL=S/shelf, POLISPEC_HOME and POLISPEC_STATE_HOME under S, cwd S/p. S/shelf/global.yml (polispec.global/v1, the minimum the schema needs) holds one rule G-RIG-PROBE: match {class: [fs.write], text_matches: \"(?i)(require\\\\(\\\\s*['\\\"]playwright(?:-core)?['\\\"]|from\\\\s+['\\\"]playwright(?:-core)?['\\\"]|sync_playwright|async_playwright|puppeteer\\\\.launch|chromium\\\\.launch\\\\()\"}, verdict warn, reason 'Use the ratelier audit'. Adjust the class list if no_action_commands shows the rig forms classify otherwise, and say so. Run the worktree's bin/polispec for the candidate and the pinned release /home/sven/bitbucket/paterasai/rstack-uber/plugins/.pinned/polispec/0d752d32acca35e79dbfaae8776a7d92bfb1af2a/bin/polispec for the 0.39.0 baseline, both with the same env."
+  classify:
+    - "classify --json for a Write of S/p/rig.mjs with content \"import { chromium } from 'playwright'\\n\": fs.write with bytes, text equal to the content, no text_truncated. An Edit with new_string, a MultiEdit with two edits (the joined strings), a Write to a policy file (class policy.edit, no text)."
+    - "An apply_patch payload through the Codex adapter adding S/p/rig.mjs with two lines and updating S/p/a.js with one added and one removed line: two Edit actions whose text holds the added lines only, each with bytes."
+    - "Bash \"cat > rig.mjs <<'EOF'\\nimport { chromium } from 'playwright'\\nEOF\": the fs.write action's text holds the cat line and the import line. Bash \"node -e \\\"require('playwright')\\\"\" and \"python3 - <<'PY'\\nfrom playwright.sync_api import sync_playwright\\nPY\": report each action and its text."
+    - "A 400 KiB Write: text is 262,144 bytes or a few fewer on a character boundary, text_truncated true, bytes the full size."
+    - "classify output of 20 lines of your choice that touch other families (git, rm, cp, curl, psql, tar) differs from 0.39.0 only by the text key."
+  verdicts:
+    - "hook pretool with the probe shelf, cwd S/p, through the Claude adapter: each rig form above that produces an action warns G-RIG-PROBE (decision ask); 'cat > notes.md <<EOF\\nplaywright is a browser library\\nEOF', 'npm ci --prefix scripts/render' and a Write of a README that mentions Playwright in prose allow."
+    - "The same rig Write with cwd outside S/p and outside every ledger project still reaches the judge and warns (the fast path does not skip it)."
+    - "A rule whose text_matches is '(' fails polispec validate global with the rule id. At runtime, a hand-built shelf that bypasses validate gives no hold and a 'text_matches:' finding."
+    - "Catastrophic pattern '(a+)+$' against a Write of 50,000 'a' followed by '!': the call returns within the hook budget, the rule does not hold, and a timeout finding is recorded (on this host's Ruby 3.3)."
+    - "Latency: time 200 hook pretool calls of a 200 KiB Write with and without the rule; report the median and p95 difference."
+  smoke: "bin/polispec smoke run --against /home/sven/bitbucket/paterasai/rstack-uber/plugins/.pinned/polispec/0d752d32acca35e79dbfaae8776a7d92bfb1af2a --no-record: report every scenario result and every diff. Expected: no verdict change."
+  checks: "ruby -wc on every changed .rb; YAML load on every changed .yml; bin/polispec validate on every changed schema-bound file; bin/polispec editions --check; bin/polispec doctor with the scratch env shows no new finding versus the pinned baseline"
+report:
+  - "A table of every probe: input, expected, observed."
+  - "Every file changed, with line counts."
+  - "The no_action_commands answer and the fast-path answer."
+  - "Anything you could not verify."
+out_of_scope:
+  - Committing, tagging, version bumps, CHANGELOG, FEATURES, TODO and specs/app.yml; the primary does those after verification
+  - The rig rule itself on the real global shelf (the primary plans it with polispec plan global after the host is re-pinned, and Sven confirms)
+  - Antigravity and other adapters beyond Claude and Codex

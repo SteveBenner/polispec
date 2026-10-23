@@ -56,6 +56,9 @@ module Polispec
         errors.concat(control_errors(data))
       elsif kind == "package" && errors.empty?
         errors.concat(package_errors(data))
+      elsif %w[policy module global].include?(kind) && errors.empty?
+        require_relative "../text_match"
+        errors.concat(TextMatch.source_errors(data))
       elsif kind == "smoke-scenario" && errors.empty?
         require_relative "../smoke/scenario"
         errors.concat(Smoke::Scenario.semantic_errors(data))
