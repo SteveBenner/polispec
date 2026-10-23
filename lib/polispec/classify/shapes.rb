@@ -7,7 +7,7 @@ require_relative "commands/support"
 module Polispec
   module Classify
     module Shapes
-      NAMES = %w[bulk_stage chained_release latest_flip lockfile_edit pattern_kill cargo_clean worktree_force tmux_kill xargs_delete web_local].freeze
+      NAMES = %w[bulk_stage chained_release latest_flip lockfile_edit pattern_kill cargo_clean worktree_force tmux_kill xargs_delete web_local bulk_write].freeze
       LOCKFILES = %w[Cargo.lock Gemfile.lock package-lock.json pnpm-lock.yaml yarn.lock uv.lock poetry.lock].freeze
       CHAIN_CLASSES = %w[git.tag git.push release.publish promote].freeze
       PATTERN_PRODUCERS = %w[pgrep].freeze
@@ -28,11 +28,41 @@ module Polispec
           hints[cmd.text].merge!(command_hints(cmd))
           extra.concat(kill_actions(cmd))
         end
+        limits = file_size_limits(script)
         chained = effective_count(script) > 1
         (actions + extra).each do |action|
           apply(action, by_text.fetch(action.raw, []).uniq, chained)
           merge_hints(action, hints.fetch(action.raw, {}))
+          merge_hints(action, "fsize_blocks" => limits[action.raw]) if action.action_class == "fs.write" && limits.key?(action.raw)
         end
+      end
+
+      def file_size_limits(script)
+        state = "unlimited"
+        limits = {}
+        script.commands.each do |cmd|
+          if cmd.name == "ulimit"
+            state = ulimit_state(cmd, state) if cmd.pipeline.nil? || cmd.pipeline.length <= 1
+          else
+            limits[cmd.text] = limits.key?(cmd.text) ? weaker_limit(limits[cmd.text], state) : state
+          end
+        end
+        limits
+      end
+
+      def weaker_limit(left, right)
+        return "unlimited" if left == "unlimited" || right == "unlimited"
+
+        [left, right].max
+      end
+
+      def ulimit_state(cmd, state)
+        options = cmd.args.take_while { |arg| arg.start_with?("-") }
+        operand = cmd.args.drop(options.length).first
+        letters = options.map { |arg| arg.delete_prefix("-") }.join
+        return state unless letters.include?("f") && (!letters.include?("S") || letters.include?("H")) && operand
+
+        operand.match?(/\A[0-9]+\z/) && !Support.dynamic?(operand) ? Integer(operand, 10) : "unlimited"
       end
 
       def names(action)
@@ -139,6 +169,7 @@ module Polispec
       end
 
       def applies?(name, action)
+        return action.action_class == "fs.write" && action.env_hint["unknown"] != true if name == "bulk_write"
         return true unless name == "lockfile_edit"
 
         path = action.env_hint["path"]

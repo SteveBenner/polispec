@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.39.0] - 2026-10-22
+
+### Added
+- Scratch size caps. Four `match` keys, valid in policy, module and global documents: `bytes_over` (an integer; an `fs.write` whose `bytes` hint is above it), `fsize_unset` (a shell `fs.write` with no hard file-size limit in force), `fsize_above` (a shell `fs.write` whose limit, in bytes, is above the value) and `tree_over` (`{marker, bytes}`; the scratch tree, found as the path itself or its nearest ancestor named `marker`, is above `bytes` by `du -sb`, cached 60 s under the state home). polispec ships no rule: the caps are the rules of a shelf module, `scratch-cap`, that a host adds with `plan global` and `apply global`. A runtime older than 0.39.0 rejects the new keys, so apply that module only after the host is pinned at 0.39.0 or later.
+- Shape `bulk_write`, on the `fs.write` actions of tar in create mode, zip, 7z, 7za, 7zr, 7zz, pg_dump, pg_dumpall, mysqldump, ffmpeg, curl, wget, cp, rsync, dd, git archive and git bundle, and of any command with one of those upstream in its pipeline. The unknown write at the working directory kept for a command whose output could not be resolved does not carry it.
+- Action hints: `bytes` on a write tool's `fs.write` (the byte size of its content strings, per `edits` entry for a MultiEdit-style input) and `fsize_blocks` on a shell command's `fs.write` (the hard `ulimit -f` in force when the command runs, or `unlimited`; the weakest limit when several commands of a script share a text).
+- `specs/scratch-cap.impl.yml`, the blueprint, and the `scratch_cap` section of `specs/app.yml`.
+
+### Changed
+- Tightening for every project, found by the work: `tar` in create mode now yields an `fs.write` for the archive when the name sits in a bundled option cluster (`tar czf X`, `tar -czf X`, `tar cf X`), after other options (`tar -C src -czf X .`) or in `--file=X`; before, only a separate `-f X` was seen and the usual forms wrote nothing polispec saw. `zip`, `7z`, `ffmpeg`, `mysqldump`, `pg_dump -f`, `git archive -o` and `git bundle create` also yield an `fs.write` for their output. Rules that judge `fs.write` (prod-write, location, protected roots) now see these outputs. `7z`, `ffmpeg` and `mysqldump` keep the 0.38.0 unknown write at the working directory when no output can be resolved.
+- A write tool call whose input exceeds 8 MiB is already denied by the hook input cap (`INPUT_LIMIT`), so a `bytes_over` cap helps only below that.
+- No other verdict changes. Smoke against the pinned 0.38.0: 43 of 44 scenarios pass; the one failure, `status-digest-doctor`, fails the same way on an unmodified copy of 0.38.0 (its expected finding count depends on the checkout's HEAD being local main), and the 37 differences are runtime kind (clone against pinned), ids and timestamps.
+
 ## [0.38.0] - 2026-10-22
 
 ### Added

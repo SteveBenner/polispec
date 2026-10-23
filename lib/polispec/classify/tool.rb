@@ -22,7 +22,7 @@ module Polispec
         if DELETE_TOOLS.include?(name)
           write_paths(tool_input).map { |path| Support.act("fs.delete", "#{name} #{Support.abs(path, cwd)}", "path" => Support.abs(path, cwd)) }
         elsif WRITE_TOOLS.include?(name)
-          write_paths(tool_input).map { |path| write(path, name, cwd, tool_input) }.compact
+          write_entries(tool_input).map { |path, entry| write(path, name, cwd, entry) }.compact
         elsif PATCH_TOOLS.include?(name)
           patch_changes(tool_input).flat_map do |change|
             rows = []
@@ -43,13 +43,21 @@ module Polispec
       end
 
       def write_paths(input)
+        write_entries(input).map(&:first)
+      end
+
+      def write_entries(input)
         if input.is_a?(Hash) && input["edits"].is_a?(Array)
           edits = input["edits"]
           return [] if edits.empty? || edits.length > Harness::Base::MULTI_LIMIT
-          return edits.map { |entry| entry.is_a?(Hash) ? Support.dig(entry, *PATH_KEYS) : nil }.select { |value| value.is_a?(String) && !value.empty? }
+
+          return edits.filter_map do |entry|
+            path = entry.is_a?(Hash) ? Support.dig(entry, *PATH_KEYS) : nil
+            [path, entry] if path.is_a?(String) && !path.empty?
+          end
         end
         value = Support.dig(input, *PATH_KEYS)
-        value.is_a?(String) && !value.empty? ? [value] : []
+        value.is_a?(String) && !value.empty? ? [[value, input]] : []
       end
 
       def read_paths(input)

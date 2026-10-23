@@ -21,6 +21,8 @@ module Polispec
       COMPRESSORS = %w[gzip gunzip bzip2 xz].freeze
       COMPRESSOR_VALUE = %w[-S --suffix -T --threads -M --memlimit --format -F].freeze
       STDOUT_LONG = %w[--stdout --to-stdout --test --list].freeze
+      DASHED = /\A-[a-zA-Z]+\z/.freeze
+      BARE = /\A[a-zA-Z]+\z/.freeze
       STDOUT_SHORT = /\A-[A-Za-z0-9]*[ctl][A-Za-z0-9]*\z/.freeze
 
       class << self
@@ -245,12 +247,30 @@ module Polispec
 
         def archive(cmd)
           args = cmd.args
-          extract = args.first.to_s.match?(/\A[a-zA-Z]*x/) || args.any? { |arg| arg.match?(/\A-[a-zA-Z]*x/) || arg == "--extract" }
-          return [Support.option_value(args, "-C", "--directory") || "."] if extract
+          return [Support.option_value(args, "-C", "--directory") || "."] if extract_mode?(args)
+          return [] unless create_mode?(args)
 
-          create = args.first.to_s.match?(/\A-?[a-zA-Z]*c/) || args.include?("--create")
-          file = Support.option_value(args, "-f", "--file")
-          create && file && file != "-" ? [file] : []
+          file = Support.option_value(args, "-f", "--file") || cluster_file(args)
+          file && file != "-" ? [file] : []
+        end
+
+        def clusters(args)
+          args.each_index.select { |i| args[i].match?(DASHED) || (i.zero? && args[i].match?(BARE)) }
+        end
+
+        def extract_mode?(args)
+          args.include?("--extract") || args.include?("--get") || clusters(args).any? { |i| args[i].include?("x") }
+        end
+
+        def create_mode?(args)
+          return false if extract_mode?(args)
+
+          args.include?("--create") || clusters(args).any? { |i| args[i].include?("c") }
+        end
+
+        def cluster_file(args)
+          at = clusters(args).find { |i| args[i].include?("f") }
+          at && args[at + 1]
         end
 
         def unzip(cmd)

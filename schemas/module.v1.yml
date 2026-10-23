@@ -100,6 +100,16 @@ $defs:
       shape: { $ref: "#/$defs/string_list" }
       lock_held: { const: true }
       live_binary: { const: true }
+      bytes_over: { type: integer, minimum: 0 }
+      fsize_unset: { const: true }
+      fsize_above: { type: integer, minimum: 0 }
+      tree_over:
+        type: object
+        additionalProperties: false
+        required: [marker, bytes]
+        properties:
+          marker: { type: string, minLength: 1, maxLength: 4096 }
+          bytes: { type: integer, minimum: 0 }
       delete_protected: { const: true }
       delete_protected_file: { const: true }
       supervised: { const: true }
