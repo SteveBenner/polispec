@@ -1,0 +1,112 @@
+schema: is.v1
+metadata:
+  name: polispec deployments manifest, clean uninstall and restore, and personal defaults
+  slug: deployments
+  version: 0.1.0
+  created: '2026-10-23'
+  status: accepted
+  base_commit: f57bb9b
+  base_version: 0.40.0
+  intended_release: 0.41.0
+  contract: [specs/app.yml#install/deployments, specs/app.yml#install/clean_uninstall, specs/app.yml#install/restore, specs/app.yml#install/personal_defaults, specs/app.yml#delete_guard]
+  worker: {harness: claude-code, agent: coding-worker, note: "AGENTS.md Part T: the primary wrote this blueprint and verifies; workers implement the slices"}
+  decisions_by_sven:
+    - "One manifest of where polispec is deployed, written by every installer, plus a deployments --scan that backfills what already exists."
+    - "uninstall --all removes host wiring (hooks, skill and rule links, git hook shims, own harness-control overlays), pins (the current link and the bin link, never release directories), the rplugin install, and host data (ledger, settings file, state home moved into the backup). --keep opts a class out; the default keeps nothing."
+    - "restore has --mode rewire (default: re-run each installer at the recorded targets) and --mode bytes (copy back the backed-up files, refusing any edited since)."
+    - "The real uninstall --all and restore need a TTY and the typed phrase uninstall polispec or restore polispec; dry runs and deployments are open to anyone."
+    - "Receipts whose target is gone are listed as gone and retired (renamed .uninstalled-<stamp>) by uninstall --all, never hidden or deleted."
+    - "polispec is a global project: ~/.ai leaves the shipped delete guard (it moves to the host's shelf, done by the primary through plan global), the stewardship rule says personal policy belongs on the shelf, and doctor and steward --check report a shipped default that names something taken from this host."
+vision:
+  problem: >-
+    polispec writes into many places (harness settings files, skill and rule links, git hooksPath shims, harness-control
+    overlays, the native pin and bin link, the rplugin store, the ledger, the settings file, the state home), and each
+    installer keeps its own receipt or none. Nothing lists them together, 14 of 15 install receipts on the release host point
+    at deleted scratch homes, and there is no single clean way to remove polispec and put it back. Separately, the shipped
+    delete guard carries one host's ~/.ai, and nothing notices when host-specific policy reaches the shipped defaults.
+  outcome: >-
+    deployments.json in the state home records every deployment; deployments lists them with a live status and --scan
+    backfills; uninstall --all backs up into the data home and removes everything through the existing uninstallers; restore
+    puts it back. uninstall.sh and a polispec-uninstall skill wrap it. PersonalDefaults reports host-taken tokens in shipped
+    defaults through doctor and steward step 4.
+  non_goals:
+    - Removing release directories, the data home, the global shelf, or any rulebook committed in a governed repository.
+    - Uninstalling a Claude Code or Codex marketplace plugin (reported with the harness command only).
+    - Any change to guard verdicts, the hook, the judgment record or the fast path.
+    - New smoke scenarios or tests (AGENTS.md Part S); verification is by running the CLI in scratch homes.
+constraints:
+  - Ruby standard library only. Keep the two-line header (shebang, SPDX) every lib file carries.
+  - No comments or docstrings in code (AGENTS.md Part Q).
+  - Commands are files (lib/polispec/commands/*.rb, glob-loaded, Polispec::CLI.register); add files, edit no registry.
+  - Work only in your own worktree and branch. Never touch the pinned runtime, ~/.ai, the live clone /home/sven/github/foss/polispec, the real ledger, shelf, settings, state home, data home, ~/.claude, ~/.codex, ~/.local/bin or ~/.rplugins.
+  - "SAFETY: never run uninstall --all, restore, deployments --scan, install, pin, hook git install or ledger init without the scratch environment below. Source it in the same command line every time. A run of uninstall --all against the real host would unhook the live guard of every agent on it."
+  - "Scratch environment (all set, every run): HOME=<scratch>/home, POLISPEC_STATE_HOME=<scratch>/state, POLISPEC_DATA_HOME=<scratch>/data, POLISPEC_LEDGER=<scratch>/config/ledger.yml, POLISPEC_SETTINGS=<scratch>/config/settings.yml, POLISPEC_GLOBAL=<scratch>/shelf, CLAUDE_CONFIG_DIR=<scratch>/home/.claude, CODEX_HOME=<scratch>/home/.codex, RPLUGINS_HOME=<scratch>/home/.rplugins, RPLUGIN_BIN=<scratch>/bin/fake-rplugin (a script you write that logs its argv and, for install and uninstall, creates or removes the store link), XDG_CONFIG_HOME=<scratch>/home/.config, XDG_DATA_HOME=<scratch>/home/.local/share. Unset XDG_STATE_HOME is not required; POLISPEC_STATE_HOME wins while unsealed. Put <scratch> under the session scratchpad, never under /tmp of another session."
+  - Run the real (non-dry) uninstall and restore through a pty, e.g. `script -qec '<cmd>' /dev/null` with the phrase on stdin, or through Operator::Tty.delegate in a Ruby driver; never weaken the TTY check.
+  - Recording into the manifest is best effort; a failure there warns on stderr and never changes an installer's result or exit status.
+  - Require every library file the uninstall needs at command start, because it may remove the link the running binary was reached through.
+  - Back up before moving or rewriting any file (AGENTS.md Part E). Nothing in this change deletes a file except the symlinks and the receipt renames the contract names.
+slices:
+  - id: A_manifest
+    worker: W1
+    owns:
+      - lib/polispec/deployments.rb (new)
+      - lib/polispec/commands/deployments.rb (new)
+      - schemas/deployments.v1.yml (new)
+      - lib/polispec/native_install.rb (record and retire hooks entries)
+      - lib/polispec/native_pin.rb (record the pin entry)
+      - lib/polispec/git_hook.rb (record and retire git_hooks entries)
+      - lib/polispec/harness_controls/lifecycle.rb (a public read-only owned_installations; record and retire controls entries)
+      - lib/polispec/ledger.rb (record the ledger entry when create_starter! creates one)
+      - lib/polispec/commands/steward.rb and lib/polispec/commands/apply.rb (after a successful stewardship pass, refresh the rplugin and pin entries through Deployments; do not edit lib/polispec/stewardship.rb, which slice C owns)
+    build:
+      - "Deployments module: path (State.home/deployments.json), load (missing file is an empty manifest; invalid JSON raises Polispec::Error naming the file), record(kind:, target:, klass:, details:, source:), retire(kind:, target:, backup_id: nil), entries, status_of(entry) computing present|drifted|gone|removed per kind as the contract says, scan! returning the entries it added. Writes hold an exclusive flock on deployments.lock and replace by temp file and rename, mode 0600 in a 0700 directory."
+      - "status_of per kind: hooks: target settings file exists and still carries a marked polispec-guard hook (Claude) or the marked block (Codex), else drifted, gone when the file is missing; controls: the installation is still active in owned_installations; git_hooks: git config core.hooksPath of the checkout equals the shim dir; pin: current link exists and resolves to a valid release; rplugin: store link exists; plugin: the enabledPlugins key or the plugin dir still exists; ledger, settings, state: the path exists."
+      - "scan!: one entry per active receipt in State.home/installs/*.json (not *.uninstalled-*), per owned installation (rescue Lifecycle::Failure and Polispec::Error to none), per <state home>/git-hooks/<project>/<env> directory, the native pin (NativePin.current_link, NativePin.bin_link when it points into the data home), the rplugin store link (Stewardship.store_link, details from <realpath>/.rplugin-release.json: commit, source, ref), Claude enabledPlugins keys starting polispec@ in the user settings file and Codex plugin dirs (the same globs NativeInstall.double_guard_codex uses), Ledger.default_path, NativeSettings.path and State.home. Ids are stable, so a second scan adds nothing."
+      - "polispec deployments [--scan] [--json]: text lists one line per entry (status, class, kind, target); --json prints {schema, entries:[...entry, live_status]}; --scan prints the added entries first. Exit 0, 2 on usage, 1 on an unreadable manifest."
+      - "schemas/deployments.v1.yml in the style of the other schemas (JSON Schema in YAML)."
+      - "Changes::KINDS gains uninstall and restore (lib/polispec/changes.rb belongs to W1)."
+  - id: B_uninstall_restore
+    worker: W1
+    owns:
+      - lib/polispec/uninstall_all.rb (new; backup, ordered removal, restore)
+      - lib/polispec/commands/uninstall.rb (--all, --keep; without --all unchanged)
+      - lib/polispec/commands/restore.rb (new)
+      - schemas/backup.v1.yml (new)
+      - uninstall.sh (new, POSIX sh, mode 0755, header like install.sh)
+      - skills/polispec-uninstall/SKILL.md (new)
+      - polispec.rplugin.yml (contents.skills gains polispec-uninstall; do not bump the version)
+      - README.md (Install section and Commands table only), docs/operator.md (the install paragraph)
+      - lib/polispec/changes.rb
+    build:
+      - "uninstall --all: refuse usage errors with exit 2; run Deployments.scan!; select active entries minus --keep classes; dry run prints the backup id it would use, every file it would copy, every step in order, and the restore command, then exits 0 without writing anything (not even the manifest scan: scan in memory for the dry run). Real run: Operator::Tty.confirm!('uninstall polispec', prompt:) first (NotTty or PhraseMismatch: exit 1 with the message, nothing written); then create <data home>/backups/bkp_<12 hex>/ (0700), copy deployments.json and every file each step will change (settings files, config.toml, symlinks recorded as symlinks with their targets) under files/<absolute path>, write backup.json; then Changes.record(kind: 'uninstall'); then run the steps in contract order, each rescued so one failure records failed and the rest continue; after each step write sha256_after for its files into backup.json; data moves (ledger, settings, state home) last, by File.rename when on the same device and copy-then-rename-aside otherwise, into data/<absolute path>. The manifest entries are marked removed with backup_id before the state home moves, so the moved manifest carries it."
+      - "Steps: controls via HarnessControls::Lifecycle.uninstall(installation_id) (a Failure with operator_required or exit_status 3 is recorded skipped operator_required); hooks via NativeInstall.uninstall(harness, scope:, project:) with the project recovered from the receipt target; gone hooks entries retire the receipt by rename; git_hooks via GitHook::Installer.new(project, env).uninstall; rplugin via Stewardship.rplugin('uninstall', 'polispec'); pin by removing NativePin.current_link (a symlink) and NativePin.bin_link only when it points into the data home; plugin entries are reported with 'claude plugin uninstall polispec@polispec' or 'codex plugin remove polispec@polispec' and not counted as failures."
+      - "The result (text and --json) names the backup directory and the exact restore command, using an absolute path to a polispec that survives the uninstall: the running release root when it is a pinned release (rplugin .pinned or native releases/<commit>), else the clone root, as '<root>/bin/polispec restore <id>'. Write the same command into backup.json as restore_command."
+      - "restore <id> [--mode rewire|bytes] [--dry-run] [--json] and restore --list [--json], as the contract says. It reads only from the backup directory; it must work when the state home, ledger and settings are absent. Confirm with 'restore polispec'. Data first by bytes to absent paths only (data_conflict otherwise, which skips that item and continues). rewire: pin (swap current back when the release dir is valid via NativePin internals, else NativePin.pin!(ref:)), rplugin (Stewardship.rplugin('install', source, '--ref', ref)), hooks (NativeInstall.install), git_hooks (GitHook::Installer#install), controls (manual unless a document path recorded in the receipt still exists). bytes: copy each backed-up file back when the current path is absent or its sha256 equals sha256_after; otherwise edited_since. Then mark entries active (source restore), Changes.record(kind: 'restore'), restored_at in backup.json."
+      - "uninstall.sh: like install.sh in style; finds polispec in this order: POLISPEC_BIN, command -v polispec, ~/.local/bin/polispec, <data home>/current/bin/polispec, ${RPLUGINS_HOME:-~/.rplugins}/polispec/bin/polispec; runs '<bin> uninstall --all --dry-run [--keep $POLISPEC_KEEP]'; stops there when POLISPEC_DRY_RUN=1; else runs '<bin> uninstall --all [--keep ...] </dev/tty'. Exit with polispec's status."
+      - "skills/polispec-uninstall/SKILL.md: frontmatter name and description like the other skills; steps: run polispec deployments --scan --json to show what is deployed, run uninstall --all --dry-run and show it, explain the classes and --keep, hand the person the exact real command (an agent shell cannot run it: not_tty), and after it ran, show the restore command from its output. Same for restore. Nothing host-specific in it."
+  - id: C_personal_defaults
+    worker: W2
+    owns:
+      - lib/polispec/personal_defaults.rb (new)
+      - lib/polispec/commands/doctor.rb (check_personal_defaults)
+      - lib/polispec/stewardship.rb (step 4)
+      - "not lib/polispec/commands/steward.rb (W1 owns it): keep every step 4 change inside lib/polispec/stewardship.rb"
+      - rules/polispec-stewardship.md (one sentence)
+      - modules/delete-guard.yml (drop "~/.ai" from tree)
+      - docs/schema.md (the delete_protected list sentence), README.md line about protected paths (drop ~/.ai)
+    build:
+      - "PersonalDefaults.findings(root: Polispec::ROOT, ledger: nil, home: Dir.home) returns [{file (relative to root), line, token, source}] for the dirs modules, packages, config, rules, skills under root (regular files under 1 MiB). Tokens as the contract row personal_defaults says: ledger project ids (length >= 4, not polispec) matched as exact YAML scalars (walk the parsed document; report the first line whose text contains the scalar); ledger repo paths and the ledger host as substrings in ~ and absolute forms with a boundary (the next character is not [A-Za-z0-9_.-]); the shelf directory and its git toplevel (find them the way Layers and the settings locate the global layer; a missing shelf adds no token); polispec.operator when it differs from the default, as a whole word. Drop tokens that appear in config/ledger.starter.yml, the tokens ~, / and the home directory itself. A missing or invalid ledger yields only the shelf and operator tokens; never raise."
+      - "doctor: one personal_default finding per hit, severity warn, detail '<file>:<line> names <token> (<source>)'."
+      - "Stewardship: step 4 'shipped defaults carry no host-personal policy': ok with the root scanned; check: missing with the first three hits and the count; ensure!: prints the step with status warn when there are hits and never raises for it. check returns four steps."
+      - "rules/polispec-stewardship.md: one sentence in the 'What agents never do here' list or beside it: personal policy (a host's own paths, project ids, hostnames or operator name) belongs on the global shelf or in the ledger, never in the shipped modules/, packages/ or config/, unless the operator chose to ship it; doctor and steward --check report it as personal_default."
+acceptance:
+  - "W1, scratch env: install --harness claude and codex at user scope, pin from the worktree (a tag in a scratch clone of the worktree, or --ref of a scratch tag), ledger init, a fake rplugin store link with a .rplugin-release.json, a scratch git repo in the scratch ledger with hook git install. deployments --scan lists every kind present; a second --scan adds nothing; a receipt whose target you delete shows gone."
+  - "W1: uninstall --all --dry-run writes nothing (compare a recursive listing with sha256 before and after) and prints every step and the restore command."
+  - "W1: uninstall --all without a TTY exits 1 not_tty and writes nothing; with the wrong phrase exits 1 and writes nothing; with the phrase it leaves no polispec hook in the scratch settings files and no marked Codex block, keeps a foreign hook you planted in each, removes the skill and rule links, unsets the scratch repo's core.hooksPath, calls fake rplugin uninstall polispec, removes current and the bin link but keeps releases/, moves ledger, settings and state home into the backup, and renames the gone receipt."
+  - "W1: restore with the printed command (rewire) puts back hooks, links, hooksPath, pin links, rplugin (fake install called with the recorded source and ref), ledger, settings and state home; deployments then shows every entry present. A second cycle with --keep data leaves the ledger, settings and state home in place."
+  - "W1: restore --mode bytes after editing one restored-target file in between refuses that file edited_since and restores the rest."
+  - "W1: polispec uninstall --harness claude (without --all) behaves as on main: same output shape on a scratch install."
+  - "W2: from the worktree, ruby -Ilib on PersonalDefaults.findings(root: <the pinned 0.40.0 tree, read only>) reading the real ledger read-only reports the ~/.ai entry in modules/delete-guard.yml; on the worktree root after the edit it reports nothing (or report every hit with its reason). bin/polispec doctor and steward --check (both read-only) run on the host and show step 4 and the findings."
+  - "Both: bin/polispec validate on the touched schemas' example files where applicable; ruby -c on every changed Ruby file; ~/.rplugin/bin/rplugin check <worktree> at zero findings other than the known .rproject notes."
+reporting:
+  - "Report every acceptance row with the command and what it showed, every deviation from this blueprint with the reason, and the commit you made on your branch. Commit only your owned paths, staged by name."
