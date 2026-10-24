@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `specs/provenance.impl.yml`, `specs/smoke.impl.yml` and `specs/webapp.impl.yml` did not load as the loader reads them: the first two held plain scalars containing `: ` (a value that is not valid YAML), and the third repeated the `events` key, so the loader silently dropped the first. The values are quoted and the key is renamed.
+- The `status-digest-doctor` smoke step `doctor reports package_file_drift as info and not_live` expected `(4 blocking, 7 info)`. The fourth blocking finding was `edition_provenance_invalid`, which exists only when HEAD differs from local `main`, so the step passed on a feature branch and failed on `main` itself. It now expects `7 info)`.
 - `web/public/openapi.yml` carried 24 Psych anchors and aliases from a Ruby dump of shared objects, which polispec's loader refuses. They are expanded in place; the document is unchanged.
 
 ## [0.41.1] - 2026-10-23
