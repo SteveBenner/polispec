@@ -476,6 +476,7 @@ The ledger is the list of projects polispec governs on this host. `polispec inst
 | `polispec plan <target>` | Preview a change: files, ledger, composed policy diff, verdicts that would change, and whether it tightens or loosens |
 | `polispec apply <target> [--confirm <plan-id>] [--with-stewardship]` | Carry out a plan; loosening, mixed, and global changes need `--confirm`. Targets: a package such as `environment-control --repo <repo>`, `project:<id>`, `global`, `ledger --from <file>` |
 | `polispec validate <kind\|auto> <file> [--json]` | Check a policy, environments, roster, ledger, global, module, profiles, behavior, control, smoke, or judgment file |
+| `polispec lint [PATH...] [--host] [--shipped] [--only RULE,...] [--strict] [--json]` | Sweep generated and shipped files for schema, hygiene, drift, reference and description findings; read-only |
 | `polispec resolve <path> [--layers] [--json]` | Name the project, environment, and layers that govern a path |
 | `polispec doctor` / `status <project>` / `digest` | Report findings, project state, deployment receipts, and a daily digest |
 | `polispec promote <project> --to <env> [--dry-run]` | Move code one hop through the gates |
@@ -518,6 +519,9 @@ Change settings with `polispec settings set <key> <value>`, which writes `~/.con
 - `polispec.web.bind` (default `127.0.0.1`), `polispec.web.port` (default `7421`; `0` picks a free port), `polispec.web.public_origin` (optional exact HTTPS origin for an external proxy; empty by default), and `polispec.web.theme` (`system`, `light`, `dark`, `apple-noir`, `apple-austere`, or `tronwave`; default `system`): the web app. A public origin supplies HTTPS links, exact Host/Origin checks, and Secure cookies; it does not expose the listener. A bind address that is not a loopback address needs `--expose` and a typed phrase ([web app](docs/web.md)).
 - `polispec.author.enabled`: `on` (default) or `off`; `POLISPEC_AUTHOR=off` does the same for one run. Off refuses every author request. `polispec.author.adapter` names the built-in adapter, default `harness-cli`.
 - `polispec.description.strict`: `off` (default) or `on`. On, a missing or failing description is an error in `validate` instead of a warning ([schema](docs/schema.md#description)).
+- `polispec.lint.on_write`: `on` (default) or `off`. On, every generator that writes a structured file refuses an output with an error finding (`lint_failed`) and writes nothing; off restores the 0.41.1 behavior ([lint](docs/operator.md#linting-generated-files)).
+- `polispec.lint.doctor`: `on` (default) or `off`. On, `doctor` files the host-scope lint findings as `lint_<code>`.
+- `polispec.lint.strict`: `off` (default) or `on`. On, a warning finding makes `polispec lint` exit 1.
 - `polispec.notice`: `on` (default) or `off`. Off stops the hook from adding the one-line epoch notice ([effect](docs/effect.md)).
 - `polispec.global.repo`, `polispec.global.ref` (default `main`), and `polispec.global.path` (default `polispec`): where the optional global shelf of shared rules, modules, and profiles is read from. Unset means no global layer. `POLISPEC_GLOBAL` points at a plain directory for scratch runs. See [schema](docs/schema.md).
 

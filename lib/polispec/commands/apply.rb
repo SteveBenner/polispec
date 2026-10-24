@@ -5,6 +5,7 @@ require_relative "../plan"
 require_relative "../stewardship"
 require_relative "../deployments"
 require_relative "../changes"
+require_relative "../lint"
 
 module Polispec
   class ApplyCommand
@@ -108,6 +109,7 @@ module Polispec
         paths.each do |relative|
           target = File.join(repo, relative)
           FileUtils.mkdir_p(File.dirname(target))
+          Lint.guard_write!(artifacts[:proposed_files].fetch(dir.empty? ? relative : relative.delete_prefix("#{dir}/")), path: target) if %w[.yml .yaml .json].include?(File.extname(target).downcase)
           write_atomic(target, artifacts[:proposed_files].fetch(dir.empty? ? relative : relative.delete_prefix("#{dir}/")))
         end
       end
@@ -129,6 +131,7 @@ module Polispec
         paths.each do |relative|
           target = File.join(source.repo, relative)
           FileUtils.mkdir_p(File.dirname(target))
+          Lint.guard_write!(artifacts[:proposed_files].fetch(relative.delete_prefix(prefix)), path: target) if %w[.yml .yaml .json].include?(File.extname(target).downcase)
           write_atomic(target, artifacts[:proposed_files].fetch(relative.delete_prefix(prefix)))
         end
       end
@@ -142,6 +145,7 @@ module Polispec
       result = Schema.validate_file("ledger", artifacts[:file])
       raise Operator::Failure.new("ledger_invalid", "#{artifacts[:file]} does not validate") unless result.ok
 
+      Lint.guard_write!(bytes, path: live)
       backup = nil
       if File.file?(live)
         backup = File.join(File.dirname(live), "#{File.basename(live)}.bak-#{Time.now.utc.strftime('%Y%m%d%H%M%S')}")

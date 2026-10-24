@@ -34,6 +34,7 @@ Preserve rule ids, foreign contributions, and unrelated behavior. Use the publis
 1. Inspect `polispec resolve . --layers` and `polispec status`. Identify the trusted policy and all layers that may override or tighten the proposed rule. The guard reads the trust ref, normally `stable`, rather than a draft working tree.
 2. Prepare the smallest candidate change in an authorized development checkout or separate worktree. A policy-edit warning still needs the user's explicit approval. Never edit a production checkout. For a separate worktree, commit the candidate to a named draft ref, then select that ref explicitly in the plan. `--from worktree` reads the ledger project's configured repository, not whichever directory the shell happens to be in.
 3. Validate each changed source with `polispec validate auto FILE --json`. Check sibling environments and modules as well as the policy. Use explicit kinds from `polispec help` when auto-detection is ambiguous. A valid file proves schema acceptance, not safe composition or actual enforcement. Read warnings. With runtime 0.35.0 or later on an unsealed installation, `env POLISPEC_DESCRIPTION_STRICT=on polispec validate auto FILE --json` additionally fails description lint for this invocation; `validate` has no `--strict` flag. Do not persist settings merely to validate a draft.
+   After validating, run `polispec lint` (project scope) and read its findings; a clean lint proves loader-safe YAML and agreement with source, not safe composition.
 4. Preview the entire proposal:
 
    ```sh

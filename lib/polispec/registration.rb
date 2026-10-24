@@ -5,6 +5,7 @@ require "etc"
 require "json"
 require "fileutils"
 require_relative "operator/git"
+require_relative "lint"
 
 module Polispec
   module Registration
@@ -90,6 +91,7 @@ module Polispec
       dir = File.join(State.home, "register")
       FileUtils.mkdir_p(dir, mode: 0o700)
       file = File.join(dir, "#{id}.ledger.yml")
+      Lint.guard_write!(text, path: file, kind: "ledger")
       File.write(file, text)
       File.chmod(0o600, file)
       file

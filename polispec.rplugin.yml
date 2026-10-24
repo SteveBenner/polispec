@@ -1,7 +1,7 @@
 schema: rplugin/v1
 id: polispec
 name: Polispec
-version: 0.41.1
+version: 0.42.0
 rplugin: ">= 1.17.0"
 native: true
 description: "Spec-based policy guardrails for agentic development and operations: committed environment policies and deterministic harness controls, with explicit backend capabilities and enforcement limits."
@@ -37,6 +37,9 @@ settings:
   - { key: polispec.exceptions, type: enum, options: ["off", "on"], default: "on", scopes: [machine], description: "on lets the operator's recorded exceptions (exceptions.yml in the global layer) lift the asks and rule warns they name; off ignores the file and restores the unexcepted behavior. POLISPEC_EXCEPTIONS overrides it only while unsealed." }
   - { key: polispec.relax.dev, type: enum, options: ["off", "on"], default: "on", scopes: [machine], description: "on lets a governed eval, source or . line pass without POLISPEC-TOOL-UNKNOWN when its working directory lies only in ledger projects with status onboarding (projects in development); off restores the ask. POLISPEC_RELAX_DEV overrides it only while unsealed." }
   - { key: polispec.description.strict, type: enum, options: ["off", "on"], default: "off", scopes: [machine], description: "on or off; default off. off: a rulebook with no description, or one the linter rejects, is a description_missing or description_invalid warning from validate and doctor. on: validate fails it. The guard never judges by it." }
+  - { key: polispec.lint.on_write, type: enum, options: ["off", "on"], default: "on", scopes: [machine], description: "on or off; default on. on: a generator that writes a rulebook, ledger, manifest, index, exceptions file, deployments manifest or delegate grants file lints its output first and refuses an error finding with lint_failed, writing nothing. off: generators write as in 0.41.1." }
+  - { key: polispec.lint.doctor, type: enum, options: ["off", "on"], default: "on", scopes: [machine], description: "on or off; default on. on: doctor files the error, warn and info findings of the host scope of polispec lint as lint_<code> findings. off: doctor files none." }
+  - { key: polispec.lint.strict, type: enum, options: ["off", "on"], default: "off", scopes: [machine], description: "on or off; default off. on: a warn finding fails polispec lint (exit 1), as --strict does for one run. Description findings keep following polispec.description.strict." }
   - { key: polispec.web.bind, type: string, default: 127.0.0.1, scopes: [machine], description: "Address polispec web listens on; default 127.0.0.1. Any address that is not a loopback address is refused unless polispec web is started with --expose on a TTY after the typed phrase expose polispec web." }
   - { key: polispec.web.port, type: string, default: "7421", scopes: [machine], description: "TCP port of polispec web; default 7421; 0 picks a free port." }
   - { key: polispec.web.public_origin, type: string, default: "", scopes: [machine], description: "Optional exact HTTPS origin for an external reverse proxy. Uses this origin for links, Host and Origin checks, and Secure cookies. Does not expose the listener or configure a proxy." }

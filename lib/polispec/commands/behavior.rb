@@ -1,6 +1,7 @@
 require_relative "../behavior"
 require_relative "../packages"
 require_relative "../surfaces"
+require_relative "../lint"
 
 module Polispec
   class BehaviorCommand
@@ -123,6 +124,7 @@ module Polispec
       end
 
       target = File.join(root, Surfaces.surface(compiled, surface_id).fetch("target"))
+      Lint.guard_write!(text, path: target, format: :text)
       FileUtils.mkdir_p(File.dirname(target))
       temp = "#{target}.#{Process.pid}.tmp"
       File.write(temp, text)

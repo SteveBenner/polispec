@@ -7,6 +7,7 @@ require_relative "../harness_controls/plane"
 require_relative "../plan"
 require_relative "apply"
 require_relative "../changes"
+require_relative "../lint"
 
 module Polispec
   class ExceptionsCommand
@@ -249,6 +250,7 @@ module Polispec
     def commit_change(source, text, verb, ids, proposals)
       target = File.join(source.repo, source.path, Exceptions::FILE)
       original = File.file?(target) ? File.binread(target) : nil
+      Lint.guard_write!(text, path: target, kind: "exceptions")
       begin
         write_atomic(target, text)
         plan_id = apply_global

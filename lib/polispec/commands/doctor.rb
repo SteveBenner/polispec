@@ -7,6 +7,7 @@ require_relative "../native_pin"
 require_relative "../exceptions"
 require_relative "../editions"
 require_relative "../personal_defaults"
+require_relative "../lint"
 
 module Polispec
   class DoctorCommand
@@ -42,6 +43,7 @@ module Polispec
       check_exceptions(findings)
       check_editions(findings)
       check_effect(findings)
+      check_lint(findings) if Engine::Settings.lint_doctor?
       check_personal_defaults(ledger, findings)
       blocking = findings.reject { |item| NONBLOCKING.include?(item["severity"]) }
       json ? puts(JSON.generate("ok" => blocking.empty?, "runtime" => runtime_info, "findings" => findings)) : print_text(findings)
@@ -465,6 +467,18 @@ module Polispec
 
     def check_effect(findings)
       findings.concat(Effect.doctor_findings)
+    end
+
+    def check_lint(findings)
+      report = Lint.run(host: true, for_doctor: true, only: %w[schema hygiene drift refs])
+      report.findings.each do |item|
+        detail = "#{item.path}#{item.line ? ":#{item.line}" : ''} #{item.message}"
+        entry = finding(item.project, "lint_#{item.code}", detail)
+        entry = entry.merge("severity" => item.severity) unless item.severity == "error"
+        findings << entry
+      end
+    rescue StandardError => error
+      findings << finding(nil, "lint_unavailable", "#{error.class}: #{error.message}").merge("severity" => "info")
     end
 
     def check_ledger_runtime(ledger, findings)

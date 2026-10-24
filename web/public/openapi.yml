@@ -110,8 +110,7 @@ paths:
       operationId: lint
       summary: Validate a rulebook or a description and return findings with positions
       parameters:
-      - &1
-        "$ref": "#/components/parameters/Csrf"
+      - "$ref": "#/components/parameters/Csrf"
       requestBody:
         required: true
         content:
@@ -151,7 +150,7 @@ paths:
       summary: Create a plan for a replace, compose, reorder, regroup, move or status
         change; a move returns two plans, destination first
       parameters:
-      - *1
+      - "$ref": "#/components/parameters/Csrf"
       requestBody:
         required: true
         content:
@@ -220,7 +219,7 @@ paths:
         required: true
         schema:
           type: string
-      - *1
+      - "$ref": "#/components/parameters/Csrf"
       requestBody:
         required: true
         content:
@@ -259,7 +258,7 @@ paths:
       operationId: explain
       summary: Judge a tool call per environment, or replay a recorded judgment
       parameters:
-      - *1
+      - "$ref": "#/components/parameters/Csrf"
       requestBody:
         required: true
         content:
@@ -290,7 +289,7 @@ paths:
       operationId: explainText
       summary: Resolve a deny message or a judgment id to its rule
       parameters:
-      - *1
+      - "$ref": "#/components/parameters/Csrf"
       requestBody:
         required: true
         content:
@@ -327,7 +326,7 @@ paths:
       operationId: blastRadius
       summary: Replay recorded judgments against a draft
       parameters:
-      - *1
+      - "$ref": "#/components/parameters/Csrf"
       requestBody:
         required: true
         content:
@@ -371,7 +370,7 @@ paths:
       summary: 'Register a path, system or software entry: a dry run previews it, otherwise
         the plan is returned and applied through /plans/{id}/apply'
       parameters:
-      - *1
+      - "$ref": "#/components/parameters/Csrf"
       requestBody:
         required: true
         content:
@@ -462,7 +461,7 @@ paths:
         required: true
         schema:
           type: string
-      - *1
+      - "$ref": "#/components/parameters/Csrf"
       requestBody:
         required: true
         content:
@@ -546,7 +545,7 @@ paths:
         required: true
         schema:
           type: string
-      - *1
+      - "$ref": "#/components/parameters/Csrf"
       requestBody:
         required: true
         content:
@@ -587,7 +586,7 @@ paths:
         required: true
         schema:
           type: string
-      - *1
+      - "$ref": "#/components/parameters/Csrf"
       responses:
         '200':
           description: Cancelled.
@@ -610,7 +609,7 @@ paths:
       operationId: openAuthorSession
       summary: Open an author session for a rulebook
       parameters:
-      - *1
+      - "$ref": "#/components/parameters/Csrf"
       requestBody:
         required: true
         content:
@@ -659,7 +658,7 @@ paths:
         required: true
         schema:
           type: string
-      - *1
+      - "$ref": "#/components/parameters/Csrf"
       responses:
         '200':
           description: Closed.
@@ -687,7 +686,7 @@ paths:
         required: true
         schema:
           type: string
-      - *1
+      - "$ref": "#/components/parameters/Csrf"
       requestBody:
         required: true
         content:
@@ -745,7 +744,7 @@ paths:
         required: true
         schema:
           type: string
-      - *1
+      - "$ref": "#/components/parameters/Csrf"
       responses:
         '200':
           description: Stopped.
@@ -2257,7 +2256,7 @@ components:
       - target
       - change
       properties:
-        target: &2
+        target:
           type: object
           required:
           - kind
@@ -2363,7 +2362,7 @@ components:
           - reload
           - trust
           properties:
-            next_call: &1
+            next_call:
               type: object
               required:
               - affected
@@ -2380,9 +2379,57 @@ components:
                     type: string
                 scope:
                   type: string
-            new_session: *1
-            reload: *1
-            trust: *1
+            new_session:
+              type: object
+              required:
+              - affected
+              - count
+              - sessions
+              properties:
+                affected:
+                  type: boolean
+                count:
+                  type: integer
+                sessions:
+                  type: array
+                  items:
+                    type: string
+                scope:
+                  type: string
+            reload:
+              type: object
+              required:
+              - affected
+              - count
+              - sessions
+              properties:
+                affected:
+                  type: boolean
+                count:
+                  type: integer
+                sessions:
+                  type: array
+                  items:
+                    type: string
+                scope:
+                  type: string
+            trust:
+              type: object
+              required:
+              - affected
+              - count
+              - sessions
+              properties:
+                affected:
+                  type: boolean
+                count:
+                  type: integer
+                sessions:
+                  type: array
+                  items:
+                    type: string
+                scope:
+                  type: string
         active_sessions:
           type: integer
         notes:
@@ -2453,14 +2500,23 @@ components:
           type: string
         all_envs:
           type: boolean
-        target: *2
+        target:
+          type: object
+          required:
+          - kind
+          - id
+          properties:
+            kind:
+              type: string
+            id:
+              type: string
         judgment_id:
           type: string
     ExplainResult:
       type: object
       required: []
       properties:
-        envs: &3
+        envs:
           type: object
           additionalProperties:
             type: object
@@ -2517,7 +2573,50 @@ components:
                 type: string
               kind:
                 type: string
-              envs: *3
+              envs:
+                type: object
+                additionalProperties:
+                  type: object
+                  required:
+                  - verdict
+                  - rule
+                  - layer
+                  - overrides
+                  - reason
+                  - trace
+                  properties:
+                    verdict:
+                      type: string
+                    rule:
+                      type: string
+                      nullable: true
+                    layer:
+                      type: string
+                      nullable: true
+                    overrides:
+                      type: array
+                      items:
+                        type: string
+                    reason:
+                      type: string
+                      nullable: true
+                    trace:
+                      type: array
+                      items:
+                        type: object
+                        required: []
+                        properties:
+                          layer:
+                            type: string
+                            nullable: true
+                          rule:
+                            type: string
+                          matched:
+                            type: boolean
+                          verdict:
+                            type: string
+                          winner:
+                            type: boolean
         record:
           type: object
           required:
@@ -2574,7 +2673,16 @@ components:
           type: object
           required: []
           properties:
-            target: *2
+            target:
+              type: object
+              required:
+              - kind
+              - id
+              properties:
+                kind:
+                  type: string
+                id:
+                  type: string
             yaml:
               type: string
         allow_once:

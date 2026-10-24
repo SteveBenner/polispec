@@ -5,6 +5,7 @@ require "stringio"
 require "tempfile"
 require_relative "operator/git"
 require_relative "registration"
+require_relative "lint"
 
 module Polispec
   module Packages
@@ -479,6 +480,7 @@ module Polispec
             built = Layers.build_raw(File.basename(target, ".yml"), Schema::Document.parse(text, target), text, :local)
             problems << "#{target} #{built}" if built.is_a?(String)
           end
+          @rendered.each { |target, text| Lint::Hygiene.check(text, path: target, format: :yaml).select(&:error?).each { |found| problems << "#{target} #{found.code} #{found.message}" } if target.match?(/\.ya?ml\z/) } if Engine::Settings.lint_on_write?
         rescue Schema::Document::ParseError => e
           problems << e.message
         end

@@ -14,6 +14,7 @@ require_relative "harness_controls/plane"
 require_relative "policy_source"
 require_relative "probes"
 require_relative "commands/doctor"
+require_relative "lint"
 
 module Polispec
   module Manifest
@@ -306,6 +307,7 @@ module Polispec
       before = Changes.epoch
       manifest = validate!("manifest", self.for(id, ledger: ledger))
       paths = [MANIFEST_FILE, BADGE_FILE]
+      Lint.guard_write!(manifest_json(manifest), path: File.join(repo, MANIFEST_FILE), format: :json)
       write_atomic(File.join(repo, MANIFEST_FILE), manifest_json(manifest))
       write_atomic(File.join(repo, BADGE_FILE), badge_svg(manifest))
       git.run!("add", "--", *paths, code: "stage_failed")
@@ -377,6 +379,7 @@ module Polispec
       document = validate!("index", index(ledger: ledger))
       confirm!("publish", name)
       before = Changes.epoch
+      Lint.guard_write!("#{JSON.pretty_generate(document)}\n", path: target, format: :json)
       write_atomic(target, "#{JSON.pretty_generate(document)}\n", 0o644)
       Changes.record(kind: "manifest", subject: { "index" => name, "action" => "publish" }, epoch_before: before, effects: [])
       { "published" => target, "entries" => document["entries"].length }
