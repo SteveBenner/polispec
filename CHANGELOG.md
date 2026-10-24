@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `polispec contract approve` classifies `policy.edit`; `check`, `digest`, `diff`, `export` to stdout, and `render` without `--write` are read verbs for the guard, and `check` stops being one when `--runner` is given. No verdict of any existing command changes.
-- Parity against 0.41.1: the only changed scenario is the new `contract`.
+- Parity against the pinned 0.41.1 (46 of 46 scenarios pass, 122 changed steps): the new `contract` scenario (40 steps, the verb does not exist in 0.41.1), and the differences that already separate 0.41.1 from a working-clone 0.42.0: the version string and `shipped:` layer source (composition, resolve, version), the runtime kind clone against pinned and its `R-POLISPEC-RUNTIME` ask against deny (stewardship, steward, plan-apply, seal, guard-shim, doctor exits in agents-render, gate-unreachable, status-digest-doctor), the 0.42.0 `lint` verb and its doctor findings (lint), generated ids, commit ids, and scratch paths (author, harness-controls, harness-uninstall, deployment-receipts, promote-deploy, registration, manifest, composition). No existing verb's output changes because of contracts.
 
 ## [0.42.0] - 2026-10-23
 
