@@ -7,8 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-10-23
+
+### Added
+- `polispec lint [PATH...] [--host] [--shipped] [--only RULE[,RULE]...] [--strict] [--json]`, a read-only sweep of the files polispec generates or ships. It reads what the YAML loader accepts silently and reports it: a repeated mapping key (the loader keeps the last), a second document (the loader reads only the first), an anchor or alias (the loader refuses them), a tab after a colon or dash, trailing spaces, CRLF, a BOM, a missing final newline, and a plain `yes`, `no`, `on` or `off` that reads as a boolean. Five rules: `schema` (every polispec document against its schema, with the same semantic checks as `validate`), `hygiene`, `drift` (a rendered `envs.md` or `AGENTS.md`, a behavior surface, a manifest or badge, and a harness artifact's file integrity, each against its source), `refs` (version homes that disagree, a missing schema file or `$ref`, a package source that does not exist, a ledger repo or path that is gone) and `description`. A PATH is a project root or one file; `--host` adds the ledger, the global shelf, the deployments manifest, delegate grants, settings, the published index and every ledger project; `--shipped` sweeps the release tree through a table of globs and kinds. Exit 0 when there is no error (no warning either under `--strict`), 1 otherwise, 2 for a usage error.
+- Write gate. With `polispec.lint.on_write` on (the default) every generator that writes a structured file lints its output first and refuses an error finding with `lint_failed`, writing nothing: `apply project`, `apply global` and `apply ledger`, the starter ledger, a registration proposal, the manifest and the published index, `agents render`, `behavior render --write`, the exceptions file, the deployments manifest, delegate grants, `code generate rubocop`, and the rendered files of a package. `off` restores the 0.41.1 behavior.
+- Doctor findings. With `polispec.lint.doctor` on (the default) `polispec doctor` files a `lint_<code>` finding, with the ledger project when one is known, for the host-scope sweep; warnings and info stay non-blocking. `polispec.lint.strict` (default off) makes warnings fail `lint`.
+- `Polispec::Schema::Check`, the check `validate` ran inline, now shared by `validate` and `lint`. The output of `validate` is byte for byte what 0.41.1 printed for every tracked YAML and JSON file, in all of its flag forms, except the three files repaired below.
+- Smoke scenario `smoke/scenarios/lint.yml` (unit `commands/lint`): clean, a repeated key, an alias, a tab under `--strict`, drift and its repair, a usage error, the write gate and its off switch, doctor and its off switch, `--shipped`, and agreement with `validate`.
+
 ### Changed
 - `docs/effect.md` no longer names the release host's own paths: the AI home is written `<ai home>`, the user home `<home>`, and the host's plugin list, other hook groups, a recorded trust hash and the launcher's fixed checkout path are described generically. The findings are unchanged.
+- A generator that wrote a file with a repeated key, an alias or a second document used to succeed; with the gate on it now fails with `lint_failed` and leaves the file as it was. `polispec.lint.on_write off` (or `POLISPEC_LINT_ON_WRITE=off`) restores the old behavior.
+- `lint` is a read verb for the guard (`Classify::Benign::POLISPEC_READ`).
+
+### Fixed
+- `specs/provenance.impl.yml`, `specs/smoke.impl.yml` and `specs/webapp.impl.yml` did not load as the loader reads them: the first two held plain scalars containing `: ` (a value that is not valid YAML), and the third repeated the `events` key, so the loader silently dropped the first. The values are quoted and the key is renamed.
+- `web/public/openapi.yml` carried 24 Psych anchors and aliases from a Ruby dump of shared objects, which polispec's loader refuses. They are expanded in place; the document is unchanged.
 
 ## [0.41.1] - 2026-10-23
 

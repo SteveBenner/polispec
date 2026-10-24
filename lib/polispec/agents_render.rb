@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require_relative "lint"
+
 module Polispec
   module AgentsRender
     BODY_PATH = ".agents/directives/envs.md"
@@ -212,6 +214,7 @@ module Polispec
     def apply(file)
       return unless file[:changed]
 
+      Lint.guard_write!(file[:content], path: file[:path], format: :text)
       FileUtils.mkdir_p(File.dirname(file[:path]))
       mode = File.file?(file[:path]) ? File.stat(file[:path]).mode & 0o777 : 0o644
       temp = "#{file[:path]}.#{Process.pid}.tmp"

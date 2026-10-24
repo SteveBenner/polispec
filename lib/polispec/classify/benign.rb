@@ -25,6 +25,7 @@ module Polispec
         "doctor" => [nil, JSON_FLAG],
         "classify" => [nil, JSON_FLAG.merge("--ledger" => true, "--policy" => true, "--cwd" => true)],
         "validate" => [nil, JSON_FLAG],
+        "lint" => [nil, JSON_FLAG.merge("--host" => false, "--shipped" => false, "--strict" => false, "--only" => true)],
         "plan" => [nil, JSON_FLAG.merge("--repo" => true, "--variant" => true, "--param" => true, "--from" => true)],
         "steward" => [nil, JSON_FLAG.merge("--check" => false), "--check"],
         "smoke" => [{

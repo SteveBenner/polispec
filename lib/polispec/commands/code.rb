@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 require_relative "../code/core"
+require_relative "../lint"
 
 module Polispec
   module Commands
@@ -259,6 +260,7 @@ module Polispec
           puts yaml
         else
           target = File.join(loaded.source.root, "enforcers", "rubocop", "base.yml")
+          Lint.guard_write!(yaml, path: target)
           FileUtils.mkdir_p(File.dirname(target))
           File.write(target, yaml)
           puts target

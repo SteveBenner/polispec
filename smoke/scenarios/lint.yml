@@ -1,0 +1,96 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/lint
+summary: lint sweeps a project for loader-unsafe YAML, aliases, tabs and drift from the generated files, filters by rule, fails on warnings under --strict, refuses a generator write that would not lint, files doctor findings, passes on the shipped tree and agrees with validate
+fixture:
+  global: example
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      files:
+        "lib/app.rb": "puts 1\n"
+steps:
+  - name: a clean project lints with no errors
+    run: ["{{polispec}}", lint]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ["polispec lint:", "0 errors"]
+  - name: the json report is ok
+    run: ["{{polispec}}", lint, --json]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      json: { ok: true }
+  - name: a repeated key in a copy of the roster is an error that names the file
+    run: [sh, -c, 'cp specs/polispec/roster.yml specs/polispec/roster-copy.yml && printf "schema: polispec.roster/v1\n" >> specs/polispec/roster-copy.yml && "$0" lint', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 1
+      stdout_includes: ["yaml_duplicate_key", "roster-copy.yml"]
+  - name: an anchor and an alias are refused
+    run: [sh, -c, 'rm specs/polispec/roster-copy.yml && printf "a: &x 1\nb: *x\n" > specs/polispec/probe-alias.yml && "$0" lint', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 1
+      stdout_includes: ["yaml_alias", "probe-alias.yml"]
+  - name: a tab after a colon is a warning and --strict makes it fail
+    run: [sh, -c, 'rm specs/polispec/probe-alias.yml && printf "a:\tb\n" > specs/polispec/probe-tab.yml && "$0" lint; echo "plain=$?"; "$0" lint --strict; echo "strict=$?"', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ["yaml_tab", "plain=0", "strict=1"]
+  - name: a hand edit of the generated envs.md is drift, and --only hygiene does not see it
+    run: [sh, -c, 'rm specs/polispec/probe-tab.yml && echo drift >> .agents/directives/envs.md && "$0" lint; echo "full=$?"; "$0" lint --only hygiene; echo "hygiene=$?"', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ["agents_drift", "full=1", "hygiene=0"]
+  - name: the drift is repaired by a render
+    run: [sh, -c, '"$0" agents render shop && "$0" lint', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ["0 errors"]
+  - name: an unknown rule is a usage error
+    run: ["{{polispec}}", lint, --only, bogus]
+    expect:
+      exit: 2
+      stderr_includes: [usage]
+  - name: the write gate refuses a ledger with a repeated key and leaves the ledger as it was
+    run: [sh, -c, 'cp "$POLISPEC_LEDGER" dup-ledger.yml && printf "host: other\n" >> dup-ledger.yml && before=$(sha256sum "$POLISPEC_LEDGER") && "$0" apply ledger --from dup-ledger.yml 2>&1; echo "rc=$?"; after=$(sha256sum "$POLISPEC_LEDGER"); [ "$before" = "$after" ] && echo ledger-unchanged', "{{polispec}}"]
+    cwd: "{{scratch}}"
+    expect:
+      exit: 0
+      stdout_includes: ["lint_failed", "rc=1", "ledger-unchanged"]
+  - name: with the gate off the apply gets past it
+    run: [sh, -c, '"$0" apply ledger --from dup-ledger.yml 2>&1; echo "rc=$?"', "{{polispec}}"]
+    cwd: "{{scratch}}"
+    env: { POLISPEC_LINT_ON_WRITE: "off" }
+    expect:
+      exit: 0
+      stdout_excludes: [lint_failed]
+  - name: doctor reports a repeated key from the host sweep
+    run: [sh, -c, 'printf "schema: polispec.roster/v1\nschema: polispec.roster/v1\n" > specs/polispec/probe-dup.yml && "$0" doctor --json', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: [0, 1]
+      stdout_includes: [lint_yaml_duplicate_key]
+  - name: polispec.lint.doctor off removes the lint findings from doctor
+    run: ["{{polispec}}", doctor, --json]
+    cwd: "{{project.shop}}"
+    env: { POLISPEC_LINT_DOCTOR: "off" }
+    expect:
+      exit: [0, 1]
+      stdout_excludes: [lint_yaml_duplicate_key]
+  - name: the shipped tree lints with no error
+    run: [sh, -c, 'rm specs/polispec/probe-dup.yml && "$0" lint --shipped', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ["polispec lint:"]
+  - name: validate and lint agree on a clean file
+    run: [sh, -c, '"$0" validate auto specs/polispec/roster.yml && "$0" lint specs/polispec/roster.yml', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0

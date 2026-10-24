@@ -34,6 +34,9 @@ module Polispec
       EXCEPTIONS_KEY = "polispec.exceptions"
       RELAX_DEV_KEY = "polispec.relax.dev"
       DESCRIPTION_STRICT_KEY = "polispec.description.strict"
+      LINT_ON_WRITE_KEY = "polispec.lint.on_write"
+      LINT_DOCTOR_KEY = "polispec.lint.doctor"
+      LINT_STRICT_KEY = "polispec.lint.strict"
       WEB_BIND_KEY = "polispec.web.bind"
       WEB_PORT_KEY = "polispec.web.port"
       WEB_THEME_KEY = "polispec.web.theme"
@@ -87,6 +90,24 @@ module Polispec
 
       def description_strict?
         text(DESCRIPTION_STRICT_KEY, "off").downcase == "on"
+      rescue StandardError
+        false
+      end
+
+      def lint_on_write?
+        text(LINT_ON_WRITE_KEY, "on").downcase != "off"
+      rescue StandardError
+        true
+      end
+
+      def lint_doctor?
+        text(LINT_DOCTOR_KEY, "on").downcase != "off"
+      rescue StandardError
+        true
+      end
+
+      def lint_strict?
+        text(LINT_STRICT_KEY, "off").downcase == "on"
       rescue StandardError
         false
       end

@@ -80,7 +80,7 @@ interfaces:
     harness_version: `claude --version` first token for claude-code, `codex --version` last token for codex, else null; 2 s timeout.
   scrubbing: In summary, steps run/expect/observed, and evidence path, replace the toplevel prefix with "." and then Dir.home with "~". Evidence path is stored relative to the toplevel when inside it, else File.basename.
   locking_and_write: Open "<ledger>.lock" (create 0600), flock LOCK_EX, read the ledger, compute prev from the last entry, append, write "<ledger>.tmp.<pid>" and File.rename over the ledger, release. Create the parent directory only if it is the toplevel itself (never mkdir elsewhere).
-  events: After the write, Events.emit("polispec.smoke", project: target project, id:, spec:, at:, verdict:). Errors are swallowed (emit already rescues).
+  events: 'After the write, Events.emit("polispec.smoke", project: target project, id:, spec:, at:, verdict:). Errors are swallowed (emit already rescues).'
 cli:
   usage: |
     usage: polispec smoke record --spec FILE [--at PATH] --verdict pass|fail|partial|blocked --summary TEXT [--step-file FILE] [--evidence PATH[:KIND]]... [--runner human|agent] [--harness H] [--model M] [--effort E] [--started ISO] [--finished ISO] [--json]
@@ -88,8 +88,8 @@ cli:
            polispec smoke show <id> [--json]
            polispec smoke verify [--json]
            polispec smoke coverage [--spec FILE] [--at PATTERN]... [--json]
-  record: --step-file is YAML or JSON holding a list of {run, exit, expect, observed}. --evidence hashes the file (must exist and be a regular file). Prints the new id (text) or the full entry (--json). Exit 0; 2 on usage; 1 with "polispec: <message>" on Polispec::Error.
-  list: One line per entry "id verdict spec#at recorded_at summary" filtered by exact spec, exact at, verdict. --json prints {"ledger": relative-or-basename path, "entries": [...]}.
+  record: '--step-file is YAML or JSON holding a list of {run, exit, expect, observed}. --evidence hashes the file (must exist and be a regular file). Prints the new id (text) or the full entry (--json). Exit 0; 2 on usage; 1 with "polispec: <message>" on Polispec::Error.'
+  list: 'One line per entry "id verdict spec#at recorded_at summary" filtered by exact spec, exact at, verdict. --json prints {"ledger": relative-or-basename path, "entries": [...]}.'
   show: Full entry as YAML (text) or JSON. Unknown id exits 1.
   verify: |
     Reports findings: schema errors (Schema.validate("smoke", data)); per entry digest_mismatch, chain_broken (prev not equal to previous digest, first entry prev must be null), duplicate_id, unresolved (proves no longer resolves), stale (at_digest differs from the node's current digest). unresolved and stale are informational. Exit 1 when any schema, digest_mismatch, chain_broken or duplicate_id finding exists, else 0. Text: "smoke: N entries, M finding(s)" plus one line per finding. --json: {"ledger", "entries", "findings": [{kind, id, detail}]}.

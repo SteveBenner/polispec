@@ -87,7 +87,7 @@ files:
   lock: <state home>/judgments.lock, exclusive flock around read head, rotate, append, write head
   head: <state home>/judgments.head.json { digest, count, file }, written atomically after every append; the truncation anchor
   rotation: when judgments.jsonl exceeds 16 MiB before an append it is renamed judgments.<%Y%m%dT%H%M%S%LZ>.jsonl and the chain continues in a new judgments.jsonl
-  skips: <state home>/skips.jsonl written by the shim: { ts, tool, session, key, skip } with skip no_needles or no_match; rotated by Judgments.append to skips.<stamp>.jsonl at 16 MiB
+  skips: "<state home>/skips.jsonl written by the shim: { ts, tool, session, key, skip } with skip no_needles or no_match; rotated by Judgments.append to skips.<stamp>.jsonl at 16 MiB"
   reading_order: rotated files sorted by name, then the current file
 slices:
   - id: A_record

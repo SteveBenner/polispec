@@ -5,6 +5,7 @@ require "openssl"
 require_relative "../delegate"
 require_relative "../editions"
 require_relative "../schema/core"
+require_relative "../lint"
 
 module Polispec
   module Delegate
@@ -222,6 +223,7 @@ module Polispec
       def write(grants)
         FileUtils.mkdir_p(Delegate.dir, mode: 0o700)
         FileUtils.chmod(0o700, Delegate.dir)
+        Lint.guard_write!(YAML.dump("schema" => SCHEMA, "grants" => grants), path: Delegate.grants_path, kind: "delegate_grants")
         temp = File.join(Delegate.dir, ".grants.#{Process.pid}.#{SecureRandom.hex(4)}.tmp")
         File.open(temp, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |file| file.write(YAML.dump("schema" => SCHEMA, "grants" => grants)) }
         File.rename(temp, Delegate.grants_path)

@@ -22,9 +22,11 @@ module Polispec
         kind, file = args
         return usage unless file && args.length == 2 && (Schema::KINDS + ["auto"]).include?(kind)
 
-        result = merged_result(kind, file) || validated(kind, file)
-        result = with_semantics(result, kind, file)
-        extra = result.ok ? description_report(kind, file, semantic) : {}
+        require_relative "schema/check"
+        outcome = Schema::Check.call(kind, file, semantic: semantic)
+        result = outcome.result
+        extra = { "warnings" => outcome.warnings }
+        extra["semantic"] = outcome.semantic if outcome.semantic
         warnings = extra.fetch("warnings", [])
         failed = !result.ok || (!warnings.empty? && Engine::Settings.description_strict?)
         json ? puts(JSON.generate(result.to_h.merge(json_extra(extra, failed)))) : print_text(result, file, extra)
@@ -32,91 +34,6 @@ module Polispec
       end
 
       private
-
-      def behavior_v2(kind, file)
-        return nil unless %w[behavior auto].include?(kind)
-
-        require_relative "behavior"
-        data = Schema::Document.load(file)
-        return nil unless Behavior.v2?(data)
-
-        errors = Behavior.validate(data)
-        Schema::Result.new(errors.empty?, Behavior::V2, errors)
-      rescue Schema::Document::ParseError
-        nil
-      end
-
-      def validated(kind, file)
-        v2 = behavior_v2(kind, file)
-        return v2 if v2
-
-        result = Schema.validate_file(kind, file)
-        return result if result.ok
-
-        data = Schema::Document.load(file)
-        kind = Schema.kind_for(data).to_s if kind == "auto"
-        parameterised = kind == "module" && data.is_a?(Hash) && data.key?("params")
-        parameterised ? Schema::Result.new(true, result.schema, []) : result
-      rescue Schema::Document::ParseError
-        result
-      end
-
-      def merged_result(kind, file)
-        return nil unless %w[policy auto].include?(kind)
-
-        data = Schema::Document.load(file)
-        return nil unless data.is_a?(Hash) && data["schema"] == Schema.schema_id("policy") && !data.key?("environments")
-
-        sibling = Environments.read_file(File.expand_path(file))
-        return nil unless sibling
-
-        errors = sibling.errors ? sibling.errors.map { |item| Schema::Error.new("/environments.yml#{item['pointer']}", item["message"]) } : []
-        if errors.empty?
-          merged, finding = Environments.merge(data, sibling.data)
-          @merged = merged
-          errors = finding ? [Schema::Error.new("/environments.yml", finding["detail"])] : Schema.validate("policy", merged)
-        end
-        Schema::Result.new(errors.empty?, errors.empty? ? "#{Schema.schema_id('policy')} + environments.yml" : Schema.schema_id("policy"), errors)
-      rescue Schema::Document::ParseError
-        nil
-      end
-
-      def with_semantics(result, kind, file)
-        return result unless result.ok
-
-        data = @merged || Schema::Document.load(file)
-        kind = Schema.kind_for(data).to_s if kind == "auto"
-        errors = semantic_errors(kind, data, file)
-        errors.empty? ? result : Schema::Result.new(false, result.schema, errors)
-      rescue Schema::Document::ParseError
-        result
-      end
-
-      def semantic_errors(kind, data, file)
-        case kind
-        when "policy"
-          health = Operator::Gates.health_required_errors(data).map { |message| Schema::Error.new("/environments", message) }
-          unreachable = Operator::Gates.unreachable_errors(data).map { |message| Schema::Error.new("/promotion", message) }
-          health + unreachable + Layers.policy_errors(data, file: file).map { |message| Schema::Error.new("/layers", message) }
-        when "global", "module"
-          Layers.document_errors(kind, data, file).map { |message| Schema::Error.new("/layers", message) }
-        else
-          []
-        end
-      end
-
-      def description_report(kind, file, semantic)
-        require_relative "description"
-        data = @merged || Schema::Document.load(file)
-        kind = Schema.kind_for(data).to_s if kind == "auto"
-        return {} unless Description::KINDS.include?(kind) && data.is_a?(Hash)
-
-        report = { "warnings" => Description.warnings(data, kind) }
-        report["semantic"] = Description.semantic(data, kind) if semantic
-        report
-      rescue Schema::Document::ParseError
-        {}
-      end
 
       def json_extra(extra, failed)
         out = {}

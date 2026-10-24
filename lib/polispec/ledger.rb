@@ -67,6 +67,8 @@ module Polispec
       raise Operator::Failure.new("ledger_invalid", "the starter ledger template does not validate", "problems" => errors.map { |error| "#{error.pointer} #{error.message}".strip }) unless errors.empty?
       return { "path" => path, "created" => true } if dry
 
+      require_relative "lint"
+      Lint.guard_write!(text, path: path)
       FileUtils.mkdir_p(File.dirname(path), mode: 0o700)
       temp = "#{path}.#{Process.pid}.tmp"
       File.write(temp, text)
