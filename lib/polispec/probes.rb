@@ -124,10 +124,10 @@ module Polispec
       list
     end
 
-    def judge(side, action)
+    def judge(side, action, extra = {})
       return UNGOVERNED if side.nil? || side.project.status != "live"
 
-      context = { cwd: side.cwd, ledger: side.ledger, global: side.global, tool: "plan", policies: { side.id => side.policy } }
+      context = { cwd: side.cwd, ledger: side.ledger, global: side.global, tool: "plan", policies: { side.id => side.policy } }.merge(extra)
       verdict = Engine.explain([action], side.target, context).verdict
       Outcome.new(verdict.level, verdict.rule_id)
     rescue StandardError => e
@@ -135,7 +135,17 @@ module Polispec
     end
 
     def outcomes(side, actions)
-      actions.map { |_label, action| judge(side, action) }
+      return actions.map { |_label, action| judge(side, action) } if side.nil? || side.project.status != "live"
+
+      PolicySource.memoize do
+        extra = begin
+          entry = side.ledger.project(side.id)
+          { roster: entry ? PolicySource.load_roster(entry) : nil }
+        rescue StandardError
+          {}
+        end
+        actions.map { |_label, action| judge(side, action, extra) }
+      end
     end
 
     def compare(actions, old, new)

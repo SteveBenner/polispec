@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.1] - 2026-10-24
+
+### Fixed
+- `plan global` (and so `exceptions add`, which plans and applies the global shelf) no longer takes tens of minutes and hundreds of megabytes on a host with a large judgment log. The journal replay in `lib/polispec/plan.rb` re-read and re-parsed the whole 14 day window once for each ledger project, then judged each distinct replayed action on both sides with a `git rev-parse` of the roster and uncached lookups for every one. The plan now reads the window once per plan (`journal_rows_for` indexes it by project), `lib/polispec/journal.rb` and `lib/polispec/judgments.rb` stream it a record at a time instead of holding every record and every row at once (`Judgments.each_recent`), and `lib/polispec/probes.rb` resolves the project roster once per side and runs the side's batch inside `PolicySource.memoize`. The rows, their order, the verdicts and the plan output are unchanged; no replayed action is dropped or capped, so a loosening in the replay is still found.
+
 ## [0.44.0] - 2026-10-24
 
 ### Added

@@ -8,7 +8,9 @@ module Polispec
     module_function
 
     def recent(now = Time.now)
-      Judgments.rows(Judgments.recent(now))
+      rows = []
+      Judgments.each_recent(now) { |entry| rows.concat(Judgments.rows([entry])) }
+      rows
     end
 
     def home_relative(path)
