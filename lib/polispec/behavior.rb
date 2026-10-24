@@ -102,7 +102,7 @@ module Polispec
       end
       data.fetch("surfaces", {}).each do |name, surface|
         pointer = "/surfaces/#{name}"
-        errors << Schema::Error.new("#{pointer}/template", "is required for #{surface['kind']} surfaces") if surface["kind"] != "rows" && !surface["template"]
+        errors << Schema::Error.new("#{pointer}/template", "is required for #{surface['kind']} surfaces") if !%w[rows policy_json locale].include?(surface["kind"]) && !surface["template"]
         %w[target template].each do |key|
           next unless surface[key]
 
