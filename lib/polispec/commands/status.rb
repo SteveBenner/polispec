@@ -16,11 +16,11 @@ module Polispec
       json = args.delete("--json")
       return usage unless args.length <= 1
 
-      ledger = Ledger.load
+      ledger = Polispec::Trace.step("load ledger") { Ledger.load }
       projects = args.empty? ? ledger.projects : [ledger.project(args.first)].compact
       raise Polispec::Operator::Failure.new("unknown_project", "#{args.first} is not in the ledger") if projects.empty? && !args.empty?
 
-      report = { "ledger" => ledger.path, "enforce" => Engine::Settings.enforce_mode, "projects" => projects.map { |project| describe(ledger, project) } }
+      report = { "ledger" => ledger.path, "enforce" => Engine::Settings.enforce_mode, "projects" => projects.map { |project| Polispec::Trace.step("describe project", project: project.id) { describe(ledger, project) } } }
       json ? puts(JSON.generate(report)) : print_text(report)
       0
     rescue Polispec::Operator::Failure => e

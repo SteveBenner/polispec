@@ -53,6 +53,8 @@ module Polispec
         end
 
         def run(argv)
+          Trace.command(argv)
+          started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           stdin, stdout_io, stderr_io, waiter = Open3.popen3(*argv, pgroup: true)
           stdin.close
           stdout_reader = bounded_reader(stdout_io)
@@ -61,11 +63,13 @@ module Polispec
             terminate(waiter)
             stdout_reader.join(0.5)
             stderr_reader.join(0.5)
+            Trace.exit_line(-1, (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000, timed_out: true) if Trace.on?
             return { "status" => "timeout", "exit_status" => nil, "stdout" => stdout_reader[:content].to_s, "stderr" => stderr_reader[:content].to_s }
           end
           stdout_reader.join(0.5)
           stderr_reader.join(0.5)
           status = waiter.value
+          Trace.exit_line(status.exitstatus || -1, (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000) if Trace.on?
           {
             "status" => status.success? ? "success" : "failed",
             "exit_status" => status.exitstatus,

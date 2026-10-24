@@ -94,6 +94,7 @@ module Polispec
       Lint.guard_write!(text, path: file, kind: "ledger")
       File.write(file, text)
       File.chmod(0o600, file)
+      Trace.info("proposal written", path: Trace.path(file), bytes: text.bytesize)
       file
     end
 
@@ -127,9 +128,11 @@ module Polispec
     def propose_register(ledger, path, id:, kind:, description:, dry: false)
       refuse_restricted!
       refuse_behind! unless dry
+      Trace.info("registration checks", edition_restricted: "no", runtime_behind: runtime_behind? ? "yes" : "no", kind: kind)
       raise Operator::Failure.new("kind_invalid", "kind must be one of #{KINDS.join(', ')}") unless KINDS.include?(kind)
 
       absolute = File.expand_path(path)
+      Trace.info("path resolved", given: path, absolute: Trace.path(absolute), exists: File.exist?(absolute) ? "yes" : "no")
       raise Operator::Failure.new("path_missing", "#{absolute} does not exist") unless File.exist?(absolute)
 
       if kind == "system"
@@ -137,9 +140,11 @@ module Polispec
         raise Operator::Failure.new("system_path_invalid", "kind system registers the home directory #{home} only", "path" => absolute) unless absolute == home
       end
       id ||= default_id(absolute)
+      Trace.info("id chosen", id: id)
       raise Operator::Failure.new("id_invalid", "#{id} is not a valid id (lowercase letters, digits and hyphens, at most 41 characters)") unless id.match?(ID_PATTERN)
 
       owner_of = ledger.locate(absolute)
+      Trace.info("ownership", inside_project: owner_of ? owner_of.project.id : "none", id_taken: ledger.entry(id) ? "yes" : "no")
       raise Operator::Failure.new("inside_project", "#{absolute} is inside the ledgered project #{owner_of.project.id}; the project's own policy governs it", "project" => owner_of.project.id) if owner_of
       raise Operator::Failure.new("id_collision", "#{id} is already in the ledger") if ledger.entry(id)
 
@@ -154,6 +159,7 @@ module Polispec
     def propose_unregister(ledger, id, dry: false)
       refuse_behind! unless dry
       entry = ledger.path_entry(id)
+      Trace.info("path entry", id: id, found: entry ? "yes" : "no", status: entry && entry.status)
       raise Operator::Failure.new("path_unknown", "#{id} is not a registered path") unless entry
       raise Operator::Failure.new("already_retired", "#{id} is already retired") if entry.status == "retired"
 

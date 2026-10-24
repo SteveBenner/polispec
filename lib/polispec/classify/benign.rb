@@ -16,6 +16,7 @@ module Polispec
       GIT_BRANCH_FLAGS = %w[--list -l -a --all -r --remotes -v -vv --verbose].freeze
       GIT_CONFIG_READ = %w[--get --get-all --get-regexp --list -l].freeze
       GIT_CONFIG_SCOPE = %w[--global --local --system --worktree --show-origin --show-scope --null -z --name-only].freeze
+      VERBOSE_FLAG = /\A(?:-v|--verbose(?:=(?:text|json))?)\z/.freeze
       JSON_FLAG = { "--json" => false }.freeze
       POLISPEC_READ = {
         "version" => [nil, {}],
@@ -201,8 +202,13 @@ module Polispec
         plain?(cmd)
       end
 
+      def without_verbose(args)
+        stop = args.index("--") || args.length
+        args.each_with_index.reject { |arg, index| index < stop && VERBOSE_FLAG.match?(arg) }.map(&:first)
+      end
+
       def polispec?(cmd)
-        args = cmd.args
+        args = without_verbose(cmd.args)
         verb = args.first
         entry = POLISPEC_READ[verb]
         return false unless entry

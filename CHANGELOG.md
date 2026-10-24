@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-10-24
+
+### Added
+- `--verbose[=text|json]`, `-v` and `POLISPEC_VERBOSE=1|text|json`: stream what an operation does while it does it, on stderr. Each step is a nested, timestamped line (`>` opens, `+` closes with its duration, `!` closes failed with the reason, `-` is a fact with `key=value` fields); each git call and child process is a `$` line, its output arrives line by line as the child writes it (`|` stdout, `2|` stderr) and its exit status and duration are an `=` line. A test deploy that runs the full smoke suite now shows its progress instead of waiting. `--verbose=json` writes the same events as NDJSON, one object per line (`{v: 1, ts, t, depth, event, ...}` with `begin`, `step`, `info`, `command`, `exit`, `output`, `end`). Stdout, `--json` documents and exit statuses are the same with and without the flag, and without it nothing is traced.
+- Coverage. Promote and deploy: project and policy load, git calls, every gate and its result, the plan, the typed-phrase wait, tag, atomic push and branch advance, the release call, each after step, and for a deploy the checkout, drain phases, steps, activation, each health poll, a swap and a rollback. Rulebook changes: `exceptions add|promote|remove`, `plan` and `apply` for every target (each file written with its bytes and sha, the commit, the change record), `register`, `unregister`, `ledger init`, `settings`, `manifest --write`, `agents render`, `behavior`, `specs`, `roster`, `pause`, `allow-once`, `delegate`, `code`. Install lifecycle: `pin`, `install`, `uninstall`, `uninstall --all`, `restore`, `steward`, `deployments --scan`, `harness`, `seal`, `plane`, `hook git install|uninstall`. Diagnostics: each `doctor` check, each `lint` target, `status`, `digest`, and `smoke run` (a step per scenario step; a passing step is counted, a failing step shows its failed checks and the first 40 lines of its output).
+- `Polispec::Trace`, the one facility behind it (`lib/polispec/trace.rb`, `trace/stream.rb`, `trace/logfile.rb`): `step`, `info`, `command`, `exit_line`, `output`, `drain`, and `capture3|capture2|capture2e` as drop-in replacements for the `Open3` methods that stream when the trace is on and call `Open3` unchanged when it is off. The `hook` and `code-hook` verbs ignore the flag and the variable, so the guard never writes to stderr because of either.
+- Trace file. While a run is verbose and `polispec.verbose.trace` is on (the default), the trace is also written to `<state home>/trace/<UTC stamp>-<verb>-<pid>.log` (`.ndjson` in JSON mode), directory 0700, file 0600, capped at 8 MiB, with files older than 14 days and all but the newest 63 removed at the start of a verbose run. It is written only when the state home exists. `polispec.verbose.trace off` writes no file.
+- `--verbose` is a grantable delegation flag: `polispec delegate grant ... --flags --dry-run,--json,--tag,--verbose` lets an application pass `--verbose` or `--verbose=json` (also `--verbose=text`) to `promote`, `deploy` and the exceptions verbs; the default grant flags are unchanged, and the stream reaches the application through the run log it already reads. `schemas/delegate_grants.v1.yml` admits `--verbose` in `flags`.
+- Smoke scenario `smoke/scenarios/verbose.yml` (unit `verbose`): flag off, `lint --verbose`, `--verbose=json` parsed line by line, a promote to test with the gates and the push, `exceptions add` through the typed phrase, the hook silent with `POLISPEC_VERBOSE=1`, the variable on a normal verb, and an unknown format as a usage error.
+
+### Changed
+- `Classify::Benign` ignores `--verbose`, `--verbose=text|json` and `-v` before it reads a verb's flags, so `polispec doctor --verbose` and `polispec --verbose status` stay benign reads; `polispec --verbose promote P --to stable` is still classified as a promotion to prod.
+- `polispec help` gains one line for the flag. `polispec settings list` shows `polispec.verbose.trace`.
+- `Operator::Gates.exec` reads the child's output through `Trace.drain` when the trace is on, and `Operator::Git`, `Git.clone`, `Deploy.clone_release`, `NativePin`, `UninstallAll`, `Stewardship`, `Deployments`, the lint target collector and the smoke host copy call `Trace.capture*` instead of `Open3`; with the trace off each is the same call as before.
+
+### Notes
+- A bare `-v` or `--verbose` that is the value of another flag is read as the flag; pass such a value as `--note=-v`, or name `--verbose` in a grant as part of a comma list. A runtime older than 0.44.0 rejects `--verbose` as an unknown flag (exit 2), so an application must not pass it to a delegate runner on an older host.
+- Not yet traced: `contract` (its runner and process-group timeout), `smoke live`, the baseline and controls writes of `code`, the relink wait of `specs link`, and the git calls of `agents render` and `manifest` that go through `Environments.git` (see TODO.md).
+
 ## [0.43.0] - 2026-10-24
 
 ### Added

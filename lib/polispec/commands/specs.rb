@@ -22,7 +22,11 @@ module Polispec
         return usage unless %w[link status promote].include?(verb)
         return usage if dry_run && verb != "link"
 
-        result = verb == "link" ? Code::Admin.link(repo, dry_run: dry_run) : Code::Admin.public_send(verb, repo)
+        Trace.info("specs repo", repo: Trace.path(repo), dry_run: (dry_run if verb == "link")) if Trace.on?
+        result = Trace.step("specs #{verb}", repo: (Trace.path(repo) if Trace.on?)) do
+          verb == "link" ? Code::Admin.link(repo, dry_run: dry_run) : Code::Admin.public_send(verb, repo)
+        end
+        Trace.info("specs result", link: result["link"], changed: result["changed"], target: result["target"], stable: result["stable"].to_s[0, 12], from: result["from"].to_s[0, 12], to: result["to"].to_s[0, 12]) if Trace.on? && result.is_a?(Hash)
         json ? puts(JSON.generate(result)) : print_text(verb, result)
         0
       rescue Operator::Tty::NotTty => e

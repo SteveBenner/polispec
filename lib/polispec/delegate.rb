@@ -17,7 +17,7 @@ module Polispec
     MAX_GRANTS = 16
     MAX_BYTES = 16_384
     FLAGS_DEFAULT = %w[--dry-run --json --tag].freeze
-    FLAGS_ALLOWED = %w[--dry-run --json --tag --waive-soak --skip-drain].freeze
+    FLAGS_ALLOWED = %w[--dry-run --json --tag --waive-soak --skip-drain --verbose].freeze
     SCHEMA = "polispec.delegate_grants/v1"
 
     class NoAnswer < Polispec::Error; end

@@ -1,0 +1,76 @@
+schema: polispec.smoke-scenario/v1
+unit: verbose
+summary: --verbose streams a nested text trace to stderr and --verbose=json streams NDJSON events, promote and exceptions add show their steps while they run, POLISPEC_VERBOSE turns the trace on for a normal verb, the hook never traces, and an unknown format is a usage error
+fixture:
+  global: example
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+      files:
+        "lib/app.rb": "puts 1\n"
+        "VERSION": "0.1.0\n"
+steps:
+  - name: the health placeholder is replaced by the command true and stable is published
+    run: [sh, -c, 'sed -i "s/run: polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml/run: \"true\"/" specs/polispec/environments.yml && git add specs/polispec/environments.yml && git commit -q -m health -- specs/polispec/environments.yml && git push -q origin main main:stable && git fetch -q origin && git branch -f stable origin/stable && echo 0.2.0 > VERSION && git add VERSION && git commit -q -m bump -- VERSION && git push -q origin main && git rev-parse main stable']
+    cwd: "{{project.shop}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+  - name: without the flag status writes no trace to stderr
+    run: [sh, -c, '"$0" status shop 2>&1 >/dev/null | wc -l', "{{polispec}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["0"]
+  - name: lint with --verbose streams its steps to stderr
+    run: ["{{polispec}}", lint, --verbose]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ["polispec lint:", "0 errors"]
+      stderr_includes: ["# trace polispec", "lint pid", "> collect targets", "# done exit 0"]
+  - name: --verbose=json streams one json event per line with a begin and an end
+    run: [sh, -c, '"$0" lint --verbose=json 2>&1 >/dev/null | ruby -rjson -e "ev = STDIN.each_line.map { |l| JSON.parse(l) }; puts \"events=#{ev.size}\"; puts \"kinds=#{ev.map { |e| e[\"event\"] }.uniq.sort.join(\",\")}\""', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ["kinds=", "begin", "end"]
+  - name: promote to test with --verbose streams the gates, the publish and the push
+    run: ["{{polispec}}", promote, shop, --to, test, --verbose]
+    expect:
+      exit: 0
+      stdout_includes: ["promoted: shop to test at ", "(v0.2.0, actor agent)", "gate G-CLEAN: pass"]
+      stderr_includes: ["> gates", "> gate G-CLEAN", "> publish", "$ git", "push", "# done exit 0"]
+  - name: a git shelf is prepared for the exceptions step
+    run: [sh, -c, 'mkdir -p "$1/polispec" && cp "$2/global.yml" "$1/polispec/global.yml" && git -C "$1" init -q && git -C "$1" add -A && git -C "$1" commit -q -m init && git -C "$1" log --oneline', sh, "{{scratch}}/shelf", "{{global}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["init"]
+  - name: exceptions add with the typed phrase and --verbose streams the write and the apply
+    run: [env, -u, POLISPEC_GLOBAL, "{{polispec}}", exceptions, add, --command, "make deploy*", --global, --note, verbose, --verbose]
+    env: { RPLUGIN_POLISPEC_POLISPEC_GLOBAL_REPO: "{{scratch}}/shelf" }
+    tty: ["exceptions add aex_3ab7336be53e"]
+    expect:
+      exit: 0
+      stdout_includes: ["> preflight", "> waiting for the typed phrase on the terminal", "> write exceptions.yml", "> apply global", "> record change", "# done exit 0"]
+  - name: the hook is silent even with POLISPEC_VERBOSE set
+    run: [sh, -c, 'printf %s "$1" | "$0" hook pretool --harness claude 2>&1 >/dev/null | wc -l', "{{polispec}}", '{"hook_event_name":"PreToolUse","session_id":"s","cwd":"{{project.shop}}","tool_name":"Bash","tool_input":{"command":"ls"}}']
+    env: { POLISPEC_VERBOSE: "1" }
+    expect:
+      exit: 0
+      stdout_includes: ["0"]
+  - name: POLISPEC_VERBOSE reaches a normal verb through the environment
+    run: ["{{polispec}}", lint]
+    cwd: "{{project.shop}}"
+    env: { POLISPEC_VERBOSE: "1" }
+    expect:
+      exit: 0
+      stderr_includes: ["# trace polispec", "> collect targets", "# done exit 0"]
+  - name: an unknown format is a usage error
+    run: ["{{polispec}}", lint, --verbose=xml]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 2
+      stderr_includes: ["--verbose takes text or json"]

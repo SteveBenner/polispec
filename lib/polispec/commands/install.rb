@@ -41,7 +41,9 @@ module Polispec
     end
 
     def perform(harness, options)
-      NativeInstall.install(harness, scope: options[:scope], project: options[:project], force: options[:force], dry_run: options[:dry_run])
+      Trace.step("#{self.class::VERB} #{harness}", scope: options[:scope], project: Trace.on? ? Trace.path(options[:project]) : nil, force: options[:force], dry_run: options[:dry_run]) do
+        NativeInstall.install(harness, scope: options[:scope], project: options[:project], force: options[:force], dry_run: options[:dry_run])
+      end
     end
 
     def parse(args)

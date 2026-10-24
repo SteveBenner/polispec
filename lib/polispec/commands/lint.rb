@@ -19,6 +19,7 @@ module Polispec
 
       roots = options.roots
       roots = [default_root] if roots.empty? && options.files.empty? && !options.host && !options.shipped
+      Polispec::Trace.info("lint options", roots: roots.map { |root| Polispec::Trace.path(root) }, files: options.files.length, host: options.host, shipped: options.shipped, only: options.only, strict: options.strict, json: options.json) if Polispec::Trace.on?
       report = Lint.run(roots: roots, files: options.files, host: options.host, shipped: options.shipped, only: options.only)
       strict = options.strict || Engine::Settings.lint_strict?
       ok = report.ok?(strict)

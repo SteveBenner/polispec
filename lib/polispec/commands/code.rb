@@ -78,13 +78,19 @@ module Polispec
       end
 
       def pack(opts)
-        Code::Pack.load(ref: opts.ref, repo: opts.repo && File.expand_path(opts.repo))
+        Trace.step("load spec pack", ref: opts.ref, repo: (Trace.path(File.expand_path(opts.repo)) if opts.repo && Trace.on?)) do
+          loaded = Code::Pack.load(ref: opts.ref, repo: opts.repo && File.expand_path(opts.repo))
+          Trace.info("pack loaded", source: loaded.source.label, specs: loaded.specs.length, policies: loaded.nodes.length) if Trace.on?
+          loaded
+        end
       end
 
       def verb_detect(opts)
         return usage unless opts.rest.length == 1
 
-        language = Code::Detector.new(pack(opts)).detect(File.expand_path(opts.rest.first))
+        detector = Code::Detector.new(pack(opts))
+        language = Trace.step("detect language", file: (Trace.path(File.expand_path(opts.rest.first)) if Trace.on?)) { detector.detect(File.expand_path(opts.rest.first)) }
+        Trace.info("language", language: language)
         opts.json ? puts(JSON.generate("file" => opts.rest.first, "language" => language)) : puts(language)
         0
       end
@@ -94,8 +100,9 @@ module Polispec
 
         loaded = pack(opts)
         target = opts.rest.first
-        language = File.exist?(target) ? Code::Detector.new(loaded).detect(File.expand_path(target)) : target
-        chain = Code::Chain.for(loaded, language)
+        language = File.exist?(target) ? Trace.step("detect language", file: (Trace.path(File.expand_path(target)) if Trace.on?)) { Code::Detector.new(loaded).detect(File.expand_path(target)) } : target
+        chain = Trace.step("resolve spec chain", language: language) { Code::Chain.for(loaded, language) }
+        Trace.info("chain", digest: chain.digest, specs: chain.spec_paths.length, rules: chain.rules.length) if Trace.on?
         if opts.json
           puts JSON.generate("language" => language, "digest" => chain.digest, "specs" => chain.spec_paths, "rules" => chain.rules.map(&:id))
           return 0
@@ -180,7 +187,8 @@ module Polispec
         loaded = pack(opts)
         after = File.read(file).force_encoding(Encoding::UTF_8)
         before = opts.before ? File.read(File.expand_path(opts.before)).force_encoding(Encoding::UTF_8) : nil
-        verdict = Code::Checker.new(loaded).check(file, after, before: before)
+        verdict = Trace.step("check file", file: (Trace.path(file) if Trace.on?), compared: !before.nil?) { Code::Checker.new(loaded).check(file, after, before: before) }
+        Trace.info("check result", language: verdict.language, chain: verdict.chain_digest[7, 12], findings: verdict.findings.length, blocked: verdict.blocked, deferred: verdict.deferred.length, errors: verdict.errors.length) if Trace.on?
         if opts.json
           puts JSON.generate(verdict.to_h)
         else
@@ -202,7 +210,8 @@ module Polispec
 
       def verb_validate(opts)
         loaded = pack(opts)
-        problems = Code::Validator.new(loaded).call
+        problems = Trace.step("validate pack") { Code::Validator.new(loaded).call }
+        Trace.info("validation", problems: problems.length)
         if opts.json
           puts JSON.generate("ref" => loaded.source.label, "ok" => problems.empty?, "problems" => problems.map(&:to_h))
         elsif problems.empty?
@@ -221,7 +230,8 @@ module Polispec
         toplevel = Code::Repo.root(root)
         raise Code::Error, "#{root} is not inside a git repository" unless toplevel
 
-        Code::Baseline.scan(toplevel, pack(opts), force: opts.force)
+        baseline_pack = pack(opts)
+        Trace.step("scan baseline", repo: (Trace.path(toplevel) if Trace.on?), force: opts.force) { Code::Baseline.scan(toplevel, baseline_pack, force: opts.force) }
         0
       end
 
@@ -229,9 +239,10 @@ module Polispec
         loaded = pack(opts)
         raise Code::Error, "unknown policy id #{opts.policy}" if opts.policy && !loaded.nodes.key?(opts.policy)
 
-        outcomes = Code::Controls.new(loaded).run(spec: opts.spec, policy: opts.policy)
-        Code::Controls.record(loaded, outcomes) unless opts.spec || opts.policy
+        outcomes = Trace.step("run negative controls", spec: opts.spec, policy: opts.policy) { Code::Controls.new(loaded).run(spec: opts.spec, policy: opts.policy) }
+        Trace.step("record controls") { Code::Controls.record(loaded, outcomes) } unless opts.spec || opts.policy
         failed = outcomes.select { |outcome| outcome.status == :fail }
+        Trace.info("controls", ok: outcomes.count { |o| o.status == :ok }, failed: failed.length, skipped: outcomes.count { |o| o.status == :skip }) if Trace.on?
         if opts.json
           puts JSON.generate("ref" => loaded.source.label, "ok" => failed.empty?, "controls" => outcomes.map { |outcome| { "policy" => outcome.rule.id, "status" => outcome.status, "message" => outcome.message } })
         else
@@ -249,26 +260,30 @@ module Polispec
         case what
         when "rubocop" then generate_rubocop(loaded, opts)
         when "directives" then generate_directives(loaded, opts)
-        else puts Code::Generate.skill(loaded)
+        else puts Trace.step("generate skill") { Code::Generate.skill(loaded) }
         end
         0
       end
 
       def generate_rubocop(loaded, opts)
-        yaml = Code::Generate.rubocop(loaded)
+        yaml = Trace.step("generate rubocop") { Code::Generate.rubocop(loaded) }
         if opts.stdout || loaded.source.kind != :dir
           puts yaml
         else
           target = File.join(loaded.source.root, "enforcers", "rubocop", "base.yml")
-          Lint.guard_write!(yaml, path: target)
-          FileUtils.mkdir_p(File.dirname(target))
-          File.write(target, yaml)
+          Trace.step("write rubocop base.yml", path: (Trace.path(target) if Trace.on?)) do
+            Lint.guard_write!(yaml, path: target)
+            FileUtils.mkdir_p(File.dirname(target))
+            File.write(target, yaml)
+            Trace.info("wrote file", path: Trace.path(target), bytes: yaml.bytesize) if Trace.on?
+          end
           puts target
         end
       end
 
       def generate_directives(loaded, opts)
-        out = Code::Generate.directives(loaded)
+        out = Trace.step("generate directives") { Code::Generate.directives(loaded) }
+        Trace.info("generated", rows: out["rows"].length, files: out["files"].length) if Trace.on?
         if opts.json
           puts JSON.generate(out)
           return
@@ -308,8 +323,9 @@ module Polispec
         raise Code::Error, "#{target} defines no policy rules in this pack; classify takes a policy id, a spec path or a spec.yml file" if rules.empty?
         raise Code::Error, "the decide port is unavailable; classification needs it" unless Code::Decide.available?
 
+        Trace.info("classify targets", rules: rules.length) if Trace.on?
         rules.each do |rule|
-          proposal = Code::Classify.propose(rule)
+          proposal = Trace.step("propose classification", policy: rule.id) { Code::Classify.propose(rule) }
           puts "# #{rule.id}"
           puts proposal ? YAML.dump("execution" => proposal).sub(/\A---\n/, "") : "unclassified: the decide port gave no answer"
         end

@@ -51,6 +51,7 @@ module Polispec
     def append_jsonl(name, record)
       path = log_path(name)
       FileUtils.mkdir_p(File.dirname(path), mode: 0o700)
+      Trace.info("append #{File.basename(path)}") if Trace.on?
       line = "#{JSON.generate(record)}\n"
       File.open(path, File::WRONLY | File::APPEND | File::CREAT, 0o600) { |file| file.syswrite(line) }
       record

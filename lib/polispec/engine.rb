@@ -37,6 +37,7 @@ module Polispec
       LINT_ON_WRITE_KEY = "polispec.lint.on_write"
       LINT_DOCTOR_KEY = "polispec.lint.doctor"
       LINT_STRICT_KEY = "polispec.lint.strict"
+      VERBOSE_TRACE_KEY = "polispec.verbose.trace"
       WEB_BIND_KEY = "polispec.web.bind"
       WEB_PORT_KEY = "polispec.web.port"
       WEB_THEME_KEY = "polispec.web.theme"
@@ -110,6 +111,12 @@ module Polispec
         text(LINT_STRICT_KEY, "off").downcase == "on"
       rescue StandardError
         false
+      end
+
+      def verbose_trace?
+        text(VERBOSE_TRACE_KEY, "on").downcase != "off"
+      rescue StandardError
+        true
       end
 
       def web_bind

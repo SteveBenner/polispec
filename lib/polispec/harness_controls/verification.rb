@@ -12,6 +12,8 @@ module Polispec
 
       def call(argv, timeout: TIMEOUT, max_output: LIMIT)
         raise Polispec::Error, "probe argv must be a bounded array" unless argv.is_a?(Array) && !argv.empty? && argv.length <= 256 && argv.all? { |item| item.is_a?(String) && !item.include?("\0") }
+        Trace.command(argv)
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         input, stdout_io, stderr_io, waiter = Open3.popen3(*argv, pgroup: true)
         input.close
         stdout = reader(stdout_io, max_output)
@@ -20,11 +22,13 @@ module Polispec
           terminate(waiter)
           stdout.join(0.5)
           stderr.join(0.5)
+          Trace.exit_line(-1, (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000, timed_out: true) if Trace.on?
           return { "stdout" => stdout[:content].to_s, "stderr" => stderr[:content].to_s, "exit_status" => nil, "timed_out" => true, "output_complete" => false }
         end
         stdout.join(0.5)
         stderr.join(0.5)
         complete = !stdout.alive? && !stderr.alive?
+        Trace.exit_line(waiter.value.exitstatus || -1, (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000) if Trace.on?
         unless complete
           terminate_group(waiter.pid)
           [stdout_io, stderr_io].each { |io| io.close unless io.closed? }
@@ -77,14 +81,22 @@ module Polispec
 
       def verify(installation_id, port_set: nil, runner: nil)
         require_relative "lifecycle" unless Lifecycle.respond_to?(:receipt)
-        receipt = Lifecycle.receipt(installation_id, port_set: port_set)
+        receipt = Trace.step("read receipt", installation: installation_id) { Lifecycle.receipt(installation_id, port_set: port_set) }
         raise Lifecycle::Failure.new("installation_not_found", "installation #{installation_id} was not found") unless receipt
-        files = Files.verify_receipt(receipt)
+        files = Trace.step("check artifacts", harness: receipt["harness"]) do
+          checked = Files.verify_receipt(receipt)
+          Trace.info("artifact check", integrity: checked["integrity"], ownership: checked["ownership"], findings: Array(checked["findings"]).length)
+          checked
+        end
         backend = Backends.fetch(receipt["harness"])
         probe_context = receipt.merge("probe_root" => probe_root(receipt))
-        probes = Array(backend.probe(probe_context, runner || VerificationRunner.method(:call))).map { |row| stringify(row) }
-        plane = resolve_plane
-        environment = Environment.scan({ "read_only" => true, "requested_edition" => receipt["edition"] })
+        probes = Trace.step("native probes", harness: receipt["harness"]) do
+          rows = Array(backend.probe(probe_context, runner || VerificationRunner.method(:call))).map { |row| stringify(row) }
+          rows.each { |row| Trace.info("probe", axis: row["axis"], status: row["status"]) } if Trace.on?
+          rows
+        end
+        plane = Trace.step("resolve plane") { resolve_plane }
+        environment = Trace.step("scan environment") { Environment.scan({ "read_only" => true, "requested_edition" => receipt["edition"] }) }
         findings = Array(files["findings"])
         findings.concat(Array(receipt["plan_findings"]))
         findings.concat(probe_findings(probes, receipt["harness"]))

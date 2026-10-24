@@ -216,12 +216,12 @@ module Polispec
       end
 
       def install(dry: false)
-        @names.each { |name| install_one(name, dry) }
+        @names.each { |name| Trace.step("install git hooks #{name}", project: @project.id, dry_run: dry ? true : nil) { install_one(name, dry) } }
         0
       end
 
       def uninstall
-        @names.each { |name| uninstall_one(name) }
+        @names.each { |name| Trace.step("uninstall git hooks #{name}", project: @project.id) { uninstall_one(name) } }
         0
       end
 
@@ -252,7 +252,8 @@ module Polispec
       end
 
       def git(dir, *args)
-        out, status = Open3.capture2(GIT_ENV, "git", "-C", dir, *args, err: File::NULL)
+        read = args.include?("--get") || args.first == "rev-parse"
+        out, status = Trace.capture2(GIT_ENV, "git", "-C", dir, *args, err: File::NULL, trace: read ? :quiet : nil)
         status.success? ? out.strip : nil
       rescue SystemCallError
         nil
@@ -276,12 +277,13 @@ module Polispec
         current = File.expand_path(current, dir) if current
         recorded = git(dir, "config", "--get", "polispec.previousHooksPath")
         previous = current == shims ? (recorded || default_hooks(dir)) : (current || default_hooks(dir))
+        Trace.info("hooks path", checkout: Trace.path(dir), shim_dir: Trace.path(shims), core_hooks_path: current && Trace.path(current), previous: previous && Trace.path(previous))
         if dry
           @out.puts "would set core.hooksPath #{shims} in #{dir} (previous #{previous})"
           return
         end
 
-        write_shims(shims, previous)
+        Trace.step("write shims", dir: Trace.path(shims), hooks: HOOKS) { write_shims(shims, previous) }
         if current == shims
           @out.puts "unchanged #{name}: #{dir} already uses #{shims}"
           record_deployment(name, dir)
@@ -290,6 +292,7 @@ module Polispec
 
         git(dir, "config", "polispec.previousHooksPath", previous)
         git(dir, "config", "core.hooksPath", shims)
+        Trace.info("core.hooksPath set", before: current && Trace.path(current), after: Trace.path(shims))
         record_deployment(name, dir)
         @out.puts "installed #{name}: #{dir} hooks #{shims} (previous #{previous})"
       end
@@ -302,12 +305,14 @@ module Polispec
         return @out.puts("unchanged #{name}: #{dir} does not use #{shim_dir(name)}") unless current && File.expand_path(current, dir) == shim_dir(name)
 
         previous = git(dir, "config", "--get", "polispec.previousHooksPath")
+        Trace.info("hooks path", checkout: Trace.path(dir), core_hooks_path: Trace.path(current), previous: previous && Trace.path(previous))
         if previous.nil? || previous == default_hooks(dir)
           git(dir, "config", "--unset", "core.hooksPath")
         else
           git(dir, "config", "core.hooksPath", previous)
         end
         git(dir, "config", "--unset", "polispec.previousHooksPath")
+        Trace.info("core.hooksPath restored", after: previous.nil? || previous == default_hooks(dir) ? "unset" : Trace.path(previous)) if Trace.on?
         Deployments.retire(kind: "git_hooks", target: shim_dir(name))
         @out.puts "uninstalled #{name}: #{dir}"
       end

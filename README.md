@@ -358,6 +358,8 @@ polispec web url
 
 **Descriptions.** Since 0.35.0 every rulebook may carry a `description` beside its one-line `summary`: the prose a person reads on a card about what the rulebook governs, for whom, and what it refuses. `polispec validate` lints it without a model call and reports a warning, or an error when `polispec.description.strict` is `on`; the guard never reads it for a verdict. A policy that uses one is invalid to a runtime older than 0.35.0, so write descriptions into live rulebooks only after 0.35.0 is pinned on every host that reads them ([schema](docs/schema.md#description), [rollout](docs/operator.md#rolling-out-0340)).
 
+**Watching an operation.** Since 0.44.0 `--verbose` (or `--verbose=json`, `-v`, or `POLISPEC_VERBOSE=1`) streams what an operation does while it does it, on stderr: each step with its elapsed time, each git call and child process with its output line by line, each gate, check, write and decision. It works on promote and deploy (a test deploy that runs the full smoke suite now shows its progress), on rulebook changes such as `exceptions add`, `apply` and `settings set`, on the install lifecycle (`pin`, `install`, `uninstall`, `restore`, `harness`), and on `doctor`, `lint` and `smoke run`. Stdout, `--json` output and exit codes are the same with and without the flag, and the guard hooks ignore it. The trace is also kept in a 0600 file under the state home; environment values, tokens and the typed confirmation are never printed ([watching an operation](docs/operator.md#watching-an-operation---verbose)).
+
 **Effect and the epoch notice.** The guard follows every policy change on the next call; the epoch, the change records, and the session records show which running sessions have crossed over and what still needs a new session, a reload, or a trust review. `polispec changes list|show|verify|await` reads the chained change records, `polispec sessions list` the sessions, and `doctor` reports a stale launcher and, for Codex, an untrusted hook. On the first call of a session after its epoch changes, the hook adds one bounded line naming the change, once per session per epoch; `polispec.notice off` turns it off ([when a change takes effect](docs/effect.md), [the epoch notice](docs/operator.md#when-a-change-lands-the-epoch-notice)).
 
 ```sh
@@ -499,6 +501,7 @@ The ledger is the list of projects polispec governs on this host. `polispec inst
 | `polispec manifest <id> [--write]` / `manifest index [--publish]` | Generate a project or path manifest, commit it with its badge, and publish the host index |
 | `polispec changes list\|show\|verify\|await` / `sessions list` | The chained change records, how many running sessions crossed over, and the sessions the guard has seen |
 | `polispec editions [--check]` | Print the edition registry or check it for drift |
+| `--verbose[=text\|json]` / `-v` (any verb except `hook`) | Stream the steps, git calls, child output and decisions of the operation to stderr as it runs; `POLISPEC_VERBOSE=1\|json` does the same for one process |
 
 `specs/app.yml` is the full contract for every command.
 
@@ -523,6 +526,7 @@ Change settings with `polispec settings set <key> <value>`, which writes `~/.con
 - `polispec.lint.on_write`: `on` (default) or `off`. On, every generator that writes a structured file refuses an output with an error finding (`lint_failed`) and writes nothing; off restores the 0.41.1 behavior ([lint](docs/operator.md#linting-generated-files)).
 - `polispec.lint.doctor`: `on` (default) or `off`. On, `doctor` files the host-scope lint findings as `lint_<code>`.
 - `polispec.lint.strict`: `off` (default) or `on`. On, a warning finding makes `polispec lint` exit 1.
+- `polispec.verbose.trace`: `on` (default) or `off`. On, a run with `--verbose` also writes its trace to a 0600 file under `<state home>/trace/`; off streams to stderr only and writes no file ([watching an operation](docs/operator.md#watching-an-operation---verbose)).
 - `polispec.notice`: `on` (default) or `off`. Off stops the hook from adding the one-line epoch notice ([effect](docs/effect.md)).
 - `polispec.global.repo`, `polispec.global.ref` (default `main`), and `polispec.global.path` (default `polispec`): where the optional global shelf of shared rules, modules, and profiles is read from. Unset means no global layer. `POLISPEC_GLOBAL` points at a plain directory for scratch runs. See [schema](docs/schema.md).
 

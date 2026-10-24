@@ -94,7 +94,10 @@ module Polispec
 
       only = kind.is_a?(String) ? %w[hygiene schema] : %w[hygiene]
       errors = check_text(text, path: path, format: format, kind: kind, only: only).select(&:error?)
-      return text if errors.empty?
+      if errors.empty?
+        Trace.info("lint gate", kind: kind, path: Trace.path(path), result: "ok") if Trace.on?
+        return text
+      end
 
       first = errors.first
       shown = path.to_s.length > 80 ? File.basename(path.to_s) : path.to_s

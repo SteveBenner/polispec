@@ -228,7 +228,7 @@ Lives in the polispec state home and is written only by `polispec delegate grant
 | `grants[].token_sha256` | string | SHA-256 of the token shown once at grant time. |
 | `grants[].verbs` | list | `promote`, `deploy`, and since 0.35.0 `exceptions-add`, `exceptions-promote`, `exceptions-remove`. |
 | `grants[].projects`, `targets` | lists | Ledger project ids, and `test` and or `stable`. |
-| `grants[].flags` | list | A subset of `--dry-run`, `--json`, `--tag`, `--waive-soak`, `--skip-drain`. |
+| `grants[].flags` | list | A subset of `--dry-run`, `--json`, `--tag`, `--waive-soak`, `--skip-drain`, `--verbose` (since 0.44.0; it also admits `--verbose=text` and `--verbose=json`). |
 | `grants[].granted_at` | string | UTC timestamp. |
 
 The exceptions verbs are accepted by the schema in both editions, but `delegate grant` refuses them with `edition_excluded` and a runner refuses a request for them under lock (`exceptions.delegate_promote`).

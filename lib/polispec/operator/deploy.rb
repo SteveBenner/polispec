@@ -34,7 +34,9 @@ module Polispec
         end
         raise Failure.new("skip_drain_unsupported", "--skip-drain applies to stable only") if skip_drain && name == "test"
 
-        Gates.with_lock("deploy-#{project.id}-#{name}") { deploy(project, name, tag, confirmed, dry_run, skip_drain) }
+        Gates.with_lock("deploy-#{project.id}-#{name}") do
+          Polispec::Trace.step("deploy #{name}", project: project.id, tag: tag, dry_run: dry_run ? "yes" : nil) { deploy(project, name, tag, confirmed, dry_run, skip_drain) }
+        end
       end
 
       def deploy(project, name, tag, confirmed, dry_run, skip_drain = false)
@@ -44,16 +46,19 @@ module Polispec
         raise Failure.new("no_deploy", "policy declares no deploy steps for #{name}") unless settings.is_a?(Hash)
 
         actor = Gates.actor
-        authorize(project, name, confirmed, dry_run)
+        Polispec::Trace.step("authorize", env: name, confirmed: confirmed ? "yes" : "no") { authorize(project, name, confirmed, dry_run) }
         skipped = skip_drain && settings["drain"].is_a?(Hash) ? skip_drain!(project, dry_run) : false
+        Polispec::Trace.info("drain skipped", reason: "--skip-drain") if skipped && Polispec::Trace.on?
         settings = settings.reject { |key, _| key == "drain" } if skipped
         dir = File.join(Gates.envs_root(project.ledger), project.id, name)
         source = source_url(project)
+        Polispec::Trace.info("deploy target", dir: Polispec::Trace.path(dir), source: source, strategy: settings["strategy"] || "in_place", steps: Array(settings["steps"]).length) if Polispec::Trace.on?
         return preview(project, name, dir, source, tag, settings, actor) if dry_run
 
         record_id = Gates.new_id("dpl")
         State.append_jsonl("deploys", { "id" => record_id, "project" => project.id, "env" => name, "health" => "running", "at" => Time.now.utc.iso8601 })
-        guard = Gates::Hermetic.for(project, Gates.tier_of(project, name), record_id)
+        Polispec::Trace.info("deploys.jsonl running record", id: record_id)
+        guard = Polispec::Trace.step("hermetic guard") { Gates::Hermetic.for(project, Gates.tier_of(project, name), record_id) }
         run = begin
           settings["strategy"] == "release_dirs" ? release_flow(project, name, config, settings, dir, source, tag, guard, record_id) : in_place_flow(project, name, config, settings, dir, source, tag, guard)
         ensure
@@ -63,7 +68,10 @@ module Polispec
         pinned = config["tier"] == "prod" ? pinned_behind?(run[:git], run[:tag]) : false
         paused = paused_note(resume_failure(run[:drain]))
         detail = [run[:detail], paused].compact.join("; ")
-        record = State.append_jsonl("deploys", record_for(project, name, run[:sha], run[:tag], health, pinned, record_id, detail.empty? ? nil : detail, skipped, run[:drain]))
+        record = Polispec::Trace.step("record", id: record_id) do
+          State.append_jsonl("deploys", record_for(project, name, run[:sha], run[:tag], health, pinned, record_id, detail.empty? ? nil : detail, skipped, run[:drain]))
+        end
+        Polispec::Trace.info("deploy health", status: health["status"], detail: health["detail"]) if Polispec::Trace.on?
         result = result_for(project, name, run[:dir], run[:sha], run[:tag], run[:version], run[:outcome][:steps], health, pinned, actor, record, started)
         result["strategy"] = settings["strategy"] || "in_place"
         result["drain"] = skipped ? "skipped" : run[:drain] if skipped || run[:drain]
@@ -72,7 +80,7 @@ module Polispec
         result["retention"] = run[:retention] if run[:retention]
         result["hermetic"] = guard_summary if guard_summary
         result["ok"] = false if run[:outcome][:code]
-        record_state(project, name, run[:tag], run[:sha], pinned, record) if result["ok"]
+        Polispec::Trace.step("record state", env: name) { record_state(project, name, run[:tag], run[:sha], pinned, record) } if result["ok"]
         Events.emit("polispec.deploy", project: project.id, env: name, sha: run[:sha], tag: run[:tag], steps: run[:outcome][:steps], health: health["status"],
                                        pinned_behind: pinned, actor: actor, result: result["ok"] ? "ok" : failure_code(run[:outcome], health),
                                        **Polispec::Delegate.via_fields)
@@ -81,14 +89,15 @@ module Polispec
       end
 
       def in_place_flow(project, name, config, settings, dir, source, tag, guard)
-        git = prepare(dir, source)
+        git = Polispec::Trace.step("prepare checkout", dir: Polispec::Trace.path(dir)) { prepare(dir, source) }
         drain = []
         early = context_for(project, name, dir, "", "", nil, git, guard)
         started = drain_start(early, settings["drain"], drain)
         ctx = early
         unless started
-          sha, resolved = checkout(git, name, config, tag)
+          sha, resolved = Polispec::Trace.step("checkout") { checkout(git, name, config, tag) }
           version = Gates.version_at(git, sha)
+          Polispec::Trace.info("checked out", sha: sha.to_s[0, 12], tag: resolved, version: version) if Polispec::Trace.on?
           ctx = context_for(project, name, dir, sha, version, resolved, git, guard)
         end
         sha = ctx[:sha]
@@ -100,7 +109,7 @@ module Polispec
         elsif outcome[:code]
           { "status" => "failed", "detail" => outcome[:detail] }
         else
-          check_health(settings["health"], ctx)
+          Polispec::Trace.step("health") { check_health(settings["health"], ctx) }
         end
         { git: git, sha: sha, tag: resolved, version: version, dir: dir, outcome: outcome, health: health, drain: drain.empty? ? nil : drain, detail: outcome[:detail] }
       ensure
@@ -110,8 +119,9 @@ module Polispec
       def release_flow(project, name, config, settings, dir, source, tag, guard, record_id)
         releases = File.join(File.dirname(dir), "releases")
         FileUtils.mkdir_p(releases, mode: 0o700)
-        git, sha, resolved, release = build_release(releases, dir, source, name, config, tag, record_id)
+        git, sha, resolved, release = Polispec::Trace.step("build release") { build_release(releases, dir, source, name, config, tag, record_id) }
         version = Gates.version_at(git, sha)
+        Polispec::Trace.info("release built", release: release, sha: sha.to_s[0, 12], tag: resolved, version: version) if Polispec::Trace.on?
         target = File.join(releases, release)
         ctx = context_for(project, name, target, sha, version, resolved, git, guard)
         run = { git: git, sha: sha, tag: resolved, version: version, dir: dir }
@@ -128,17 +138,20 @@ module Polispec
                            drain: drain, detail: started[:detail])
         end
 
-        previous = swap_in(releases, dir, release)
+        previous = Polispec::Trace.step("swap in", release: release) { swap_in(releases, dir, release) }
         live = context_for(project, name, dir, sha, version, resolved, git, guard)
-        activated = run_activate(live, settings, activate)
-        health = activated ? { "status" => "failed", "detail" => activated } : check_health(settings["health"], live)
+        activated = Polispec::Trace.step("activate") { run_activate(live, settings, activate) }
+        health = activated ? { "status" => "failed", "detail" => activated } : Polispec::Trace.step("health") { check_health(settings["health"], live) }
         health = { "status" => "failed", "detail" => guard.violation } if guard&.violation
         detail = nil
         unless %w[ok unchecked].include?(health["status"]) || previous.nil? || previous == release
-          health, detail = roll_back(project, name, settings, dir, releases, previous, release, health, activate, guard)
+          health, detail = Polispec::Trace.step("roll back", failed: health["status"], previous: previous) { roll_back(project, name, settings, dir, releases, previous, release, health, activate, guard) }
+          Polispec::Trace.info("roll back result", failed: health["failed"]["status"], restored: health["restored"]["status"]) if Polispec::Trace.on?
         end
+        retention = Polispec::Trace.step("retain releases") { retain(releases, File.dirname(dir), [release, previous]) }
+        Polispec::Trace.info("retention", kept: retention["kept"], removed: retention["removed"], held: retention["held"]) if Polispec::Trace.on?
         run.merge(outcome: outcome, health: health, drain: drain.empty? ? nil : drain, activate: activate.empty? ? nil : activate, detail: detail,
-                  retention: retain(releases, File.dirname(dir), [release, previous]))
+                  retention: retention)
       ensure
         drain_resume(ctx, settings["drain"], drain) if ctx && drain
         FileUtils.rm_rf(File.join(releases, ".build-#{record_id}")) if releases
@@ -177,7 +190,7 @@ module Polispec
         argv = ["git", "clone", "--quiet"]
         argv += ["--reference", reference, "--dissociate"] if reference
         argv += [source, dest]
-        out, err, status = Open3.capture3(Git.env, *argv)
+        out, err, status = Polispec::Trace.capture3(Git.env, *argv)
         return if status.success?
 
         raise Failure.new("clone_failed", "git clone #{source} failed", "output_tail" => Git.tail([err, out].join("\n")))
@@ -232,7 +245,7 @@ module Polispec
       def run_activate(ctx, settings, log)
         Array(settings["activate"]).each do |command|
           argv = Gates.argv_for(command, ctx[:vars])
-          execution = Gates.exec(argv, chdir: ctx[:dir], env: ctx[:env], timeout: STEP_TIMEOUT)
+          execution = Polispec::Trace.step("activate step", command: argv.join(" ")) { Gates.exec(argv, chdir: ctx[:dir], env: ctx[:env], timeout: STEP_TIMEOUT) }
           log << { "command" => argv.join(" "), "exit" => execution.code, "duration_ms" => execution.duration_ms, "output_tail" => (execution.ok? ? nil : execution.tail) }.compact
           return "activate failed: #{argv.join(' ')}: #{execution.tail}" unless execution.ok?
         end
@@ -253,14 +266,18 @@ module Polispec
         run = drain_ctx(ctx, drain)
         if drain["pause"]
           argv = Gates.argv_for(drain["pause"], run[:vars])
-          execution = Gates.exec(argv, chdir: run[:dir], env: run[:env], timeout: STEP_TIMEOUT)
+          execution = Polispec::Trace.step("drain pause") { Gates.exec(argv, chdir: run[:dir], env: run[:env], timeout: STEP_TIMEOUT) }
           log << { "phase" => "pause", "command" => argv.join(" "), "exit" => execution.code }
+          Polispec::Trace.info("drain pause failed", exit: execution.code) if !execution.ok? && Polispec::Trace.on?
           return { failed: false, steps: [], code: "drain_failed", detail: "drain pause failed: #{execution.tail}" } unless execution.ok?
         end
-        waited = drain_wait(run, drain, log)
+        waited = Polispec::Trace.step("drain wait", timeout_s: drain["timeout_s"] || DRAIN_TIMEOUT) { drain_wait(run, drain, log) }
+        Polispec::Trace.info("drain wait failed", detail: waited[:detail]) if waited && Polispec::Trace.on?
         return waited if waited
 
-        drain_checks(run, drain, log)
+        checked = Polispec::Trace.step("drain checks") { drain_checks(run, drain, log) }
+        Polispec::Trace.info("drain check failed", detail: checked[:detail]) if checked && Polispec::Trace.on?
+        checked
       rescue Failure => e
         { failed: false, steps: [], code: "drain_failed", detail: e.message }
       end
@@ -283,7 +300,10 @@ module Polispec
         argv = Gates.argv_for(drain["wait"], ctx[:vars])
         limit = drain["timeout_s"] || DRAIN_TIMEOUT
         deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + limit
+        attempt = 0
         loop do
+          attempt += 1
+          Polispec::Trace.info("drain wait poll", attempt: attempt, remaining_s: (deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)).round) if Polispec::Trace.on?
           execution = Gates.exec(argv, chdir: ctx[:dir], env: ctx[:env], timeout: limit)
           if execution.ok?
             log << { "phase" => "wait", "command" => argv.join(" "), "exit" => 0 }
@@ -304,7 +324,7 @@ module Polispec
         run = drain_ctx(ctx, drain)
         argv = Gates.argv_for(drain["resume"], run[:vars])
         (RESUME_BACKOFF.length + 1).times do |attempt|
-          execution = Gates.exec(argv, chdir: run[:dir], env: run[:env], timeout: STEP_TIMEOUT)
+          execution = Polispec::Trace.step("drain resume", attempt: attempt + 1) { Gates.exec(argv, chdir: run[:dir], env: run[:env], timeout: STEP_TIMEOUT) }
           entry = { "phase" => "resume", "command" => argv.join(" "), "dir" => run[:dir].to_s, "exit" => execution.code, "attempt" => attempt + 1 }
           entry["output_tail"] = execution.tail unless execution.ok?
           log << entry
@@ -415,10 +435,10 @@ module Polispec
           raise Failure.new("checkout_conflict", "#{dir} exists and is not a git checkout") if Dir.exist?(dir) && !Dir.empty?(dir)
 
           FileUtils.mkdir_p(File.dirname(dir), mode: 0o700)
-          Git.clone(source, dir)
+          Polispec::Trace.step("clone", dir: Polispec::Trace.path(dir)) { Git.clone(source, dir) }
         end
         git = Git.new(dir)
-        git.fetch
+        Polispec::Trace.step("fetch") { git.fetch }
         git
       end
 
@@ -459,7 +479,7 @@ module Polispec
         steps = []
         Array(settings["steps"]).each do |command|
           argv = Gates.argv_for(command, ctx[:vars])
-          execution = run_command(ctx, argv, STEP_TIMEOUT)
+          execution = Polispec::Trace.step("deploy step", command: (Polispec::Trace.on? ? argv.join(" ") : nil)) { run_command(ctx, argv, STEP_TIMEOUT) }
           steps << { "command" => argv.join(" "), "exit" => execution.code, "duration_ms" => execution.duration_ms, "output_tail" => (execution.ok? ? nil : execution.tail) }.compact
           return { steps: steps, failed: true } unless execution.ok?
         end
@@ -477,7 +497,8 @@ module Polispec
         return { "status" => "unchecked", "detail" => "policy declares no health check" } unless config.is_a?(Hash)
 
         if config["run"]
-          ran = run_health(config, ctx)
+          ran = Polispec::Trace.step("health run") { run_health(config, ctx) }
+          Polispec::Trace.info("health run result", status: ran["status"], detail: ran["detail"]) if Polispec::Trace.on?
           return ran unless ran["status"] == "ok" && config["url"]
         end
         poll_health(config, ctx[:version])
@@ -499,8 +520,12 @@ module Polispec
         expect = config["expect_version"] ? version : nil
         last = "no response"
         status = "timeout"
+        attempt = 0
+        Polispec::Trace.info("health poll", url: config["url"], timeout_s: config["timeout_s"] || DEFAULT_HEALTH_TIMEOUT, expect_version: expect) if Polispec::Trace.on?
         loop do
+          attempt += 1
           ok, detail = probe(config["url"], expect)
+          Polispec::Trace.info("health probe", attempt: attempt, ok: ok ? "yes" : "no", detail: detail, remaining_s: (deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)).round) if Polispec::Trace.on?
           return { "status" => "ok", "detail" => detail } if ok
 
           last = detail

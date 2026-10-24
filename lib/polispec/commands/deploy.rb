@@ -17,6 +17,7 @@ module Polispec
         tag = extract_tag(args)
         return usage unless args.length == 2
 
+        Polispec::Trace.info("deploy options", project: args[0], env: args[1], tag: tag, dry_run: dry_run ? "yes" : nil, skip_drain: skip_drain ? "yes" : nil) if Polispec::Trace.on?
         result = Polispec::Operator::Deploy.call(args[0], args[1], tag: tag, dry_run: !dry_run.nil?, skip_drain: !skip_drain.nil?)
         json ? puts(JSON.generate(result)) : print_text(result)
         0

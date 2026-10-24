@@ -58,6 +58,7 @@ To explain a refused call, use the read-only command `polispec explain --harness
 
 - `polispec validate auto <file>` checks a policy, roster, ledger, or behavioral policy file against its schema and prints every violation with a JSON pointer. Add `--json` for machine output.
 - After generating or editing spec files, run `polispec lint` (project scope) and read its findings: a clean lint proves loader-safe YAML and agreement with source, not safe composition.
+- To watch what an operation does while it runs (promote, deploy, `exceptions add`, `apply`, `pin`, `install`, `doctor`, `smoke run`), add `--verbose` (or `--verbose=json` for NDJSON, `-v`, or `POLISPEC_VERBOSE=1`). The trace goes to stderr only; stdout, `--json` output and the exit status do not change. It never prints environment values, tokens or the typed confirmation. The `hook` verbs ignore it.
 - `polispec behavior compile <file>` emits deterministic compiled JSON and its content digest. It does not sign, publish, or install policy. The receiving application owns authentication and enforcement.
 - `polispec behavior decide <file> <event> <facts.json>` evaluates declarative deny predicates; missing facts deny. Native bindings and advisory guidance are not executed by this command.
 - `polispec version` prints the installed version.

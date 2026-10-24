@@ -99,6 +99,10 @@ module Polispec
         verb == "promote" ? promote_reason(grant, argv.drop(1)) : deploy_reason(grant, argv.drop(1))
       end
 
+      def flag_name(item)
+        item.to_s.match?(/\A--verbose=(?:text|json)\z/) ? "--verbose" : item
+      end
+
       def exceptions_locked?
         !Editions.allowed?("exceptions.delegate_promote")
       end
@@ -130,6 +134,8 @@ module Polispec
             return "flag given twice: #{name}" if values.include?(name)
 
             values << name
+          elsif flag_name(item) == "--verbose"
+            return "flag not granted: #{item}" unless Array(grant["flags"]).include?("--verbose")
           elsif item.start_with?("--")
             return "flag not granted: #{item}"
           else
@@ -173,7 +179,7 @@ module Polispec
             end
             return "target not granted: missing" if target.nil? || target.empty?
           elsif item.start_with?("--")
-            return "flag not granted: #{item}" unless FLAGS_ALLOWED.include?(item) && flags.include?(item) && item != "--tag"
+            return "flag not granted: #{item}" unless FLAGS_ALLOWED.include?(flag_name(item)) && flags.include?(flag_name(item)) && item != "--tag"
           elsif project
             return "unexpected argument: #{item}"
           else
@@ -201,7 +207,7 @@ module Polispec
             index += 1
             return "tag is not a release tag: #{rest[index]}" unless rest[index].to_s.match?(TAG)
           elsif item.start_with?("--")
-            return "flag not granted: #{item}" unless FLAGS_ALLOWED.include?(item) && flags.include?(item)
+            return "flag not granted: #{item}" unless FLAGS_ALLOWED.include?(flag_name(item)) && flags.include?(flag_name(item))
           else
             positional << item
           end

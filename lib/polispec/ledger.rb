@@ -59,7 +59,10 @@ module Polispec
     def self.create_starter!(path = default_path, dry: false)
       require_relative "operator/git"
       raise Operator::Failure.new("ledger_sealed", "the sealed plane owns the ledger at #{path}; ask the operator") if sealed_ledger?
-      return { "path" => path, "created" => false } if File.exist?(path)
+      if File.exist?(path)
+        Trace.info("ledger already present", path: Trace.path(path))
+        return { "path" => path, "created" => false }
+      end
 
       text = starter_text
       data = Schema::Document.parse(text, path)
@@ -73,6 +76,7 @@ module Polispec
       temp = "#{path}.#{Process.pid}.tmp"
       File.write(temp, text)
       File.chmod(0o600, temp)
+      Trace.info("starter ledger written", path: Trace.path(path), bytes: text.bytesize)
       if File.exist?(path)
         File.rename(temp, "#{path}.starter-#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}")
         return { "path" => path, "created" => false }
@@ -99,6 +103,7 @@ module Polispec
         overrides = HarnessControls::Plane.activation_overrides
         Array(data["projects"]).each { |entry| entry["status"] = overrides[entry["id"].to_s] if overrides.key?(entry["id"].to_s) }
       end
+      Trace.info("ledger loaded", path: Trace.path(path), projects: Array(data["projects"]).length, paths: Array(data["paths"]).length, bytes: bytes.bytesize) if Trace.on?
       new(data, path: path, digest: "sha256:#{Digest::SHA256.hexdigest(bytes)}")
     rescue Schema::Document::ParseError => e
       raise Invalid, e.message

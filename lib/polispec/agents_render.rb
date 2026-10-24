@@ -221,6 +221,7 @@ module Polispec
       File.write(temp, file[:content])
       File.chmod(mode, temp)
       File.rename(temp, file[:path])
+      Trace.info("wrote file", path: Trace.path(file[:path]), bytes: file[:content].bytesize) if Trace.on?
     end
 
     def row_in(text)

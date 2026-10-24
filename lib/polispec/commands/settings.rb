@@ -110,11 +110,11 @@ module Polispec
         warn SEALED
         return 1
       end
-      value = NativeSettings.coerce(key, raw)
+      value = Trace.step("validate key and value", key: key, value_length: (raw.to_s.length if Trace.on?)) { NativeSettings.coerce(key, raw) }
       before = Changes.epoch
-      data = NativeSettings.read
+      data = Trace.step("read settings file", path: settings_path) { NativeSettings.read }
       data[key] = value
-      file = NativeSettings.write(data)
+      file = Trace.step("write settings file", key: key) { NativeSettings.write(data) }
       Changes.record(kind: "settings.set", subject: { "key" => key }, epoch_before: before)
       puts "set #{key} = #{value} in #{file}"
       overriding = overriding_source(key)
@@ -123,19 +123,23 @@ module Polispec
     end
 
     def unset(key)
-      return 2 unless known!(key)
+      return 2 unless Trace.step("validate key and value", key: key) { known!(key) }
 
       if plane
         warn SEALED
         return 1
       end
       before = Changes.epoch
-      data = NativeSettings.read
+      data = Trace.step("read settings file", path: settings_path) { NativeSettings.read }
       data.delete(key)
-      file = NativeSettings.write(data)
+      file = Trace.step("write settings file", key: key) { NativeSettings.write(data) }
       Changes.record(kind: "settings.set", subject: { "key" => key }, epoch_before: before)
       puts "unset #{key} in #{file}"
       0
+    end
+
+    def settings_path
+      Trace.on? ? Trace.path(NativeSettings.path) : nil
     end
 
     def overriding_source(key)

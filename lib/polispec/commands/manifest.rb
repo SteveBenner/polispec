@@ -57,7 +57,7 @@ module Polispec
     end
 
     def show(id)
-      manifest = Manifest.validate!("manifest", Manifest.for(id))
+      manifest = Trace.step("compose manifest", project: id) { Manifest.validate!("manifest", Manifest.for(id)) }
       if @json
         puts JSON.generate(manifest)
       else
@@ -67,7 +67,7 @@ module Polispec
     end
 
     def write(id)
-      result = Manifest.write(id)
+      result = Trace.step("write manifest", project: id) { Manifest.write(id) }
       @json ? puts(JSON.generate({ "ok" => true }.merge(result))) : puts("polispec manifest: #{result['detail']}")
       0
     end
@@ -76,25 +76,25 @@ module Polispec
       return publish if options[:publish]
       return unpublish if options[:unpublish]
 
-      document = Manifest.validate!("index", Manifest.index)
+      document = Trace.step("compose index") { Manifest.validate!("index", Manifest.index) }
       @json ? puts(JSON.generate(document)) : puts(JSON.pretty_generate(document))
       0
     end
 
     def publish
-      result = Manifest.publish
+      result = Trace.step("publish index") { Manifest.publish }
       @json ? puts(JSON.generate({ "ok" => true }.merge(result))) : puts("polispec manifest: published #{result['entries']} entries to #{result['published']}")
       0
     end
 
     def unpublish
-      result = Manifest.unpublish
+      result = Trace.step("unpublish index") { Manifest.unpublish }
       @json ? puts(JSON.generate({ "ok" => true }.merge(result))) : puts("polispec manifest: removed #{result['unpublished']}")
       0
     end
 
     def badge(id)
-      print Manifest.badge_svg(Manifest.for(id))
+      print Trace.step("render badge", project: id) { Manifest.badge_svg(Manifest.for(id)) }
       0
     end
 

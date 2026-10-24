@@ -57,6 +57,7 @@ module Polispec
   autoload :HookMemo, File.join(LIB, "hook_memo")
   autoload :Notice, File.join(LIB, "notice")
   autoload :Chain, File.join(LIB, "chain")
+  autoload :Trace, File.join(LIB, "trace")
 
   module HarnessControls
     autoload :Contracts, File.join(LIB, "harness_controls", "contracts")

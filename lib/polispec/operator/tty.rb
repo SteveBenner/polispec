@@ -31,17 +31,19 @@ module Polispec
       end
 
       def confirm!(phrase, prompt: nil)
-        return confirm_delegated!(phrase, prompt) if delegated?
+        Trace.step("waiting for the typed phrase on the terminal", phrase: phrase) do
+          next confirm_delegated!(phrase, prompt) if delegated?
 
-        tty = console
-        raise NotTty, "this action needs an interactive terminal (a TTY on stdin and a controlling console); an agent shell cannot run it" unless tty && $stdin.tty?
+          tty = console
+          raise NotTty, "this action needs an interactive terminal (a TTY on stdin and a controlling console); an agent shell cannot run it" unless tty && $stdin.tty?
 
-        tty.puts(prompt) if prompt
-        tty.write("Type exactly: #{phrase}\n> ")
-        typed = tty.gets
-        raise PhraseMismatch, "the typed phrase did not match; nothing was done" unless typed && typed.chomp == phrase
+          tty.puts(prompt) if prompt
+          tty.write("Type exactly: #{phrase}\n> ")
+          typed = tty.gets
+          raise PhraseMismatch, "the typed phrase did not match; nothing was done" unless typed && typed.chomp == phrase
 
-        true
+          true
+        end
       end
 
       def confirm_delegated!(phrase, prompt)

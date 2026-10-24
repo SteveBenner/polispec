@@ -20,8 +20,9 @@ module Polispec
         return 2
       end
       json = args.include?("--json")
-      added = args.include?("--scan") ? Deployments.scan! : []
-      list = Deployments.with_status
+      added = args.include?("--scan") ? Trace.step("scan deployments") { Deployments.scan! } : []
+      list = Trace.step("read deployments") { Deployments.with_status }
+      Trace.info("deployments", count: list.length, added: added.length)
       if json
         puts JSON.generate({ "schema" => Deployments::SCHEMA, "added" => added.map { |entry| entry["id"] }, "entries" => list })
       else

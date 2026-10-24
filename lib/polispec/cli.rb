@@ -82,6 +82,11 @@ module Polispec
       end
 
       def run(argv)
+        argv, mode, error = extract_trace(argv)
+        if error
+          warn error
+          return 2
+        end
         verb, *rest = argv
         return help(0) if verb.nil? || %w[help --help -h].include?(verb)
         return version if %w[version --version -V].include?(verb)
@@ -89,7 +94,7 @@ module Polispec
         entry = find(verb)
         return unknown(verb) unless entry
 
-        invoke(entry, rest)
+        mode ? invoke_traced(entry, verb, rest, mode) : invoke(entry, rest)
       rescue Polispec::Error => e
         warn "polispec: #{e.message}"
         1
@@ -121,6 +126,29 @@ module Polispec
         @load_errors << [file, e.message]
       end
 
+      def extract_trace(argv)
+        wanted = ENV.key?("POLISPEC_VERBOSE") || argv.any? { |token| token.start_with?("-v", "--verbose") }
+        wanted ? Trace.extract(argv, ENV) : [argv, nil, nil]
+      end
+
+      def invoke_traced(entry, verb, args, mode)
+        owner = !Trace.on?
+        Trace.configure(mode, op: verb)
+        status = 1
+        begin
+          status = invoke(entry, args)
+        rescue Polispec::Error => e
+          warn "polispec: #{e.message}"
+          status = 1
+        rescue SystemExit => e
+          status = e.status
+          raise
+        ensure
+          Trace.finish(status) if owner
+        end
+        status
+      end
+
       def invoke(entry, args)
         klass = entry.klass
         status = klass.respond_to?(:run) ? klass.run(args) : klass.new.run(args)
@@ -147,6 +175,7 @@ module Polispec
           io.puts format("  %-12s %s", entry.name, entry.summary)
         end
         io.puts "  version                                                print the version"
+        io.puts "  --verbose[=json] | -v   stream what the operation does, on stderr (any verb except hook)"
         status
       end
     end

@@ -18,6 +18,7 @@ module Polispec
         target = extract_target(args)
         return usage unless args.length == 1 && target
 
+        Polispec::Trace.info("promote options", project: args.first, to: target, dry_run: dry_run ? "yes" : nil, waive_soak: waive_soak ? "yes" : nil) if Polispec::Trace.on?
         before = dry_run ? nil : Changes.epoch
         result = Polispec::Operator::Promote.call(args.first, to: target, dry_run: !dry_run.nil?, waive_soak: !waive_soak.nil?)
         record_change(result, before) unless dry_run
@@ -42,7 +43,7 @@ module Polispec
         project = Ledger.load.project(result["project"])
         return [] unless project && project.trust_ref == result["to"] && result["from_sha"].to_s.match?(/\A[0-9a-f]{40,64}\z/) && result["from_sha"].to_s.count("0") != result["from_sha"].to_s.length
 
-        out, status = Open3.capture2(Polispec::Operator::Git.env, "git", "-C", File.expand_path(project.repo), "diff", "--name-only", result["from_sha"], result["to_sha"], err: File::NULL)
+        out, status = Polispec::Trace.capture2(Polispec::Operator::Git.env, "git", "-C", File.expand_path(project.repo), "diff", "--name-only", result["from_sha"], result["to_sha"], err: File::NULL, trace: :quiet)
         status.success? ? out.lines.map(&:strip) : []
       rescue StandardError
         []

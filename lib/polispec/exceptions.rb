@@ -148,6 +148,7 @@ module Polispec
 
       document = Schema::Document.parse(text, FILE)
       problems = validate(document)
+      Trace.info("exceptions read", file: FILE, bytes: text.bytesize, entries: problems.empty? ? document["exceptions"].length : 0, problems: problems.length) if Trace.on?
       problems.empty? ? Result.new(document["exceptions"], [], true) : Result.new([], problems, true)
     rescue Schema::Document::ParseError => error
       Result.new([], [error.message], true)

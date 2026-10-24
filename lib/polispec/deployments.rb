@@ -76,10 +76,12 @@ module Polispec
       target = path
       require_relative "lint"
       Lint.guard_write!("#{JSON.pretty_generate(data)}\n", path: target, format: :json)
-      temporary = "#{target}.#{Process.pid}.tmp"
-      File.write(temporary, "#{JSON.pretty_generate(data)}\n")
-      File.chmod(0o600, temporary)
-      File.rename(temporary, target)
+      Trace.step("write deployments.json", path: Trace.path(target), entries: data["entries"].length) do
+        temporary = "#{target}.#{Process.pid}.tmp"
+        File.write(temporary, "#{JSON.pretty_generate(data)}\n")
+        File.chmod(0o600, temporary)
+        File.rename(temporary, target)
+      end
     end
 
     def best_effort
@@ -111,13 +113,24 @@ module Polispec
     end
 
     def record(kind:, target:, klass: nil, details: {}, source: "install")
-      best_effort { mutate { |list| upsert(list, kind: kind, target: target.to_s, klass: klass, details: stringify(details), source: source).first } }
+      best_effort do
+        mutate do |list|
+          result = upsert(list, kind: kind, target: target.to_s, klass: klass, details: stringify(details), source: source)
+          Trace.info("deployment recorded", kind: kind, target: Trace.path(target.to_s), created: result[1])
+          result.first
+        end
+      end
     end
 
     def retire(kind:, target:, backup_id: nil)
       return nil unless File.file?(path)
 
-      best_effort { mutate { |list| mark_removed(list, entry_id(kind, target.to_s), backup_id) } }
+      best_effort do
+        mutate do |list|
+          Trace.info("deployment retired", kind: kind, target: Trace.path(target.to_s))
+          mark_removed(list, entry_id(kind, target.to_s), backup_id)
+        end
+      end
     end
 
     def mark_removed(list, id, backup_id)
@@ -199,7 +212,7 @@ module Polispec
       checkout = details["checkout"].to_s
       return "gone" if checkout.empty? || !File.directory?(checkout)
 
-      out, status = Open3.capture2({ "GIT_DIR" => nil, "GIT_WORK_TREE" => nil }, "git", "-C", checkout, "config", "--get", "core.hooksPath", err: File::NULL)
+      out, status = Trace.capture2({ "GIT_DIR" => nil, "GIT_WORK_TREE" => nil }, "git", "-C", checkout, "config", "--get", "core.hooksPath", err: File::NULL, trace: :quiet)
       return "drifted" unless status.success?
 
       File.expand_path(out.strip, checkout) == target ? "present" : "drifted"
@@ -269,7 +282,7 @@ module Polispec
         end
         next unless checkout && File.directory?(checkout)
 
-        out, status = Open3.capture2({ "GIT_DIR" => nil, "GIT_WORK_TREE" => nil }, "git", "-C", checkout, "config", "--get", "core.hooksPath", err: File::NULL)
+        out, status = Trace.capture2({ "GIT_DIR" => nil, "GIT_WORK_TREE" => nil }, "git", "-C", checkout, "config", "--get", "core.hooksPath", err: File::NULL, trace: :quiet)
         next unless status.success? && File.expand_path(out.strip, checkout) == shim
 
         { kind: "git_hooks", target: shim, details: { "project" => project, "env" => env, "checkout" => checkout } }
@@ -352,7 +365,13 @@ module Polispec
     end
 
     def candidates
-      hooks_candidates + controls_candidates + git_hooks_candidates + pin_candidates + rplugin_candidates + plugin_candidates + data_candidates
+      %w[hooks controls git_hooks pin rplugin plugin data].flat_map do |kind|
+        Trace.step("scan #{kind}") do
+          found = send("#{kind}_candidates")
+          Trace.info("found", count: found.length)
+          found
+        end
+      end
     end
 
     def scan!(persist: true)
@@ -362,6 +381,7 @@ module Polispec
       mutate do |list|
         found.filter_map do |item|
           entry, added = upsert_scanned(list, item)
+          Trace.info("deployment added", kind: item[:kind], target: Trace.path(item[:target].to_s)) if added
           entry if added
         end
       end

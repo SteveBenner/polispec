@@ -17,9 +17,13 @@ module Polispec
       seconds = window_seconds(since)
       return usage unless seconds && args.empty?
 
-      ledger = Ledger.load
+      ledger = Polispec::Trace.step("load ledger") { Ledger.load }
       cutoff = Time.now - seconds
-      report = build(ledger, cutoff)
+      report = Polispec::Trace.step("read judgments", window: since) do
+        built = build(ledger, cutoff)
+        Polispec::Trace.info("digest built", projects: built.length) if Polispec::Trace.on?
+        built
+      end
       json ? puts(JSON.generate("since" => since, "projects" => report)) : print_text(since, report)
       0
     end

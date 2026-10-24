@@ -31,8 +31,8 @@ module Polispec
 
     def perform(parsed)
       spec = parsed.spec
-      refuse_sealed(spec) unless parsed.dry
-      steward(parsed) if parsed.with_stewardship && !parsed.dry
+      Trace.step("sealed check", target: spec.kind) { refuse_sealed(spec) } unless parsed.dry
+      Trace.step("stewardship") { steward(parsed) } if parsed.with_stewardship && !parsed.dry
       return package_run(parsed, dry: true) if parsed.dry && spec.kind == :package
 
       plan = Plan.build(spec)
@@ -40,9 +40,9 @@ module Polispec
         @json ? puts(plan.to_json) : plan.render_text
         return 0
       end
-      gate(plan, parsed.confirm)
+      Trace.step("confirm gate", plan_id: plan.plan_id, classification: plan.data["classification"], needs_confirm: plan.needs_confirm?, confirmed: parsed.confirm.nil? ? "no" : "yes") { gate(plan, parsed.confirm) }
       before = Changes.epoch
-      status = send("apply_#{spec.kind}", plan, parsed)
+      status = Trace.step("apply #{spec.kind}", plan_id: plan.plan_id) { send("apply_#{spec.kind}", plan, parsed) }
       record_change(spec, plan, before) if status == 0
       status
     end
@@ -55,6 +55,7 @@ module Polispec
 
     def steward(parsed)
       @stewardship = Stewardship.ensure!(quiet: @json)
+      @stewardship.each { |item| Trace.info("stewardship", step: item.number, status: item.status, detail: item.detail) } if Trace.on? && @stewardship.respond_to?(:each)
       Deployments.refresh_stewardship
     end
 
@@ -88,7 +89,7 @@ module Polispec
       options = Packages::Runner::Options.new(repo: spec.repo, variant: spec.variant, params: spec.params, commit: parsed.commit, push: parsed.push,
                                               checkouts: parsed.checkouts, dry: dry, json: @json,
                                               extra: @stewardship ? { "stewardship" => @stewardship.map(&:to_h) } : {})
-      Packages::Runner.new(package, options).run
+      Trace.step("run package", package: package.name, version: package.version, variant: spec.variant, dry: dry ? "yes" : "no") { Packages::Runner.new(package, options).run }
     end
 
     def apply_package(plan, parsed)
@@ -101,16 +102,22 @@ module Polispec
       repo = artifacts[:repo]
       git = Operator::Git.new(repo)
       branch = git.current_branch
+      Trace.info("branch", branch: branch || "detached", repo: Trace.path(repo))
       raise Operator::Failure.new("not_on_main", "HEAD is #{branch || 'detached'}, not main; apply commits on main only", "repo" => repo) unless branch == "main"
 
       dir = artifacts[:dir]
       paths = plan.data["files"].select { |item| %w[add replace].include?(item["action"]) }.map { |item| item["path"] }
-      unless artifacts[:from] == "worktree"
+      if artifacts[:from] == "worktree"
+        Trace.info("files come from the worktree; nothing is written", files: paths.length)
+      else
         paths.each do |relative|
           target = File.join(repo, relative)
-          FileUtils.mkdir_p(File.dirname(target))
-          Lint.guard_write!(artifacts[:proposed_files].fetch(dir.empty? ? relative : relative.delete_prefix("#{dir}/")), path: target) if %w[.yml .yaml .json].include?(File.extname(target).downcase)
-          write_atomic(target, artifacts[:proposed_files].fetch(dir.empty? ? relative : relative.delete_prefix("#{dir}/")))
+          text = artifacts[:proposed_files].fetch(dir.empty? ? relative : relative.delete_prefix("#{dir}/"))
+          Trace.step("write #{relative}", bytes: text.bytesize, sha: (Packages.sha(text) if Trace.on?)) do
+            FileUtils.mkdir_p(File.dirname(target))
+            Lint.guard_write!(text, path: target) if %w[.yml .yaml .json].include?(File.extname(target).downcase)
+            write_atomic(target, text)
+          end
         end
       end
       commit(git, paths, plan, project.id)
@@ -123,16 +130,22 @@ module Polispec
 
       git = Operator::Git.new(source.repo)
       branch = git.current_branch
+      Trace.info("branch", branch: branch || "detached", expected: source.ref, repo: Trace.path(source.repo))
       raise Operator::Failure.new("not_on_ref", "#{source.ref} is not checked out in #{source.repo} (HEAD is #{branch || 'detached'})") unless branch == source.ref
 
       prefix = source.path.to_s.empty? ? "" : "#{source.path}/"
       paths = plan.data["files"].select { |item| %w[add replace].include?(item["action"]) }.map { |item| item["path"] }
-      unless artifacts[:from] == "worktree"
+      if artifacts[:from] == "worktree"
+        Trace.info("files come from the worktree; nothing is written", files: paths.length)
+      else
         paths.each do |relative|
           target = File.join(source.repo, relative)
-          FileUtils.mkdir_p(File.dirname(target))
-          Lint.guard_write!(artifacts[:proposed_files].fetch(relative.delete_prefix(prefix)), path: target) if %w[.yml .yaml .json].include?(File.extname(target).downcase)
-          write_atomic(target, artifacts[:proposed_files].fetch(relative.delete_prefix(prefix)))
+          text = artifacts[:proposed_files].fetch(relative.delete_prefix(prefix))
+          Trace.step("write #{relative}", bytes: text.bytesize, sha: (Packages.sha(text) if Trace.on?)) do
+            FileUtils.mkdir_p(File.dirname(target))
+            Lint.guard_write!(text, path: target) if %w[.yml .yaml .json].include?(File.extname(target).downcase)
+            write_atomic(target, text)
+          end
         end
       end
       commit(git, paths, plan, "global")
@@ -145,13 +158,16 @@ module Polispec
       result = Schema.validate_file("ledger", artifacts[:file])
       raise Operator::Failure.new("ledger_invalid", "#{artifacts[:file]} does not validate") unless result.ok
 
-      Lint.guard_write!(bytes, path: live)
       backup = nil
-      if File.file?(live)
-        backup = File.join(File.dirname(live), "#{File.basename(live)}.bak-#{Time.now.utc.strftime('%Y%m%d%H%M%S')}")
-        FileUtils.cp(live, backup, preserve: true)
+      Trace.step("ledger update", path: Trace.path(live), bytes: bytes.bytesize) do
+        Lint.guard_write!(bytes, path: live)
+        if File.file?(live)
+          backup = File.join(File.dirname(live), "#{File.basename(live)}.bak-#{Time.now.utc.strftime('%Y%m%d%H%M%S')}")
+          FileUtils.cp(live, backup, preserve: true)
+          Trace.info("ledger backup", path: Trace.path(backup))
+        end
+        write_atomic(live, bytes, File.file?(live) ? File.stat(live).mode & 0o777 : nil)
       end
-      write_atomic(live, bytes, File.file?(live) ? File.stat(live).mode & 0o777 : nil)
       report("plan_id" => plan.plan_id, "target" => "ledger", "ledger" => live, "backup" => backup, "applied" => true)
       0
     end
@@ -164,6 +180,10 @@ module Polispec
     end
 
     def commit(git, paths, plan, label)
+      Trace.step("commit", target: label, files: paths.length) { commit_paths(git, paths, plan, label) }
+    end
+
+    def commit_paths(git, paths, plan, label)
       if paths.empty?
         report("plan_id" => plan.plan_id, "target" => plan.data["target"], "committed" => [], "detail" => "no files change")
         return 0
@@ -171,6 +191,7 @@ module Polispec
 
       git.run!("add", "--", *paths, code: "stage_failed")
       staged = git.run!("diff", "--cached", "--name-only", "--", *paths, code: "stage_failed").out.lines.map(&:chomp)
+      Trace.info("staged", files: staged.length)
       if staged.empty?
         report("plan_id" => plan.plan_id, "target" => plan.data["target"], "committed" => [], "detail" => "nothing to commit for #{label}")
         return 0

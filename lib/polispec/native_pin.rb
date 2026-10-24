@@ -12,6 +12,7 @@ module Polispec
   module NativePin
     URL_PATTERN = %r{\A(https?|ssh|git)://|\A[^/]+@[^:]+:}
     REF_PATTERN = %r{\A[0-9A-Za-z][0-9A-Za-z._/-]*\z}
+    READ_VERBS = %w[rev-parse show-ref show].freeze
 
     module_function
 
@@ -69,7 +70,8 @@ module Polispec
 
     def git(*args)
       env = { "LC_ALL" => "C", "GIT_TERMINAL_PROMPT" => "0" }
-      out, err, status = Open3.capture3(env, "git", *args)
+      mode = READ_VERBS.include?(args.first == "-C" ? args[2] : args.first) ? :quiet : nil
+      out, err, status = Trace.capture3(env, "git", *args, trace: mode)
       raise Polispec::Error, "git #{args.first(2).join(' ')} failed: #{(err.empty? ? out : err).strip.lines.last.to_s.strip}" unless status.success?
 
       out
@@ -98,6 +100,7 @@ module Polispec
 
       remote = url?(given)
       given = File.expand_path(given) unless remote
+      Trace.info("pin source", ref: ref, source: given, remote: remote, dry_run: dry_run)
       steps = []
       fetched = nil
       path = given
@@ -106,14 +109,18 @@ module Polispec
         if File.directory?(path)
           steps << "fetch tags from #{given} into #{path}"
           unless dry_run
-            git("-C", path, "fetch", "--tags", "--force", "origin")
+            Trace.step("fetch tags", source: given, into: Trace.path(path)) do
+              git("-C", path, "fetch", "--tags", "--force", "origin")
+            end
             fetched = "fetched #{given} into #{path}"
           end
         else
           steps << "clone #{given} into #{path} (bare)"
           unless dry_run
             FileUtils.mkdir_p(data_home)
-            git("clone", "--bare", "--filter=blob:none", given, path)
+            Trace.step("clone source", source: given, into: Trace.path(path)) do
+              git("clone", "--bare", "--filter=blob:none", given, path)
+            end
             fetched = "cloned #{given} into #{path}"
           end
         end
@@ -130,23 +137,28 @@ module Polispec
         return result
       end
 
-      commit = resolve(path, ref)
+      commit = Trace.step("resolve ref", ref: ref, source: Trace.path(path)) do
+        found = resolve(path, ref)
+        Trace.info("resolved", ref: ref, commit: found)
+        found
+      end
       release = File.join(releases_dir, commit)
       result["commit"] = commit
       result["release"] = release
 
       if File.directory?(release) && release_valid?(release)
         steps << "keep existing release #{release}"
+        Trace.info("release already present and valid, nothing to extract", release: Trace.path(release))
       else
         steps << "extract #{ref} (#{commit[0, 12]}) into #{release}, read-only"
-        extract!(path, commit, ref, given, release) unless dry_run
+        Trace.step("archive release", commit: commit[0, 12], into: Trace.path(release)) { extract!(path, commit, ref, given, release) } unless dry_run
       end
 
       steps << "point #{current_link} at releases/#{commit}"
-      swap_current(commit) unless dry_run
+      Trace.step("swap current link", link: Trace.path(current_link), target: "releases/#{commit}") { swap_current(commit) } unless dry_run
 
-      result["bin_link"] = link_bin!(result["notes"], steps, dry_run)
-      record_deployment(result, given) unless dry_run
+      result["bin_link"] = Trace.step("link ~/.local/bin/polispec") { link_bin!(result["notes"], steps, dry_run) }
+      Trace.step("record deployment") { record_deployment(result, given) } unless dry_run
       result
     end
 
@@ -179,11 +191,19 @@ module Polispec
       tmp = "#{release}.tmp-#{Process.pid}"
       FileUtils.mkdir_p(tmp)
       begin
+        if Trace.on?
+          Trace.command(["git", "-C", path, "archive", "--format=tar", commit])
+          Trace.command(["tar", "-x", "-C", tmp])
+          archive_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        end
         statuses = Open3.pipeline(["git", "-C", path, "archive", "--format=tar", commit], ["tar", "-x", "-C", tmp])
+        if Trace.on?
+          statuses.each { |item| Trace.exit_line(item.exitstatus || -1, (Process.clock_gettime(Process::CLOCK_MONOTONIC) - archive_started) * 1000) }
+        end
         raise Polispec::Error, "could not extract #{commit[0, 12]} from #{path}" unless statuses.all?(&:success?)
 
         version = File.read(File.join(tmp, "VERSION")).strip
-        make_read_only(tmp)
+        Trace.step("make tree read-only") { make_read_only(tmp) }
         previous = File.symlink?(current_link) ? File.readlink(current_link) : nil
         record = {
           "schema" => Runtime::NATIVE_RELEASE_SCHEMA,
@@ -192,7 +212,7 @@ module Polispec
           "commit" => commit,
           "version" => version,
           "source" => given,
-          "tree_digest" => Runtime.tree_digest(tmp),
+          "tree_digest" => Trace.step("verify tree digest") { Runtime.tree_digest(tmp) },
           "installed_at" => Time.now.utc.iso8601,
           "previous_target" => previous
         }
@@ -201,6 +221,7 @@ module Polispec
         File.chmod(0o444, file)
         File.chmod(File.stat(tmp).mode & ~0o222, tmp)
         File.rename(tmp, release)
+        Trace.info("release written", release: Trace.path(release), version: version, tree_digest: record["tree_digest"])
       rescue StandardError
         restore_writable(tmp)
         raise
@@ -248,13 +269,19 @@ module Polispec
         owned = existing && File.readlink(link).start_with?("#{data_home}/")
         unless owned
           shown = existing ? File.readlink(link) : "a regular file"
+          Trace.info("link left in place", link: Trace.path(link), points_at: shown)
           notes << "kept #{link} (points at #{shown}); the native pin is at #{target}"
           return nil
         end
-        return link if File.readlink(link) == target
+        if File.readlink(link) == target
+          Trace.info("link already current", link: Trace.path(link))
+          return link
+        end
       end
       steps << "link #{link} to #{target}"
       return link if dry_run
+
+      Trace.info("linking", link: Trace.path(link), target: Trace.path(target))
 
       FileUtils.mkdir_p(File.dirname(link))
       temporary = "#{link}.tmp-#{Process.pid}"
