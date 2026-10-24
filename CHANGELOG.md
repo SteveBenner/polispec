@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- `docs/effect.md` no longer names the release host's own paths: the AI home is written `<ai home>`, the user home `<home>`, and the host's plugin list, other hook groups, a recorded trust hash and the launcher's fixed checkout path are described generically. The findings are unchanged.
+
 ## [0.41.1] - 2026-10-23
 
 ### Fixed
