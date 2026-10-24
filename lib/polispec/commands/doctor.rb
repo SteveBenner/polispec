@@ -471,7 +471,10 @@ module Polispec
 
     def check_lint(findings)
       report = Lint.run(host: true, for_doctor: true, only: %w[schema hygiene drift refs])
+      reported = findings.select { |item| %w[layers_invalid gate_unreachable].include?(item["kind"]) }.map { |item| [item["project"], item["detail"]] }
       report.findings.each do |item|
+        next if item.code == "schema_invalid" && reported.include?([item.project, item.message])
+
         detail = "#{item.path}#{item.line ? ":#{item.line}" : ''} #{item.message}"
         entry = finding(item.project, "lint_#{item.code}", detail)
         entry = entry.merge("severity" => item.severity) unless item.severity == "error"
