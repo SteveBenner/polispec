@@ -53,10 +53,11 @@ module Polispec
         end
 
         git = Git.new(project.repo)
-        git.fetch
-        plan = plan_to_test(project, config, git, actor)
+        Polispec::Trace.step("fetch") { git.fetch }
+        plan = Polispec::Trace.step("plan") { plan_to_test(project, config, git, actor) }
+        trace_plan(plan)
         plan.started = started
-        plan.gates = Gates.run_all(Gates.effective_gates(project, "test"), context(plan))
+        plan.gates = Polispec::Trace.step("gates") { Gates.run_all(Gates.effective_gates(project, "test"), context(plan)) }
         return preview(plan) if dry_run
 
         publish(plan)
@@ -68,10 +69,12 @@ module Polispec
         stable = project.environment("prod")["branch"]
         main_tip = remote_tip(git, source)
         check_drift(git, stable, main_tip)
+        Polispec::Trace.info("drift check", stable: stable, result: "no drift") if Polispec::Trace.on?
         previous = git.rev("origin/#{target}")
         if previous
           raise Failure.new("nothing_to_promote", "#{target} already points at #{main_tip[0, 12]}") if previous == main_tip
           raise Failure.new("not_fast_forward", "#{target} (#{previous[0, 12]}) is not an ancestor of #{source} (#{main_tip[0, 12]})", "from_sha" => previous, "to_sha" => main_tip) unless git.ancestor?(previous, main_tip)
+          Polispec::Trace.info("fast-forward check", target: target, result: "ok") if Polispec::Trace.on?
         end
         version = Gates.version_at(git, main_tip)
         check_version_bump(git, version) if config["requires_version_bump"]
@@ -80,6 +83,12 @@ module Polispec
 
         Plan.new(project: project, git: git, to: "test", source_ref: source, target: target, from_sha: previous || Git::ZEROS,
                  to_sha: main_tip, version: version, tag: tag, gates: [], actor: actor)
+      end
+
+      def trace_plan(plan)
+        return unless Polispec::Trace.on?
+
+        Polispec::Trace.info("promotion plan", project: plan.project.id, to: plan.to, from: plan.from_sha.to_s[0, 12], to_sha: plan.to_sha.to_s[0, 12], version: plan.version, tag: plan.tag, source: plan.source_ref, target: plan.target, actor: plan.actor)
       end
 
       def remote_tip(git, branch)
@@ -124,15 +133,19 @@ module Polispec
         git = plan.git
         refspecs = ["#{plan.to_sha}:refs/heads/#{plan.target}"]
         refspecs << "refs/tags/#{plan.tag}" if plan.to == "test"
-        git.create_tag(plan.tag, plan.to_sha) if plan.to == "test"
-        begin
-          git.push_atomic("origin", refspecs)
-        rescue Failure
-          git.drop_tag(plan.tag, plan.to_sha) if plan.to == "test"
-          raise
+        local, record = Polispec::Trace.step("publish", target: plan.target, tag: plan.tag) do
+          git.create_tag(plan.tag, plan.to_sha) if plan.to == "test"
+          begin
+            git.push_atomic("origin", refspecs)
+          rescue Failure
+            git.drop_tag(plan.tag, plan.to_sha) if plan.to == "test"
+            raise
+          end
+          local = git.advance_branch(plan.target, plan.to_sha)
+          record = Polispec::Trace.step("record promotion") { State.append_jsonl("promotions", record_for(plan)) }
+          Polispec::Trace.info("promotions record", id: record["id"]) if Polispec::Trace.on?
+          [local, record]
         end
-        local = git.advance_branch(plan.target, plan.to_sha)
-        record = State.append_jsonl("promotions", record_for(plan))
         result = base_result(plan, record, local)
         finish(plan, result)
       end
@@ -158,8 +171,8 @@ module Polispec
         config = plan.project.promotion["to_#{plan.to}"]
         emit(plan, "ok")
         begin
-          result["release"] = release(plan, config)
-          result["deploys"] = run_after(plan, config)
+          result["release"] = Polispec::Trace.step("release") { release(plan, config) }
+          result["deploys"] = Polispec::Trace.step("after steps") { run_after(plan, config) }
         rescue Failure => e
           raise e.with_payload("promoted" => true, "to_sha" => plan.to_sha, "tag" => plan.tag, "record_id" => result["record_id"])
         end
@@ -197,17 +210,21 @@ module Polispec
         if argv[0] == "polispec" && argv[1] == "deploy"
           deploy_step(plan, argv[2..])
         else
-          execution = Gates.exec(argv, chdir: plan.project.repo)
-          raise Failure.new("after_failed", "after step #{argv.join(' ')} failed", "output_tail" => execution.tail) unless execution.ok?
+          Polispec::Trace.step("after step", command: argv.join(" ")) do
+            execution = Gates.exec(argv, chdir: plan.project.repo)
+            raise Failure.new("after_failed", "after step #{argv.join(' ')} failed", "output_tail" => execution.tail) unless execution.ok?
 
-          { "command" => argv.join(" "), "exit" => execution.code }
+            { "command" => argv.join(" "), "exit" => execution.code }
+          end
         end
       end
 
       def deploy_step(plan, args)
         project, env, *rest = args
         tag = rest.each_cons(2).find { |flag, _| flag == "--tag" }&.last
-        Deploy.call(project, env, tag: tag, confirmed: plan.to != "test")
+        Polispec::Trace.step("after step", command: "polispec deploy #{project} #{env}") do
+          Deploy.call(project, env, tag: tag, confirmed: plan.to != "test")
+        end
       end
 
       def to_hop(project, to, dry_run, started, waive_soak = false)
@@ -224,12 +241,13 @@ module Polispec
         gates = Gates.effective_gates(project, to)
         waived = waive_soak ? waive_soak!(project, to, gates, dry_run) : nil
         git = Git.new(project.repo)
-        git.fetch
-        plan = plan_to_hop(project, config, git, to, stable ? "operator" : Gates.actor)
+        Polispec::Trace.step("fetch") { git.fetch }
+        plan = Polispec::Trace.step("plan") { plan_to_hop(project, config, git, to, stable ? "operator" : Gates.actor) }
+        trace_plan(plan)
         plan.started = started
         plan.waived = waived
-        plan.preflight = Gates.run_all(Array(config["preflight"]), context(plan))
-        plan.gates = Gates.run_all(gates, context(plan), waive: waived ? %w[soaked] : [])
+        plan.preflight = Polispec::Trace.step("preflight") { Gates.run_all(Array(config["preflight"]), context(plan)) }
+        plan.gates = Polispec::Trace.step("gates") { Gates.run_all(gates, context(plan), waive: waived ? %w[soaked] : []) }
         return preview(plan) if dry_run
 
         if phrased
@@ -254,6 +272,7 @@ module Polispec
         target = project.environment(Gates.env_key(to))["branch"]
         tip = remote_tip(git, source)
         previous = git.rev("origin/#{target}")
+        Polispec::Trace.info("hop check", source: source, target: target, previous: previous.to_s[0, 12]) if Polispec::Trace.on?
         if previous
           raise Failure.new("nothing_to_promote", "#{target} already points at #{tip[0, 12]}") if previous == tip
           raise Failure.new("not_fast_forward", "#{target} (#{previous[0, 12]}) is not an ancestor of #{source} (#{tip[0, 12]})", "from_sha" => previous, "to_sha" => tip) unless git.ancestor?(previous, tip)

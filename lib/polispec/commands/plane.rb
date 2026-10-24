@@ -25,12 +25,16 @@ module Polispec
       return usage(json_requested, action) if %w[activate rollback].include?(action) && values.empty?
       return usage(json_requested, action) if action == "rollback" && values.length != 1
 
-      data = case action
-             when "status" then HarnessControls::Plane.resolve
-             when "verify" then HarnessControls::Plane.verify
-             when "activate" then HarnessControls::Plane.activate(values, dry_run: !!dry_run)
-             else HarnessControls::Plane.rollback_activation(values.first, dry_run: !!dry_run)
-             end
+      data = Trace.step("plane #{action}", projects: values.empty? ? nil : values, dry_run: dry_run ? true : nil) do
+        found = case action
+                when "status" then HarnessControls::Plane.resolve
+                when "verify" then HarnessControls::Plane.verify
+                when "activate" then HarnessControls::Plane.activate(values, dry_run: !!dry_run)
+                else HarnessControls::Plane.rollback_activation(values.first, dry_run: !!dry_run)
+                end
+        Trace.info("plane result", status: found["status"], generation: found["generation"], green: found["green"], findings: Array(found["findings"]).length) if Trace.on?
+        found
+      end
       edition = data["edition"] || data.dig("plane", "edition")
       generation = data["generation"] || data.dig("plane", "generation")
       operation_id = Digest::SHA256.hexdigest(HarnessControls::Authority.canonical_json({ "operation" => "plane.#{action}", "generation" => generation, "projects" => values.sort }))

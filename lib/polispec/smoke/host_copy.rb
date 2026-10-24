@@ -76,8 +76,8 @@ module Polispec
           FileUtils.cp_r(File.join(source.root, "."), target) if File.directory?(source.root)
         else
           spec = source.path.to_s.empty? ? source.ref : "#{source.ref}:#{source.path}"
-          tar, status = Open3.capture2("git", "-C", source.repo, "archive", "--format=tar", spec, binmode: true)
-          Open3.capture2("tar", "-x", "-C", target, stdin_data: tar, binmode: true) if status.success?
+          tar, status = Polispec::Trace.capture2("git", "-C", source.repo, "archive", "--format=tar", spec, binmode: true, trace: :quiet)
+          Polispec::Trace.capture2("tar", "-x", "-C", target, stdin_data: tar, binmode: true, trace: :quiet) if status.success?
         end
         target
       end

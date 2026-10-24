@@ -24,16 +24,21 @@ module Polispec
       @json = options[:json]
       return usage unless options[:rest].length == 1
 
-      ledger = Ledger.load
+      ledger = Trace.step("load ledger") { Ledger.load }
       before = options[:dry_run] ? nil : Changes.epoch
       target = options[:rest].first
-      if unregister
-        id = target
-        text = Registration.propose_unregister(ledger, id, dry: options[:dry_run])
-      else
-        id, text = Registration.propose_register(ledger, target, id: options[:id], kind: options[:kind] || "directory", description: options[:description], dry: options[:dry_run])
+      id = nil
+      text = nil
+      Trace.step(unregister ? "propose unregister" : "propose register", target: target, dry_run: options[:dry_run] ? "yes" : "no") do
+        if unregister
+          id = target
+          text = Registration.propose_unregister(ledger, id, dry: options[:dry_run])
+        else
+          id, text = Registration.propose_register(ledger, target, id: options[:id], kind: options[:kind] || "directory", description: options[:description], dry: options[:dry_run])
+        end
+        Trace.info("proposal ready", id: id, bytes: text.bytesize)
       end
-      file = Registration.proposal_file(id, text)
+      file = Trace.step("write proposal file", id: id) { Registration.proposal_file(id, text) }
       plan = Plan.build(Plan::SPEC.new(kind: :ledger, file: file))
       @json ? puts(plan.to_json) : plan.render_text
       if options[:dry_run]
@@ -44,7 +49,7 @@ module Polispec
       apply = ["ledger", "--from", file]
       apply.push("--confirm", options[:confirm]) if options[:confirm]
       apply << "--json" if @json
-      status = ApplyCommand.run(apply)
+      status = Trace.step("apply ledger", confirmed: options[:confirm] ? "yes" : "no") { ApplyCommand.run(apply) }
       Changes.record(kind: "register", subject: { "id" => id }, epoch_before: before) if status == 0
       status
     rescue Packages::Usage, ArgumentError => e

@@ -65,6 +65,7 @@ module Polispec
           config = project.hermetic(tier)
           return nil unless config && (Array(config["isolate"]).any? || Array(config["protected_roots"]).any?)
 
+          Polispec::Trace.info("hermetic guard", tier: tier, isolate: Array(config["isolate"]), protected_roots: Array(config["protected_roots"]).length)
           new(config, id).tap(&:prepare)
         end
 
@@ -95,6 +96,7 @@ module Polispec
           unless changed.empty?
             execution.violation = "wrote outside its location: #{changed.join(', ')}"
             @violations << execution.violation
+            Polispec::Trace.info("hermetic violation", roots: changed.length)
           end
           execution
         end
@@ -306,28 +308,32 @@ module Polispec
       end
 
       def load_project(id, bootstrap_from: nil)
-        ledger = Polispec::Ledger.load
-        entry = ledger.project(id)
-        raise Failure.new("unknown_project", "no project #{id.inspect} in #{ledger.path}") unless entry
-        raise Failure.new("retired_project", "project #{id} is retired") if entry.status == "retired"
+        Polispec::Trace.step("load project", project: id) do
+          ledger = Polispec::Ledger.load
+          entry = ledger.project(id)
+          raise Failure.new("unknown_project", "no project #{id.inspect} in #{ledger.path}") unless entry
+          raise Failure.new("retired_project", "project #{id} is retired") if entry.status == "retired"
 
-        repo = File.expand_path(entry.repo)
-        raise Failure.new("repo_missing", "project #{id} repo #{repo} is not a git checkout") unless File.exist?(File.join(repo, ".git"))
+          repo = File.expand_path(entry.repo)
+          raise Failure.new("repo_missing", "project #{id} repo #{repo} is not a git checkout") unless File.exist?(File.join(repo, ".git"))
 
-        policy, source, digest = Polispec::PolicySource.load(entry)
-        if source == "defaults" && bootstrap_from && Polispec::PolicySource.missing?(entry)
-          Git.new(repo).fetch
-          found = Polispec::PolicySource.bootstrap(entry, "origin/#{bootstrap_from}")
-          policy, source, digest = found.policy, found.source, found.digest if found
+          policy, source, digest = Polispec::PolicySource.load(entry)
+          if source == "defaults" && bootstrap_from && Polispec::PolicySource.missing?(entry)
+            Polispec::Trace.info("policy missing, bootstrapping", from: "origin/#{bootstrap_from}") if Polispec::Trace.on?
+            Git.new(repo).fetch
+            found = Polispec::PolicySource.bootstrap(entry, "origin/#{bootstrap_from}")
+            policy, source, digest = found.policy, found.source, found.digest if found
+          end
+          Polispec::Trace.info("policy", source: source, digest: digest.to_s[0, 12]) if Polispec::Trace.on?
+          usable = policy.is_a?(Hash) && policy["promotion"].is_a?(Hash) && policy["environments"].is_a?(Hash)
+          raise Failure.new("policy_unavailable", "project #{id} has no usable promotion policy (source #{source})", "policy_source" => source) unless usable
+
+          problems = health_required_errors(policy) + env_names_errors(policy) + Polispec::ValidateProfiles.errors(policy, entry, ledger: ledger)
+          problems += Polispec::Layers.policy_errors(policy, project: entry, ledger: ledger)
+          raise Failure.new("policy_invalid", problems.join("; "), "policy_source" => source, "errors" => problems) unless problems.empty?
+
+          Project.new(ledger: ledger, entry: entry, policy: policy, source: source, digest: digest, repo: repo)
         end
-        usable = policy.is_a?(Hash) && policy["promotion"].is_a?(Hash) && policy["environments"].is_a?(Hash)
-        raise Failure.new("policy_unavailable", "project #{id} has no usable promotion policy (source #{source})", "policy_source" => source) unless usable
-
-        problems = health_required_errors(policy) + env_names_errors(policy) + Polispec::ValidateProfiles.errors(policy, entry, ledger: ledger)
-        problems += Polispec::Layers.policy_errors(policy, project: entry, ledger: ledger)
-        raise Failure.new("policy_invalid", problems.join("; "), "policy_source" => source, "errors" => problems) unless problems.empty?
-
-        Project.new(ledger: ledger, entry: entry, policy: policy, source: source, digest: digest, repo: repo)
       end
 
       def with_lock(name)
@@ -335,6 +341,7 @@ module Polispec
         File.open(File.join(State.home, "operator-#{name}.lock"), File::RDWR | File::CREAT, 0o600) do |file|
           raise Failure.new("locked", "another operator command holds #{name}") unless file.flock(File::LOCK_EX | File::LOCK_NB)
 
+          Polispec::Trace.info("lock held", name: name)
           yield
         end
       end
@@ -344,9 +351,10 @@ module Polispec
         output = +""
         code = 1
         timed_out = false
+        Polispec::Trace.command(argv, chdir: chdir)
         Open3.popen2e(env, *argv, chdir: chdir) do |stdin, out, waiter|
           stdin.close
-          reader = Thread.new { out.read }
+          reader = Thread.new { Polispec::Trace.on? ? Polispec::Trace.drain(out) : out.read }
           if waiter.join(timeout)
             code = waiter.value.exitstatus || 1
           else
@@ -357,8 +365,10 @@ module Polispec
           output = reader.alive? ? "" : reader.value.to_s
           reader.kill
         end
+        Polispec::Trace.exit_line(code, now_ms - started, timed_out: timed_out)
         Execution.new(code, output, now_ms - started, timed_out)
       rescue SystemCallError => e
+        Polispec::Trace.exit_line(127, now_ms - started)
         Execution.new(127, "#{argv.first}: #{e.message}", now_ms - started, false)
       end
 
@@ -442,13 +452,19 @@ module Polispec
 
       def run_all(gates, context, waive: [])
         gates.map do |gate|
-          next { "id" => gate["id"], "result" => "waived", "duration_ms" => 0 } if gate["builtin"] && waive.include?(gate["builtin"])
+          if gate["builtin"] && waive.include?(gate["builtin"])
+            Polispec::Trace.info("gate waived", id: gate["id"], builtin: gate["builtin"])
+            next { "id" => gate["id"], "result" => "waived", "duration_ms" => 0 }
+          end
 
-          started = now_ms
-          gate["builtin"] ? builtin(gate, context) : command(gate, context)
-          result = { "id" => gate["id"], "result" => "pass", "duration_ms" => now_ms - started }
-          result["hermetic"] = false if gate["hermetic"] == false && !gate["builtin"]
-          result
+          Polispec::Trace.step("gate #{gate['id']}", builtin: gate["builtin"]) do
+            started = now_ms
+            gate["builtin"] ? builtin(gate, context) : command(gate, context)
+            result = { "id" => gate["id"], "result" => "pass", "duration_ms" => now_ms - started }
+            result["hermetic"] = false if gate["hermetic"] == false && !gate["builtin"]
+            Polispec::Trace.info("gate result", id: gate["id"], result: "pass")
+            result
+          end
         end
       end
 
@@ -457,6 +473,9 @@ module Polispec
         raise Failure.new("gate_failed", "gate #{gate['id']} has an empty command", "gate_id" => gate["id"]) if argv.empty?
 
         chdir, extra = gate_location(gate, context)
+        if Polispec::Trace.on?
+          Polispec::Trace.info("command gate", cwd: Polispec::Trace.path(chdir), dir: gate["dir"], env_from: gate["env_from"], env_names: extra.keys.sort, hermetic: gate["hermetic"] == false ? "no" : "yes")
+        end
 
         guard = gate["hermetic"] == false ? nil : Hermetic.for(context.project, tier_of(context.project, context.to), new_id("gate"))
         execution = guard ? guard.exec(argv, chdir: chdir, env: extra, timeout: DEFAULT_TIMEOUT) : exec(argv, chdir: chdir, env: extra)
@@ -509,7 +528,9 @@ module Polispec
       end
 
       def gate_clean_tree(gate, context)
-        return unless context.git.dirty?
+        dirty = context.git.dirty?
+        Polispec::Trace.info("working tree", dirty: dirty ? "yes" : "no", sha: context.sha[0, 12]) if Polispec::Trace.on?
+        return unless dirty
 
         status = context.git.run!("status", "--short").out
         raise Failure.new("gate_failed", "gate #{gate['id']}: the working tree has uncommitted changes", "gate_id" => gate["id"], "output_tail" => Git.tail(status))
@@ -518,6 +539,7 @@ module Polispec
       def gate_version_homes_agree(gate, context)
         homes = version_homes(context.git, context.sha, context.version)
         odd = homes.reject { |_, value| value == context.version }
+        Polispec::Trace.info("version homes", version: context.version, homes: homes.keys, disagreeing: odd.keys) if Polispec::Trace.on?
         return if odd.empty?
 
         listing = homes.map { |path, value| "#{path}=#{value}" }.join("\n")
@@ -557,7 +579,9 @@ module Polispec
 
       def gate_sha_ran_on(gate, context)
         env = gate_env_name(gate)
-        return if ran_on?(context.project.id, context.sha, env)
+        found = ran_on?(context.project.id, context.sha, env)
+        Polispec::Trace.info("deploy records", env: env, sha: context.sha[0, 12], healthy: found ? "found" : "none") if Polispec::Trace.on?
+        return if found
 
         raise Failure.new("untested_sha", "#{context.sha[0, 12]} never passed the #{env} health check", "gate_id" => gate["id"], "sha" => context.sha)
       end
@@ -582,6 +606,7 @@ module Polispec
         end
         cutoff = Time.now.utc - (hours * 3600)
         index = rows.index { |row| row["health"] == "ok" && recorded_at(row)&.<=(cutoff) }
+        Polispec::Trace.info("soak window", env: env, hours: hours, deploy_records: rows.length, soaked: index ? "yes" : "no") if Polispec::Trace.on?
         later_other = index && rows[(index + 1)..].any? { |row| row["health"] != "ok" }
         return if index && !later_other
 
@@ -601,6 +626,7 @@ module Polispec
 
       def gate_health_required(gate, context)
         problems = health_required_errors(candidate_policy(context))
+        Polispec::Trace.info("health required", problems: problems.length) if Polispec::Trace.on?
         return if problems.empty?
 
         raise Failure.new("gate_failed", "gate #{gate['id']}: #{problems.join('; ')}", "gate_id" => gate["id"], "output_tail" => problems.join("\n"))
@@ -676,6 +702,7 @@ module Polispec
           raise Failure.new("gate_failed", "gate #{gate['id']}: the logs count command printed a non-integer for #{service} (fails closed)", "gate_id" => gate["id"], "output_tail" => execution.tail)
         end
 
+        Polispec::Trace.info("logs count", service: service, count: text.to_i) if Polispec::Trace.on?
         text.to_i
       end
 
@@ -705,6 +732,7 @@ module Polispec
         end
 
         live = Gem::Version.new(row["tag"].to_s.sub(/\Av/, ""))
+        Polispec::Trace.info("required live version", project: other, live: live.to_s, minimum: minimum.to_s) if Polispec::Trace.on?
         return if live >= minimum
 
         raise Failure.new("not_live", "gate #{gate['id']}: #{other} runs #{row['tag']} in prod, below the required #{minimum}", "gate_id" => gate["id"], "required" => minimum.to_s)
@@ -738,6 +766,7 @@ module Polispec
 
       def gate_not_frozen(gate, context)
         windows = Array(Polispec::Freeze.active(context.project.policy, "promote.to_#{context.to}"))
+        Polispec::Trace.info("freeze windows", active: windows.length) if Polispec::Trace.on?
         return if windows.empty?
 
         first = windows.first

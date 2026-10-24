@@ -55,6 +55,7 @@ module Polispec
       TAG_PATTERN = /\Av\d+(\.\d+)*([.-][0-9A-Za-z.-]+)?\z/
       BLOCKED = %w[reset --hard --no-ff --mirror --prune-tags].freeze
       TAIL_LINES = 40
+      READ_ONLY = %w[rev-parse show merge-base ls-tree ls-files symbolic-ref describe diff cat-file config for-each-ref rev-list log status].freeze
 
       attr_reader :dir
 
@@ -71,12 +72,18 @@ module Polispec
 
       def self.clone(source, dest)
         argv = ["git", "clone", "--quiet", source, dest]
-        out, err, status = Open3.capture3(env, *argv)
+        out, err, status = Polispec::Trace.capture3(env, *argv)
         return if status.success?
 
         raise Failure.new("clone_failed", "git clone #{source} failed", "output_tail" => tail([err, out].join("\n")))
       rescue SystemCallError => e
         raise Failure.new("clone_failed", "git clone #{source} failed: #{e.message}")
+      end
+
+      def self.trace_mode(argv)
+        verb = argv.first.to_s
+        read = READ_ONLY.include?(verb) || (verb == "tag" && (argv.include?("--list") || argv.length == 1)) || (verb == "remote" && argv[1] == "get-url")
+        read ? :quiet : nil
       end
 
       def self.env
@@ -89,7 +96,7 @@ module Polispec
 
       def run(*argv)
         self.class.guard!(argv)
-        out, err, status = Open3.capture3(self.class.env, "git", "-C", dir, *argv)
+        out, err, status = Polispec::Trace.capture3(self.class.env, "git", "-C", dir, *argv, trace: self.class.trace_mode(argv))
         Result.new(out, err, status.exitstatus || 1)
       rescue SystemCallError => e
         raise Failure.new("git_unavailable", "git could not run in #{dir}: #{e.message}")
@@ -151,11 +158,15 @@ module Polispec
       end
 
       def create_tag(name, sha)
-        run!("tag", name, sha, code: "tag_failed")
+        Polispec::Trace.step("create tag", tag: name, sha: sha.to_s[0, 12]) do
+          run!("tag", name, sha, code: "tag_failed")
+        end
       end
 
       def drop_tag(name, sha)
-        run("update-ref", "-d", "refs/tags/#{name}", sha)
+        Polispec::Trace.step("drop tag", tag: name) do
+          run("update-ref", "-d", "refs/tags/#{name}", sha)
+        end
       end
 
       def dirty?
@@ -173,10 +184,12 @@ module Polispec
       end
 
       def push_atomic(remote, refspecs)
-        result = run("push", "--atomic", remote, *refspecs)
-        return result if result.ok?
+        Polispec::Trace.step("push atomic", remote: remote, refspecs: refspecs) do
+          result = run("push", "--atomic", remote, *refspecs)
+          next result if result.ok?
 
-        raise Failure.new("push_rejected", "git push #{remote} #{refspecs.join(' ')} was rejected", "output_tail" => result.tail)
+          raise Failure.new("push_rejected", "git push #{remote} #{refspecs.join(' ')} was rejected", "output_tail" => result.tail)
+        end
       end
 
       def branch_elsewhere?(branch)
@@ -193,6 +206,12 @@ module Polispec
       end
 
       def advance_branch(branch, sha)
+        result = advance_branch_result(branch, sha)
+        Polispec::Trace.info("advance branch", branch: branch, to: sha.to_s[0, 12], result: result.to_s) if Polispec::Trace.on?
+        result
+      end
+
+      def advance_branch_result(branch, sha)
         old = rev("refs/heads/#{branch}")
         return :skipped if old && branch_elsewhere?(branch)
         return :unchanged if old == sha

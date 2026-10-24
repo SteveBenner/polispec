@@ -16,13 +16,19 @@ module Polispec
       project_id, minutes, reason = parse(args)
       return usage unless project_id && minutes && reason
 
-      ledger = Ledger.load
-      project = ledger.project(project_id)
-      raise Polispec::Error, "#{project_id} is not in the ledger" unless project
+      ledger = nil
+      project = nil
+      Trace.step("load project", project: project_id) do
+        ledger = Ledger.load
+        project = ledger.project(project_id)
+        raise Polispec::Error, "#{project_id} is not in the ledger" unless project
+      end
 
       capped = [minutes, MAX_MINUTES].min
+      Trace.info("pause length", requested_minutes: minutes, minutes: capped)
       Operator::Tty.confirm!("pause #{project.id}", prompt: "Pause the guard for #{project.id} for #{capped} minutes (reason: #{reason}).")
-      record = Engine::Pauses.start!(ledger, project.id, capped, reason)
+      record = Trace.step("record pause", project: project.id) { Engine::Pauses.start!(ledger, project.id, capped, reason) }
+      Trace.info("pause recorded", project: project.id, minutes: capped, expires_at: record["expires_at"])
       Events.emit("polispec.pause", project: project.id, minutes: capped, reason: reason, expires_at: record["expires_at"], actor: "operator")
       puts "polispec: #{project.id} paused until #{record['expires_at']}#{" (capped from #{minutes})" if capped != minutes}"
       0

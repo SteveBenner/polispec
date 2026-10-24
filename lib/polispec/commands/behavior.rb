@@ -76,7 +76,15 @@ module Polispec
     end
 
     def compiled_for(path, options)
-      Behavior.compile(Behavior.load(path), root: root_for(path, options))
+      Trace.step("compile behavior", path: (Trace.path(File.expand_path(path)) if Trace.on?)) do
+        data = Trace.step("load behavior document") { Behavior.load(path) }
+        compiled = Behavior.compile(data, root: root_for(path, options))
+        if Trace.on?
+          policy = compiled["policy"] || {}
+          Trace.info("compiled", schema: compiled["schema"], digest: compiled["digest"], directives: Array(policy["directives"]).length, surfaces: policy.fetch("surfaces", {}).length)
+        end
+        compiled
+      end
     end
 
     def emit(output)
@@ -91,7 +99,7 @@ module Polispec
     end
 
     def export_package(name)
-      package = Packages.find(name)
+      package = Trace.step("find package", package: name) { Packages.find(name) }
       text = package.read("behavior.yml")
       raise Polispec::Error, "package #{name} has no behavior.yml" unless text
 
@@ -106,8 +114,10 @@ module Polispec
     def decide(path, options)
       return usage unless options[:positional].size == 2
 
-      doc = Behavior.load(path)
-      emit("digest" => Behavior.digest(doc), "decisions" => Behavior.decisions(doc, options[:positional][0], JSON.parse(File.read(options[:positional][1]))))
+      doc = Trace.step("load behavior document", path: (Trace.path(File.expand_path(path)) if Trace.on?)) { Behavior.load(path) }
+      decisions = Trace.step("decide", event: options[:positional][0]) { Behavior.decisions(doc, options[:positional][0], JSON.parse(File.read(options[:positional][1]))) }
+      Trace.info("decisions", count: decisions.length)
+      emit("digest" => Behavior.digest(doc), "decisions" => decisions)
       0
     end
 
@@ -117,18 +127,21 @@ module Polispec
       root = root_for(path, options)
       compiled = compiled_for(path, options)
       surface_id = options[:surfaces].first
-      text = Surfaces.render(compiled, surface_id, root: root)
+      text = Trace.step("render surface", surface: surface_id) { Surfaces.render(compiled, surface_id, root: root) }
+      Trace.info("rendered", surface: surface_id, bytes: text.bytesize, sha: Digest::SHA256.hexdigest(text)) if Trace.on?
       unless options[:write]
         print text
         return 0
       end
 
       target = File.join(root, Surfaces.surface(compiled, surface_id).fetch("target"))
-      Lint.guard_write!(text, path: target, format: :text)
-      FileUtils.mkdir_p(File.dirname(target))
-      temp = "#{target}.#{Process.pid}.tmp"
-      File.write(temp, text)
-      File.rename(temp, target)
+      Trace.step("write surface", path: (Trace.path(target) if Trace.on?)) do
+        Lint.guard_write!(text, path: target, format: :text)
+        FileUtils.mkdir_p(File.dirname(target))
+        temp = "#{target}.#{Process.pid}.tmp"
+        File.write(temp, text)
+        File.rename(temp, target)
+      end
       puts "wrote #{target}"
       0
     end
@@ -137,7 +150,12 @@ module Polispec
       return usage unless options[:positional].empty?
 
       root = root_for(path, options)
-      found = Surfaces.drift(compiled_for(path, options), root: root, surfaces: options[:surfaces].empty? ? nil : options[:surfaces])
+      compiled = compiled_for(path, options)
+      found = Trace.step("check drift", surfaces: options[:surfaces]) { Surfaces.drift(compiled, root: root, surfaces: options[:surfaces].empty? ? nil : options[:surfaces]) }
+      if Trace.on?
+        found.each { |item| Trace.info("drifted", surface: item["surface"], target: item["target"], expected: item["expected_sha256"].to_s[0, 12], actual: item["actual_sha256"].to_s[0, 12]) }
+        Trace.info("drift result", drifted: found.length)
+      end
       if options[:json]
         puts JSON.generate("ok" => found.empty?, "drift" => found)
       elsif found.empty?
@@ -153,7 +171,10 @@ module Polispec
 
       root = root_for(path, options)
       files = options[:corpus].flat_map { |glob| Dir.glob(File.join(root, glob)) }.select { |file| File.file?(file) }.sort.uniq
-      found = Surfaces.lint(compiled_for(path, options), files, root: root)
+      compiled = compiled_for(path, options)
+      Trace.info("corpus files", count: files.length) if Trace.on?
+      found = Trace.step("lint corpus", files: files.length) { Surfaces.lint(compiled, files, root: root) }
+      Trace.info("lint result", findings: found.length) if Trace.on?
       if options[:json]
         puts JSON.generate("ok" => found.empty?, "findings" => found)
       elsif found.empty?

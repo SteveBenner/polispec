@@ -104,6 +104,7 @@ module Polispec
       tmp = "#{file}.#{Process.pid}.tmp"
       File.open(tmp, File::WRONLY | File::CREAT | File::TRUNC, 0o600) { |handle| handle.write(body) }
       File.rename(tmp, file)
+      Trace.info("wrote settings file", path: Trace.path(file), bytes: body.bytesize, keys: hash.length) if Trace.on?
       file
     end
 
@@ -112,6 +113,7 @@ module Polispec
 
       target = "#{file}.polispec-backup-#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}"
       FileUtils.cp(file, target)
+      Trace.info("backed up settings file", backup: Trace.path(target)) if Trace.on?
       target
     end
   end

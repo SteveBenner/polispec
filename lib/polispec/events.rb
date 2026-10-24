@@ -17,6 +17,7 @@ module Polispec
     module_function
 
     def emit(type, fields = {})
+      Trace.info("emit event", type: type.to_s) if Trace.on?
       payload = shape(type.to_s, fields)
       return nil if through_port(type.to_s, payload)
 

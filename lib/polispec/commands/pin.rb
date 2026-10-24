@@ -19,7 +19,7 @@ module Polispec
 
       before = options[:dry_run] ? nil : Changes.epoch
       previous = options[:dry_run] ? nil : current_release
-      result = NativePin.pin!(ref: options[:ref], source: options[:source], dry_run: options[:dry_run])
+      result = Trace.step("pin", ref: options[:ref], dry_run: options[:dry_run] ? true : nil) { NativePin.pin!(ref: options[:ref], source: options[:source], dry_run: options[:dry_run]) }
       record_change(result, before, previous) unless options[:dry_run]
       if options[:json]
         puts JSON.generate(result.reject { |key, _| %w[steps notes].include?(key) })

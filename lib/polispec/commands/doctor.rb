@@ -31,27 +31,42 @@ module Polispec
       return usage unless args.empty?
 
       findings = []
-      ledger = load_ledger(findings)
-      check_ledger(ledger, findings) if ledger
-      check_ledger_runtime(ledger, findings) if ledger
-      check_descriptions(ledger, findings) if ledger
-      check_drain_resume(findings)
-      check_runtime(findings)
-      check_release(findings)
-      check_plane(findings)
-      check_judgments(findings)
-      check_exceptions(findings)
-      check_editions(findings)
-      check_effect(findings)
-      check_lint(findings) if Engine::Settings.lint_doctor?
-      check_contracts(ledger, findings) if ledger
-      check_personal_defaults(ledger, findings)
+      ledger = traced_check("load ledger", findings) { load_ledger(findings) }
+      traced_check("check ledger", findings) { check_ledger(ledger, findings) } if ledger
+      traced_check("check ledger runtime", findings) { check_ledger_runtime(ledger, findings) } if ledger
+      traced_check("check descriptions", findings) { check_descriptions(ledger, findings) } if ledger
+      traced_check("check drain resume", findings) { check_drain_resume(findings) }
+      traced_check("check runtime", findings) { check_runtime(findings) }
+      traced_check("check release", findings) { check_release(findings) }
+      traced_check("check plane", findings) { check_plane(findings) }
+      traced_check("check judgments", findings) { check_judgments(findings) }
+      traced_check("check exceptions", findings) { check_exceptions(findings) }
+      traced_check("check editions", findings) { check_editions(findings) }
+      traced_check("check effect", findings) { check_effect(findings) }
+      if Engine::Settings.lint_doctor?
+        traced_check("check lint", findings) { check_lint(findings) }
+      else
+        Polispec::Trace.info("skipped check lint", reason: "polispec.lint.doctor is off")
+      end
+      traced_check("check contracts", findings) { check_contracts(ledger, findings) } if ledger
+      traced_check("check personal defaults", findings) { check_personal_defaults(ledger, findings) }
       blocking = findings.reject { |item| NONBLOCKING.include?(item["severity"]) }
       json ? puts(JSON.generate("ok" => blocking.empty?, "runtime" => runtime_info, "findings" => findings)) : print_text(findings)
       blocking.empty? ? 0 : 1
     end
 
     private
+
+    def traced_check(label, findings, **fields)
+      return yield unless Polispec::Trace.on?
+
+      Polispec::Trace.step(label, **fields) do
+        before = findings.length
+        result = yield
+        Polispec::Trace.info("findings", count: findings.length - before)
+        result
+      end
+    end
 
     def load_ledger(findings)
       path = Ledger.default_path
@@ -70,7 +85,7 @@ module Polispec
 
     def check_ledger(ledger, findings)
       ledger.projects.reject { |project| project.status == "retired" }.each do |project|
-        check_project(ledger, project, findings)
+        traced_check("check project", findings, project: project.id) { check_project(ledger, project, findings) }
       end
     end
 
@@ -82,6 +97,7 @@ module Polispec
       loaded = PolicySource.resolve(project, ledger: ledger)
       findings << finding(project.id, loaded.finding["kind"], loaded.finding["detail"]) if loaded.finding
       defaults = loaded.source == "defaults"
+      Polispec::Trace.info("policy source", project: project.id, source: loaded.source, status: project.status)
       Operator::Gates.health_required_errors(loaded.policy).each { |message| findings << finding(project.id, "health_required", message) } unless defaults
       Operator::Gates.unreachable_errors(loaded.policy).each { |message| findings << finding(project.id, "gate_unreachable", message) } unless defaults
       Layers.policy_errors(loaded.policy, project: project, ledger: ledger).each { |message| findings << finding(project.id, "layers_invalid", message) }
@@ -329,6 +345,8 @@ module Polispec
         "GIT_SHALLOW_FILE" => nil, "GIT_GRAFT_FILE" => nil, "GIT_NAMESPACE" => nil,
         "GIT_CONFIG_PARAMETERS" => nil, "GIT_CONFIG_COUNT" => nil
       }
+      started = monotonic
+      Polispec::Trace.command(command)
       Open3.popen3(git_env, *command, pgroup: true) do |input, output, error, waiter|
         input.close
         output.binmode
@@ -362,6 +380,7 @@ module Polispec
         end
         waiter.join(0)
         status = waiter.value.exitstatus
+        Polispec::Trace.exit_line(status, (monotonic - started) * 1000)
       ensure
         [input, output, error].compact.each { |io| io.close unless io.closed? }
       end

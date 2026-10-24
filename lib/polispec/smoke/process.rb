@@ -65,6 +65,7 @@ module Polispec
         out_r, out_w = IO.pipe
         err_r, err_w = IO.pipe
         in_r, in_w = IO.pipe
+        Polispec::Trace.command(argv, chdir: chdir)
         begin
           pid = ::Process.spawn(clean_env(env), *argv, chdir: chdir, in: in_r, out: out_w, err: err_w, pgroup: true)
         rescue SystemCallError => e
@@ -88,6 +89,7 @@ module Polispec
         out = out_thread.value
         err = err_thread.value
         [out_r, err_r].each(&:close)
+        Polispec::Trace.exit_line(status.exitstatus || -1, (clock - started) * 1000, timed_out: timed_out)
         Result.new(exit: timed_out ? nil : status.exitstatus, stdout: out.force_encoding("UTF-8").scrub, stderr: err.force_encoding("UTF-8").scrub,
                    duration: clock - started, timed_out: timed_out, error: nil)
       end
@@ -96,6 +98,7 @@ module Polispec
         started = clock
         deadline = started + timeout
         output = +""
+        Polispec::Trace.command(argv, chdir: chdir)
         reader, writer, pid = PTY.spawn(clean_env(env), *argv, chdir: chdir)
         queue = lines.dup
         last_data = clock
@@ -130,6 +133,7 @@ module Polispec
         reader.close
         writer.close unless writer.closed?
         text = output.force_encoding("UTF-8").scrub.gsub("\r\n", "\n").gsub("\r", "")
+        Polispec::Trace.exit_line(status ? status.exitstatus || -1 : -1, (clock - started) * 1000, timed_out: timed_out)
         Result.new(exit: status&.exitstatus, stdout: text, stderr: "", duration: clock - started, timed_out: timed_out, error: nil)
       rescue SystemCallError, PTY::ChildExited => e
         Result.new(exit: nil, stdout: output.to_s, stderr: "", duration: clock - started, timed_out: false, error: e.message)

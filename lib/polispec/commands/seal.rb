@@ -15,12 +15,16 @@ module Polispec
       json_requested = args.include?("--json")
       options = parse(args)
       return usage(json_requested) unless options
-      plan = if options["from"]
-               repo, revision = split_source(options["from"])
-               HarnessControls::Authority.seal_plan(kind: "git", source: repo, revision: revision)
-             else
-               HarnessControls::Authority.seal_plan(kind: "root_authored", source: options["source"])
-             end
+      plan = Trace.step("plan seal", dry_run: options["dry_run"]) do
+        built = if options["from"]
+                  repo, revision = split_source(options["from"])
+                  HarnessControls::Authority.seal_plan(kind: "git", source: repo, revision: revision)
+                else
+                  HarnessControls::Authority.seal_plan(kind: "root_authored", source: options["source"])
+                end
+        trace_plan(built)
+        built
+      end
       operation_id = Digest::SHA256.hexdigest(HarnessControls::Authority.canonical_json(plan.slice("edition", "generation", "source", "runtime")))
       data = { "dry_run" => options["dry_run"], "plan" => plan }
       if !options["dry_run"]
@@ -32,22 +36,26 @@ module Polispec
         end
         HarnessControls::Authority.bootstrap_identity!("seal.prepare")
         Operator::Tty.confirm!("seal generation #{plan['generation']}", prompt: "Sealing prepares protected authority and may switch the active generation.")
-        data["runtime_preparation"] = HarnessControls::Authority.prepare_runtime
-        plan = if options["from"]
-                 repo, revision = split_source(options["from"])
-                 HarnessControls::Authority.seal_plan(kind: "git", source: repo, revision: revision)
-               else
-                 HarnessControls::Authority.seal_plan(kind: "root_authored", source: options["source"])
-               end
+        data["runtime_preparation"] = Trace.step("prepare runtime") { HarnessControls::Authority.prepare_runtime }
+        plan = Trace.step("re-plan seal") do
+          built = if options["from"]
+                    repo, revision = split_source(options["from"])
+                    HarnessControls::Authority.seal_plan(kind: "git", source: repo, revision: revision)
+                  else
+                    HarnessControls::Authority.seal_plan(kind: "root_authored", source: options["source"])
+                  end
+          trace_plan(built)
+          built
+        end
         data["plan"] = plan
         operation_id = Digest::SHA256.hexdigest(HarnessControls::Authority.canonical_json(plan.slice("edition", "generation", "source", "runtime")))
-        prepared = HarnessControls::Plane.build_generation(plan)
+        prepared = Trace.step("build generation", generation: plan["generation"]) { HarnessControls::Plane.build_generation(plan) }
         data["prepared_generation"] = prepared
         unless plan["ready"]
           data["activation"] = { "status" => "blocked", "reason" => "protected runtime and native prerequisites remain unresolved" }
           return emit(result(false, operation_id, plan["edition"], data, plane_findings(plan["findings"])), options["json"], 3)
         end
-        data["activation"] = HarnessControls::Plane.switch_generation(plan)
+        data["activation"] = Trace.step("switch generation", generation: plan["generation"]) { HarnessControls::Plane.switch_generation(plan) }
       end
       ok = plan["ready"]
       status = ok ? 0 : 3
@@ -61,6 +69,15 @@ module Polispec
     end
 
     private
+
+    def trace_plan(plan)
+      return unless Trace.on?
+
+      source = plan["source"].is_a?(Hash) ? plan["source"] : {}
+      manifest = source["manifest"].is_a?(Hash) ? source["manifest"] : {}
+      blocking = Array(plan["findings"]).count { |row| row.is_a?(Hash) && row["blocking"] }
+      Trace.info("seal plan", kind: manifest["kind"], ref: manifest["ref"], entries: Array(manifest["files"]).length, source_digest: source["digest"], generation: plan["generation"], ready: plan["ready"], preparation_ready: plan["preparation_ready"], blocking: blocking)
+    end
 
     def parse(args)
       values = args.dup

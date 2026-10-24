@@ -52,7 +52,9 @@ module Polispec
     end
 
     def perform(harness, options)
-      NativeInstall.uninstall(harness, scope: options[:scope], project: options[:project], dry_run: options[:dry_run])
+      Trace.step("#{self.class::VERB} #{harness}", scope: options[:scope], project: Trace.on? ? Trace.path(options[:project]) : nil, dry_run: options[:dry_run]) do
+        NativeInstall.uninstall(harness, scope: options[:scope], project: options[:project], dry_run: options[:dry_run])
+      end
     end
 
     def usage

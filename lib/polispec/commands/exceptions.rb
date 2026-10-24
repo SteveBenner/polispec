@@ -183,14 +183,19 @@ module Polispec
       expanded = Exceptions.canonical_path(directory)
       return expanded unless File.directory?(expanded)
 
-      out, status = Open3.capture2(Operator::Git.env, "git", "-C", expanded, "rev-parse", "--show-toplevel", err: File::NULL)
+      out, status = Trace.capture2(Operator::Git.env, "git", "-C", expanded, "rev-parse", "--show-toplevel", err: File::NULL, trace: :quiet)
       status.success? && !out.strip.empty? ? Exceptions.canonical_path(out.strip) : expanded
     rescue SystemCallError
       Exceptions.canonical_path(directory)
     end
 
     def preflight
+      Trace.step("preflight") { preflight_checks }
+    end
+
+    def preflight_checks
       plane = HarnessControls::Plane.resolve
+      Trace.info("plane status", status: plane["status"])
       raise Operator::Failure.new("sealed_authority", "the sealed plane is broken; repair it before recording exceptions") if plane["status"] == "broken"
       raise Operator::Failure.new("sealed_authority", "the sealed plane owns the global layer; change the sealed source and reseal") if plane["status"] == "active"
 
@@ -198,12 +203,16 @@ module Polispec
       raise Operator::Failure.new("global_unconfigured", "no global layer is configured (polispec.global.repo)") unless source
       raise Operator::Failure.new("global_not_repo", "exceptions are recorded in a git shelf; the global layer is a plain directory") unless source.kind == :repo
 
+      Trace.info("global source", kind: source.kind, ref: source.ref, repo: Trace.path(source.repo), path: source.path)
+
       git = Operator::Git.new(source.repo)
       branch = git.current_branch
+      Trace.info("shelf branch", branch: branch || "detached", expected: source.ref)
       raise Operator::Failure.new("not_on_ref", "#{source.ref} is not checked out in #{source.repo} (HEAD is #{branch || 'detached'})") unless branch == source.ref
 
       scope = source.path.to_s.empty? ? "." : source.path
       dirty = git.run!("status", "--porcelain", "--", scope).out.lines.first
+      Trace.info("shelf status", scope: scope, clean: dirty ? "no" : "yes")
       raise Operator::Failure.new("dirty_shelf", "uncommitted changes under #{scope} would be committed with the exception: #{dirty.to_s[3..].to_s.strip}") if dirty
       source
     end
@@ -211,18 +220,30 @@ module Polispec
     def mutate(label:, verb:, proposals:, shown: nil)
       source = preflight
       Exceptions.reset!
-      loaded = Exceptions.load
+      loaded = Trace.step("load exceptions") do
+        result = Exceptions.load
+        Trace.info("exceptions loaded", path: Trace.path(Exceptions.path), entries: result.entries.length, problems: result.problems.length)
+        result
+      end
       raise Operator::Failure.new("exceptions_invalid", "#{Exceptions::FILE} is invalid: #{loaded.problems.first}") unless loaded.problems.empty?
 
-      entries, touched = yield(loaded.entries)
+      entries, touched = Trace.step("build entry", action: label) do
+        pair = yield(loaded.entries)
+        pair[1].each do |entry|
+          Trace.info("entry", id: entry["id"], kind: entry["kind"], tool: entry["tool"], command: entry["command"], rule: entry["rule"], scope: entry["scope"]["global"] == true ? "global" : entry["scope"]["project"], note_length: entry["note"].to_s.length)
+        end
+        pair
+      end
       combined = entries
       duplicate = combined.map { |entry| entry["id"] }.tally.find { |_, count| count > 1 }
       raise Operator::Failure.new("duplicate", "#{duplicate.first} is already recorded") if duplicate
       raise Operator::Failure.new("exceptions_invalid", "more than #{Exceptions::MAX_ENTRIES} exceptions would be recorded") if combined.length > Exceptions::MAX_ENTRIES
 
-      document = Schema::Document.parse(Exceptions.dump(combined), Exceptions::FILE)
-      problems = Exceptions.validate(document)
-      raise Operator::Failure.new("exceptions_invalid", "the resulting document is invalid: #{problems.first}") unless problems.empty?
+      Trace.step("validate document", entries: combined.length) do
+        document = Schema::Document.parse(Exceptions.dump(combined), Exceptions::FILE)
+        problems = Exceptions.validate(document)
+        raise Operator::Failure.new("exceptions_invalid", "the resulting document is invalid: #{problems.first}") unless problems.empty?
+      end
 
       ids = touched.map { |entry| entry["id"] }
       phrase = ids.empty? ? "exceptions #{label}" : "exceptions #{label} #{(label == 'promote' ? proposals : ids).join(' ')}"
@@ -250,16 +271,19 @@ module Polispec
     def commit_change(source, text, verb, ids, proposals)
       target = File.join(source.repo, source.path, Exceptions::FILE)
       original = File.file?(target) ? File.binread(target) : nil
-      Lint.guard_write!(text, path: target, kind: "exceptions")
-      begin
-        write_atomic(target, text)
-        plan_id = apply_global
-      rescue StandardError, ScriptError => e
-        restore(source, target, original)
-        warn "polispec: exceptions_failed: #{e.message}" unless e.is_a?(Operator::Failure)
-        raise
+      plan_id = nil
+      Trace.step("write exceptions.yml", path: Trace.path(target), bytes: text.bytesize) do
+        Lint.guard_write!(text, path: target, kind: "exceptions")
+        begin
+          write_atomic(target, text)
+          plan_id = apply_global
+        rescue StandardError, ScriptError => e
+          Trace.step("restore previous bytes", path: Trace.path(target), had_original: original ? "yes" : "no") { restore(source, target, original) }
+          warn "polispec: exceptions_failed: #{e.message}" unless e.is_a?(Operator::Failure)
+          raise
+        end
       end
-      Exceptions.forget(proposals) unless proposals.empty?
+      Trace.step("forget proposals", ids: proposals) { Exceptions.forget(proposals) } unless proposals.empty?
       puts "exceptions: #{verb} #{ids.join(' ')} (plan #{plan_id}, committed in #{source.repo})"
       0
     ensure
@@ -267,14 +291,20 @@ module Polispec
     end
 
     def apply_global
-      plan = Plan.build(Plan::SPEC.new(kind: :global))
+      plan = Trace.step("plan global") do
+        built = Plan.build(Plan::SPEC.new(kind: :global))
+        Trace.info("plan built", plan_id: built.plan_id, classification: built.data["classification"])
+        built
+      end
       captured = StringIO.new
       previous = $stdout
-      status = begin
-        $stdout = captured
-        ApplyCommand.new.run(["global", "--confirm", plan.plan_id])
-      ensure
-        $stdout = previous
+      status = Trace.step("apply global", plan_id: plan.plan_id) do
+        begin
+          $stdout = captured
+          ApplyCommand.new.run(["global", "--confirm", plan.plan_id])
+        ensure
+          $stdout = previous
+        end
       end
       raise Operator::Failure.new("apply_failed", "apply global did not complete (exit #{status})") unless status.zero?
 

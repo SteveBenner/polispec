@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require "digest"
+
 module Polispec
   class AgentsCommand
     USAGE = "usage: polispec agents render <project-id|repo-path> [--from worktree|<ref>] [--check] [--json]"
@@ -18,11 +20,18 @@ module Polispec
       verb, subject = args
       return usage unless verb == "render" && subject && args.length == 2
 
-      target = locate(subject)
-      source = from == "worktree" ? AgentsRender.source_from_worktree(target.root, target.policy_path) : AgentsRender.source_from_ref(target.root, from, target.policy_path)
-      rendered = AgentsRender.render(source)
-      files = AgentsRender.plan(target.root, rendered)
-      files.each { |file| AgentsRender.apply(file) } unless check
+      target = Trace.step("resolve project", subject: subject) { locate(subject) }
+      Trace.info("project resolved", project: target.project&.id, root: (Trace.path(target.root) if Trace.on?), policy: target.policy_path) if Trace.on?
+      source = Trace.step("read policy source", from: from) do
+        from == "worktree" ? AgentsRender.source_from_worktree(target.root, target.policy_path) : AgentsRender.source_from_ref(target.root, from, target.policy_path)
+      end
+      rendered = Trace.step("render envs.md") { AgentsRender.render(source) }
+      Trace.info("rendered", bytes: rendered.body.bytesize, sha: Digest::SHA256.hexdigest(rendered.body)[0, 12]) if Trace.on?
+      files = Trace.step("plan files") { AgentsRender.plan(target.root, rendered) }
+      files.each { |file| Trace.info("planned file", path: (Trace.path(file[:path]) if Trace.on?), changed: file[:changed]) } if Trace.on?
+      unless check
+        Trace.step("upsert AGENTS.md row") { files.each { |file| AgentsRender.apply(file) } }
+      end
       report(rendered, files, json: json, check: check)
     end
 
@@ -69,6 +78,7 @@ module Polispec
 
     def report(rendered, files, json:, check:)
       rows = files.map { |file| { "path" => file[:path], "status" => status_of(file, check) } }
+      Trace.info("check result", differing: rows.count { |row| row["status"] == "differs" }) if check && Trace.on?
       if json
         puts JSON.generate("project" => rendered.project, "row" => rendered.row, "files" => rows)
       elsif check

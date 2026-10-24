@@ -31,7 +31,7 @@ module Polispec
     private
 
     def init(options)
-      result = Ledger.create_starter!(Ledger.default_path, dry: options[:dry_run])
+      result = Trace.step("create starter ledger", dry_run: options[:dry_run] ? "yes" : "no") { Ledger.create_starter!(Ledger.default_path, dry: options[:dry_run]) }
       path = result["path"]
       if options[:json]
         puts JSON.generate("path" => path, "created" => result["created"], "dry_run" => options[:dry_run])

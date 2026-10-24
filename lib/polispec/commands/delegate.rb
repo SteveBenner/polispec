@@ -83,16 +83,18 @@ module Polispec
         app = args.first
         raise Refused.new("sealed", "delegation is not available on a sealed plane", 3) if ::Polispec::Delegate.sealed?
 
-        scope = build_scope(app, csv(projects), csv(verbs), csv(targets), flags.nil? ? ::Polispec::Delegate::FLAGS_DEFAULT : csv(flags))
+        scope = Trace.step("validate grant", app: app) { build_scope(app, csv(projects), csv(verbs), csv(targets), flags.nil? ? ::Polispec::Delegate::FLAGS_DEFAULT : csv(flags)) }
+        Trace.info("grant scope", app: scope["app"], projects: scope["projects"], verbs: scope["verbs"], targets: scope["targets"], flags: scope["flags"]) if Trace.on?
         prompt = "Grant #{app} the right to #{scope['verbs'].join('/')} #{scope['projects'].join('/')} to #{scope['targets'].join('/')} (flags #{scope['flags'].empty? ? 'none' : scope['flags'].join(' ')})."
         Operator::Tty.confirm!("grant delegation to #{app}", prompt: prompt)
         token = grants_module.new_token
         entry = scope.merge("token_sha256" => grants_module.digest(token), "granted_at" => Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ"))
-        existing = grants_module.load
+        existing = Trace.step("read grants") { grants_module.load }
         others = existing.grants.reject { |item| item["app"] == app }
+        Trace.info("existing grants", count: existing.grants.length, replacing: existing.grants.length - others.length) if Trace.on?
         raise Refused.new("invalid", "at most #{::Polispec::Delegate::MAX_GRANTS} grants are allowed") if others.length >= ::Polispec::Delegate::MAX_GRANTS
 
-        grants_module.write(others + [entry])
+        Trace.step("write grants.yml", grants: others.length + 1) { grants_module.write(others + [entry]) }
         if json
           puts JSON.generate("app" => app, "token" => token, "scope" => scope)
         else
@@ -125,11 +127,11 @@ module Polispec
         app = args.first
         raise Refused.new("sealed", "delegation is not available on a sealed plane", 3) if ::Polispec::Delegate.sealed?
 
-        existing = grants_module.load
+        existing = Trace.step("read grants") { grants_module.load }
         raise Refused.new("not_found", "no grant for #{app}") unless existing.grants.any? { |item| item["app"] == app }
 
         Operator::Tty.confirm!("revoke delegation from #{app}", prompt: "Revoke the delegation of #{app}.")
-        grants_module.write(existing.grants.reject { |item| item["app"] == app })
+        Trace.step("write grants.yml", app: app) { grants_module.write(existing.grants.reject { |item| item["app"] == app }) }
         puts "polispec: delegation revoked from #{app}"
         0
       end
@@ -143,7 +145,8 @@ module Polispec
       end
 
       def print_grants(json)
-        loaded = grants_module.load
+        loaded = Trace.step("read grants") { grants_module.load }
+        Trace.info("grants read", count: loaded.grants.length, problems: loaded.problems.length) if Trace.on?
         scopes = loaded.grants.map { |grant| grants_module.public_scope(grant) }
         if json
           puts JSON.generate("grants" => scopes, "problems" => loaded.problems)
@@ -190,8 +193,9 @@ module Polispec
         return usage unless args.empty?
 
         path = ::Polispec::Delegate.socket_path
-        reply = ping(path)
-        loaded = grants_module.load
+        reply = Trace.step("ping runner", socket: (Trace.path(path) if Trace.on?)) { ping(path) }
+        Trace.info("runner", running: !reply.nil?, version: reply && reply["version"]) if Trace.on?
+        loaded = Trace.step("read grants") { grants_module.load }
         scopes = loaded.grants.map { |grant| grants_module.public_scope(grant) }
         if json
           puts JSON.generate("running" => !reply.nil?, "socket" => path, "version" => reply && reply["version"], "grants" => scopes, "problems" => loaded.problems)

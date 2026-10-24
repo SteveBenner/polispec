@@ -22,11 +22,11 @@ module Polispec
       end
       json = args.include?("--json")
       if args.include?("--check")
-        steps = Stewardship.check
+        steps = Trace.step("steward check") { Stewardship.check }
         report(steps, json)
       else
-        steps = Stewardship.ensure!(quiet: json)
-        Deployments.refresh_stewardship
+        steps = Trace.step("steward ensure") { Stewardship.ensure!(quiet: json) }
+        Trace.step("refresh stewardship record") { Deployments.refresh_stewardship }
         report(steps, json) if json
       end
       steps.all? { |step| %w[ok installed warn].include?(step.status) } ? 0 : 1

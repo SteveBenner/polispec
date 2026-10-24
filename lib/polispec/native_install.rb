@@ -106,24 +106,33 @@ module Polispec
     end
 
     def write_file(plan, path, content)
-      return false if File.file?(path) && File.read(path) == content
+      if File.file?(path) && File.read(path) == content
+        Trace.info("settings file already current", path: Trace.path(path))
+        return false
+      end
 
       plan.change(path, File.exist?(path) ? "rewrite (backup first)" : "create")
       plan.files_written << path
-      return true if plan.dry_run?
-
-      mode = File.exist?(path) ? File.stat(path).mode & 0o7777 : 0o600
-      if File.exist?(path)
-        backup = "#{path}.polispec-backup-#{stamp}"
-        FileUtils.cp(path, backup, preserve: true)
-        plan.backups << backup
+      if plan.dry_run?
+        Trace.info("dry run, settings file not written", path: Trace.path(path), bytes: content.bytesize)
+        return true
       end
-      FileUtils.mkdir_p(File.dirname(path))
-      temporary = "#{path}.#{Process.pid}.tmp"
-      File.write(temporary, content)
-      File.chmod(mode, temporary)
-      File.rename(temporary, path)
-      true
+
+      Trace.step("settings file", path: Trace.path(path), bytes: content.bytesize) do
+        mode = File.exist?(path) ? File.stat(path).mode & 0o7777 : 0o600
+        if File.exist?(path)
+          backup = "#{path}.polispec-backup-#{stamp}"
+          FileUtils.cp(path, backup, preserve: true)
+          plan.backups << backup
+          Trace.info("backup written", backup: Trace.path(backup))
+        end
+        FileUtils.mkdir_p(File.dirname(path))
+        temporary = "#{path}.#{Process.pid}.tmp"
+        File.write(temporary, content)
+        File.chmod(mode, temporary)
+        File.rename(temporary, path)
+        true
+      end
     end
 
     def place_link(plan, path, target)
@@ -131,20 +140,24 @@ module Polispec
         raw = File.readlink(path)
         if raw == target
           plan.links << { "path" => path, "target" => target }
+          Trace.info("link already current", path: Trace.path(path))
           return
         end
         unless ours?(File.expand_path(raw, File.dirname(path)), plan.wired_root)
           plan.say("kept #{path} (points at #{raw})")
+          Trace.info("link kept, not ours", path: Trace.path(path), points_at: raw)
           return
         end
       elsif File.exist?(path)
         plan.say("kept #{path} (not a symlink)")
+        Trace.info("link kept, not a symlink", path: Trace.path(path))
         return
       end
       plan.change(path, "link -> #{target}")
       plan.links << { "path" => path, "target" => target }
       return if plan.dry_run?
 
+      Trace.info("link", path: Trace.path(path), target: Trace.path(target))
       FileUtils.mkdir_p(File.dirname(path))
       temporary = "#{path}.#{Process.pid}.tmp"
       File.symlink(target, temporary)
@@ -158,9 +171,11 @@ module Polispec
       allowed = expected ? raw == expected : ours?(File.expand_path(raw, File.dirname(path)), plan.wired_root)
       unless allowed
         plan.say("kept #{path} (points at #{raw})")
+        Trace.info("link kept, not ours", path: Trace.path(path), points_at: raw)
         return
       end
       plan.change(path, "unlink")
+      Trace.info("unlink", path: Trace.path(path)) unless plan.dry_run?
       File.delete(path) unless plan.dry_run?
     end
 
@@ -200,6 +215,7 @@ module Polispec
       files = [File.join(Stewardship.claude_home, "settings.json")]
       files << File.join(project, ".claude", "settings.json") if plan.scope == "project"
       files.each do |file|
+        Trace.info("checking for the Claude Code plugin", file: Trace.path(file))
         enabled = read_json(file)["enabledPlugins"]
         next unless enabled.is_a?(Hash)
 
@@ -212,7 +228,10 @@ module Polispec
     end
 
     def double_guard_codex(force)
-      return if force
+      if force
+        Trace.info("double guard check skipped", reason: "--force")
+        return
+      end
 
       base = File.join(codex_home, "plugins")
       hit = %w[*polispec* */*polispec* */*/*polispec*].flat_map { |pattern| Dir.glob(File.join(base, pattern)) }.first
@@ -226,14 +245,19 @@ module Polispec
       raise Polispec::Error, "unknown scope #{scope}" unless SCOPES.include?(scope)
 
       project = File.expand_path(project)
-      root = wired_root
+      root = Trace.step("detect harness", harness: harness, scope: scope) do
+        found = wired_root
+        Trace.info("wired root", root: Trace.path(found), pinned: !pinned_note?)
+        found
+      end
       plan = Plan.new(harness, scope, target_file(harness, scope, project), root, dry_run)
+      Trace.info("settings target", path: Trace.path(plan.target))
       plan.say("note: polispec is not pinned; run polispec pin so the hooks point at a read-only release") if pinned_note?
       harness == "claude" ? install_claude(plan, project, force) : install_codex(plan, project, force)
-      ensure_ledger(plan) if scope == "user"
+      Trace.step("ensure ledger") { ensure_ledger(plan) } if scope == "user"
       unless dry_run
-        write_receipt(plan)
-        record_deployment(plan)
+        Trace.step("write receipt") { write_receipt(plan) }
+        Trace.step("record deployment") { record_deployment(plan) }
       end
       plan
     end
@@ -269,17 +293,21 @@ module Polispec
         ours = { "hooks" => [{ "type" => "command", "command" => command, "timeout" => 10 }] }
         groups = hooks[event].is_a?(Array) ? hooks[event] : []
         marked = groups.select { |group| group_hooks(group).any? { |hook| marked_command?(hook) } }
-        next if marked.length == 1 && marked.first == ours
+        if marked.length == 1 && marked.first == ours
+          Trace.info("hook already current", event: event, name: kind)
+          next
+        end
 
+        Trace.info("hook set", event: event, name: kind, path: Trace.path(path))
         hooks[event] = strip_marked(groups) + [ours]
       end
       data["hooks"] = hooks
       after = JSON.pretty_generate(hooks)
       plan.show(before, after)
       write_file(plan, path, "#{JSON.pretty_generate(data)}\n")
-      skill_links(plan, project).each { |path, source| place_link(plan, path, source) }
+      Trace.step("skill links") { skill_links(plan, project).each { |path, source| place_link(plan, path, source) } }
       if plan.scope == "user"
-        RULE_NAMES.each { |name| place_link(plan, File.join(Stewardship.claude_home, "rules", "polispec", name), File.join(plan.wired_root, "rules", name)) }
+        Trace.step("rule links") { RULE_NAMES.each { |name| place_link(plan, File.join(Stewardship.claude_home, "rules", "polispec", name), File.join(plan.wired_root, "rules", name)) } }
       else
         plan.say("rules are user scope; run with --scope user to load them in every session")
       end
@@ -314,8 +342,9 @@ module Polispec
           "#{original}#{original.end_with?("\n") ? '' : "\n"}\n#{block}"
         end
       plan.show(original[codex_block_pattern].to_s.sub(/\A\n/, ""), block)
+      Trace.info("codex hooks block", events: CODEX_EVENTS.map(&:last), path: Trace.path(path))
       write_file(plan, path, updated)
-      skill_links(plan, nil).each { |path, source| place_link(plan, path, source) }
+      Trace.step("skill links") { skill_links(plan, nil).each { |path, source| place_link(plan, path, source) } }
       plan.say(TRUST_NOTE)
     end
 
@@ -338,6 +367,7 @@ module Polispec
       record["ledger_created"] = created if created
       File.write(receipt, "#{JSON.pretty_generate(record)}\n")
       File.chmod(0o600, receipt)
+      Trace.info("receipt written", path: Trace.path(receipt), links: plan.links.length, files: record["files_written"].length)
     end
 
     def read_receipt(plan)
@@ -354,17 +384,21 @@ module Polispec
       raise Polispec::Error, "unknown scope #{scope}" unless SCOPES.include?(scope)
 
       project = File.expand_path(project)
-      plan = Plan.new(harness, scope, target_file(harness, scope, project), wired_root, dry_run)
+      plan = Trace.step("detect harness", harness: harness, scope: scope) do
+        Plan.new(harness, scope, target_file(harness, scope, project), wired_root, dry_run)
+      end
+      Trace.info("settings target", path: Trace.path(plan.target))
       harness == "claude" ? uninstall_claude(plan, project) : uninstall_codex(plan)
       receipt, record = read_receipt(plan)
-      remove_links(plan, expected_links(plan, project), record)
+      Trace.step("remove links") { remove_links(plan, expected_links(plan, project), record) }
       if File.file?(receipt) && !dry_run
         File.rename(receipt, "#{receipt}.uninstalled-#{stamp}")
         plan.change(receipt, "rename to .uninstalled")
+        Trace.info("receipt renamed", path: Trace.path(receipt))
       elsif File.file?(receipt)
         plan.change(receipt, "rename to .uninstalled")
       end
-      Deployments.retire(kind: "hooks", target: plan.target) unless dry_run
+      Trace.step("retire deployment") { Deployments.retire(kind: "hooks", target: plan.target) } unless dry_run
       plan
     end
 
@@ -406,6 +440,7 @@ module Polispec
       CLAUDE_EVENTS.each_key do |event|
         next unless hooks[event].is_a?(Array)
 
+        Trace.info("hook removed", event: event, name: CLAUDE_EVENTS[event], path: Trace.path(path))
         remaining = strip_marked(hooks[event])
         remaining.empty? ? hooks.delete(event) : hooks[event] = remaining
       end

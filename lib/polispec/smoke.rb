@@ -29,6 +29,8 @@ module Polispec
     def command(argv, chdir: nil)
       options = { err: File::NULL }
       options[:chdir] = chdir if chdir
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      Trace.command(argv, chdir: chdir)
       Open3.popen2(*argv, **options) do |stdin, stdout, thread|
         stdin.close
         reader = Thread.new { stdout.read }
@@ -40,7 +42,9 @@ module Polispec
           end
           return nil
         end
-        return nil unless thread.value.success?
+        status = thread.value
+        Trace.exit_line(status.exitstatus || -1, (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000)
+        return nil unless status.success?
 
         reader.value.to_s.strip
       end

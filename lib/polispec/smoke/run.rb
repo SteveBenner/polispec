@@ -30,14 +30,24 @@ module Polispec
       def call
         against = options.against ? validated_against(options.against) : nil
         out = prepare_out
+        Polispec::Trace.info("smoke run", tree: Polispec::Trace.path(tree), against: against && Polispec::Trace.path(against), out: Polispec::Trace.path(out), units: options.units, record: options.record, host_copy: options.host_copy, live: options.live) if Polispec::Trace.on?
         results = []
         host = nil
         if select_scenarios?
           results = scenarios.map { |entry| run_entry(entry, out, against) }
-          recorded = options.record ? record_all(results) : []
+          recorded = if options.record
+                       Polispec::Trace.step("record results") { record_all(results) }
+                     else
+                       Polispec::Trace.info("recording skipped", reason: "--no-record")
+                       []
+                     end
         end
-        host = HostCopy.run(tree: tree, out: out, polispec: polispec_for(tree), against: against) if options.host_copy
+        host = Polispec::Trace.step("host copy") { HostCopy.run(tree: tree, out: out, polispec: polispec_for(tree), against: against) } if options.host_copy
         diffs = results.flat_map { |item| item["diffs"] || [] } + (host ? host["diffs"] : [])
+        if Polispec::Trace.on?
+          diffs.each { |diff| Polispec::Trace.info("diff", scenario: diff["scenario"], step: diff["step"], candidate: diff["candidate"], against: diff["against"]) }
+          Polispec::Trace.info("diffs", count: diffs.length)
+        end
         ok = finish_ok?(results, diffs)
         payload = { "schema" => SCHEMA, "tree" => tree, "against" => against, "out" => out, "scenarios" => results.map { |item| public_result(item) },
                     "recorded" => recorded || [], "diffs" => diffs, "ok" => ok }
@@ -94,22 +104,28 @@ module Polispec
 
       def run_entry(entry, out, against)
         if entry[:error]
+          Polispec::Trace.info("scenario unreadable", file: File.basename(entry[:path]), reason: entry[:error]) if Polispec::Trace.on?
           return { "file" => File.basename(entry[:path]), "path" => entry[:path], "unit" => nil, "verdict" => "error", "reason" => entry[:error], "steps" => [], "diffs" => [] }
         end
 
         scenario = entry[:scenario]
-        scratch = File.join(out, scenario.stem)
-        result = execute(scenario, scratch, tree, polispec_for(tree), out)
-        result["diffs"] = []
-        if against && result["layout"]
-          other_scratch = File.join(out, "against", scenario.stem)
-          other = execute(scenario, other_scratch, against, polispec_for(against), out)
-          roots = [[scratch, "<SCRATCH>"], [tree, "<TREE>"]]
-          other_roots = [[other_scratch, "<SCRATCH>"], [against, "<TREE>"]]
-          result["diffs"] = Parity.compare(scenario.stem, result, other, roots, other_roots) if other["layout"]
-          result["diffs"] << { "scenario" => scenario.stem, "step" => "-", "candidate" => "ran", "against" => "blocked: #{other['reason']}" } unless other["layout"]
+        Polispec::Trace.step("scenario #{scenario.unit} #{File.basename(entry[:path])}") do
+          scratch = File.join(out, scenario.stem)
+          result = execute(scenario, scratch, tree, polispec_for(tree), out)
+          result["diffs"] = []
+          if against && result["layout"]
+            Polispec::Trace.step("against pass", tree: Polispec::Trace.on? ? Polispec::Trace.path(against) : nil) do
+              other_scratch = File.join(out, "against", scenario.stem)
+              other = execute(scenario, other_scratch, against, polispec_for(against), out)
+              roots = [[scratch, "<SCRATCH>"], [tree, "<TREE>"]]
+              other_roots = [[other_scratch, "<SCRATCH>"], [against, "<TREE>"]]
+              result["diffs"] = Parity.compare(scenario.stem, result, other, roots, other_roots) if other["layout"]
+              result["diffs"] << { "scenario" => scenario.stem, "step" => "-", "candidate" => "ran", "against" => "blocked: #{other['reason']}" } unless other["layout"]
+              Polispec::Trace.info("against compared", diffs: result["diffs"].length) if Polispec::Trace.on?
+            end
+          end
+          result
         end
-        result
       end
 
       def execute(scenario, scratch, root, binary, out)
@@ -117,14 +133,23 @@ module Polispec
         result = { "file" => File.basename(scenario.path), "path" => scenario.path, "stem" => scenario.stem, "unit" => scenario.unit, "spec" => scenario.spec,
                    "summary" => scenario.summary, "steps" => [], "reason" => nil, "started" => started, "scratch" => scratch }
         problem = precheck(scenario)
-        return finish(result, scratch, "error", problem) if problem
+        if problem
+          Polispec::Trace.info("scenario precheck failed", reason: problem) if Polispec::Trace.on?
+          return finish(result, scratch, "error", problem)
+        end
 
         missing = scenario.requires.reject { |flag| flag_enabled?(flag) }
-        return finish(result, scratch, "blocked", "requires #{missing.join(', ')}: feature flag off") unless missing.empty?
+        unless missing.empty?
+          Polispec::Trace.info("scenario blocked", requires: missing) if Polispec::Trace.on?
+          return finish(result, scratch, "blocked", "requires #{missing.join(', ')}: feature flag off")
+        end
 
         begin
-          layout = Fixture.build(scenario, scratch: scratch, tree: root, polispec: binary, builder: polispec_for(tree), out: out)
+          layout = Polispec::Trace.step("build fixtures", scratch: Polispec::Trace.on? ? Polispec::Trace.path(scratch) : nil) do
+            Fixture.build(scenario, scratch: scratch, tree: root, polispec: binary, builder: polispec_for(tree), out: out)
+          end
         rescue FixtureError, Polispec::Error, SystemCallError => e
+          Polispec::Trace.info("scenario blocked", reason: "fixture: #{e.message}") if Polispec::Trace.on?
           return finish(result, scratch, "blocked", "fixture: #{e.message}")
         end
         result["layout"] = layout
@@ -181,7 +206,9 @@ module Polispec
           report = File.join(scratch, "report.json")
           File.write(report, JSON.pretty_generate(report_body(result)))
           result["report"] = report
+          Polispec::Trace.info("report written", path: Polispec::Trace.path(report)) if Polispec::Trace.on?
         end
+        Polispec::Trace.info("scenario verdict", verdict: verdict, reason: reason) if Polispec::Trace.on?
         result
       end
 
@@ -210,6 +237,7 @@ module Polispec
           entry = Smoke.record(top: toplevel, path: path, spec: spec, at: unit, verdict: verdict, summary: summary_for(group, verdict),
                                steps: steps, evidence: evidence, runner: runner, started: group.map { |item| item["started"] }.min, finished: group.map { |item| item["finished"] }.max)
           ids << entry["id"]
+          Polispec::Trace.info("recorded", id: entry["id"], unit: unit, verdict: verdict) if Polispec::Trace.on?
           group.each { |item| item["origin"]["recorded"] = entry["id"] }
         rescue Polispec::Error => e
           group.each { |item| item["origin"]["record_error"] = e.message }

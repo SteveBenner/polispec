@@ -220,6 +220,40 @@ Doctor. With `polispec.lint.doctor` on, `doctor` runs the host scope without the
 
 Limits. A clean sweep proves schema acceptance, loader-safe YAML, and agreement between a generated file and its source; it does not prove that policies compose safely or that a harness enforces anything. Harness integrity is file integrity only; no native probe runs. Markdown generators are checked for text validity only. `manifest_drift` compares identity, status, mode, and digests, not findings, promotions, or timestamps. Lint reads the working tree, so an uncommitted edit is judged and the trust ref is not; `doctor` remains the check of what the guard reads.
 
+## Watching an operation: --verbose
+
+An operation prints one summary when it ends. `--verbose` (also `--verbose=text`, `--verbose=json`, `-v`) streams what it does while it does it, so a promotion, a deploy, `exceptions add` or `uninstall --all` can be watched instead of waited for. `POLISPEC_VERBOSE=1|text|json` does the same for one process (the flag wins; `0`, `false`, `off` or empty is off). Any verb takes the flag except `hook` and `code-hook`, which ignore both the flag and the variable so the guard never writes to stderr because of them. The exception is `hook git install` and `hook git uninstall`, which are installers and do take it; `hook git pre-commit` and the other git hooks stay silent.
+
+The trace goes to stderr and nowhere else. What an operation prints on stdout, its `--json` document and its exit status are the same with and without the flag, and without the flag nothing is traced. A line looks like this:
+
+```
+[   12.3s]   > gate G-CLEAN
+[   12.4s]     $ git status --porcelain
+[   12.4s]     = exit 0 in 98 ms
+[   12.4s]   + gate G-CLEAN (112 ms)
+```
+
+`>` opens a step and `+` closes it with its duration, `!` closes it failed with the reason, `-` is an information line with `key=value` fields, `$` is a command, `=` its exit status, `|` is a line of the child's stdout and `2|` of its stderr, and `#` marks the start and the end of the run. Indent is nesting. A child's output appears line by line as the child writes it, so the test deploy of a promotion shows the smoke suite's progress; a read-only git call shows its command and a one-line summary instead of its output.
+
+What it covers, by group:
+
+- Promote and deploy: project and policy load, every git call, each gate with its result, the plan (shas, version, tag), the typed-phrase wait, the tag, the atomic push, the release call, each after step, and for a deploy the checkout, the drain phases, each step, the activation, every health poll, a swap and a rollback.
+- Rulebook changes: `exceptions add|promote|remove` (preflight, the new entry, validation, the wait, the write, the plan and apply of the global shelf, the commit, the change record), `plan` and `apply` for every target, `register`, `unregister`, `settings`, `manifest --write`, `agents render`, `behavior render`, `specs`, `roster`, `pause`, `allow-once`, `delegate grant|revoke`, `code`.
+- Install lifecycle: `pin`, `install`, `uninstall`, `uninstall --all`, `restore`, `steward`, `deployments --scan`, `harness`, `seal`, `plane`, `hook git install|uninstall`.
+- Diagnostics: each `doctor` check, each `lint` target, `status`, `digest`, and `smoke run` scenario and step (a passing step's output is counted, a failing step's output is shown).
+
+`--verbose=json` writes the same events as NDJSON, one object per stderr line: `{v: 1, ts, t, depth, event, ...}` with the events `begin`, `step` (`phase` start or end), `info`, `command`, `exit`, `output` and `end`. Keys are added, never renamed or removed, within `v` 1. A reader can follow a run with `polispec promote shop --to test --verbose=json 2>&1 >/dev/null | jq -c .`.
+
+The trace file. While a run is verbose and `polispec.verbose.trace` is on (the default), the same trace is written to `<state home>/trace/<UTC stamp>-<verb>-<pid>.log` (`.ndjson` in JSON mode), directory 0700, file 0600, and the end line names it. A file stops at 8 MiB with one closing line. At the start of a verbose run, files older than 14 days are removed and the oldest beyond 64 are removed. The file is written only when the state home already exists, so a verbose run never creates it (this keeps `restore` after `uninstall --all` from finding a state directory it would have to treat as a conflict). An unwritable or missing state home never fails the run.
+
+What it never prints. Environment values and env-file contents, delegate app tokens, the web launch secret and the answer typed at a confirmation prompt; the phrase to type is printed, since it is already on screen. A command is printed as the operator ran it, and child output is printed as the child wrote it, so a step that prints a secret on its own would show it, and the trace file would keep it. That is why the file is 0600 and why `polispec.verbose.trace off` exists.
+
+Delegation. `--verbose` is a grantable flag: `polispec delegate grant ... --flags --dry-run,--json,--tag,--verbose` lets an application pass `--verbose` or `--verbose=json` to `promote` or `deploy`. The default grant flags are unchanged, so an existing grant does not stream. The runner already keeps both streams in the run log that the application reads by offset (`output {run_id, offset}`), so the stream reaches the application with no new protocol.
+
+The guard. `polispec doctor --verbose` and `polispec --verbose status` stay benign reads, and `polispec --verbose promote shop --to stable` or `polispec promote shop --to stable -v` is still the promotion to prod it was: the flag changes neither what is classified nor what is asked.
+
+Limits. A trace is a record for the person at the terminal, not an audit log: it is not chained, not sent to the events port and not read by the guard, `doctor` or any consumer. A bare `-v` that is the value of another flag is read as the flag; write `--note=-v` to pass such a value, and name `--verbose` in a grant as part of a comma list (`--flags --dry-run,--verbose`). A runtime older than 0.44.0 rejects `--verbose` as an unknown flag (exit 2), so an application must not pass it to a delegate runner on an older host. A run that is killed leaves a trace file without its end line.
+
 ## Judgment records
 
 Every call that reaches the guard leaves one record in `judgments.jsonl` under the polispec state directory (`polispec.judgment/v1`, `docs/schema.md`): what was judged (tool, harness, event, session, home-relative working directory, and a `call_digest` over the tool, its arguments and the working directory), against which rulebook (one target per governed project or global baseline the call touched, with the policy source and digest, the matched rule and one row per classified action), by which polispec (version, runtime kind, commit, tree digest when pinned, edition, enforce mode, plane status, fast-path key), and what the harness was told (the composed verdict, rule, rendered decision and duration). Allows are recorded as well as warns and denies. A guard that fails closed records `POLISPEC-INTERNAL` and the error class. Git hooks record with harness `git`; the session hook records nothing.
@@ -361,7 +395,7 @@ Since 0.31.0 an application can run `polispec promote` and `polispec deploy` for
    polispec delegate grant teach --projects teach,reach --verbs promote,deploy --targets test,stable
    ```
 
-   Flags default to `--dry-run`, `--json` and `--tag`; add `--flags --dry-run,--json,--tag,--waive-soak` to allow more. Put the token in the application's protected secrets (for Teach, `TEACH_RELEASE_TOKEN` in its env file). Granting again replaces the token; `polispec delegate revoke teach` withdraws it.
+   Flags default to `--dry-run`, `--json` and `--tag`; add `--flags --dry-run,--json,--tag,--waive-soak` to allow more (`--skip-drain` and, since 0.44.0, `--verbose` are the other flags a grant may name; see [watching an operation](#watching-an-operation---verbose)). Put the token in the application's protected secrets (for Teach, `TEACH_RELEASE_TOKEN` in its env file). Granting again replaces the token; `polispec delegate revoke teach` withdraws it.
 2. Run the runner as a user service. `polispec delegate unit` prints the unit and the two commands that install and start it. It refuses to start on a sealed plane.
 3. The application sends `request`, `output`, `phrase`, `cancel` and `status` over the local socket (`specs/app.yml#delegation` has the protocol). When a run reaches a confirmation, the application shows the phrase and forwards what the person typed, once; a wrong phrase stops the run with `confirmation_failed`, exactly as at a terminal.
 

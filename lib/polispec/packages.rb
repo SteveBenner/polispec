@@ -190,7 +190,7 @@ module Polispec
       new.write(after.to_s)
       old.flush
       new.flush
-      out, = Open3.capture2("diff", "-u", "--label", "a/#{path}", "--label", "b/#{path}", old.path, new.path, err: File::NULL)
+      out, = Trace.capture2("diff", "-u", "--label", "a/#{path}", "--label", "b/#{path}", old.path, new.path, err: File::NULL, trace: :silent)
       out
     rescue SystemCallError
       (before.to_s.lines.map { |line| "-#{line}" } + after.to_s.lines.map { |line| "+#{line}" }).join
@@ -251,12 +251,13 @@ module Polispec
         @kinds = @active.map(&:kind)
         @git = Operator::Git.new(@root)
         @prepared = true
+        Trace.info("package prepared", package: package.name, version: package.version, variant: @variant, project: @id, root: Trace.path(@root), manifest: @manifest && File.basename(@manifest), steps: @kinds, ledger: Trace.path(@ledger.path))
         refuse_if_applied if @kinds.include?("ledger")
         if @kinds.include?("files")
-          @rendered = render_files
-          validate_rendered
+          @rendered = Trace.step("render files") { render_files }
+          Trace.step("validate rendered files", files: @rendered.length) { validate_rendered }
         end
-        @ledger_update = ledger_text(expected_digests) if @kinds.include?("ledger")
+        @ledger_update = Trace.step("compute ledger update") { ledger_text(expected_digests) } if @kinds.include?("ledger")
       end
 
       def perform
@@ -264,8 +265,9 @@ module Polispec
         deferred = []
         package.steps.each do |step|
           if @active.include?(step)
-            send("step_#{step.kind}")
+            Trace.step("package step #{step.kind}", variant: @variant, dry: @options.dry ? "yes" : "no") { send("step_#{step.kind}") }
           elsif step.kind == "files"
+            Trace.info("skipped step files", reason: "the component does not serve real users")
             deferred << ["files", "skipped", "no environments were scaffolded because the component does not serve real users"]
           end
         end
@@ -363,6 +365,7 @@ module Polispec
 
       def note(step, status, detail)
         @notes << Note.new(step, status, detail)
+        Trace.info("step result", step: step, status: status, detail: detail)
         puts "#{step}: #{status} #{detail}" unless @options.json
       end
 
@@ -375,7 +378,7 @@ module Polispec
       end
 
       def repo_root
-        out, status = Open3.capture2(Environments::GIT_ENV, "git", "-C", File.expand_path(@options.repo), "rev-parse", "--show-toplevel", err: File::NULL)
+        out, status = Trace.capture2(Environments::GIT_ENV, "git", "-C", File.expand_path(@options.repo), "rev-parse", "--show-toplevel", err: File::NULL, trace: :quiet)
         raise Operator::Failure.new("not_a_git_repo", "#{@options.repo} is not a git repository") unless status.success?
 
         File.realpath(out.strip)
@@ -492,6 +495,7 @@ module Polispec
         File.write(temp, text)
         File.chmod(mode, temp) if mode
         File.rename(temp, path)
+        Trace.info("wrote file", path: Trace.path(path), bytes: text.to_s.bytesize, sha: (Packages.sha(text.to_s) if Trace.on?))
       end
 
       def step_files
@@ -666,6 +670,7 @@ module Polispec
         errors = Schema.validate("ledger", data)
         raise Operator::Failure.new("ledger_invalid", "the ledger with the new entry does not validate", "problems" => errors.map { |error| "#{error.pointer} #{error.message}".strip }) unless errors.empty?
 
+        Trace.info("ledger entry computed", project: @id, upgrade: @upgrade ? "yes" : "no", created: @ledger_created ? "yes" : "no")
         updated
       rescue Schema::Document::ParseError => e
         raise Operator::Failure.new("ledger_invalid", e.message)
@@ -693,6 +698,7 @@ module Polispec
         elsif !@options.dry
           backup = File.join(File.dirname(path), "#{File.basename(path)}.bak-#{Time.now.utc.strftime('%Y%m%d%H%M%S')}")
           FileUtils.cp(path, backup, preserve: true)
+          Trace.info("ledger backup", path: Trace.path(backup))
           atomic_write(path, updated, File.stat(path).mode & 0o777)
         end
         if @upgrade

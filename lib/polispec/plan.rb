@@ -120,8 +120,10 @@ module Polispec
     end
 
     def build
-      parts = Probes.silently { send("build_#{@spec.kind}") }
-      finalize(parts)
+      Trace.step("build plan", kind: @spec.kind, package: @spec.package, id: @spec.id, from: @spec.from) do
+        parts = Probes.silently { send("build_#{@spec.kind}") }
+        finalize(parts)
+      end
       self
     end
 
@@ -205,6 +207,19 @@ module Polispec
         "reasons" => reasons, "steps" => parts[:steps], "notes" => @notes.uniq,
         "effects" => effects_for(parts)
       }
+      trace_plan(parts) if Trace.on?
+    end
+
+    def trace_plan(parts)
+      Trace.info("plan target", target: @data["target"])
+      Trace.info("plan digests", proposed: Packages.sha(JSON.generate(canonical(parts[:proposed]))), current: Packages.sha(JSON.generate(canonical(parts[:current]))))
+      Trace.info("plan classification", classification: @data["classification"], needs_confirm: @data["needs_confirm"], plan_id: @data["plan_id"])
+      @data["files"].each { |file| Trace.info("plan file", path: Trace.path(file["path"]), action: file["action"], digest: file["digest"]) }
+      Trace.info("plan ledger", effect: @data["ledger"] ? "changes" : "untouched")
+      changed = @data["probes"].reject { |probe| probe["change"] == "same" }
+      Trace.info("plan probes", judged: @data["probes"].length, changed: changed.length)
+      Trace.info("plan journal", replayed: @data["journal"].length)
+      @data["notes"].each { |note| Trace.info("plan note", note: note) }
     end
 
     def classify(rows)

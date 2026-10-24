@@ -305,17 +305,28 @@ module Polispec
       raise Operator::Failure.new("index_dirty", "the index already has staged changes; commit or unstage them first", "staged" => staged) unless staged.empty?
 
       before = Changes.epoch
-      manifest = validate!("manifest", self.for(id, ledger: ledger))
+      manifest = Trace.step("compose manifest", project: id) { validate!("manifest", self.for(id, ledger: ledger)) }
+      Trace.info("manifest composed", status: manifest["status"], enforce: manifest["enforce"], policy_digest: manifest.dig("policy", "digest"), effective_digest: manifest.dig("layers", "effective_digest"), findings: manifest["findings"].to_h.values.map(&:length).sum) if Trace.on?
       paths = [MANIFEST_FILE, BADGE_FILE]
-      Lint.guard_write!(manifest_json(manifest), path: File.join(repo, MANIFEST_FILE), format: :json)
-      write_atomic(File.join(repo, MANIFEST_FILE), manifest_json(manifest))
-      write_atomic(File.join(repo, BADGE_FILE), badge_svg(manifest))
-      git.run!("add", "--", *paths, code: "stage_failed")
-      changed = git.run!("diff", "--cached", "--name-only", "--", *paths, code: "stage_failed").out.lines.map(&:chomp)
+      Trace.step("write #{MANIFEST_FILE}", path: (Trace.path(File.join(repo, MANIFEST_FILE)) if Trace.on?)) do
+        Lint.guard_write!(manifest_json(manifest), path: File.join(repo, MANIFEST_FILE), format: :json)
+        write_atomic(File.join(repo, MANIFEST_FILE), manifest_json(manifest))
+        Trace.info("wrote file", path: MANIFEST_FILE, bytes: manifest_json(manifest).bytesize) if Trace.on?
+      end
+      Trace.step("write badge", path: (Trace.path(File.join(repo, BADGE_FILE)) if Trace.on?)) do
+        write_atomic(File.join(repo, BADGE_FILE), badge_svg(manifest))
+        Trace.info("wrote file", path: BADGE_FILE, bytes: badge_svg(manifest).bytesize) if Trace.on?
+      end
+      changed = Trace.step("stage") do
+        git.run!("add", "--", *paths, code: "stage_failed")
+        git.run!("diff", "--cached", "--name-only", "--", *paths, code: "stage_failed").out.lines.map(&:chomp)
+      end
       return { "id" => id, "committed" => [], "detail" => "the manifest is already current" } if changed.empty?
 
-      git.run!("commit", "--quiet", "-m", COMMIT_MESSAGE, "--", *changed, code: "commit_failed")
-      sha = git.rev("HEAD")
+      sha = Trace.step("commit", files: changed) do
+        git.run!("commit", "--quiet", "-m", COMMIT_MESSAGE, "--", *changed, code: "commit_failed")
+        git.rev("HEAD")
+      end
       Changes.record(kind: "manifest", subject: { "manifest" => id, "action" => "write", "sha" => sha }, epoch_before: before, effects: [])
       { "id" => id, "committed" => changed, "sha" => sha, "detail" => "committed #{changed.join(', ')}" }
     end
@@ -376,11 +387,14 @@ module Polispec
         raise Operator::Failure.new("index_dir_unavailable", "#{index_dir} must exist and be writable by #{name}; polispec does not create it", "dir" => index_dir)
       end
 
-      document = validate!("index", index(ledger: ledger))
+      document = Trace.step("compose index", user: name) { validate!("index", index(ledger: ledger)) }
+      Trace.info("index composed", entries: document["entries"].length)
       confirm!("publish", name)
       before = Changes.epoch
-      Lint.guard_write!("#{JSON.pretty_generate(document)}\n", path: target, format: :json)
-      write_atomic(target, "#{JSON.pretty_generate(document)}\n", 0o644)
+      Trace.step("write index", path: (Trace.path(target) if Trace.on?)) do
+        Lint.guard_write!("#{JSON.pretty_generate(document)}\n", path: target, format: :json)
+        write_atomic(target, "#{JSON.pretty_generate(document)}\n", 0o644)
+      end
       Changes.record(kind: "manifest", subject: { "index" => name, "action" => "publish" }, epoch_before: before, effects: [])
       { "published" => target, "entries" => document["entries"].length }
     end
@@ -393,7 +407,7 @@ module Polispec
 
       confirm!("unpublish", name)
       before = Changes.epoch
-      File.delete(target)
+      Trace.step("remove index", path: (Trace.path(target) if Trace.on?)) { File.delete(target) }
       Changes.record(kind: "manifest", subject: { "index" => name, "action" => "unpublish" }, epoch_before: before, effects: [])
       { "unpublished" => target }
     end

@@ -17,7 +17,7 @@ module Polispec
       json = take_flag!(args, "--json")
       operation = args.shift
       raise_usage unless %w[grammar parse plan install verify uninstall scan].include?(operation)
-      data = send("run_#{operation}", args)
+      data = Trace.step("harness #{operation}") { send("run_#{operation}", args) }
       operation_id = data.is_a?(Hash) && data["operation_id"] || operation_id(operation, data)
       result = envelope(true, operation, operation_id, data, findings_from(data))
       render(result, json)
@@ -77,25 +77,34 @@ module Polispec
 
     def run_plan(args)
       file, context = planning_arguments(args, dry_run: false)
-      document = load_document(file)
-      HarnessControls::Lifecycle.plan(document, context.delete("harness"), context)
+      document = Trace.step("load control document", file: Trace.path(file)) { load_document(file) }
+      Trace.step("plan controls", harness: context["harness"], scope: context["scope"], edition: context["edition"]) do
+        planned = HarnessControls::Lifecycle.plan(document, context.delete("harness"), context)
+        Trace.info("plan", operation: planned["operation_id"], control_digest: planned["control_digest"], artifacts: Array(planned["artifacts"]).length, findings: Array(planned["findings"]).length)
+        planned
+      end
     end
 
     def run_install(args)
       file, context = planning_arguments(args, dry_run: true)
       dry_run = context.delete("dry_run")
-      document = load_document(file)
-      planned = HarnessControls::Lifecycle.plan(document, context.delete("harness"), context)
+      document = Trace.step("load control document", file: Trace.path(file)) { load_document(file) }
+      planned = Trace.step("plan controls", harness: context["harness"], scope: context["scope"], edition: context["edition"]) do
+        found = HarnessControls::Lifecycle.plan(document, context.delete("harness"), context)
+        Trace.info("plan", operation: found["operation_id"], control_digest: found["control_digest"], artifacts: Array(found["artifacts"]).length, findings: Array(found["findings"]).length)
+        found
+      end
       return { "operation_id" => planned["operation_id"], "dry_run" => true, "plan" => planned, "findings" => planned["findings"] } if dry_run
       unless HarnessControls::Features.enabled?("harness_controls")
         raise HarnessControls::Lifecycle::Failure.new("feature_disabled", "harness mutation remains disabled during construction", exit_status: 3, data: planned)
       end
-      HarnessControls::Lifecycle.install(planned, { "scope" => planned["scope"] })
+      Trace.step("install controls", scope: planned["scope"], operation: planned["operation_id"]) { HarnessControls::Lifecycle.install(planned, { "scope" => planned["scope"] }) }
     end
 
     def run_verify(args)
       raise_usage unless args.length == 1 && valid_id?(args.first)
       result = HarnessControls::Lifecycle.verify(args.first)
+      Trace.info("verification", integrity: result["integrity"], ownership: result["ownership"], certified: result["certified"], findings: Array(result["findings"]).length)
       unless result["integrity"] && result["ownership"]
         raise HarnessControls::Lifecycle::Failure.new("verification_failed", "installed artifact integrity or ownership verification failed", data: result, findings: result["findings"])
       end
@@ -127,7 +136,9 @@ module Polispec
       unless HarnessControls::Features.enabled?("harness_controls")
         raise HarnessControls::Lifecycle::Failure.new("feature_disabled", "harness mutation remains disabled during construction", exit_status: 3) unless dry_run
       end
-      HarnessControls::Lifecycle.uninstall(installation_id, owner: owner, scope: scope, project: project && File.expand_path(project), state_home: state_home && File.expand_path(state_home), dry_run: dry_run)
+      Trace.step("uninstall controls", installation: installation_id, owner: owner, scope: scope, dry_run: dry_run) do
+        HarnessControls::Lifecycle.uninstall(installation_id, owner: owner, scope: scope, project: project && File.expand_path(project), state_home: state_home && File.expand_path(state_home), dry_run: dry_run)
+      end
     end
 
     def run_scan(args)
@@ -136,6 +147,7 @@ module Polispec
       raise Polispec::Error, "unknown harness backend #{harness}" if harness && !HarnessControls::Backends.names.include?(harness)
       result = HarnessControls::Lifecycle.scan({ "requested_edition" => HarnessControls::Lifecycle.edition })
       result["harness"] = harness if harness
+      Trace.info("scan", harness: harness, findings: Array(result["findings"]).length)
       failed = Array(result["findings"]).find { |row| row.is_a?(Hash) && row["code"] == "environment_scan_failed" }
       raise HarnessControls::Lifecycle::Failure.new("environment_scan_failed", failed["detail"], exit_status: 1, data: result, findings: result["findings"]) if failed
       result

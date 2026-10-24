@@ -93,7 +93,7 @@ module Polispec
     end
 
     def git_config_path(checkout)
-      out, status = Open3.capture2({ "GIT_DIR" => nil, "GIT_WORK_TREE" => nil }, "git", "-C", checkout, "rev-parse", "--git-path", "config", err: File::NULL)
+      out, status = Trace.capture2({ "GIT_DIR" => nil, "GIT_WORK_TREE" => nil }, "git", "-C", checkout, "rev-parse", "--git-path", "config", err: File::NULL, trace: :quiet)
       status.success? ? File.expand_path(out.strip, checkout) : nil
     rescue SystemCallError
       nil
@@ -145,9 +145,14 @@ module Polispec
     end
 
     def build_plan(keep, persist)
-      list = candidates(persist)
+      list = Trace.step("scan deployments", persist: persist, keep: keep) do
+        found = candidates(persist)
+        Trace.info("deployments found", count: found.length)
+        found
+      end
       select_entries(list, keep).map do |entry|
         live = Deployments.status_of(entry)
+        Trace.info("deployment", kind: entry["kind"], target: Trace.path(entry["target"].to_s), live: live)
         { "entry" => entry, "live" => live, "files" => live == "gone" && entry["kind"] != "hooks" ? [] : files_for(entry), "describe" => describe(entry) }
       end
     end
@@ -217,6 +222,7 @@ module Polispec
       plan = build_plan(keep, true)
       FileUtils.mkdir_p(backups_dir, mode: 0o700)
       FileUtils.mkdir_p(dir, mode: 0o700)
+      Trace.info("backup directory", id: id, dir: Trace.path(dir))
       backup = {
         "schema" => SCHEMA, "id" => id, "created_at" => Time.now.utc.iso8601, "polispec_version" => Polispec.version,
         "runtime_root" => Runtime.root, "keep" => keep, "entries" => plan.map { |item| item["entry"] },
@@ -224,10 +230,13 @@ module Polispec
       }
       manifest = Deployments.path
       FileUtils.cp(manifest, File.join(dir, "deployments.json"), preserve: true) if File.file?(manifest)
-      plan.each do |item|
-        item["files"].each { |file| copy_in(backup, dir, item["entry"], file) }
+      Trace.step("backup files", id: id) do
+        plan.each do |item|
+          item["files"].each { |file| copy_in(backup, dir, item["entry"], file) }
+        end
+        write_json(File.join(dir, "backup.json"), backup)
+        Trace.info("backup manifest written", path: Trace.path(File.join(dir, "backup.json")), files: backup["files"].length)
       end
-      write_json(File.join(dir, "backup.json"), backup)
       before = Changes.epoch
       Changes.record(kind: "uninstall", subject: { "backup_id" => id, "keep" => keep }, epoch_before: before)
       statuses = {}
@@ -236,7 +245,7 @@ module Polispec
         refresh_after(backup, item["entry"]["id"])
       end
       write_json(File.join(dir, "backup.json"), backup)
-      move_data(plan, backup, dir, statuses)
+      Trace.step("move data") { move_data(plan, backup, dir, statuses) }
       write_json(File.join(dir, "backup.json"), backup)
       report(backup, dir, json)
     end
@@ -244,6 +253,8 @@ module Polispec
     def copy_in(backup, dir, entry, file)
       return unless present?(file)
       return if backup["files"].any? { |record| record["original"] == file }
+
+      Trace.info("backup copy", file: Trace.path(file), size: (File.lstat(file).size rescue nil), sha256: sha_of(file)) if Trace.on?
 
       stored = File.join("files", file.sub(%r{\A/}, ""))
       target = File.join(dir, stored)
@@ -271,7 +282,11 @@ module Polispec
 
     def run_step(item, backup)
       entry = item["entry"]
-      status, detail = perform(entry, item["live"])
+      status, detail = Trace.step("surface #{entry['kind']}", target: Trace.path(entry["target"].to_s), live: item["live"]) do
+        result = perform(entry, item["live"])
+        Trace.info("surface result", status: result[0], detail: result[1])
+        result
+      end
       backup["steps"] << { "entry" => entry["id"], "kind" => entry["kind"], "target" => entry["target"], "status" => status, "detail" => detail }
       status
     rescue StandardError, ScriptError => e
@@ -373,7 +388,7 @@ module Polispec
       return "it lies in the global shelf #{shelf}" if shelf && (expanded == shelf || expanded.start_with?("#{shelf}/"))
 
       dir = File.directory?(expanded) ? expanded : File.dirname(expanded)
-      out, status = Open3.capture2({ "GIT_DIR" => nil, "GIT_WORK_TREE" => nil }, "git", "-C", dir, "rev-parse", "--show-toplevel", err: File::NULL)
+      out, status = Trace.capture2({ "GIT_DIR" => nil, "GIT_WORK_TREE" => nil }, "git", "-C", dir, "rev-parse", "--show-toplevel", err: File::NULL, trace: :quiet)
       status.success? ? "it lies in the git working tree #{out.strip}" : nil
     rescue SystemCallError
       nil
@@ -383,10 +398,12 @@ module Polispec
       source = entry["target"]
       unless present?(source)
         backup["steps"] << { "entry" => entry["id"], "kind" => entry["kind"], "target" => source, "status" => "gone", "detail" => "nothing to move" }
+        Trace.info("data gone", kind: entry["kind"], path: Trace.path(source))
         return "gone"
       end
       reason = kept_reason(source)
       if reason
+        Trace.info("data kept", kind: entry["kind"], path: Trace.path(source), reason: reason)
         backup["steps"] << { "entry" => entry["id"], "kind" => entry["kind"], "target" => source, "status" => "kept", "detail" => "not moved: #{reason}" }
         return "kept"
       end
@@ -394,6 +411,7 @@ module Polispec
       destination = File.join(dir, stored)
       FileUtils.mkdir_p(File.dirname(destination))
       method = relocate(source, destination)
+      Trace.info("data moved", kind: entry["kind"], path: Trace.path(source), method: method)
       backup["data"] << { "entry" => entry["id"], "original" => source, "stored" => stored, "kind" => File.directory?(destination) ? "dir" : "file", "method" => method }
       backup["steps"] << { "entry" => entry["id"], "kind" => entry["kind"], "target" => source, "status" => "ok", "detail" => "moved into #{stored} (#{method})" }
       "ok"
@@ -477,7 +495,7 @@ module Polispec
         UninstallAll.preload
         raise Polispec::Error, "--mode takes rewire or bytes" unless %w[rewire bytes].include?(mode)
 
-        backup, dir = load_backup(id)
+        backup, dir = Trace.step("load backup", id: id, mode: mode) { load_backup(id) }
         lines = plan_lines(backup, mode)
         if dry_run
           if json
@@ -503,9 +521,9 @@ module Polispec
 
       def execute(backup, dir, mode, json)
         results = []
-        restore_data(backup, dir, results)
-        restored = mode == "rewire" ? rewire(backup, results) : restore_bytes(backup, dir, results)
-        sync_manifest(backup, restored)
+        Trace.step("restore data") { restore_data(backup, dir, results) }
+        restored = Trace.step("restore #{mode}") { mode == "rewire" ? rewire(backup, results) : restore_bytes(backup, dir, results) }
+        Trace.step("sync deployments") { sync_manifest(backup, restored) }
         Changes.record(kind: "restore", subject: { "backup_id" => backup["id"], "mode" => mode }, epoch_before: Changes.epoch)
         backup["restored_at"] = Time.now.utc.iso8601
         backup["restore_results"] = results
@@ -519,12 +537,14 @@ module Polispec
           target = item["original"]
           if UninstallAll.present?(target)
             results << { "item" => target, "kind" => "data", "status" => "data_conflict", "detail" => "#{target} exists; left as it is" }
+            Trace.info("data conflict", path: Trace.path(target))
           elsif !UninstallAll.present?(source)
             results << { "item" => target, "kind" => "data", "status" => "failed", "detail" => "#{source} is missing from the backup" }
           else
             FileUtils.mkdir_p(File.dirname(target))
             FileUtils.cp_r(source, target, preserve: true)
             results << { "item" => target, "kind" => "data", "status" => "ok", "detail" => "copied back" }
+            Trace.info("data restored", path: Trace.path(target))
           end
         rescue StandardError => e
           results << { "item" => target, "kind" => "data", "status" => "failed", "detail" => "#{e.class}: #{e.message}" }
@@ -539,6 +559,7 @@ module Polispec
           unless current == "absent" || current == record["sha256_after"]
             edited << record["entry"]
             results << { "item" => target, "kind" => record["kind"], "status" => "edited_since", "detail" => "#{target} changed after the uninstall; left as it is" }
+            Trace.info("conflict, edited since the uninstall", path: Trace.path(target))
             next
           end
           source = File.join(dir, record["stored"])
@@ -550,6 +571,7 @@ module Polispec
             FileUtils.cp(source, target, preserve: true)
           end
           results << { "item" => target, "kind" => record["kind"], "status" => "ok", "detail" => "copied back" }
+          Trace.info("file restored", path: Trace.path(target), kind: record["kind"])
         rescue StandardError => e
           edited << record["entry"]
           results << { "item" => target, "kind" => record["kind"], "status" => "failed", "detail" => "#{e.class}: #{e.message}" }
@@ -564,7 +586,11 @@ module Polispec
         chosen = chosen.sort_by { |entry| REWIRE_ORDER.index(entry["kind"]) }
         restored = []
         chosen.each do |entry|
-          status, detail = rewire_one(entry)
+          status, detail = Trace.step("rewire #{entry['kind']}", target: Trace.path(entry["target"].to_s)) do
+            outcome = rewire_one(entry)
+            Trace.info("rewire result", status: outcome[0], detail: outcome[1])
+            outcome
+          end
           results << { "item" => entry["target"], "kind" => entry["kind"], "status" => status, "detail" => detail }
           restored << entry if status == "ok"
         rescue StandardError, ScriptError => e

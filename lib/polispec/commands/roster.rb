@@ -19,8 +19,10 @@ module Polispec
         opts = parse(args)
         return usage unless opts && %w[resolve check].include?(verb)
 
-        roster, digest = load_roster(opts)
+        roster, digest = Trace.step("load roster", project: opts[:project], source: (opts[:roster] ? Trace.path(opts[:roster]) : "trust ref")) { load_roster(opts) }
         return fail_with(opts, roster) if digest.nil?
+
+        Trace.info("roster loaded", digest: digest)
 
         verb == "resolve" ? resolve(opts, roster, digest) : check(opts, roster)
       rescue Roster::Unknown, Polispec::Error => e
@@ -78,14 +80,17 @@ module Polispec
         project = Ledger.load.project(id)
         raise Polispec::Error, "project #{id} is not in the ledger" unless project
 
-        out, err, status = Open3.capture3("git", "-C", File.expand_path(project.repo), "show", "#{project.trust_ref}:#{project.roster}")
+        out, err, status = Trace.capture3("git", "-C", File.expand_path(project.repo), "show", "#{project.trust_ref}:#{project.roster}", trace: :quiet)
         raise Polispec::Error, "cannot read #{project.trust_ref}:#{project.roster} in #{project.repo}: #{err.strip}" unless status.success?
 
         out
       end
 
       def resolve(opts, roster, digest)
-        result = Roster.resolve(roster, role: opts[:role], pipeline: opts[:pipeline], phase: opts[:phase], env: opts[:env] || "dev", digest: digest)
+        result = Trace.step("resolve assignment", role: opts[:role], pipeline: opts[:pipeline], phase: opts[:phase], env: opts[:env] || "dev") do
+          Roster.resolve(roster, role: opts[:role], pipeline: opts[:pipeline], phase: opts[:phase], env: opts[:env] || "dev", digest: digest)
+        end
+        Trace.info("resolved", default: JSON.generate(result["default"]), env_allowed: result["env_allowed"]) if Trace.on?
         if opts[:json]
           puts JSON.generate(result)
         else
@@ -102,7 +107,8 @@ module Polispec
 
         text = opts[:profile] == "-" ? $stdin.read : read_file(opts[:profile])
         profile = Schema::Document.parse(text, opts[:profile])
-        violations = Roster.check(roster, opts[:pipeline], profile, env: opts[:env])
+        violations = Trace.step("check profile", pipeline: opts[:pipeline], env: opts[:env]) { Roster.check(roster, opts[:pipeline], profile, env: opts[:env]) }
+        Trace.info("profile checked", violations: violations.length)
         if opts[:json]
           puts JSON.generate("ok" => violations.empty?, "violations" => violations)
         elsif violations.empty?

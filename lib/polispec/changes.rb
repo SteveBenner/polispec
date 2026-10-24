@@ -36,14 +36,18 @@ module Polispec
     end
 
     def record(kind:, subject:, epoch_before:, details: {}, actor: nil, effects: nil)
-      Layers.reset!
-      Exceptions.reset! if defined?(Exceptions) && Exceptions.respond_to?(:reset!)
-      context = details.is_a?(Hash) && details["runtime_dir"] ? { runtime: Effect.release_material(details["runtime_dir"]) } : {}
-      body = {
-        "schema" => SCHEMA, "ts" => Time.now.utc.iso8601(3), "kind" => kind, "actor" => actor || self.actor, "subject" => subject,
-        "epoch_before" => epoch_before, "epoch_after" => Effect.epoch(nil, context), "effects" => effects || Effect.classes(kind, details)
-      }
-      chain.append(body)
+      Trace.step("record change", kind: kind) do
+        Layers.reset!
+        Exceptions.reset! if defined?(Exceptions) && Exceptions.respond_to?(:reset!)
+        context = details.is_a?(Hash) && details["runtime_dir"] ? { runtime: Effect.release_material(details["runtime_dir"]) } : {}
+        body = {
+          "schema" => SCHEMA, "ts" => Time.now.utc.iso8601(3), "kind" => kind, "actor" => actor || self.actor, "subject" => subject,
+          "epoch_before" => epoch_before, "epoch_after" => Effect.epoch(nil, context), "effects" => effects || Effect.classes(kind, details)
+        }
+        entry = chain.append(body)
+        Trace.info("recorded", id: entry["id"]) if Trace.on? && entry.is_a?(Hash)
+        entry
+      end
     rescue StandardError, ScriptError => error
       unrecorded(error)
     end

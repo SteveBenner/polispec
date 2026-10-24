@@ -1,7 +1,7 @@
 schema: rplugin/v1
 id: polispec
 name: Polispec
-version: 0.43.0
+version: 0.44.0
 rplugin: ">= 1.17.0"
 native: true
 description: "Spec-based policy guardrails for agentic development and operations: committed environment policies and deterministic harness controls, with explicit backend capabilities and enforcement limits."
@@ -40,6 +40,7 @@ settings:
   - { key: polispec.lint.on_write, type: enum, options: ["off", "on"], default: "on", scopes: [machine], description: "on or off; default on. on: a generator that writes a rulebook, ledger, manifest, index, exceptions file, deployments manifest or delegate grants file lints its output first and refuses an error finding with lint_failed, writing nothing. off: generators write as in 0.41.1." }
   - { key: polispec.lint.doctor, type: enum, options: ["off", "on"], default: "on", scopes: [machine], description: "on or off; default on. on: doctor files the error, warn and info findings of the host scope of polispec lint as lint_<code> findings. off: doctor files none." }
   - { key: polispec.lint.strict, type: enum, options: ["off", "on"], default: "off", scopes: [machine], description: "on or off; default off. on: a warn finding fails polispec lint (exit 1), as --strict does for one run. Description findings keep following polispec.description.strict." }
+  - { key: polispec.verbose.trace, type: enum, options: ["off", "on"], default: "on", scopes: [machine], description: "on or off; default on. off: a verbose run (--verbose or POLISPEC_VERBOSE) streams to stderr but writes no trace file under the state home." }
   - { key: polispec.web.bind, type: string, default: 127.0.0.1, scopes: [machine], description: "Address polispec web listens on; default 127.0.0.1. Any address that is not a loopback address is refused unless polispec web is started with --expose on a TTY after the typed phrase expose polispec web." }
   - { key: polispec.web.port, type: string, default: "7421", scopes: [machine], description: "TCP port of polispec web; default 7421; 0 picks a free port." }
   - { key: polispec.web.public_origin, type: string, default: "", scopes: [machine], description: "Optional exact HTTPS origin for an external reverse proxy. Uses this origin for links, Host and Origin checks, and Secure cookies. Does not expose the listener or configure a proxy." }

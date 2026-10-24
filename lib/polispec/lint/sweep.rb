@@ -21,26 +21,45 @@ module Polispec
         labels = {}
         scratch = []
         targets = []
-        roots.each { |root| targets.concat(Targets.project(root, notes: notes)) }
-        files.each do |file|
-          path = File.expand_path(file)
-          targets << Targets.target(path: path, kind: "auto", format: Lint.format_for(path), descriptions: true)
+        Trace.step("collect targets") do
+          roots.each { |root| targets.concat(Targets.project(root, notes: notes)) }
+          files.each do |file|
+            path = File.expand_path(file)
+            targets << Targets.target(path: path, kind: "auto", format: Lint.format_for(path), descriptions: true)
+          end
+          targets.concat(Targets.host(for_doctor: for_doctor, notes: notes, roots: host_roots, labels: labels, scratch: scratch)) if host
+          targets.concat(Targets.shipped(notes: notes)) if shipped
+          targets = targets.uniq { |target| [target.path, target.kind] }
+          Trace.info("targets collected", project_roots: roots.length, files: files.length, host: host, shipped: shipped, targets: targets.length, rules: only) if Trace.on?
         end
-        targets.concat(Targets.host(for_doctor: for_doctor, notes: notes, roots: host_roots, labels: labels, scratch: scratch)) if host
-        targets.concat(Targets.shipped(notes: notes)) if shipped
-        targets = targets.uniq { |target| [target.path, target.kind] }
         findings = notes.select { |note| only.include?(note.rule) }
         description_error = Engine::Settings.description_strict?
         targets.each do |target|
-          check_target(target, only, description_error).each do |item|
-            item.path = labels[item.path] if labels.key?(item.path)
-            findings << item
+          Trace.step("check #{Trace.path(target.path)}", kind: target.kind) do
+            found = check_target(target, only, description_error)
+            found.each do |item|
+              item.path = labels[item.path] if labels.key?(item.path)
+              findings << item
+            end
+            Trace.info("target checked", error: found.count(&:error?), warn: found.count { |item| item.severity == "warn" }, info: found.count { |item| item.severity == "info" }) if Trace.on?
           end
         end
         scope = { roots: (roots.map { |root| File.expand_path(root) } + host_roots).uniq, host: host, shipped: shipped, targets: targets }
-        findings.concat(Drift.check(scope, only: only, for_doctor: for_doctor))
-        findings.concat(Refs.check(scope, only: only, for_doctor: for_doctor))
-        Report.new(Lint.finalize(findings), targets.length)
+        Trace.step("drift") do
+          before = findings.length
+          findings.concat(Drift.check(scope, only: only, for_doctor: for_doctor))
+          Trace.info("drift checked", findings: findings.length - before) if Trace.on?
+        end
+        Trace.step("refs") do
+          before = findings.length
+          findings.concat(Refs.check(scope, only: only, for_doctor: for_doctor))
+          Trace.info("refs checked", findings: findings.length - before) if Trace.on?
+        end
+        Trace.step("summary") do
+          report = Report.new(Lint.finalize(findings), targets.length)
+          Trace.info("lint summary", targets: report.targets, error: report.counts["error"], warn: report.counts["warn"], info: report.counts["info"]) if Trace.on?
+          report
+        end
       ensure
         scratch.each { |dir| FileUtils.remove_entry(dir) if File.directory?(dir) } if scratch
       end

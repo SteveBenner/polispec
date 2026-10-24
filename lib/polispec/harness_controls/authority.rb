@@ -716,6 +716,8 @@ module Polispec
         stdout = +""
         stderr = +""
         status = nil
+        Trace.command(argv)
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         Open3.popen3(*argv) do |stdin, out, err, waiter|
           stdin.close
           readers = [[out, stdout], [err, stderr]].map do |io, target|
@@ -738,6 +740,7 @@ module Polispec
           readers.each(&:value)
           status = waiter.value
         end
+        Trace.exit_line(status.exitstatus || -1, (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000) if Trace.on?
         [stdout, stderr, status]
       rescue Timeout::Error
         raise Failure.new("subprocess_timeout", "#{argv.first} exceeded #{COMMAND_TIMEOUT} seconds")

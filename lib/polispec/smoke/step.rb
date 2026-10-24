@@ -39,23 +39,43 @@ module Polispec
         cwd = expanded["cwd"] || layout.scratch
         env = layout.env(expanded["env"] || {}, home: expanded["home"] == true)
         timeout = expanded["timeout"] || DEFAULT_TIMEOUT
-        result = if expanded["tty"]
-                   Exec.run_pty(argv, env: env, chdir: cwd, lines: expanded["tty"], timeout: timeout)
-                 else
-                   Exec.run(argv, env: env, chdir: cwd, stdin: payload || expanded["stdin"], timeout: timeout)
-                 end
-        verdict = expanded["hook"] ? hook_verdict(expanded["hook"], result.stdout) : nil
-        checks = check(expect, result, verdict, shas, expanded["hook"])
-        {
-          "name" => step["name"], "run" => template(step), "argv" => argv, "exit" => result.exit,
-          "duration_ms" => (result.duration * 1000).round, "timed_out" => result.timed_out,
-          "stdout" => clip(result.stdout), "stderr" => clip(result.stderr), "decision" => verdict && verdict["decision"],
-          "rule" => verdict && verdict["rule"], "checks" => checks, "ok" => checks.all? { |item| item["ok"] },
-          "parity" => step["parity"] || "compare", "stop" => step["stop"] == true, "expect" => step["expect"],
-          "full_stdout" => result.stdout
-        }
+        Polispec::Trace.step("step #{step['name']}", argv: argv.is_a?(Array) ? argv.join(" ") : argv, cwd: Polispec::Trace.on? ? Polispec::Trace.path(cwd) : nil) do
+          result = if expanded["tty"]
+                     Exec.run_pty(argv, env: env, chdir: cwd, lines: expanded["tty"], timeout: timeout)
+                   else
+                     Exec.run(argv, env: env, chdir: cwd, stdin: payload || expanded["stdin"], timeout: timeout)
+                   end
+          verdict = expanded["hook"] ? hook_verdict(expanded["hook"], result.stdout) : nil
+          checks = check(expect, result, verdict, shas, expanded["hook"])
+          trace_outcome(result, checks)
+          {
+            "name" => step["name"], "run" => template(step), "argv" => argv, "exit" => result.exit,
+            "duration_ms" => (result.duration * 1000).round, "timed_out" => result.timed_out,
+            "stdout" => clip(result.stdout), "stderr" => clip(result.stderr), "decision" => verdict && verdict["decision"],
+            "rule" => verdict && verdict["rule"], "checks" => checks, "ok" => checks.all? { |item| item["ok"] },
+            "parity" => step["parity"] || "compare", "stop" => step["stop"] == true, "expect" => step["expect"],
+            "full_stdout" => result.stdout
+          }
+        end
       rescue ScenarioError => e
         failure(step, e.message)
+      end
+
+      def trace_outcome(result, checks)
+        return unless Polispec::Trace.on?
+
+        failed = checks.reject { |item| item["ok"] }
+        if failed.empty?
+          Polispec::Trace.info("step passed", exit: result.exit, stdout_bytes: result.stdout.bytesize, stderr_bytes: result.stderr.bytesize, ms: (result.duration * 1000).round)
+          return
+        end
+        Polispec::Trace.info("step failed", exit: result.exit, stdout_bytes: result.stdout.bytesize, stderr_bytes: result.stderr.bytesize, ms: (result.duration * 1000).round)
+        failed.each { |item| Polispec::Trace.info("check failed", check: item["check"], detail: item["detail"]) }
+        [[:out, result.stdout], [:err, result.stderr]].each do |stream, text|
+          lines = text.lines
+          lines.first(40).each { |line| Polispec::Trace.output(line, stream: stream) }
+          Polispec::Trace.info("#{stream == :out ? 'stdout' : 'stderr'} truncated", lines_total: lines.length) if lines.length > 40
+        end
       end
 
       def failure(step, message)

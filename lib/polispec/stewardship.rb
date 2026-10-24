@@ -50,8 +50,8 @@ module Polispec
 
     def ensure!(out: $stdout, quiet: false)
       steps = []
-      [[1, method(:rule_step)], [2, method(:runtime_step)], [3, method(:pin_step)], [4, method(:personal_step)]].each do |number, action|
-        step = action.call(number)
+      [[1, method(:rule_step), "rule"], [2, method(:runtime_step), "runtime protection"], [3, method(:pin_step), "pinned runtime"], [4, method(:personal_step), "personal defaults"]].each do |number, action, name|
+        step = traced(number, name) { action.call(number) }
         steps << step
         out.puts step.line unless quiet
         next unless step.status == "failed"
@@ -62,7 +62,20 @@ module Polispec
     end
 
     def check
-      [rule_step(1, check: true), runtime_step(2), pin_step(3, check: true), personal_step(4, check: true)]
+      [
+        traced(1, "rule") { rule_step(1, check: true) },
+        traced(2, "runtime protection") { runtime_step(2) },
+        traced(3, "pinned runtime") { pin_step(3, check: true) },
+        traced(4, "personal defaults") { personal_step(4, check: true) }
+      ]
+    end
+
+    def traced(number, name)
+      Trace.step("stewardship #{number} #{name}") do
+        step = yield
+        Trace.info("result", status: step.status, detail: step.detail)
+        step
+      end
     end
 
     def rule_shipped?(root)
@@ -242,7 +255,7 @@ module Polispec
       bin = rplugin_bin
       return { ok: false, tail: "#{bin} is not executable" } unless File.executable?(bin)
 
-      out, err, status = Open3.capture3(bin, *args)
+      out, err, status = Trace.capture3(bin, *args, trace: args.first == "version" ? :quiet : nil)
       { ok: status.success?, tail: Operator::Git.tail([err, out].reject(&:empty?).join("\n"), 5) }
     rescue SystemCallError => e
       { ok: false, tail: e.message }

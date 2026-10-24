@@ -16,20 +16,26 @@ module Polispec
       id = args.first
       return usage unless args.length == 1 && id.to_s.match?(/\Aalo_[0-9a-f]{12}\z/)
 
-      plane = HarnessControls::Plane.resolve
+      plane = Trace.step("check sealed plane") { HarnessControls::Plane.resolve }
+      Trace.info("plane status", status: plane["status"])
       raise Polispec::Error, "sealed authority is broken" if plane["status"] == "broken"
       if plane["status"] == "active"
-        result = HarnessControls::Authorizations.redeem(id)
+        result = Trace.step("redeem protected authorization", id: id) { HarnessControls::Authorizations.redeem(id) }
         puts "polispec: #{id} redeemed through protected authorization records"
         return result ? 0 : 1
       end
-      ledger = Ledger.load
-      entry = Engine::Passes.fold(ledger)[id]
-      raise Polispec::Error, "unknown allow-once id #{id}" unless entry
-      raise Polispec::Error, "#{id} was already consumed" if entry["consumed_at"]
+      ledger = nil
+      entry = nil
+      Trace.step("load allow-once entry", id: id) do
+        ledger = Ledger.load
+        entry = Engine::Passes.fold(ledger)[id]
+        raise Polispec::Error, "unknown allow-once id #{id}" unless entry
+        raise Polispec::Error, "#{id} was already consumed" if entry["consumed_at"]
+      end
+      Trace.info("entry found", project: entry["project"], env: entry["env"], action_class: entry["action_class"], rule: entry["rule_id"])
 
       Operator::Tty.confirm!("allow-once #{id}", prompt: describe(entry))
-      Engine::Passes.redeem!(ledger, id)
+      Trace.step("redeem allow-once", id: id) { Engine::Passes.redeem!(ledger, id) }
       Events.emit("polispec.allow_once", project: entry["project"], id: id, action_class: entry["action_class"], rule_id: entry["rule_id"], redeemed_at: Time.now.utc.iso8601, consumed_by_session: nil)
       puts "polispec: #{id} redeemed; the matching call is allowed once within #{Engine::Passes::TTL / 60} minutes"
       0

@@ -37,7 +37,7 @@ module Polispec
         validate_document!(document)
         values = stringify(context)
         values["edition"] ||= requested_edition.first
-        values["version"] ||= native_version(harness)
+        values["version"] ||= Trace.step("detect harness version", harness: harness) { native_version(harness) }
         backend = Backends.fetch(harness)
         draft = stringify(backend.plan(canonical(document), values))
         paths = Array(draft["artifacts"]).map { |artifact| artifact["path"] }
@@ -59,7 +59,11 @@ module Polispec
         actor = stringify(actor)
         document = controls_from_plan(proposed)
         context = context_from_plan(proposed)
-        trusted = self.plan(document, proposed["harness"], context, port_set: port_set)
+        trusted = Trace.step("re-plan controls", harness: proposed["harness"], scope: proposed["scope"], operation: proposed["operation_id"]) do
+          replanned = self.plan(document, proposed["harness"], context, port_set: port_set)
+          Trace.info("planned", control_digest: replanned["control_digest"], artifacts: Array(replanned["artifacts"]).length, findings: Array(replanned["findings"]).length, edition: replanned["edition"])
+          replanned
+        end
         assert_same_plan!(proposed, trusted)
         unavailable = Array(trusted["findings"]).select { |item| item["code"] == "sandbox_unavailable" }
         unless unavailable.empty?
@@ -70,72 +74,78 @@ module Polispec
           raise Failure.new("unsupported_controls", "one or more requested controls have no effective native implementation", data: { "controls" => blockers }, findings: Array(trusted["findings"]))
         end
 
-        plane = resolve_plane
+        plane = Trace.step("resolve plane") { resolve_plane }
+        Trace.info("plane", status: plane["status"], generation: plane["generation"]) if Trace.on?
         targets = Array(proposed["artifacts"]).map { |artifact| artifact["path"] }
         protected_paths = Array(plane["authority_files"]) + (plane["controls"].is_a?(Hash) ? plane["controls"].values : [])
         protected_collision = !(targets & protected_paths.map(&:to_s)).empty?
         privileged = proposed["scope"] == "managed" || protected_collision
+        Trace.info("ownership checks", targets: targets.length, protected_collision: protected_collision, privileged: privileged)
         identity = privileged ? operator_identity!("harness.install") : nil
         state = state_adapter(privileged, identity, port_set)
         installation_id = installation_id_for(proposed)
         access = file_access(privileged)
         result = nil
-        Files.with_target_locks(targets, access: access) do
-          records = read_records(state, identity)
-          block_unresolved!(records, targets)
-          latest = active_installation(records, installation_id)
-          if latest && latest["status"] == "committed"
-            receipt = stringify(latest["receipt"])
-            checked = Files.verify_receipt(receipt)
-            raise Failure.new("idempotent_install_drift", "the existing identical installation has drifted", data: checked, findings: checked["findings"]) unless checked["integrity"] && checked["ownership"]
-            unless idempotent_match?(receipt, trusted, context)
-              raise Failure.new("idempotent_install_conflict", "the installation identity matches but its planned artifacts or runtime provenance changed", exit_status: 3)
+        Trace.step("install transaction", installation: installation_id, targets: targets.length) do
+          Files.with_target_locks(targets, access: access) do
+            records = read_records(state, identity)
+            block_unresolved!(records, targets)
+            latest = active_installation(records, installation_id)
+            if latest && latest["status"] == "committed"
+              receipt = stringify(latest["receipt"])
+              checked = Files.verify_receipt(receipt)
+              raise Failure.new("idempotent_install_drift", "the existing identical installation has drifted", data: checked, findings: checked["findings"]) unless checked["integrity"] && checked["ownership"]
+              unless idempotent_match?(receipt, trusted, context)
+                raise Failure.new("idempotent_install_conflict", "the installation identity matches but its planned artifacts or runtime provenance changed", exit_status: 3)
+              end
+              result = receipt.merge("idempotent" => true)
+              Trace.info("installation already committed and identical", installation: installation_id)
+              next
             end
-            result = receipt.merge("idempotent" => true)
-            next
-          end
-          monotonic = Controls.monotonic(current_controls(proposed), document, actor)
-          if monotonic["disposition"] == "operator_required" && !privileged
-            raise Failure.new("operator_required", monotonic["reasons"].join("; "), exit_status: 3, data: monotonic)
-          end
-          operator_identity!("harness.install.loosen") if monotonic["disposition"] == "operator_required" && privileged
-          prepared = Files.prepare(proposed["artifacts"], proposed["operation_id"], access: access)
-          supersedes = inherit_ownership!(prepared, records, installation_id)
-          receipt = build_receipt(proposed, document, installation_id, prepared, plane, context, privileged)
-          receipt["supersedes"] = supersedes unless supersedes.empty?
-          schedule_plan = Schedule.plan(document, receipt, context)
-          receipt["schedules"] = schedule_plan["jobs"]
-          sequence = next_sequence(records)
-          transaction = transaction_record(proposed, receipt, "prepared", sequence, targets)
-          append_confirm!(state, transaction, identity)
-          schedules = nil
-          begin
-            Files.apply(prepared, lock: false)
-            schedules = Schedule.install(document, receipt, context, port_set: schedule_port_set) unless schedule_plan["jobs"].empty?
-            ensure_schedules_verified!(schedules)
-            receipt["schedule_results"] = schedules ? schedules["installed"] : []
-            receipt["artifact_digests"] = prepared.each_with_object({}) { |row, memo| memo[row["target"]] = row["installed_digest"] }
-            receipt["owned_entries"] = receipt_owned_entries(prepared)
-            committed = transaction_record(proposed, receipt, "committed", sequence + 1, targets)
-            append_confirm!(state, committed, identity)
-            emit_committed(port_set, proposed, receipt)
-            result = receipt
-          rescue StandardError => error
-            recovery_ids = schedules ? Array(schedules["installed"]).select { |row| row["port_accepted"] }.map { |row| row["job_id"] } : []
-            schedule_recovery = recovery_ids.empty? ? nil : Schedule.uninstall(recovery_ids, port_set: schedule_port_set)
-            rollback_failures = Files.rollback(prepared, lock: false)
-            schedule_failed = schedule_recovery && Array(schedule_recovery["uninstalled"]).any? { |row| row["absence_verified"] != true }
-            status = rollback_failures.empty? && !schedule_failed ? "rollback_complete" : "recovery_required"
-            recovery = transaction_record(proposed, receipt.merge("recovery_job_ids" => recovery_ids, "rollback_failures" => rollback_failures, "schedule_recovery" => schedule_recovery), status, sequence + 1, targets)
+            monotonic = Controls.monotonic(current_controls(proposed), document, actor)
+            if monotonic["disposition"] == "operator_required" && !privileged
+              raise Failure.new("operator_required", monotonic["reasons"].join("; "), exit_status: 3, data: monotonic)
+            end
+            operator_identity!("harness.install.loosen") if monotonic["disposition"] == "operator_required" && privileged
+            prepared = Trace.step("prepare artifacts", count: Array(proposed["artifacts"]).length) { Files.prepare(proposed["artifacts"], proposed["operation_id"], access: access) }
+            prepared.each { |row| Trace.info("artifact", path: Trace.path(row["target"].to_s), prior_exists: row["prior_exists"], backup: row["backup_path"] && Trace.path(row["backup_path"].to_s)) } if Trace.on?
+            supersedes = inherit_ownership!(prepared, records, installation_id)
+            receipt = build_receipt(proposed, document, installation_id, prepared, plane, context, privileged)
+            receipt["supersedes"] = supersedes unless supersedes.empty?
+            schedule_plan = Schedule.plan(document, receipt, context)
+            receipt["schedules"] = schedule_plan["jobs"]
+            sequence = next_sequence(records)
+            transaction = transaction_record(proposed, receipt, "prepared", sequence, targets)
+            Trace.step("journal prepared", sequence: sequence) { append_confirm!(state, transaction, identity) }
+            schedules = nil
             begin
-              append_confirm!(state, recovery, identity)
-            rescue StandardError => state_error
-              raise Failure.new("recovery_state_failed", "#{error.class}: #{error.message}; recovery journal failed: #{state_error.class}: #{state_error.message}", data: recovery)
+              Trace.step("apply artifacts", count: prepared.length) { Files.apply(prepared, lock: false) }
+              schedules = Trace.step("install schedules", jobs: schedule_plan["jobs"].length) { Schedule.install(document, receipt, context, port_set: schedule_port_set) } unless schedule_plan["jobs"].empty?
+              ensure_schedules_verified!(schedules)
+              receipt["schedule_results"] = schedules ? schedules["installed"] : []
+              receipt["artifact_digests"] = prepared.each_with_object({}) { |row, memo| memo[row["target"]] = row["installed_digest"] }
+              receipt["owned_entries"] = receipt_owned_entries(prepared)
+              committed = transaction_record(proposed, receipt, "committed", sequence + 1, targets)
+              Trace.step("journal committed", sequence: sequence + 1) { append_confirm!(state, committed, identity) }
+              emit_committed(port_set, proposed, receipt)
+              result = receipt
+            rescue StandardError => error
+              recovery_ids = schedules ? Array(schedules["installed"]).select { |row| row["port_accepted"] }.map { |row| row["job_id"] } : []
+              schedule_recovery = recovery_ids.empty? ? nil : Schedule.uninstall(recovery_ids, port_set: schedule_port_set)
+              rollback_failures = Trace.step("roll back artifacts", reason: error.class.name) { Files.rollback(prepared, lock: false) }
+              schedule_failed = schedule_recovery && Array(schedule_recovery["uninstalled"]).any? { |row| row["absence_verified"] != true }
+              status = rollback_failures.empty? && !schedule_failed ? "rollback_complete" : "recovery_required"
+              recovery = transaction_record(proposed, receipt.merge("recovery_job_ids" => recovery_ids, "rollback_failures" => rollback_failures, "schedule_recovery" => schedule_recovery), status, sequence + 1, targets)
+              begin
+                append_confirm!(state, recovery, identity)
+              rescue StandardError => state_error
+                raise Failure.new("recovery_state_failed", "#{error.class}: #{error.message}; recovery journal failed: #{state_error.class}: #{state_error.message}", data: recovery)
+              end
+              raise Failure.new(status, "installation failed and #{status.tr('_', ' ')}: #{error.class}: #{error.message}", data: recovery, exit_status: status == "recovery_required" ? 3 : 1)
             end
-            raise Failure.new(status, "installation failed and #{status.tr('_', ' ')}: #{error.class}: #{error.message}", data: recovery, exit_status: status == "recovery_required" ? 3 : 1)
           end
         end
-        record_controls(installation_id, result)
+        Trace.step("record controls deployment") { record_controls(installation_id, result) }
         result
       end
 
@@ -171,7 +181,7 @@ module Polispec
       private_class_method :retire_controls
 
       def verify(installation_id, port_set: nil, runner: nil)
-        Verifier.verify(installation_id, port_set: port_set, runner: runner)
+        Trace.step("verify installation", installation: installation_id) { Verifier.verify(installation_id, port_set: port_set, runner: runner) }
       end
 
       def uninstall(installation_id, port_set: nil, schedule_port_set: nil, owner: nil, scope: nil, project: nil, state_home: nil, dry_run: false)
@@ -285,10 +295,11 @@ module Polispec
       private_class_method :owner_check_finding
 
       def uninstall_from_state(installation_id, state, schedule_port_set, identity, dry_run, owner_profile, plane)
-        records = read_records(state, identity)
+        records = Trace.step("read installation records", installation: installation_id) { read_records(state, identity) }
         committed = active_installation(records, installation_id)
         raise Failure.new("installation_not_found", "installation #{installation_id} was not found") unless committed
         receipt = stringify(committed["receipt"])
+        Trace.info("installation found", installation: installation_id, harness: receipt["harness"], scope: receipt["scope"], protected: receipt["protected"])
         if owner_profile
           validate_mutable_receipt!(committed, receipt, owner_profile, plane)
         elsif receipt["protected"] != true
@@ -315,23 +326,23 @@ module Polispec
           sequence = next_sequence(records)
           operation_id = "uninstall_#{Digest::SHA256.hexdigest("#{installation_id}\0#{sequence}")[0, 24]}"
           plan = { "operation_id" => operation_id, "control_digest" => receipt["control_digest"], "harness" => receipt["harness"], "scope" => receipt["scope"], "edition" => receipt["edition"] }
-          file_plan = Files.prepare_uninstall(receipt)
+          file_plan = Trace.step("prepare uninstall", targets: targets.length) { Files.prepare_uninstall(receipt) }
           prepared = transaction_record(plan, receipt, "prepared", sequence, targets).merge("operation" => "uninstall")
-          append_confirm!(state, prepared, identity)
+          Trace.step("journal prepared", sequence: sequence) { append_confirm!(state, prepared, identity) }
           schedule_result = nil
           begin
-            Files.apply_uninstall(file_plan, lock: false)
+            Trace.step("apply uninstall", count: file_plan.length) { Files.apply_uninstall(file_plan, lock: false) }
             job_ids = Array(receipt["schedules"]).map { |job| job["job_id"] }
-            schedule_result = Schedule.uninstall(job_ids, port_set: schedule_port_set)
+            schedule_result = Trace.step("uninstall schedules", jobs: job_ids.length) { Schedule.uninstall(job_ids, port_set: schedule_port_set) }
             if Array(schedule_result["uninstalled"]).any? { |row| row["absence_verified"] != true }
               raise Failure.new("schedule_uninstall_unverified", "scheduled jobs were not verified absent", exit_status: 3, data: schedule_result)
             end
             removed = file_plan.map { |row| { "target" => row["target"], "backup_path" => row["uninstall_backup"] } }
             record = transaction_record(plan, receipt.merge("uninstalled_artifacts" => removed, "schedule_results" => schedule_result["uninstalled"]), "uninstalled", sequence + 1, targets)
-            append_confirm!(state, record, identity)
+            Trace.step("journal uninstalled", sequence: sequence + 1) { append_confirm!(state, record, identity) }
             result = record
           rescue StandardError => error
-            rollback_failures = Files.rollback_uninstall(file_plan, lock: false)
+            rollback_failures = Trace.step("roll back uninstall", reason: error.class.name) { Files.rollback_uninstall(file_plan, lock: false) }
             schedules_touched = schedule_result && !Array(receipt["schedules"]).empty?
             status = rollback_failures.empty? && !schedules_touched ? "rollback_complete" : "recovery_required"
             recovery = transaction_record(plan, receipt.merge("rollback_failures" => rollback_failures, "schedule_recovery" => schedule_result), status, sequence + 1, targets)
@@ -350,7 +361,7 @@ module Polispec
       def scan(context = {})
         values = stringify(context)
         values["requested_edition"] ||= requested_edition.first
-        Environment.scan(values)
+        Trace.step("scan environment", edition: values["requested_edition"]) { Environment.scan(values) }
       end
 
       def edition
