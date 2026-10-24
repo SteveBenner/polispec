@@ -369,6 +369,10 @@ A child layer is built like the repo layer: the child's includes (from its own p
 
 `polispec resolve <path> --layers --json` prints each layer with its source, digest, rule count and modules, then the effective digest (sha256 over the ordered layer digests). `polispec validate policy`, `validate global`, `validate module` and `polispec doctor` report override, include and profile errors, and an environment that deploys without a health check.
 
+## Behavior contract: `polispec.contract/v1`, `polispec.contract-vocabulary/v1`
+
+Since 0.43.0, `specs/polispec/contracts/*.yml` holds one versioned behavior contract per file, and `specs/polispec/contracts/vocabulary.yml` holds the project's vocabulary. `polispec validate contract FILE` and `polispec validate contract-vocabulary FILE` check them, and `validate auto` picks them up by schema id. Both reject unknown keys. See [contract](contract.md).
+
 ## Candidates for schema v2
 
 - SUG-1 `approvals.quorum`: N named humans must confirm a prod promotion (a second owner or reviewer).

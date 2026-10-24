@@ -9,6 +9,21 @@ module Polispec
 
     attr_reader :path, :head_path, :lock_path
 
+    def self.link(body, previous)
+      linked = body.merge("prev" => previous)
+      linked.merge("hash" => Canonical.sha256(Canonical.json(linked)))
+    end
+
+    def self.broken_at(entries)
+      previous = nil
+      entries.each_with_index do |entry, index|
+        return index unless entry.is_a?(Hash) && entry["prev"] == previous && entry["hash"] == Canonical.sha256(Canonical.json(entry.reject { |key, _| key == "hash" }))
+
+        previous = entry["hash"]
+      end
+      nil
+    end
+
     def initialize(dir:, file:, head:, lock:, prefix:, schema:)
       @dir = dir
       @path = File.join(dir, file)

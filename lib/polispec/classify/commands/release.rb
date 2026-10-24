@@ -13,7 +13,7 @@ module Polispec
       RELEASE_SCRIPT = /(?:release_stable|stable_promote|promote_stable|release_publish)\.rb\z/.freeze
       ENV_NAMES = { "stable" => "prod", "prod" => "prod", "production" => "prod", "test" => "test", "dev" => "dev", "main" => "dev" }.freeze
       OPERATOR_VERBS = %w[promote deploy].freeze
-      APPLY_VALUE_FLAGS = %w[--to --tag --minutes --reason --since --role --pipeline --phase --profile --policy --ledger --confirm --repo --variant --param --from --bind --port].freeze
+      APPLY_VALUE_FLAGS = %w[--to --tag --minutes --reason --since --role --pipeline --phase --profile --policy --ledger --confirm --repo --variant --param --from --bind --port --actor --vocabulary --runner --format --surface --out].freeze
       GOVERNED_TARGETS = %w[global ledger].freeze
       DELEGATE_GOVERNED = %w[grant revoke serve].freeze
 
@@ -30,12 +30,20 @@ module Polispec
           return apply(cmd, pos) if verb == "apply"
           return delegate(cmd, pos) if verb == "delegate"
           return web(cmd, pos) if verb == "web"
+          return contract(cmd, pos) if verb == "contract"
           return [] unless OPERATOR_VERBS.include?(verb)
 
           project = pos[1]
           target = verb == "promote" ? Support.option_value(cmd.args, "--to") : pos[2]
           env = ENV_NAMES[target.to_s]
           [Support.act(verb, cmd.text, "path" => cmd.cwd, "project" => project, "env" => env)]
+        end
+
+        def contract(cmd, pos)
+          return [] unless pos[1] == "approve"
+
+          target = pos[2] ? File.expand_path(pos[2], cmd.cwd.to_s) : cmd.cwd
+          [Support.act("policy.edit", cmd.text, "path" => target)]
         end
 
         def apply(cmd, pos)

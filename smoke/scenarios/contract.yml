@@ -1,0 +1,342 @@
+schema: polispec.smoke-scenario/v1
+unit: contract
+summary: the behavior contract validates by its schema id, resolves its behavior refs, evaluates probes built in and through a runner, composes clauses from facts, reports conflicts and surface drift, classifies a diff, chains approvals to its digest, exports a compiled bundle, and plans as a project change
+fixture:
+  global: example
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      files:
+        "lib/app.rb": "puts 1\n"
+  files:
+    "behavior.yml": |
+      schema: polispec.behavior/v2
+      id: demo.app
+      version: 1
+      authority: { id: demo, kind: application, authentication: release }
+      scope: { application: demo, spaces: [main] }
+      directives:
+        - { id: D1, opcode: DEMO, rule: Hold a notice until the work is saved., when: [always], enforce: native-gate, body: Save the work before sending a notice. }
+      parameters: {}
+      rules:
+        - { id: R1, description: hold a notice, event: notice.send, mode: declarative, binding: gate, failure: deny, message_id: M-DEMO-GATE, all: { held: [true] } }
+        - { id: R2, description: native output check, event: output.check, mode: native, binding: native-check, failure: deny, message_id: M-DEMO-NATIVE }
+      messages:
+        M-DEMO-GATE: { text: "The notice was held." }
+        M-DEMO-NATIVE: { text: "The output was flagged." }
+        demo.notice: { text: "The notice was held." }
+        demo.saved: { text: "Your work is saved." }
+        demo.unsaved: { text: "Save your work first." }
+        demo.flagged: { text: "Review the output." }
+        demo.spare: { text: "Spare text." }
+      surfaces:
+        locale_en:
+          kind: locale
+          target: out/en.yml
+          template: out/blank.txt
+          refs: [demo.notice, demo.saved, demo.unsaved, demo.flagged]
+          mode: generated
+        bundle:
+          kind: policy_json
+          target: out/bundle.json
+          template: out/blank.txt
+          refs: [DEMO, M-DEMO-NATIVE]
+          mode: generated
+    "out/blank.txt": "\n"
+    "contracts/demo-gate.yml": |
+      schema: polispec.contract/v1
+      id: demo.gate
+      version: 1.0.0
+      lifecycle: advise
+      intent: Hold a notice until the work is saved.
+      scope: { application: demo, course: null, assignment: null, harnesses: [alpha, beta] }
+      trigger: [event:notice.send]
+      precedence: { rank: 0 }
+      behavior: { path: behavior.yml, sha256: ce5cc5c903846344ad02cc8d193c136a866fe9c2e611a0b0ff1676a9314859a6 }
+      directive: DEMO
+      guards:
+        - { rule: R1, location: pre-output, decision: deny, harnesses: [alpha] }
+      messages:
+        - message_id: M-DEMO-GATE
+          clauses:
+            - { id: held, text_ref: demo.notice }
+            - { id: saved, text_ref: demo.saved, shown_when: { fact: saved, equals: true } }
+            - { id: unsaved, text_ref: demo.unsaved, shown_when: { fact: saved, equals: false } }
+      probes:
+        positive:
+          - { id: p1, event: notice.send, facts: { held: true, saved: true }, expect: { verdict: deny, message_id: M-DEMO-GATE, clauses: [held, saved], hidden: [unsaved] } }
+          - { id: p2, event: notice.send, facts: { held: true, saved: false }, expect: { verdict: deny, message_id: M-DEMO-GATE, clauses: [held, unsaved], hidden: [saved] } }
+          - { id: p3, event: notice.send, facts: { held: true }, expect: { verdict: deny, clauses: [held], hidden: [saved, unsaved] } }
+        negative:
+          - { id: n1, event: notice.send, facts: { held: false, saved: true }, expect: { verdict: allow } }
+          - { id: n2, event: notice.send, facts: { held: false, saved: false }, expect: { verdict: allow } }
+      annotations: { surface: web }
+      owner: demo-team
+      change: { reason: first version }
+    "contracts/demo-native.yml": |
+      schema: polispec.contract/v1
+      id: demo.native
+      version: 1.0.0
+      lifecycle: advise
+      intent: Flag a flagged output.
+      scope: { application: demo }
+      trigger: [event:output.check]
+      precedence: { rank: 0 }
+      behavior: { path: behavior.yml, sha256: ce5cc5c903846344ad02cc8d193c136a866fe9c2e611a0b0ff1676a9314859a6 }
+      guards:
+        - { rule: R2, location: post-output, decision: report }
+      messages:
+        - message_id: M-DEMO-NATIVE
+          compose: list
+          clauses:
+            - { id: flagged, text_ref: demo.flagged }
+      probes:
+        positive:
+          - { id: p1, event: output.check, facts: { blocked: true }, expect: { verdict: report, message_id: M-DEMO-NATIVE, clauses: [flagged] } }
+        negative:
+          - { id: n1, event: output.check, facts: { blocked: false }, expect: { verdict: allow } }
+      owner: demo-team
+      change: { reason: first version }
+    "contracts/vocabulary.yml": |
+      schema: polispec.contract-vocabulary/v1
+      locations: [pre-output, post-output]
+      annotations:
+        surface: { type: string, values: [web, cli], required: false }
+      facts:
+        held: { type: boolean }
+        saved: { type: boolean }
+        blocked: { type: boolean }
+      approvals:
+        roles: [engineering, reviewer]
+        required_roles: [engineering, reviewer]
+    "runner.rb": |
+      #!/usr/bin/env ruby
+      require "json"
+
+      $stdin.each_line do |line|
+        request = JSON.parse(line)
+        if request["facts"]["blocked"] == true
+          puts JSON.generate("id" => request["id"], "verdict" => "report", "message_id" => "M-DEMO-NATIVE", "clauses" => ["flagged"])
+        else
+          puts JSON.generate("id" => request["id"], "verdict" => "allow")
+        end
+      end
+steps:
+  - name: the demo contract validates by its schema id
+    run: ["{{polispec}}", validate, auto, "{{files}}/contracts/demo-gate.yml", --json]
+    expect:
+      exit: 0
+      json: { ok: true, schema: polispec.contract/v1 }
+  - name: the vocabulary validates by its schema id
+    run: ["{{polispec}}", validate, auto, "{{files}}/contracts/vocabulary.yml", --json]
+    expect:
+      exit: 0
+      json: { ok: true, schema: polispec.contract-vocabulary/v1 }
+  - name: an unknown key is refused with a schema finding
+    run: [sh, -c, 'sed "s/^owner: demo-team/owner: demo-team\nbogus: 1/" "$1/demo-gate.yml" > "$2/bad.yml" && "$0" validate contract "$2/bad.yml"', "{{polispec}}", "{{files}}/contracts", "{{scratch}}"]
+    expect:
+      exit: 1
+      stdout_includes: ['/bogus', 'unknown key']
+  - name: a bad semantic version is refused
+    run: [sh, -c, 'sed "s/^version: 1.0.0/version: 1.x.0/" "$1/demo-gate.yml" > "$2/bad.yml" && "$0" validate contract "$2/bad.yml"', "{{polispec}}", "{{files}}/contracts", "{{scratch}}"]
+    expect:
+      exit: 1
+      stdout_includes: ['/version', 'must match']
+  - name: a clause without an id is refused
+    run: [sh, -c, 'sed "s/{ id: held, text_ref/{ text_ref/" "$1/demo-gate.yml" > "$2/bad.yml" && "$0" validate contract "$2/bad.yml"', "{{polispec}}", "{{files}}/contracts", "{{scratch}}"]
+    expect:
+      exit: 1
+      stdout_includes: ['required key is missing']
+  - name: render --write generates every surface that names the contract
+    run: [sh, -c, '"$0" contract render "$1" --write --root "$2"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['wrote']
+  - name: check resolves refs, evaluates declarative probes built in and native probes through the runner
+    run: ["{{polispec}}", contract, check, "{{files}}/contracts", --root, "{{files}}", --runner, "ruby {{files}}/runner.rb"]
+    expect:
+      exit: 0
+      stdout_includes: ['0 errors', '2 contracts', 'contract_advisory_on_harness demo.gate']
+  - name: a probe that needs a native guard is unrun without a runner and only warns in advise
+    run: ["{{polispec}}", contract, check, "{{files}}/contracts", --root, "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['warn contract_probe_unrun demo.native', '0 errors']
+  - name: check reports json
+    run: ["{{polispec}}", contract, check, "{{files}}/contracts", --root, "{{files}}", --runner, "ruby {{files}}/runner.rb", --format, json]
+    expect:
+      exit: 0
+      json: { ok: true }
+  - name: the digest is stable across an edit to a part of the behavior document the contract does not reference
+    run: [sh, -c, 'a=$("$0" contract digest "$1/demo-gate.yml" --root "$2") && sed -i "s/Spare text./Other spare text./" "$2/behavior.yml" && b=$("$0" contract digest "$1/demo-gate.yml" --root "$2") && sed -i "s/Other spare text./Spare text./" "$2/behavior.yml" && test "$a" = "$b" && echo "same=$a"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['same=sha256:']
+  - name: the digest changes when a referenced message changes
+    run: [sh, -c, 'a=$("$0" contract digest "$1/demo-gate.yml" --root "$2") && sed -i "s/Your work is saved./Your work is kept./" "$2/behavior.yml" && b=$("$0" contract digest "$1/demo-gate.yml" --root "$2") && sed -i "s/Your work is kept./Your work is saved./" "$2/behavior.yml" && test "$a" != "$b" && echo changed', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['changed']
+  - name: a wrong probe expectation fails with the cause
+    run: [sh, -c, 'sed -i "s/clauses: \[held, saved\], hidden: \[unsaved\]/clauses: [held, unsaved], hidden: [saved]/" "$1/demo-gate.yml" && "$0" contract check "$1" --root "$2"; echo "exit=$?"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['contract_probe_failed demo.gate: probe p1', 'exit=1']
+  - name: the probe is repaired
+    run: [sh, -c, 'sed -i "s/id: p1, event: notice.send, facts: { held: true, saved: true }, expect: { verdict: deny, message_id: M-DEMO-GATE, clauses: \[held, unsaved\], hidden: \[saved\]/id: p1, event: notice.send, facts: { held: true, saved: true }, expect: { verdict: deny, message_id: M-DEMO-GATE, clauses: [held, saved], hidden: [unsaved]/" "$1/demo-gate.yml" && "$0" contract check "$1" --root "$2" --runner "ruby $2/runner.rb"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['0 errors']
+  - name: a location outside the vocabulary is refused
+    run: [sh, -c, 'sed -i "s/location: pre-output/location: nowhere/" "$1/demo-gate.yml" && "$0" contract check "$1" --root "$2" --runner "ruby $2/runner.rb"; echo "exit=$?"; sed -i "s/location: nowhere/location: pre-output/" "$1/demo-gate.yml"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['contract_vocabulary demo.gate: /guards/0/location nowhere', 'exit=1']
+  - name: a directive that the behavior document lacks is a missing ref
+    run: [sh, -c, 'sed -i "s/^directive: DEMO/directive: GHOST/" "$1/demo-gate.yml" && "$0" contract check "$1" --root "$2" --runner "ruby $2/runner.rb"; echo "exit=$?"; sed -i "s/^directive: GHOST/directive: DEMO/" "$1/demo-gate.yml"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['contract_ref_missing demo.gate: directive GHOST', 'exit=1']
+  - name: a stale behavior sha256 is a missing ref
+    run: [sh, -c, 'sed -i "s/Hold a notice until the work is saved., when/Hold a notice until the work is kept., when/" "$2/behavior.yml" && "$0" contract check "$1" --root "$2" --runner "ruby $2/runner.rb"; echo "exit=$?"; sed -i "s/Hold a notice until the work is kept., when/Hold a notice until the work is saved., when/" "$2/behavior.yml"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['contract_ref_missing', 'has sha256', 'exit=1']
+  - name: two overlapping contracts with different decisions and no precedence conflict
+    run: [sh, -c, 'sed "s/^id: demo.gate/id: demo.clash/; s/decision: deny/decision: report/; s/verdict: deny/verdict: report/" "$1/demo-gate.yml" > "$1/demo-clash.yml" && "$0" contract check "$1" --root "$2" --runner "ruby $2/runner.rb"; echo "exit=$?"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['contract_conflict demo.clash: demo.clash and demo.gate overlap at pre-output', 'exit=1']
+  - name: a rank settles the conflict and check passes again
+    run: [sh, -c, 'sed -i "s/rank: 0/rank: 1/" "$1/demo-clash.yml" && "$0" contract check "$1" --root "$2" --runner "ruby $2/runner.rb"; echo "exit=$?"; rm "$1/demo-clash.yml"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['exit=0', '0 errors']
+  - name: a runner that exits nonzero fails its probes with the cause
+    run: ["{{polispec}}", contract, check, "{{files}}/contracts", --root, "{{files}}", --runner, 'sh -c "exit 3"']
+    expect:
+      exit: 1
+      stdout_includes: ['contract_probe_failed demo.native: probe p1: the runner exited 3']
+  - name: a runner that prints nothing usable fails its probes
+    run: ["{{polispec}}", contract, check, "{{files}}/contracts", --root, "{{files}}", --runner, "true"]
+    expect:
+      exit: 1
+      stdout_includes: ['no valid line for probe p1']
+  - name: render prints the locale surface and is byte-identical twice
+    run: [sh, -c, 'a=$("$0" contract render "$1" --surface locale_en --root "$2") && b=$("$0" contract render "$1" --surface locale_en --root "$2") && test "$a" = "$b" && printf "%s\n" "$a"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['"demo.saved": "Your work is saved."', '"demo.unsaved": "Save your work first."']
+  - name: check reports a missing generated surface as drift
+    run: [sh, -c, 'rm "$2/out/en.yml" && "$0" contract check "$1" --root "$2" --runner "ruby $2/runner.rb"; echo "exit=$?"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['behavior_surface_drift demo.gate: surface locale_en out/en.yml', 'exit=1']
+  - name: render --write repairs the drift
+    run: [sh, -c, '"$0" contract render "$1" --write --root "$2" >/dev/null && "$0" contract check "$1" --root "$2" --runner "ruby $2/runner.rb"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['0 errors']
+  - name: a hand edit of a generated surface is reported as drift
+    run: [sh, -c, 'echo hand >> "$2/out/en.yml" && "$0" contract check "$1" --root "$2" --runner "ruby $2/runner.rb"; echo "exit=$?"; "$0" lint "$2"; echo "lint=$?"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['behavior_surface_drift', 'exit=1']
+  - name: the render repairs it
+    run: [sh, -c, '"$0" contract render "$1" --write --root "$2" >/dev/null && "$0" contract check "$1" --root "$2" --runner "ruby $2/runner.rb"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['0 errors']
+  - name: a contract in enforce without an approval is refused
+    run: [sh, -c, 'sed -i "s/^lifecycle: advise/lifecycle: enforce/" "$1/demo-gate.yml" && "$0" contract render "$1" --write --root "$2" >/dev/null; "$0" contract check "$1" --root "$2" --runner "ruby $2/runner.rb"; echo "exit=$?"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['contract_unapproved demo.gate: no approval recorded', 'exit=1']
+  - name: approve appends an approval bound to the digest
+    run: [sh, -c, '"$0" contract approve "$1/demo-gate.yml" --actor ann --role engineering --root "$2" && cat "$1/approvals.jsonl"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['approved demo.gate 1.0.0 sha256:', '"role":"engineering"', '"prev":null']
+  - name: a required second role keeps the contract unapproved
+    run: [sh, -c, '"$0" contract check "$1" --root "$2" --runner "ruby $2/runner.rb"; echo "exit=$?"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['approval from role reviewer is missing', 'exit=1']
+  - name: the second approval chains to the first and check passes after the render
+    run: [sh, -c, '"$0" contract approve "$1/demo-gate.yml" --actor bob --role reviewer --root "$2" >/dev/null && "$0" contract render "$1" --write --root "$2" >/dev/null && "$0" contract check "$1" --root "$2" --runner "ruby $2/runner.rb" && test "$(wc -l < "$1/approvals.jsonl")" -eq 2 && echo chained', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['0 errors', 'chained']
+  - name: approve refuses a role outside the vocabulary
+    run: ["{{polispec}}", contract, approve, "{{files}}/contracts/demo-gate.yml", --actor, ann, --role, stranger, --root, "{{files}}"]
+    expect:
+      exit: 1
+  - name: a hand edit of an approval breaks the chain
+    run: [sh, -c, 'sed -i "s/\"actor\":\"ann\"/\"actor\":\"eve\"/" "$1/approvals.jsonl" && "$0" contract check "$1" --root "$2" --runner "ruby $2/runner.rb"; echo "exit=$?"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['the approval chain in approvals.jsonl is broken', 'exit=1']
+  - name: the changes ledger records an approval row per approval
+    run: ["{{polispec}}", changes, list]
+    expect:
+      exit: 0
+      stdout_includes: ['contract_approval contract=demo.gate']
+  - name: export writes the compiled bundle
+    run: [sh, -c, 'rm "$1/approvals.jsonl" && sed -i "s/^lifecycle: enforce/lifecycle: advise/" "$1/demo-gate.yml" && "$0" contract export "$1" --root "$2" --out "$2/export.json" && grep -c polispec.contract.compiled/v1 "$2/export.json"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['wrote', '1']
+  - name: export lists each contract with its digest and behavior digest
+    run: ["{{polispec}}", contract, export, "{{files}}/contracts", --root, "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['"id": "demo.gate"', '"id": "demo.native"', '"digest": "sha256:', '"behavior_digest": "sha256:']
+  - name: diff on a fixture repo shows a tightening for an added negative probe
+    run: [sh, -c, 'rm -rf "$3" && mkdir "$3" && cp -r "$2/behavior.yml" "$2/contracts" "$2/out" "$3/" && cd "$3" && git init -q -b main && git add behavior.yml contracts out && git commit -q -m base && sed -i "s/^    - { id: n2, event: notice.send/    - { id: n3, event: notice.send, facts: { held: false }, expect: { verdict: allow } }\n    - { id: n2, event: notice.send/" contracts/demo-gate.yml && "$0" contract diff contracts --from HEAD; echo "exit=$?"', "{{polispec}}", "{{files}}/contracts", "{{files}}", "{{scratch}}/repo"]
+    expect:
+      exit: 0
+      stdout_includes: ['demo.gate: tightening', 'tighten: negative probe n3 added', 'exit=0']
+  - name: diff reports a version left unchanged when a guard changes
+    run: [sh, -c, 'cd "$3" && sed -i "s/decision: deny/decision: block/" contracts/demo-gate.yml && "$0" contract diff contracts --from HEAD; echo "exit=$?"', "{{polispec}}", "{{files}}/contracts", "{{files}}", "{{scratch}}/repo"]
+    expect:
+      exit: 0
+      stdout_includes: ['contract_version_unchanged demo.gate', 'loosen: guard R1 decision deny to block', 'exit=1']
+  - name: diff classifies a removed probe and a lowered lifecycle as loosening
+    run: [sh, -c, 'cd "$3" && git checkout -q contracts/demo-gate.yml && sed -i "/id: n2, event: notice.send/d" contracts/demo-gate.yml && "$0" contract diff contracts --from HEAD --format json; echo "exit=$?"', "{{polispec}}", "{{files}}/contracts", "{{files}}", "{{scratch}}/repo"]
+    expect:
+      exit: 0
+      stdout_includes: ['"classification":"loosening"', 'negative probe n2 removed', 'exit=0']
+  - name: usage errors exit 2
+    run: [sh, -c, '"$0" contract; echo "none=$?"; "$0" contract check; echo "check=$?"; "$0" contract diff x; echo "diff=$?"', "{{polispec}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['none=2', 'check=2', 'diff=2']
+  - name: a missing contract file is a usage error
+    run: ["{{polispec}}", contract, digest, "{{files}}/contracts/absent.yml"]
+    expect:
+      exit: 2
+  - name: the project holds the contracts on main and on the trust ref
+    run: [sh, -c, 'mkdir -p specs/polispec/contracts out && cp "$1/behavior.yml" . && cp "$1/out/blank.txt" out/ && cp "$1/contracts/demo-gate.yml" "$1/contracts/demo-native.yml" "$1/contracts/vocabulary.yml" specs/polispec/contracts/ && git add behavior.yml out/blank.txt specs/polispec/contracts && git commit -q -m contracts && git branch -f stable main && echo ready', "{{polispec}}", "{{files}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ['ready']
+  - name: an unchanged project with contracts plans as neutral
+    run: ["{{polispec}}", plan, 'project:shop', --json]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      json: { classification: neutral, needs_confirm: false }
+  - name: removing a negative probe plans as loosening and needs a confirmation
+    run: [sh, -c, 'sed -i "/id: n2, event: notice.send/d" specs/polispec/contracts/demo-gate.yml && "$0" plan project:shop', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ['classification: loosening; needs_confirm: true', 'loosen: shop contract demo.gate: negative probe n2 removed', 'contracts ~1']
+  - name: restoring the probe and appending an approval plans as neutral
+    run: [sh, -c, 'git checkout -q specs/polispec/contracts/demo-gate.yml && "$0" contract approve specs/polispec/contracts/demo-gate.yml --actor ann --role engineering && "$0" plan project:shop --json', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ['"classification":"neutral"', '"needs_confirm":false', 'approvals.jsonl']

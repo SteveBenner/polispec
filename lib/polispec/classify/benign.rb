@@ -55,6 +55,13 @@ module Polispec
         }],
         "agents" => [{ "render" => JSON_FLAG.merge("--from" => true, "--check" => false) }, "--check"],
         "behavior" => [{ "compile" => {}, "decide" => {} }],
+        "contract" => [{
+          "check" => JSON_FLAG.merge("--vocabulary" => true, "--root" => true, "--format" => true),
+          "digest" => JSON_FLAG.merge("--root" => true),
+          "diff" => JSON_FLAG.merge("--from" => true, "--root" => true, "--format" => true),
+          "export" => JSON_FLAG.merge("--root" => true),
+          "render" => JSON_FLAG.merge("--surface" => true, "--root" => true)
+        }],
         "exceptions" => [{ "list" => JSON_FLAG }]
       }.freeze
       WRAPPERS = %w[eval exec source env sudo doas nohup timeout xargs command builtin nice ionice stdbuf setsid unbuffer flock time bash sh zsh dash ksh ash].freeze

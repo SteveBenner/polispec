@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-10-24
+
+### Added
+- The behavior contract, `polispec.contract/v1`: a versioned document per agent behavior that binds an intent, an optional directive, the guards that enforce it and where they run, the exact user-facing messages with a truth condition per clause, the constraints it protects, positive and negative probes, an owner, and a rollback target. `polispec.contract-vocabulary/v1` is the project-owned vocabulary for locations, annotations, facts, and approval roles. Both are schema kinds (`validate contract`, `validate contract-vocabulary`, `validate auto`).
+- `polispec contract check|render|digest|diff|approve|export` ([contract](docs/contract.md)). `check` resolves behavior refs and their sha256, evaluates probes (declarative rules built in, native guards through `--runner`), composes clauses from facts, reports conflicts, approval state, and surface drift; `diff --from REF` classifies tightening, loosening, mixed, or neutral; `approve` appends a hash-chained approval bound to the contract digest and records a `contract_approval` change; `export` writes `polispec.contract.compiled/v1`.
+- Behavior v2 surface kinds `policy_json` and `locale`, and an optional `locale` key on a surface. Both are drift-checked like every surface.
+- `plan project:<id>` classifies contract changes, `lint` and `doctor` report contract surface drift, and `doctor` reports `contract_ahead_of_runtime` when a project holds contract files and the installed release is older than 0.43.0.
+- Smoke scenario `smoke/scenarios/contract.yml` (unit `contract`).
+
+### Changed
+- `polispec contract approve` classifies `policy.edit`; `check`, `digest`, `diff`, `export` to stdout, and `render` without `--write` are read verbs for the guard, and `check` stops being one when `--runner` is given. No verdict of any existing command changes.
+- Parity against 0.41.1: the only changed scenario is the new `contract`.
+
 ## [0.42.0] - 2026-10-23
 
 ### Added

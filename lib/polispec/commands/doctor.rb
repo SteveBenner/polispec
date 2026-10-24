@@ -44,6 +44,7 @@ module Polispec
       check_editions(findings)
       check_effect(findings)
       check_lint(findings) if Engine::Settings.lint_doctor?
+      check_contracts(ledger, findings) if ledger
       check_personal_defaults(ledger, findings)
       blocking = findings.reject { |item| NONBLOCKING.include?(item["severity"]) }
       json ? puts(JSON.generate("ok" => blocking.empty?, "runtime" => runtime_info, "findings" => findings)) : print_text(findings)
@@ -451,6 +452,23 @@ module Polispec
       end
     rescue StandardError => error
       findings << finding(nil, "editions_drift", "#{error.class}: #{error.message}").merge("severity" => "warn")
+    end
+
+    def check_contracts(ledger, findings)
+      require_relative "../contract"
+      release = Description.installed_release
+      return unless release && (release <=> Contract::FLOOR) == -1
+
+      ledger.projects.reject { |project| project.status == "retired" }.each do |project|
+        repo = File.expand_path(project.repo)
+        worktree = Dir.glob(File.join(repo, Contract::DIR, "*.yml")).any?
+        committed = !Environments.git(repo, "ls-tree", "--name-only", "#{project.trust_ref}:#{Contract::DIR}").to_s.strip.empty?
+        next unless worktree || committed
+
+        findings << finding(project.id, "contract_ahead_of_runtime", "the working tree or #{project.trust_ref} holds contract files but the installed release is #{release.join('.')}, older than #{Contract::FLOOR.join('.')}; that runtime reports them as unknown").merge("severity" => "warn")
+      end
+    rescue StandardError => error
+      findings << finding(nil, "contract_ahead_of_runtime", "#{error.class}: #{error.message}").merge("severity" => "info")
     end
 
     def check_personal_defaults(ledger, findings)

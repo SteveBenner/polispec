@@ -53,6 +53,9 @@ module Polispec
     def render(compiled, surface_id, root:)
       spec = surface(compiled, surface_id)
       entries = resolve(compiled, surface_id)
+      return policy_json(compiled, spec, root) if spec["kind"] == "policy_json"
+      return locale(compiled, spec) if spec["kind"] == "locale"
+
       template = spec["template"] ? read(root, spec["template"], "template of #{surface_id}") : "{{rows}}\n"
       pieces = template.scan(PLACEHOLDER).flatten.map { |inner| inner.strip.split(":", 2) }
       pieces.each { |name, argument| check_placeholder(surface_id, spec, entries, name, argument) }
@@ -60,6 +63,18 @@ module Polispec
         name, argument = Regexp.last_match(1).strip.split(":", 2)
         expand(compiled, surface_id, entries, root, name, argument)
       end
+    end
+
+    def policy_json(compiled, spec, root)
+      require_relative "contract"
+      "#{JSON.generate(Contract.bundle_for_surface(compiled, root, Array(spec['refs'])))}\n"
+    end
+
+    def locale(compiled, spec)
+      wanted = spec["locale"] || Behavior::DEFAULT_LOCALE
+      refs = Array(spec["refs"])
+      messages = policy(compiled).fetch("messages", {}).select { |id, message| (refs.empty? || refs.include?(id)) && (message["locale"] || Behavior::DEFAULT_LOCALE) == wanted }
+      messages.sort.map { |id, message| "#{JSON.generate(id)}: #{JSON.generate(message['text'])}\n" }.join
     end
 
     def check_placeholder(surface_id, spec, entries, name, argument)
