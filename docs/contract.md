@@ -43,7 +43,7 @@ Two advise or enforce contracts conflict when their scopes overlap, their trigge
 
 ## Surfaces
 
-Behavior v2 gains the surface kinds `policy_json` (the compiled bundle of the contracts that reference the listed refs, canonical JSON) and `locale` (a mapping of message id to text for one locale, limited to the listed refs; the surface key `locale` defaults to `en-US`). Both are wholly generated and drift-checked; the surface must still name a `template` file, which render ignores.
+Behavior v2 gains the surface kinds `policy_json` (the compiled bundle of the contracts that reference the listed refs, canonical JSON) and `locale` (a mapping of message id to text for one locale, limited to the listed refs; the surface key `locale` defaults to `en-US`). Both are wholly generated and drift-checked, and neither needs a `template`.
 
 ## Plan, lint, doctor
 
