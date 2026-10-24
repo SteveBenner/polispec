@@ -169,6 +169,10 @@ module Polispec
         counts = entry[section].map { |kind, items| "#{kind == 'added' ? '+' : (kind == 'removed' ? '-' : '~')}#{items.length}" if items.any? }.compact
         counts.empty? ? [] : ["#{section} #{counts.join(' ')}"]
       end
+      if entry["contracts"]
+        counts = entry["contracts"].map { |kind, items| "#{kind == 'added' ? '+' : (kind == 'removed' ? '-' : '~')}#{items.length}" if items.any? }.compact
+        parts << "contracts #{counts.join(' ')}" unless counts.empty?
+      end
       parts.empty? ? "no structural change" : parts.join(", ")
     end
 
@@ -532,6 +536,68 @@ module Polispec
       end
     end
 
+    CONTRACT_FILE = %r{\Acontracts/[^/]+\.yml\z}.freeze
+    CONTRACT_APPROVALS = "contracts/approvals.jsonl".freeze
+
+    def contract_docs(files, label)
+      files.each_with_object({}) do |(path, text), memo|
+        next unless CONTRACT_FILE.match?(path) && path != "contracts/#{Contract::VOCABULARY}"
+
+        begin
+          doc = Schema::Document.parse(text, "#{label}:#{path}")
+        rescue Schema::Document::ParseError
+          doc = nil
+        end
+        memo[doc.is_a?(Hash) && doc["id"] ? doc["id"] : path] = Contract.contract?(doc) ? doc : { "unreadable" => path }
+      end
+    end
+
+    def contract_behavior(project, repo, ref, doc)
+      path = doc.dig("behavior", "path").to_s
+      return nil unless Schema.safe_relative?(path)
+
+      text = ref == "worktree" ? (File.file?(File.join(repo, path)) ? File.read(File.join(repo, path)) : nil) : Environments.git(repo, "show", "#{ref}:#{path}")
+      text && Schema::Document.parse(text, "#{ref}:#{path}")
+    rescue StandardError
+      nil
+    end
+
+    def contract_plan(project, repo, from, current, proposed)
+      require_relative "contract"
+      old_docs = contract_docs(current, project.trust_ref)
+      new_docs = contract_docs(proposed, from)
+      old_log = current[CONTRACT_APPROVALS].to_s
+      new_log = proposed[CONTRACT_APPROVALS].to_s
+      return if old_docs.empty? && new_docs.empty? && old_log == new_log
+
+      entry = @diffs.find { |item| item["project"] == project.id }
+      entry ||= { "project" => project.id, "digest" => { "before" => nil, "after" => nil } }.tap { |item| @diffs << item }
+      rows = { "added" => (new_docs.keys - old_docs.keys).sort, "removed" => (old_docs.keys - new_docs.keys).sort, "changed" => [] }
+      rows["added"].each { |id| @changes << Change.new("tighten", "#{project.id} adds contract #{id}") }
+      rows["removed"].each { |id| @changes << Change.new("loosen", "#{project.id} removes contract #{id}") }
+      (old_docs.keys & new_docs.keys).sort.each do |id|
+        old = old_docs[id]
+        new = new_docs[id]
+        next if old == new
+
+        rows["changed"] << id
+        if old["unreadable"] || new["unreadable"]
+          @changes << Change.new("loosen", "#{project.id} changes contract #{id} that cannot be read")
+          next
+        end
+        result = Contract.classify(old, new, contract_behavior(project, repo, project.trust_ref, old), contract_behavior(project, repo, from, new))
+        result["reasons"].each do |reason|
+          direction, text = reason.split(": ", 2)
+          @changes << Change.new(direction, "#{project.id} contract #{id}: #{text}") if %w[tighten loosen].include?(direction)
+        end
+        result["findings"].each { |item| @notes << "#{project.id} contract #{id}: #{item.code}: #{item.message}" }
+      end
+      entry["contracts"] = rows
+      return if old_log == new_log
+
+      @changes << Change.new("loosen", "#{project.id} rewrites contract approvals") unless new_log.start_with?(old_log)
+    end
+
     def build_project
       ledger = Ledger.load
       project = ledger.project(@spec.id)
@@ -553,6 +619,7 @@ module Polispec
       local = from == "worktree" ? Layers.local_source(project, "file:#{File.join(repo, project.policy)}") : Layers.local_source(project, "bootstrap:#{from}:plan")
       after = Probes.compose(project, ledger, proposed_files[policy_name], proposed_files[env_name], source: from == "worktree" ? "file:#{File.join(repo, project.policy)}" : "bootstrap:#{from}:plan", local: local)
       compare(project.id, before, after, journal_rows_for(project.id))
+      contract_plan(project, repo, from, current_files, proposed_files)
       @notes.concat(Operator::Gates.unreachable_errors(after.policy).map { |message| "#{project.id}: #{message}" })
       files = file_rows(current_files, proposed_files, dir.empty? ? "" : "#{dir}/")
       @artifacts.merge!(project: project, repo: repo, dir: dir, from: from, proposed_files: proposed_files, files: files)

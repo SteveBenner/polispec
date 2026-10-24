@@ -26,7 +26,8 @@ module Polispec
         "specs/polispec/environments.yml" => "environments",
         "specs/polispec/policy.yml" => "policy",
         "specs/polispec/roster.yml" => "roster",
-        "specs/polispec/code-waivers.yml" => "waivers"
+        "specs/polispec/code-waivers.yml" => "waivers",
+        "specs/polispec/contracts/vocabulary.yml" => "contract-vocabulary"
       }.freeze
       SHIPPED_DESCRIBED = %w[policy environments roster global module package spec].freeze
 
@@ -149,6 +150,7 @@ module Polispec
         fields = { path: path, kind: "auto", project: id, descriptions: described, unrecognized: relative.start_with?("specs/polispec/") }
         fields[:expect] = EXPECTATIONS[relative]
         fields[:expect] = "module" if relative.start_with?("specs/polispec/modules/") && relative.end_with?(".yml")
+        fields[:expect] = "contract" if relative.start_with?("specs/polispec/contracts/") && relative.end_with?(".yml") && File.basename(relative) != "vocabulary.yml"
         if relative == "polispec.app.yml"
           fields[:kind] = "app"
         elsif relative == "polispec.manifest.json"

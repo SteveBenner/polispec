@@ -102,12 +102,13 @@ $defs:
     additionalProperties: false
     required: [kind, target, mode]
     properties:
-      kind: {enum: [rows, rules_file, stub, persona, skill, message, prose]}
+      kind: {enum: [rows, rules_file, stub, persona, skill, message, prose, policy_json, locale]}
       target: {$ref: '#/$defs/relpath'}
       harness:
         type: array
         items: {type: string, minLength: 1}
       template: {$ref: '#/$defs/relpath'}
+      locale: {type: string, minLength: 2}
       refs:
         type: array
         uniqueItems: true

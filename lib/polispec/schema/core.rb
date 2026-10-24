@@ -6,7 +6,7 @@ require_relative "validator"
 
 module Polispec
   module Schema
-    KINDS = %w[policy environments roster ledger behavior spec waivers global module profiles control smoke smoke-scenario package judgment exceptions delegate_grants editions session change manifest app index].freeze
+    KINDS = %w[policy environments roster ledger behavior spec waivers global module profiles control smoke smoke-scenario package judgment exceptions delegate_grants editions session change manifest app index contract contract-vocabulary].freeze
     CONTROL_EFFECT_KEYS = {
       "deny" => [],
       "ask" => [],
@@ -52,6 +52,9 @@ module Polispec
       if kind == "behavior" && errors.empty?
         require_relative "../behavior"
         errors.concat(Behavior.semantic_errors(data))
+      elsif kind == "contract" && errors.empty?
+        require_relative "../contract"
+        errors.concat(Contract.semantic_errors(data))
       elsif kind == "control" && errors.empty?
         errors.concat(control_errors(data))
       elsif kind == "package" && errors.empty?

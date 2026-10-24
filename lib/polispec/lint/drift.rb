@@ -20,6 +20,7 @@ module Polispec
           out.concat(manifest_drift(root)) unless for_doctor
         end
         out.concat(behavior_drift(roots, Array(scope[:targets])))
+        out.concat(contract_drift(roots, Array(scope[:targets])))
         out.concat(harness_drift) if scope[:host]
         out
       end
@@ -68,6 +69,35 @@ module Polispec
 
             compiled = Behavior.compile(Behavior.load(target.path), root: root)
             Surfaces.drift(compiled, root: root).each do |item|
+              out << finding("error", "behavior_surface_drift", File.join(root, item["target"]),
+                             "surface #{item['surface']} expected sha256 #{item['expected_sha256']} actual #{item['actual_sha256'] || 'missing'}", target.project)
+            end
+          rescue Schema::Document::ParseError
+            next
+          rescue StandardError => e
+            out << finding("warn", "behavior_surface_drift", target.path, e.message, target.project)
+          end
+        end
+        out
+      end
+
+      def contract_drift(roots, targets)
+        require_relative "../contract"
+        out = []
+        targets.each do |target|
+          next unless %w[auto contract].include?(target.kind)
+
+          root = roots.select { |candidate| target.path.start_with?("#{candidate}/") }.max_by(&:length)
+          next unless root && File.file?(target.path)
+
+          begin
+            data = Schema::Document.parse(File.binread(target.path).force_encoding("UTF-8"), target.path)
+            next unless Contract.contract?(data) && Schema.validate("contract", data).empty?
+
+            behavior, = Contract.load_behavior(data, root, data["id"])
+            next unless behavior
+
+            Contract.drift_items(data, behavior, root).each do |item|
               out << finding("error", "behavior_surface_drift", File.join(root, item["target"]),
                              "surface #{item['surface']} expected sha256 #{item['expected_sha256']} actual #{item['actual_sha256'] || 'missing'}", target.project)
             end

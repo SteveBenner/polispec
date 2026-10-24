@@ -1,0 +1,46 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.contract-vocabulary/v1
+title: Polispec behavior contract vocabulary
+type: object
+additionalProperties: false
+required: [schema]
+properties:
+  schema: { const: polispec.contract-vocabulary/v1 }
+  locations:
+    type: array
+    items: { type: string, minLength: 1 }
+  annotations:
+    type: object
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type: { enum: [string, number, boolean, array] }
+        values:
+          anyOf:
+            - { type: "null" }
+            - { type: array, items: { type: [string, number, boolean] } }
+        required: { type: boolean }
+  facts:
+    type: object
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type: { enum: [string, number, boolean] }
+        values:
+          anyOf:
+            - { type: "null" }
+            - { type: array, items: { type: [string, number, boolean] } }
+  approvals:
+    type: object
+    additionalProperties: false
+    properties:
+      roles:
+        type: array
+        items: { type: string, minLength: 1 }
+      required_roles:
+        type: array
+        items: { type: string, minLength: 1 }

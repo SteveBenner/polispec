@@ -9,7 +9,7 @@ properties:
   id: { type: string, pattern: "^chg_[0-9a-f]{12}$" }
   ts: { type: string, minLength: 1 }
   kind:
-    enum: [promote, apply, exceptions.add, exceptions.promote, exceptions.remove, settings.set, pin, install, register, manifest, uninstall, restore]
+    enum: [promote, apply, exceptions.add, exceptions.promote, exceptions.remove, settings.set, pin, install, register, manifest, uninstall, restore, contract_approval]
   actor: { type: string, minLength: 1 }
   subject: { type: object }
   epoch_before: { $ref: "#/$defs/epoch" }

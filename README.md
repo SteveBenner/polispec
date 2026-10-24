@@ -486,6 +486,7 @@ The ledger is the list of projects polispec governs on this host. `polispec inst
 | `polispec agents render <project\|repo>` | Write the `[ENVS]` directive from the trusted rulebook |
 | `polispec hook git install <project> <env>` | Install git hooks that apply the same rules outside a harness |
 | `polispec roster resolve\|check` | Resolve and check role assignments |
+| `polispec contract check\|render\|digest\|diff\|approve\|export` | Check, render, diff, approve, and export versioned behavior contracts (`polispec.contract/v1`; [contract](docs/contract.md)) |
 | `polispec behavior compile\|decide\|render\|drift\|lint` | Compile and evaluate a behavioral policy; render its surfaces, check them for drift, and lint for restated rules (v2) |
 | `polispec code …` / `polispec specs …` | Code specs: detect, chain, check, baseline, controls; link and promote the specs repository |
 | `polispec harness …` / `seal` / `plane` / `authorizations` | Harness controls and the sealed authority plane |
@@ -599,6 +600,7 @@ Today polispec governs where an agent may act and how code travels to users. Wit
 - [`docs/effect.md`](docs/effect.md): when a change reaches running Claude Code and Codex sessions, what needs a reload, and how to confirm it landed.
 - [`docs/roster.md`](docs/roster.md): the roster resolver.
 - [`docs/behavior.md`](docs/behavior.md): behavioral policy.
+- [`docs/contract.md`](docs/contract.md): behavior contracts.
 - [`docs/code-specs.md`](docs/code-specs.md): code specs.
 - [`docs/smoke.md`](docs/smoke.md): the smoke ledger and the bundled suite.
 - [`docs/VISION.md`](docs/VISION.md): where polispec is going.
