@@ -151,9 +151,10 @@ module Polispec
       file = File.join(root, path)
       return [nil, [finding("error", "contract_ref_missing", label, "behavior document #{path} is missing under #{root}")]] unless File.file?(file)
 
-      actual = Digest::SHA256.file(file).hexdigest
       out = []
-      out << finding("error", "contract_ref_missing", label, "behavior document #{path} has sha256 #{actual}, the contract declares #{contract.dig('behavior', 'sha256')}") unless actual == contract.dig("behavior", "sha256")
+      pinned = contract.dig("behavior", "sha256")
+      actual = pinned && Digest::SHA256.file(file).hexdigest
+      out << finding("error", "contract_ref_missing", label, "behavior document #{path} has sha256 #{actual}, the contract declares #{pinned}") if pinned && actual != pinned
       data = Behavior.load(file)
       return [nil, out << finding("error", "contract_ref_missing", label, "#{path} is not a polispec.behavior/v2 document")] unless Behavior.v2?(data)
 
@@ -365,7 +366,7 @@ module Polispec
       stdout = stderr = nil
       status = nil
       timed_out = false
-      Open3.popen3(*words, chdir: root) do |stdin, out, err, thread|
+      Open3.popen3(*words, chdir: root, pgroup: true) do |stdin, out, err, thread|
         writer = Thread.new do
           begin
             stdin.write(input)
@@ -384,7 +385,7 @@ module Polispec
           status = thread.value
         else
           timed_out = true
-          Process.kill("KILL", thread.pid) rescue nil
+          Process.kill("KILL", -thread.pid) rescue nil
           thread.join
         end
         writer.kill
@@ -430,6 +431,9 @@ module Polispec
         id = request[:contract]["id"]
         if reply.is_a?(String)
           out << finding("error", "contract_probe_failed", id, "probe #{request[:probe]['id']}: #{reply}")
+        elsif reply["verdict"] == "unrun"
+          reason = reply["reason"].to_s.strip[0, 200]
+          out << finding(request[:contract]["lifecycle"] == "enforce" ? "error" : "warn", "contract_probe_unrun", id, "probe #{request[:probe]['id']}: the runner has no guard for it#{reason.empty? ? '' : " (#{reason})"}")
         else
           outcome = { "verdict" => reply["verdict"], "message_id" => reply["message_id"], "clauses" => reply["clauses"] }
           mismatches(request[:probe], outcome).each { |detail| out << finding("error", "contract_probe_failed", id, "probe #{request[:probe]['id']}: #{detail}") }
