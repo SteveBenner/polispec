@@ -494,7 +494,8 @@ module Polispec
     end
 
     def journal_rows_for(id)
-      Journal.recent.select { |row| row["project"] == id }
+      @journal_index ||= Journal.recent.group_by { |row| row["project"] }
+      @journal_index.fetch(id, [])
     end
 
     def journal_compare(id, before, after, rows)

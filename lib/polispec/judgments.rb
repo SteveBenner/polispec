@@ -334,9 +334,18 @@ module Polispec
       nil
     end
 
-    def recent(now = Time.now)
+    def each_recent(now = Time.now)
       cutoff = now - WINDOW_SECONDS
-      records.select { |entry| stamp_of(entry) && stamp_of(entry) >= cutoff }
+      each_record do |entry, _|
+        stamp = stamp_of(entry)
+        yield entry if stamp && stamp >= cutoff
+      end
+    end
+
+    def recent(now = Time.now)
+      list = []
+      each_recent(now) { |entry| list << entry }
+      list
     end
 
     def stamp_of(entry)
