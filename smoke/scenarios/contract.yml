@@ -34,16 +34,13 @@ fixture:
         locale_en:
           kind: locale
           target: out/en.yml
-          template: out/blank.txt
           refs: [demo.notice, demo.saved, demo.unsaved, demo.flagged]
           mode: generated
         bundle:
           kind: policy_json
           target: out/bundle.json
-          template: out/blank.txt
           refs: [DEMO, M-DEMO-NATIVE]
           mode: generated
-    "out/blank.txt": "\n"
     "contracts/demo-gate.yml": |
       schema: polispec.contract/v1
       id: demo.gate
@@ -53,7 +50,7 @@ fixture:
       scope: { application: demo, course: null, assignment: null, harnesses: [alpha, beta] }
       trigger: [event:notice.send]
       precedence: { rank: 0 }
-      behavior: { path: behavior.yml, sha256: ce5cc5c903846344ad02cc8d193c136a866fe9c2e611a0b0ff1676a9314859a6 }
+      behavior: { path: behavior.yml, sha256: 5b54ee1cf056070c746938403d45f7d3122067e27e6ffddfcb229f66085e67e8 }
       directive: DEMO
       guards:
         - { rule: R1, location: pre-output, decision: deny, harnesses: [alpha] }
@@ -83,7 +80,7 @@ fixture:
       scope: { application: demo }
       trigger: [event:output.check]
       precedence: { rank: 0 }
-      behavior: { path: behavior.yml, sha256: ce5cc5c903846344ad02cc8d193c136a866fe9c2e611a0b0ff1676a9314859a6 }
+      behavior: { path: behavior.yml }
       guards:
         - { rule: R2, location: post-output, decision: report }
       messages:
@@ -121,6 +118,13 @@ fixture:
         else
           puts JSON.generate("id" => request["id"], "verdict" => "allow")
         end
+      end
+    "unrun.rb": |
+      #!/usr/bin/env ruby
+      require "json"
+
+      $stdin.each_line do |line|
+        puts JSON.generate("id" => JSON.parse(line)["id"], "verdict" => "unrun", "reason" => "not built yet")
       end
 steps:
   - name: the demo contract validates by its schema id
@@ -203,6 +207,11 @@ steps:
     expect:
       exit: 0
       stdout_includes: ['contract_ref_missing', 'has sha256', 'exit=1']
+  - name: an unreferenced edit fails only the contract that pins the whole behavior file
+    run: [sh, -c, 'sed -i "s/Spare text./Other spare text./" "$2/behavior.yml" && "$0" contract check "$1" --root "$2" --runner "ruby $2/runner.rb"; echo "dir=$?"; "$0" contract check "$1/demo-native.yml" --root "$2" --runner "ruby $2/runner.rb"; echo "native=$?"; sed -i "s/Other spare text./Spare text./" "$2/behavior.yml"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['contract_ref_missing demo.gate: behavior document behavior.yml has sha256', 'dir=1', 'native=0']
   - name: two overlapping contracts with different decisions and no precedence conflict
     run: [sh, -c, 'sed "s/^id: demo.gate/id: demo.clash/; s/decision: deny/decision: report/; s/verdict: deny/verdict: report/" "$1/demo-gate.yml" > "$1/demo-clash.yml" && "$0" contract check "$1" --root "$2" --runner "ruby $2/runner.rb"; echo "exit=$?"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
     expect:
@@ -223,6 +232,11 @@ steps:
     expect:
       exit: 1
       stdout_includes: ['no valid line for probe p1']
+  - name: a runner without a guard for a probe answers unrun, which only warns in advise
+    run: ["{{polispec}}", contract, check, "{{files}}/contracts", --root, "{{files}}", --runner, "ruby {{files}}/unrun.rb"]
+    expect:
+      exit: 0
+      stdout_includes: ['warn contract_probe_unrun demo.native: probe p1: the runner has no guard for it (not built yet)', '0 errors']
   - name: render prints the locale surface and is byte-identical twice
     run: [sh, -c, 'a=$("$0" contract render "$1" --surface locale_en --root "$2") && b=$("$0" contract render "$1" --surface locale_en --root "$2") && test "$a" = "$b" && printf "%s\n" "$a"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
     expect:
@@ -317,7 +331,7 @@ steps:
     expect:
       exit: 2
   - name: the project holds the contracts on main and on the trust ref
-    run: [sh, -c, 'mkdir -p specs/polispec/contracts out && cp "$1/behavior.yml" . && cp "$1/out/blank.txt" out/ && cp "$1/contracts/demo-gate.yml" "$1/contracts/demo-native.yml" "$1/contracts/vocabulary.yml" specs/polispec/contracts/ && git add behavior.yml out/blank.txt specs/polispec/contracts && git commit -q -m contracts && git branch -f stable main && echo ready', "{{polispec}}", "{{files}}"]
+    run: [sh, -c, 'mkdir -p specs/polispec/contracts && cp "$1/behavior.yml" . && cp "$1/contracts/demo-gate.yml" "$1/contracts/demo-native.yml" "$1/contracts/vocabulary.yml" specs/polispec/contracts/ && git add behavior.yml specs/polispec/contracts && git commit -q -m contracts && git branch -f stable main && echo ready', "{{polispec}}", "{{files}}"]
     cwd: "{{project.shop}}"
     expect:
       exit: 0
