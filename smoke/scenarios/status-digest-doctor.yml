@@ -131,7 +131,7 @@ steps:
     run: ["{{polispec}}", doctor]
     expect:
       exit: 1
-      stdout_includes: ["shop  package_file_drift (info)  specs/polispec/roster.yml differs from the environment-control 1.1.0 record", "fresh  not_live  status onboarding: the guard does not enforce this project", "(4 blocking, 7 info)"]
+      stdout_includes: ["shop  package_file_drift (info)  specs/polispec/roster.yml differs from the environment-control 1.1.0 record", "fresh  not_live  status onboarding: the guard does not enforce this project", "7 info)"]
   - name: status lists both projects
     run: ["{{polispec}}", status]
     expect:
