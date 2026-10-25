@@ -14,7 +14,7 @@ module Polispec
     @all_loaded = false
 
     class Validate
-      USAGE = "usage: polispec validate <policy|environments|roster|ledger|behavior|spec|waivers|global|module|profiles|control|smoke|smoke-scenario|package|judgment|exceptions|delegate_grants|editions|session|change|manifest|app|index|contract|contract-vocabulary|auto> <file> [--json] [--semantic]"
+      USAGE = "usage: polispec validate <policy|environments|roster|ledger|behavior|spec|waivers|global|module|profiles|control|smoke|smoke-scenario|package|judgment|exceptions|delegate_grants|editions|session|change|manifest|app|index|contract|contract-vocabulary|catalog|catalog-state|auto> <file> [--json] [--semantic]"
 
       def run(args)
         json = args.delete("--json")
@@ -170,7 +170,7 @@ module Polispec
         load_all
         io.puts "polispec #{Polispec.version}: spec-based policy guardrails"
         io.puts
-        io.puts "  validate <policy|environments|roster|ledger|behavior|spec|waivers|global|module|profiles|control|smoke|smoke-scenario|package|judgment|exceptions|delegate_grants|editions|session|change|manifest|app|index|contract|contract-vocabulary|auto> <file> [--json] [--semantic]   check a file against its schema"
+        io.puts "  validate <policy|environments|roster|ledger|behavior|spec|waivers|global|module|profiles|control|smoke|smoke-scenario|package|judgment|exceptions|delegate_grants|editions|session|change|manifest|app|index|contract|contract-vocabulary|catalog|catalog-state|auto> <file> [--json] [--semantic]   check a file against its schema"
         @commands.values.reject { |entry| entry.name == "validate" }.sort_by(&:name).each do |entry|
           io.puts format("  %-12s %s", entry.name, entry.summary)
         end

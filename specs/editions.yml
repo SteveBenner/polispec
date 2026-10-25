@@ -27,13 +27,13 @@ features:
     lock: restricted
     since: 0.23.0
     code: lib/polispec/harness_controls/evaluate.rb
-    note: "An unknown or undeclared call asks under standard and is denied under lock."
+    note: "An unknown or undeclared call asks under standard and is denied under lock; the default applies only while tools/unknown or mcp/undeclared is active on the host."
   - id: mcp_default.ask
     standard: included
     lock: restricted
     since: 0.23.0
     code: lib/polispec/commands/hook.rb
-    note: "The undeclared MCP default is ask under standard and deny under lock."
+    note: "The undeclared MCP default is ask under standard and deny under lock; it applies only while mcp/undeclared is active on the host."
   - id: legacy_warn
     standard: included
     lock: restricted

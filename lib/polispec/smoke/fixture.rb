@@ -112,9 +112,38 @@ module Polispec
         seed_ledger(layout, tree)
         write_global(layout, spec)
         write_files(spec["files"], layout.files, layout)
+        write_catalog(layout, spec)
         projects.each { |project| build_project(project, layout, builder) }
         flip_status(layout, projects, builder)
         layout
+      end
+
+      def write_catalog(layout, spec)
+        wanted = Array(spec["catalog"])
+        provisioned = spec["catalog_provisioned"] || {}
+        return if wanted.empty? && provisioned.empty?
+
+        previous = ENV["POLISPEC_STATE_HOME"]
+        ENV["POLISPEC_STATE_HOME"] = layout.state
+        begin
+          require_relative "../catalog"
+          provisioned.each do |target, text|
+            name, sub = target.split("/", 2)
+            Polispec::Catalog.provision!(name, sub, Scenario.expand(text, layout.vars))
+          end
+          wanted.each do |target|
+            name, sub = target.split("/", 2)
+            catalog = Polispec::Catalog.spec(name)
+            raise FixtureError, "unknown catalog spec #{target}" unless catalog
+
+            ids = sub ? [sub] : catalog.subspecs.reject(&:provision).map(&:id)
+            Polispec::Catalog.activate!(name, ids, release: Polispec.version)
+          end
+        ensure
+          ENV["POLISPEC_STATE_HOME"] = previous
+        end
+      rescue Polispec::Error => e
+        raise FixtureError, "cannot prepare the catalog: #{e.message}"
       end
 
       def write_files(map, root, layout)

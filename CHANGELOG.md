@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.0] - 2026-10-24
+
+### Added
+- The catalog: polispec ships a set of optional specs under `catalog/`, and none is active by default. A catalog spec is `catalog/<spec>/catalog.yml` (`polispec.catalog/v1`) with one `polispec.module/v1` file per subspec beside it. Three specs ship:
+  - `tools`: subspecs `declared` (the `TOOL-*` allow rules for the harness's own tools and reads, and `TOOL-OPAQUE-DEVELOPMENT`), `unknown` (the `POLISPEC-TOOL-UNKNOWN` default for a call polispec cannot positively classify) and `web-agent` (`G-WEB-AGENT`).
+  - `delete-guard`: subspecs `protected` (the `delete_protected` list, `G-DELETE-PROTECTED` and `G-DELETE-PROTECTED-FILE`) and `xargs` (`G-DELETE-XARGS`).
+  - `mcp`: subspecs `undeclared` (the `POLISPEC-MCP-UNDECLARED` default, ask under standard and deny under lock) and `declared` (the host's own MCP declarations, provisioned by the operator from a file; the release ships it empty).
+- `polispec catalog list|show|activate|deactivate|provision`. `list` and `show` are read-only. `activate`, `deactivate` and `provision` are the operator's: each needs a TTY and a typed phrase (`activate catalog SPEC`, `deactivate catalog SPEC`, `provision catalog SPEC/SUBSPEC`), refuses while the sealed plane is active, and emits a `polispec.catalog` event. A bare `SPEC` names every subspec; `SPEC/SUBSPEC` names one.
+- Host-local catalog state, `<state home>/catalog/active.yml` (`polispec.catalog-state/v1`), with provisioned files under `<state home>/catalog/provisioned/`. Activation is per host and never lives on the global shelf or in the ledger, which a host may share with other hosts. The state directory is a protected path for the harness-control ceiling. A state file that does not parse or validate fails closed: every gate counts as on.
+- Schemas `schemas/catalog.v1.yml` and `schemas/catalog-state.v1.yml`; `validate catalog` and `validate catalog-state`.
+- Doctor findings `catalog_none_active` (info), `catalog_state_invalid` (blocking) and `catalog_provision_missing` (warn).
+- Smoke scenario `smoke/scenarios/catalog.yml`, and a smoke fixture key `catalog:` (with `catalog_provisioned:`) that activates catalog subspecs in the scenario's state home.
+
+### Changed
+- There is no always-on shipped layer. The first layer of every chain is the catalog layer, built from the active subspecs in catalog order (tools, delete-guard, mcp), and it is absent when nothing is active. `resolve --layers` prints it as `catalog`. Its digest covers each active subspec's module text, so activating, deactivating or provisioning changes every effective digest and the fast-path key.
+- The undeclared-MCP gate runs only while `mcp/undeclared` is active, and the unknown-tool gate only while `tools/unknown` is active. With neither, an MCP call or an unknown call gets only the verdicts of the rules that match it. The `unknown_call.ask` and `mcp_default.ask` edition rows decide ask or deny only while their gate is on.
+- `fastpath.tools` takes its names from the release's `tools/declared` module when that subspec is active or the unknown-tool gate is off, and is empty otherwise.
+- `modules/tool-declared.yml` and `modules/delete-guard.yml` moved into `catalog/tools/` and `catalog/delete-guard/`, rule for rule, and `modules/` is gone. The personal-defaults scan and `lint --shipped` sweep `catalog/`.
+
+### Upgrade
+- A host upgrading from 0.44.x gets none of the previous shipped rules until the operator activates them. To keep the 0.44.1 behavior, run `polispec catalog activate tools` and `polispec catalog activate delete-guard`, and `polispec catalog activate mcp` for the undeclared-MCP gate. A host that declared its MCP servers in a global shelf module can provision that module into `mcp/declared` (`polispec catalog provision mcp/declared --from FILE`) or remove it from the shelf. Pin 0.45.0 before removing the module: an older runtime keeps its undeclared-MCP gate on, so a shelf without declarations makes every MCP call ask there.
+
 ## [0.44.1] - 2026-10-24
 
 ### Fixed

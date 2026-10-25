@@ -1,0 +1,5 @@
+schema: polispec.module/v1
+name: delete-guard-xargs
+summary: Warns on deletes whose targets are fed through xargs, which polispec cannot see.
+rules:
+  - { id: G-DELETE-XARGS, match: { shape: [xargs_delete] }, verdict: warn, overridable: true, reason: "polispec cannot see targets fed through xargs; confirm before deleting" }

@@ -1,0 +1,41 @@
+schema: polispec.smoke-scenario/v1
+unit: catalog
+summary: a scenario fixture activates catalog specs and provisions mcp/declared before its steps run, and doctor reports the catalog state it finds
+fixture:
+  enforce: enforce
+  global: files
+  global_files:
+    "global.yml": "schema: polispec.global/v1\nsummary: Smoke baseline with one rule so every path is governed.\nrules:\n  - { id: SMOKE-NOSECRETS, match: { class: [secrets.read], env: prod }, verdict: deny, reason: \"smoke baseline: no production secrets\" }\n"
+  catalog: [tools, delete-guard, mcp]
+  catalog_provisioned:
+    "mcp/declared": "schema: polispec.module/v1\nname: mcp-declared\nsummary: Smoke declarations.\nrules:\n  - { id: SMOKE-MCP-DESK-PAGE, match: { class: [mcp.call], server: desk, operation: page }, verdict: allow, reason: \"smoke: the desk page operation is declared\" }\n"
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      files:
+        "README.md": "shop\n"
+steps:
+  - name: the fixture activated every plain subspec
+    run: ["{{polispec}}", catalog, list]
+    parity: ignore
+    expect: { exit: 0, stdout_includes: ["tools/declared  active", "tools/unknown  active", "delete-guard/protected  active", "mcp/undeclared  active", "mcp/declared  provisioned"] }
+  - name: an unknown tool asks
+    hook: { harness: claude, event: pretool, tool: CronCreate, input: {}, cwd: "{{project.shop}}" }
+    expect: { decision: ask, rule: POLISPEC-TOOL-UNKNOWN }
+  - name: an undeclared MCP call asks
+    hook: { harness: claude, event: pretool, tool: mcp__srv__op, input: {}, cwd: "{{project.shop}}" }
+    expect: { decision: ask, rule: POLISPEC-MCP-UNDECLARED }
+  - name: a protected delete is denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{home}}/.ssh" }, cwd: "{{project.shop}}" }
+    home: true
+    expect: { decision: deny, rule: G-DELETE-PROTECTED }
+  - name: activating the provisioned subspec through the verb is idempotent
+    run: ["{{polispec}}", catalog, activate, mcp/declared]
+    tty: ["activate catalog mcp/declared"]
+    parity: ignore
+    expect: { exit: 0 }
+  - name: doctor reports no finding about the catalog
+    run: [sh, -c, '"$0" doctor --json; exit 0', "{{polispec}}"]
+    parity: ignore
+    expect: { exit: 0, stdout_excludes: ["catalog_none_active", "catalog_state_invalid", "catalog_provision_missing"] }

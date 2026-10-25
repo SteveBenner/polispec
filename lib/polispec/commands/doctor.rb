@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require "digest"
 require_relative "../validate_profiles"
 require_relative "../packages"
 require_relative "../native_pin"
@@ -8,6 +9,7 @@ require_relative "../exceptions"
 require_relative "../editions"
 require_relative "../personal_defaults"
 require_relative "../lint"
+require_relative "../catalog"
 
 module Polispec
   class DoctorCommand
@@ -50,6 +52,7 @@ module Polispec
       end
       traced_check("check contracts", findings) { check_contracts(ledger, findings) } if ledger
       traced_check("check personal defaults", findings) { check_personal_defaults(ledger, findings) }
+      traced_check("check catalog", findings) { check_catalog(findings) }
       blocking = findings.reject { |item| NONBLOCKING.include?(item["severity"]) }
       json ? puts(JSON.generate("ok" => blocking.empty?, "runtime" => runtime_info, "findings" => findings)) : print_text(findings)
       blocking.empty? ? 0 : 1
@@ -488,6 +491,27 @@ module Polispec
       end
     rescue StandardError => error
       findings << finding(nil, "contract_ahead_of_runtime", "#{error.class}: #{error.message}").merge("severity" => "info")
+    end
+
+    def check_catalog(findings)
+      state = Catalog.state
+      if state["invalid"]
+        findings << finding(nil, "catalog_state_invalid", "#{state['invalid']}; every gate counts on until it is fixed")
+        return
+      end
+      findings << info(nil, "catalog_none_active", "no catalog spec is active on this host; polispec catalog list") if Array(state["active"]).empty?
+      Array(state["active"]).each do |entry|
+        sub = Catalog.spec(entry["spec"])&.subspecs&.find { |item| item.id == entry["subspec"] }
+        next unless sub&.provision
+
+        record = Array(state["provisioned"]).find { |item| item["spec"] == entry["spec"] && item["subspec"] == entry["subspec"] }
+        path = record && File.join(Catalog.state_dir, record["file"].to_s)
+        next if path && File.file?(path) && Digest::SHA256.file(path).hexdigest == record["sha256"]
+
+        findings << finding(nil, "catalog_provision_missing", "#{entry['spec']}/#{entry['subspec']} is active but its provisioned file is missing or changed").merge("severity" => "warn")
+      end
+    rescue StandardError => e
+      findings << finding(nil, "catalog_state_invalid", "#{e.class}: #{e.message}")
     end
 
     def check_personal_defaults(ledger, findings)

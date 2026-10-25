@@ -3,6 +3,7 @@ unit: harness_controls
 summary: source and dot with a static readable file are followed like a script file, so the sourced commands carry their own verdicts and the file's variables and cd reach the rest of the line, while a dynamic operand, a missing file, an unknown-content write to the file and a same-line cp, mv or sed -i of the followed file stay opaque
 requires: [harness_controls]
 fixture:
+  catalog: [tools, delete-guard, mcp]
   enforce: enforce
   global: files
   global_files:

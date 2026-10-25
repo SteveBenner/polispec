@@ -1,0 +1,4 @@
+schema: polispec.module/v1
+name: mcp-declared
+summary: The MCP operations this host declares, provisioned by the operator from a file; empty in the release.
+rules: []

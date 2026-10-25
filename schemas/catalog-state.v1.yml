@@ -1,0 +1,37 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.catalog-state/v1
+title: Polispec catalog state
+description: "Host-local record of the catalog subspecs the operator activated and provisioned. Lives at catalog/active.yml in the polispec state home."
+type: object
+additionalProperties: false
+required: [schema]
+properties:
+  schema: { const: polispec.catalog-state/v1 }
+  active:
+    type: array
+    items: { $ref: "#/$defs/active" }
+  provisioned:
+    type: array
+    items: { $ref: "#/$defs/provisioned" }
+$defs:
+  id: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }
+  timestamp: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" }
+  active:
+    type: object
+    additionalProperties: false
+    required: [spec, subspec, activated_at, release]
+    properties:
+      spec: { $ref: "#/$defs/id" }
+      subspec: { $ref: "#/$defs/id" }
+      activated_at: { $ref: "#/$defs/timestamp" }
+      release: { type: string, minLength: 1 }
+  provisioned:
+    type: object
+    additionalProperties: false
+    required: [spec, subspec, file, sha256, provisioned_at]
+    properties:
+      spec: { $ref: "#/$defs/id" }
+      subspec: { $ref: "#/$defs/id" }
+      file: { type: string, minLength: 1 }
+      sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+      provisioned_at: { $ref: "#/$defs/timestamp" }

@@ -1,0 +1,134 @@
+schema: polispec.smoke-scenario/v1
+unit: catalog
+summary: with no catalog spec active the guard gives no special verdict to MCP calls, unknown tools, protected deletes or the local web app, each spec returns its verdicts once the operator activates it on a terminal, mcp/declared needs a provisioned file, and the verbs refuse without a terminal
+fixture:
+  enforce: enforce
+  global: files
+  global_files:
+    "global.yml": "schema: polispec.global/v1\nsummary: Smoke baseline with one rule so every path is governed.\nrules:\n  - { id: SMOKE-NOSECRETS, match: { class: [secrets.read], env: prod }, verdict: deny, reason: \"smoke baseline: no production secrets\" }\n"
+  files:
+    "declared.yml": "schema: polispec.module/v1\nname: mcp-declared\nsummary: Smoke declarations.\nrules:\n  - { id: SMOKE-MCP-DESK-PAGE, match: { class: [mcp.call], server: desk, operation: page }, verdict: allow, reason: \"smoke: the desk page operation is declared\" }\n"
+    "bad.yml": "schema: polispec.module/v1\nname: mcp-declared\nsummary: Not a declaration.\nrules:\n  - { id: SMOKE-BAD, match: { class: [fs.write] }, verdict: allow, reason: \"smoke: not an mcp declaration\" }\n"
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      files:
+        "README.md": "shop\n"
+        "build/out.txt": "x\n"
+steps:
+  - name: the catalog lists every spec inactive
+    run: ["{{polispec}}", catalog, list]
+    parity: ignore
+    expect: { exit: 0, stdout_includes: ["tools/declared  inactive", "tools/unknown  inactive", "tools/web-agent  inactive", "delete-guard/protected  inactive", "delete-guard/xargs  inactive", "mcp/undeclared  inactive", "mcp/declared  not_provisioned"] }
+  - name: doctor reports that no catalog spec is active
+    run: [sh, -c, '"$0" doctor --json; exit 0', "{{polispec}}"]
+    parity: ignore
+    expect: { exit: 0, stdout_includes: ["catalog_none_active"] }
+  - name: show prints the rules of a spec
+    run: ["{{polispec}}", catalog, show, delete-guard]
+    parity: ignore
+    expect: { exit: 0, stdout_includes: ["G-DELETE-PROTECTED", "G-DELETE-XARGS"] }
+  - name: show of an unknown spec is a usage error
+    run: ["{{polispec}}", catalog, show, nothing]
+    parity: ignore
+    expect: { exit: 2 }
+  - name: an undeclared MCP call is allowed with nothing active
+    hook: { harness: claude, event: pretool, tool: mcp__srv__op, input: {}, cwd: "{{project.shop}}" }
+    parity: ignore
+    expect: { decision: allow }
+  - name: an unknown tool is allowed with nothing active
+    hook: { harness: claude, event: pretool, tool: CronCreate, input: {}, cwd: "{{project.shop}}" }
+    parity: ignore
+    expect: { decision: allow }
+  - name: a protected delete is not judged by a delete rule with nothing active
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{home}}/.ssh" }, cwd: "{{project.shop}}" }
+    home: true
+    parity: ignore
+    expect: { decision: allow, stdout_excludes: ["G-DELETE-PROTECTED"] }
+  - name: activate without a terminal is refused and writes nothing
+    run: ["{{polispec}}", catalog, activate, tools]
+    parity: ignore
+    expect: { exit: 1, stderr_includes: ["not_tty"] }
+  - name: nothing was activated by the refused verb
+    run: ["{{polispec}}", catalog, list]
+    parity: ignore
+    expect: { exit: 0, stdout_excludes: ["  active"] }
+  - name: a dry run activates nothing
+    run: ["{{polispec}}", catalog, activate, tools, --dry-run]
+    parity: ignore
+    expect: { exit: 0, stdout_includes: ["dry run"] }
+  - name: a wrong phrase is refused
+    run: ["{{polispec}}", catalog, activate, tools]
+    tty: ["activate catalog nothing"]
+    parity: ignore
+    expect: { exit: 1, stdout_includes: ["confirmation_failed"] }
+  - name: activate the whole tools spec on a terminal
+    run: ["{{polispec}}", catalog, activate, tools]
+    tty: ["activate catalog tools"]
+    parity: ignore
+    expect: { exit: 0, stdout_includes: ["tools/declared", "tools/unknown", "tools/web-agent"] }
+  - name: an unknown tool asks once tools is active
+    hook: { harness: claude, event: pretool, tool: CronCreate, input: {}, cwd: "{{project.shop}}" }
+    expect: { decision: ask, rule: POLISPEC-TOOL-UNKNOWN }
+  - name: a declared harness tool is allowed once tools is active
+    hook: { harness: claude, event: pretool, tool: TodoWrite, input: {}, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: an MCP call is still allowed while mcp is inactive
+    hook: { harness: claude, event: pretool, tool: mcp__srv__op, input: {}, cwd: "{{project.shop}}" }
+    parity: ignore
+    expect: { decision: allow }
+  - name: activate the delete guard on a terminal
+    run: ["{{polispec}}", catalog, activate, delete-guard]
+    tty: ["activate catalog delete-guard"]
+    parity: ignore
+    expect: { exit: 0, stdout_includes: ["delete-guard/protected", "delete-guard/xargs"] }
+  - name: a protected delete is denied once delete-guard is active
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{home}}/.ssh" }, cwd: "{{project.shop}}" }
+    home: true
+    expect: { decision: deny, rule: G-DELETE-PROTECTED }
+  - name: an xargs-fed delete asks once delete-guard is active
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "echo x | xargs rm -rf" }, cwd: "{{project.shop}}" }
+    home: true
+    expect: { decision: ask, rule: G-DELETE-XARGS }
+  - name: deactivate one subspec on a terminal
+    run: ["{{polispec}}", catalog, deactivate, delete-guard/xargs]
+    tty: ["deactivate catalog delete-guard/xargs"]
+    parity: ignore
+    expect: { exit: 0 }
+  - name: the xargs delete is no longer judged
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "echo x | xargs rm -rf" }, cwd: "{{project.shop}}" }
+    home: true
+    parity: ignore
+    expect: { decision: allow }
+  - name: mcp/declared cannot be activated before it is provisioned
+    run: ["{{polispec}}", catalog, activate, mcp/declared]
+    tty: ["activate catalog mcp/declared"]
+    parity: ignore
+    expect: { exit: 1, stdout_includes: ["not_provisioned"] }
+  - name: a file that declares more than MCP operations is refused
+    run: ["{{polispec}}", catalog, provision, mcp/declared, --from, "{{files}}/bad.yml"]
+    tty: ["provision catalog mcp/declared"]
+    parity: ignore
+    expect: { exit: 1, stdout_includes: ["provision_invalid"] }
+  - name: provision the host's declarations on a terminal
+    run: ["{{polispec}}", catalog, provision, mcp/declared, --from, "{{files}}/declared.yml"]
+    tty: ["provision catalog mcp/declared"]
+    parity: ignore
+    expect: { exit: 0, stdout_includes: ["provisioned: mcp/declared"] }
+  - name: activate the whole mcp spec on a terminal
+    run: ["{{polispec}}", catalog, activate, mcp]
+    tty: ["activate catalog mcp"]
+    parity: ignore
+    expect: { exit: 0, stdout_includes: ["mcp/undeclared", "mcp/declared"] }
+  - name: a declared MCP operation is allowed
+    hook: { harness: claude, event: pretool, tool: mcp__desk__page, input: {}, cwd: "{{project.shop}}" }
+    parity: ignore
+    expect: { decision: allow }
+  - name: an undeclared MCP operation asks
+    hook: { harness: claude, event: pretool, tool: mcp__desk__restore, input: {}, cwd: "{{project.shop}}" }
+    expect: { decision: ask, rule: POLISPEC-MCP-UNDECLARED }
+  - name: doctor reports no finding about an active catalog
+    run: [sh, -c, '"$0" doctor --json; exit 0', "{{polispec}}"]
+    parity: ignore
+    expect: { exit: 0, stdout_excludes: ["catalog_none_active", "catalog_state_invalid", "catalog_provision_missing"] }

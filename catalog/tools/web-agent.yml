@@ -1,0 +1,5 @@
+schema: polispec.module/v1
+name: tools-web-agent
+summary: Warns on agent calls that reach the local polispec web app's mutating API.
+rules:
+  - { id: G-WEB-AGENT, match: { shape: [web_local] }, verdict: warn, overridable: true, reason: "this call reaches the local polispec web app's mutating API; the person at the browser makes these changes" }

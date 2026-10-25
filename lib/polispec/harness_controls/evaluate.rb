@@ -2,6 +2,7 @@ require_relative "../hook_memo"
 require_relative "root_guard"
 require_relative "../exceptions"
 require_relative "../editions"
+require_relative "../catalog"
 
 module Polispec
   module HarnessControls
@@ -72,6 +73,7 @@ module Polispec
         paths.concat(Array(documents).flat_map { |entry| Array(stringify(entry)["owned_paths"]) })
         paths << ledger.path if ledger && ledger.respond_to?(:path)
         paths << exceptions_path
+        paths << Catalog.state_dir
         program = File.expand_path($PROGRAM_NAME.to_s)
         paths << program if File.file?(program)
         paths.concat($LOADED_FEATURES.select { |path| path.include?("/rplugin/") && path.start_with?("/") })
@@ -220,10 +222,16 @@ module Polispec
         actions = Array(values["actions"])
         trusted = values["trusted_declaration"]
         declared = ->(action) { trusted.respond_to?(:call) && trusted.call(action) }
-        undeclared = actions.select { |action| action.action_class == "mcp.call" }.reject do |action|
-          Evaluate.declared_action?(values["documents"], action, input, values, protected_only: true) || declared.call(action)
+        undeclared = []
+        if Catalog.gate?("mcp_undeclared")
+          undeclared = actions.select { |action| action.action_class == "mcp.call" }.reject do |action|
+            Evaluate.declared_action?(values["documents"], action, input, values, protected_only: true) || declared.call(action)
+          end
         end
-        unknown = actions.select { |action| action.raw.is_a?(Hash) && action.raw["unknown_tool"] == true }.reject { |action| declared.call(action) }
+        unknown = []
+        if Catalog.gate?("unknown_tool")
+          unknown = actions.select { |action| action.raw.is_a?(Hash) && action.raw["unknown_tool"] == true }.reject { |action| declared.call(action) }
+        end
         return result if undeclared.empty? && unknown.empty?
         lifter = values["excepted"]
         if lifter.respond_to?(:call)

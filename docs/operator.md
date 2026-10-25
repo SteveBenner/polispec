@@ -208,7 +208,7 @@ Without rplugin, `polispec install --harness claude|codex [--scope user|project]
 
 - Project scope (the default; the git toplevel of the working directory, or each directory operand): files found by their `polispec.` schema id, the fixed `specs/polispec` files with the kind their name demands, the `[ENVS]` row of `AGENTS.md`, `.agents/directives/envs.md`, behavior v2 surfaces and `polispec.manifest.json`.
 - `--host` adds the ledger, the global shelf as the guard reads it, `deployments.json`, `delegate/grants.yml`, the settings file (hygiene only), the published index, the harness-control installations the current user owns (file integrity only), and the working tree of every non-retired ledger project.
-- `--shipped` judges the running release tree against the ordered table in `lib/polispec/lint/shipped.rb`. Expected on a clean tree: three `description_missing` warnings (`modules/delete-guard.yml`, `modules/tool-declared.yml`, `packages/environment-control/package.yml`) and one `file_too_large` info for `smoke.yml`, which is over the 5 MiB cap on purpose.
+- `--shipped` judges the running release tree against the ordered table in `lib/polispec/lint/shipped.rb`. Expected on a clean tree: three `description_missing` warnings (`catalog/delete-guard/protected.yml`, `catalog/tools/declared.yml`, `packages/environment-control/package.yml`) and one `file_too_large` info for `smoke.yml`, which is over the 5 MiB cap on purpose.
 
 Rules and codes. Schema: `schema_invalid`, `schema_kind_mismatch` (errors), `schema_unrecognized` (warn). Hygiene errors: `yaml_syntax`, `json_syntax`, `yaml_duplicate_key`, `json_duplicate_key`, `yaml_alias`, `yaml_multiple_documents`, `text_invalid`. Hygiene warnings: `text_final_newline`, `yaml_tab`, `yaml_bom`, `yaml_crlf`, `yaml_trailing_space`, `yaml_no_final_newline`, `yaml_bool_word`, `yaml_non_string_key`, `target_unreadable`. Hygiene info: `file_too_large`. Drift errors: `agents_drift`, `behavior_surface_drift`, `harness_artifact_drift`; drift warning: `manifest_drift`. Refs errors: `version_disagree`, `schema_ref_missing`, `schema_file_missing`, `package_source_missing`; refs warnings: `ledger_repo_missing`, `ledger_path_missing`, `shipped_unclaimed`, `shipped_row_unmatched`; refs info: `too_many_files`. Description: `description_<code>` (warn, error while `polispec.description.strict` is on). `--only` takes `schema`, `hygiene`, `drift`, `refs`, and `description`.
 
@@ -339,7 +339,7 @@ A directory is in development when at least one non-retired ledger project conta
 
 Only the opaque trigger is relaxed. An unrecognised tool, a line the parser extracts no command from, an undeclared MCP operation and every deny or rule warn behave as before, and the visible commands of the line are judged as they always were, so `source env.sh; git push origin main:stable` is still denied. What the relaxation gives up is sight of the sourced file's own commands: a rule that would deny something inside `env.sh` cannot see it. Each relaxed call carries `relaxed` in its judgment record (`polispec judgments show <id>`), so the calls it let through can be audited. `polispec.relax.dev off` (or `POLISPEC_RELAX_DEV=off`) restores the ask everywhere without a release.
 
-Since 0.32.0 that relaxation is a rule polispec ships: `TOOL-OPAQUE-DEVELOPMENT` in `modules/tool-declared.yml`, composed as the `shipped` layer above the global shelf on every host (`polispec resolve <path> --layers` prints it first). It allows a line with shape `opaque_shell` when the `in_development` predicate holds, under the rules above; `polispec.relax.dev off` makes the predicate false everywhere, so the rule declares nothing. The same module declares the harness-internal tools (`TOOL-<NAME>`, class `tool.internal`: TodoWrite, Skill, AskUserQuestion and the rest) and the read tools (`TOOL-READ-<NAME>`, class `tool.read`: Read, Grep and the rest, when called without a path); an undeclared tool such as `CronCreate` still asks `POLISPEC-TOOL-UNKNOWN`. Every shipped rule is overridable, and the shelf changes them with ordinary rules through `polispec plan global` and `polispec apply global`:
+Since 0.32.0 that relaxation is a rule polispec ships: `TOOL-OPAQUE-DEVELOPMENT` in the catalog spec `tools/declared`, composed as the `catalog` layer above the global shelf on a host where the operator activated it (`polispec resolve <path> --layers` prints it first). It allows a line with shape `opaque_shell` when the `in_development` predicate holds, under the rules above; `polispec.relax.dev off` makes the predicate false everywhere, so the rule declares nothing. The same subspec declares the harness-internal tools (`TOOL-<NAME>`, class `tool.internal`: TodoWrite, Skill, AskUserQuestion and the rest) and the read tools (`TOOL-READ-<NAME>`, class `tool.read`: Read, Grep and the rest, when called without a path); an undeclared tool such as `CronCreate` asks `POLISPEC-TOOL-UNKNOWN` while `tools/unknown` is active. Every catalog rule is overridable, and the shelf changes them with ordinary rules through `polispec plan global` and `polispec apply global`:
 
 - declare another tool: `{ id: TOOL-CRONCREATE, match: { tool: CronCreate, class: [tool.internal] }, verdict: allow }`;
 - tighten one: the same match with `verdict: deny` (the strictest layer wins, and the tool leaves the fast-path skip list);
@@ -365,6 +365,34 @@ An installed polispec older than 0.35.0 rejects a ledger that carries `paths`, `
    - `editions_drift` (warn) repeats `polispec editions --check`.
 
 The writers refuse while the installed release is older than 0.35.0. `polispec register`, `polispec unregister` and the package apply that adds a project entry (`polispec apply environment-control`) fail with code `runtime_behind`, which names the installed release and says to install 0.35.0 first; with `--dry-run` (or `plan`) they still print the preview and add a note that the apply will be refused. A host with no installed release, or one at 0.35.0 or later, is unchanged. The release is read the same way `polispec doctor` reads it: the native pin (`<data home>/current/VERSION`), then a pinned runtime's own `VERSION`.
+
+## Catalog
+
+Since 0.45.0 polispec ships a catalog of optional specs under `catalog/`, and none is active by default. A spec takes effect on a host only when the operator activates it there (and, for a provisioned subspec, provisions it first). Activation is recorded in `catalog/active.yml` inside the polispec state directory, which the guard protects like the rest of its state. With nothing active, polispec gives no special verdict to MCP calls, unknown tools, protected deletes or calls to the local web app; every other rule, gate, control, root guard and protected root is unchanged.
+
+| Spec | Subspec | Effect while active |
+| --- | --- | --- |
+| `tools` | `declared` | Classifies the harness's own tools and read tools as known, and relaxes `eval`, `source` and `.` lines in development. |
+| `tools` | `unknown` | Gates every call polispec cannot positively classify (`POLISPEC-TOOL-UNKNOWN`: ask under standard, deny under lock). |
+| `tools` | `web-agent` | Warns on an agent call to the local web app (`G-WEB-AGENT`). |
+| `delete-guard` | `protected` | Denies deletes that reach the protected system and configuration folders, and warns on single-file deletes beneath them. |
+| `delete-guard` | `xargs` | Warns on an xargs-fed delete. |
+| `mcp` | `undeclared` | Gates MCP operations that no protected control or committed policy declares (`POLISPEC-MCP-UNDECLARED`: ask under standard, deny under lock). |
+| `mcp` | `declared` | Declares the operations of the MCP servers the host configures; needs a provisioned file. |
+
+Commands:
+
+- `polispec catalog list [--json]` prints every spec and subspec with its gate, whether it needs provisioning, and its state on this host: `active`, `inactive`, `provisioned` or `not_provisioned`. It changes nothing.
+- `polispec catalog show SPEC [--json]` prints the subspecs of one spec with the rules of each module. It changes nothing.
+- `polispec catalog activate SPEC[/SUBSPEC] [--dry-run]` activates one subspec, or every subspec of the spec when no subspec is named. A provisioned subspec that is not provisioned is skipped, and listed, when the spec is named whole, and refused with `not_provisioned` when named alone.
+- `polispec catalog deactivate SPEC[/SUBSPEC] [--dry-run]` reverses it.
+- `polispec catalog provision SPEC/SUBSPEC --from FILE [--dry-run]` stores the host's own module for a provisioned subspec. For `mcp/declared` the file is a `polispec.module/v1` document whose every rule has the shape `{ id, reason, verdict: allow, match: { class: [mcp.call], server: S, operation: O } }`; nothing else is accepted. polispec records the file's sha256, and a file that later changes stops counting until it is provisioned again.
+
+The three changes are operator-only. Each types a phrase on a terminal: `activate catalog SPEC`, `deactivate catalog SPEC` or `provision catalog SPEC/SUBSPEC`, with the argument exactly as given. Without a terminal the command exits 1 with `not_tty` and writes nothing; a wrong phrase exits 1 with `confirmation_failed`; while the sealed plane is active the command exits 1 with `catalog_sealed`; `not_provisioned` and `provision_invalid` also exit 1; a usage error exits 2. `--dry-run` prints what would change and writes nothing. Each change emits a `polispec.catalog` event with the action, the spec, the subspecs and the actor.
+
+`polispec doctor` reports `catalog_none_active` (info) while nothing is active, `catalog_provision_missing` (warn) for an active provisioned subspec whose file is missing or changed, and `catalog_state_invalid` (blocking) when the state file cannot be read; in that last case every gate counts as on until the file is fixed.
+
+Upgrading from 0.44.x: the release no longer applies the tool declarations, the unknown-tool gate, the delete guard or the undeclared-MCP gate on its own. Activate `tools` and `delete-guard` to keep the previous behavior, and `mcp/undeclared` if the host relied on the undeclared-MCP gate. A host that kept its MCP declarations in a shelf module can provision them into `mcp/declared` or leave the module where it is.
 
 ## Registering software, directories and the system scope
 

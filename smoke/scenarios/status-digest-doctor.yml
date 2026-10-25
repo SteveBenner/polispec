@@ -2,6 +2,7 @@ schema: polispec.smoke-scenario/v1
 unit: commands/status, digest, doctor
 summary: status reports policy source, packages, outstanding allow-once ids and policy_invalid findings (and a JSON unknown_project error), digest counts recorded denials, warnings and the empty window, and doctor reports health_required, package_file_drift and not_live findings with exit 1
 fixture:
+  catalog: [tools]
   global: example
   enforce: enforce
   projects:
