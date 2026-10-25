@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.2] - 2026-10-25
+
+### Fixed
+- **Calls were denied with `guard unavailable` while the resident judge reloaded.** The judge answers one request at a time. The launcher gave up on it after 0.5 seconds and each waiting caller started its own cold Ruby, so while the judge was slow the herd of cold starts missed the 8 second deadline and the shim failed closed. The launcher log held 263 `timeout` rows since 2026-10-20, 244 of them denials, in bursts (the latest at 21:25 and 21:34 UTC on 2026-10-25). The judge log showed accepted requests finishing 2.8 to 6.2 seconds later and repeated `Timeout::Error` replies at 7.0 seconds, none of them on a request that changed the freshness key (`key_changed` is false on every slow row). Why the judge is slow at those moments is not established; the host was heavily loaded (load average between 7.6 and 31 on 32 cores while this was investigated). `bin/polispec-guard` now keeps waiting on the same connection for a judge that accepted the request, up to `POLISPEC_JUDGE_WAIT` seconds (integer 0 to 8, default 6, held below the launcher deadline; 0 restores the earlier behaviour), logs a served late reply as `judge_slow`, and gives the cold path the deadline less the seconds already waited, rounded up to whole seconds and never below 1 second. That arithmetic runs before the caller's locale is restored, because bash writes `EPOCHREALTIME` with the locale's decimal mark. Measured with the real launcher against a stand-in judge: a reply after 2 seconds is served by the judge in 2.0 seconds and not by a cold start; with `POLISPEC_JUDGE_WAIT=0` the same case falls to the cold path at 0.5 seconds as before; a judge that errors at 3.95 seconds ends the call at 8.0 seconds, a judge that never answers at 7.0 seconds, and under `LANG=en_DK.utf8` a judge that errors at 1.3 seconds at 7.3 seconds, all inside the 8 second deadline. A cold hook for a call outside any governed project took 0.13 to 0.14 seconds at load 11, so the 1 to 2 seconds left to the cold path after a full wait is ample for such a call; a governed call was not timed. The cause of the judge's slow requests is neither changed nor reproduced here.
+
+Validation: existing smoke suite 49/49 from the candidate against the installed 0.45.1, with all 63 output differences reviewed: clone-versus-pinned runtime evidence and its runtime-write verdicts, scratch fixture paths, generated ids and timestamps, and version output. No launcher scenario differs and none exercises the new wait, which was measured only with the stand-in judge above. No new tests were written.
+
 ## [0.45.1] - 2026-10-25
 
 ### Fixed
