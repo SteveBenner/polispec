@@ -144,6 +144,13 @@ judge_left() {
   [ "$left_us" -gt 0 ] || return 1
   printf -v rem '%d.%06d' $(( left_us / 1000000 )) $(( left_us % 1000000 ))
 }
+judge_extend() {
+  [ "$judge_extended" = 0 ] || return 1
+  extend_us=$(( judge_start + judge_wait * 1000000 ))
+  [ "$extend_us" -gt "$judge_deadline" ] || return 1
+  judge_deadline="$extend_us"
+  judge_extended=1
+}
 judge_attempt() {
   jfile="$state/judge.json"
   if [ ! -r "$jfile" ]; then judge_cause=judge_absent; return 1; fi
@@ -159,14 +166,26 @@ judge_attempt() {
     budget_us=500000
   fi
   [ "$budget_us" -gt 0 ] || { judge_cause=judge_budget; return 1; }
-  judge_deadline=$(( ${EPOCHREALTIME/./} + budget_us ))
+  judge_start="${EPOCHREALTIME//[!0-9]/}"
+  judge_deadline=$(( judge_start + budget_us ))
+  judge_wait="${POLISPEC_JUDGE_WAIT-}"
+  case "$judge_wait" in [0-8]) ;; *) judge_wait=6 ;; esac
+  [ "$judge_wait" -lt "$deadline" ] || judge_wait=$(( deadline - 1 ))
   trap '' PIPE
   if ! { exec 3<>"/dev/tcp/127.0.0.1/$jport"; } 2>/dev/null; then judge_cause=judge_refused; return 1; fi
   payload_bytes="${#input}"
   if ! printf '%s\n%s' "POLISPEC/1 $jtoken $mode $harness $bindir $payload_bytes" "$input" >&3 2>/dev/null; then exec 3>&-; judge_cause=judge_refused; return 1; fi
   jhead=""
   if ! judge_left; then exec 3>&-; judge_cause=judge_timeout; return 1; fi
-  if ! read -t "$rem" -r -u 3 jhead; then
+  IFS= read -t "$rem" -r -u 3 jhead
+  jrc=$?
+  if [ "$jrc" -gt 128 ] && judge_extend; then
+    jpart="$jhead"
+    jhead=""
+    if judge_left; then IFS= read -t "$rem" -r -u 3 jhead; jrc=$?; else jrc=142; fi
+    jhead="$jpart$jhead"
+  fi
+  if [ "$jrc" -ne 0 ]; then
     exec 3>&-
     judge_cause=judge_timeout
     return 1
@@ -184,10 +203,12 @@ judge_attempt() {
   esac
   jbody="${jbody%"${jbody##*[!$'\n']}"}"
   if [ "$jstatus" = 0 ]; then
+    if [ "$judge_extended" = 1 ]; then launcher_note judge_slow; fi
     [ -n "$jbody" ] && printf '%s\n' "$jbody"
     exit 0
   fi
   if [ "$jstatus" = 2 ] && [ "$mode" = pretool ] && [ "${jbody:0:1}" = "{" ]; then
+    if [ "$judge_extended" = 1 ]; then launcher_note judge_slow; fi
     printf '%s\n' "$jbody"
     exit 2
   fi
@@ -200,7 +221,13 @@ if [ "${POLISPEC_JUDGE:-on}" != off ]; then
   saved_lc_set="${LC_ALL+x}"
   LC_ALL=C
   judge_cause=""
+  judge_extended=0
+  judge_start=0
   if ! judge_attempt; then
+    if [ "$judge_extended" = 1 ]; then
+      deadline=$(( deadline - ( ${EPOCHREALTIME//[!0-9]/} - judge_start + 999999 ) / 1000000 ))
+      [ "$deadline" -ge 1 ] || deadline=1
+    fi
     if [ -n "$saved_lc_set" ]; then LC_ALL="$saved_lc"; else unset LC_ALL; fi
     trap - PIPE
     launcher_note "$judge_cause"
