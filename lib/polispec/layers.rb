@@ -20,6 +20,17 @@ module Polispec
     BUCKETS = %w[freezes to_test to_stable preflight].freeze
     EMPTY_EXTRAS = { "freezes" => [], "hermetic" => {}, "to_test" => [], "to_stable" => [], "preflight" => [] }.freeze
 
+    class ComposedPolicy < Hash
+      attr_reader :raw_digest, :composition_errors
+
+      def initialize(policy, raw_digest:, composition_errors:)
+        super()
+        replace(policy)
+        @raw_digest = raw_digest
+        @composition_errors = composition_errors
+      end
+    end
+
     Source = Struct.new(:kind, :root, :repo, :ref, :path, keyword_init: true) do
       def key
         [kind, root, repo, ref, path]
@@ -555,14 +566,12 @@ module Polispec
           where = gstore ? gstore.source.describe : (local.is_a?(Source) ? local.describe : "policy")
           Events.emit("polispec.finding", project: project&.id, kind: "layers_invalid", detail: errors.first(3).join("; "), policy_source: where)
         end
-        merged = merge_policy(policy, extras)
-        raw_digests[merged] = digest
-        composed_errors[merged] = errors
+        merged = ComposedPolicy.new(merge_policy(policy, extras), raw_digest: digest, composition_errors: errors)
         [merged, Chain.new(layers: layers, errors: errors, profile: nil, applied: []).effective_digest]
       end
 
       def errors_for(policy)
-        composed_errors[policy]
+        policy.composition_errors if policy.is_a?(ComposedPolicy)
       end
 
       def policy_errors(policy, project: nil, ledger: nil, file: nil)
@@ -601,14 +610,6 @@ module Polispec
       end
 
       private
-
-      def raw_digests
-        @raw_digests ||= ObjectSpace::WeakMap.new
-      end
-
-      def composed_errors
-        @composed_errors ||= ObjectSpace::WeakMap.new
-      end
 
       def scalar_param?(value)
         value.is_a?(String) || value.is_a?(Numeric) || value == true || value == false
@@ -892,7 +893,8 @@ module Polispec
       def repo_layer(local, global, policy, digest, label, errors)
         mods = Shelf.new(local, global).expand(policy["includes"], errors)
         duplicate_ids("repo", mods, errors)
-        base = raw_digests[policy] || digest || sha(JSON.generate(policy))
+        raw_digest = policy.raw_digest if policy.is_a?(ComposedPolicy)
+        base = raw_digest || digest || sha(JSON.generate(policy))
         Layer.new(
           name: "repo", source: label || "policy", digest: digest_with(base, mods),
           rules: mods.flat_map { |mod| Array(mod.doc["rules"]) } + Array(policy["rules"]),
