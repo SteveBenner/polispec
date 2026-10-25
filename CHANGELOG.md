@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Upgrade
 - A host upgrading from 0.44.x gets none of the previous shipped rules until the operator activates them. To keep the 0.44.1 behavior, run `polispec catalog activate tools` and `polispec catalog activate delete-guard`, and `polispec catalog activate mcp` for the undeclared-MCP gate. A host that declared its MCP servers in a global shelf module can provision that module into `mcp/declared` (`polispec catalog provision mcp/declared --from FILE`) or remove it from the shelf. Pin 0.45.0 before removing the module: an older runtime keeps its undeclared-MCP gate on, so a shelf without declarations makes every MCP call ask there.
 
+### Notes
+- The resident judge's freshness key and the fast-path watch list include the catalog state, so an activation is judged on the next call without restarting the judge, and the launcher stops skipping until the fast path is re-stamped.
+- `polispec catalog list` and `show` are benign reads for the guard. `polispec.catalog` is a registered event.
+- The web map's shipped band and the explain view read the catalog layer; the API keys are unchanged. The author adapter reads `catalog/` where it read `modules/`.
+- Parity against the installed 0.44.1: 49 of 49 scenarios pass, 76 changed steps, recorded in `smoke.yml`. Every hook verdict is the same once a scenario activates the catalog specs it relies on (`catalog:` fixture key). The changes are the absent catalog layer where 0.44.1 printed its shipped layer (12: `resolve --layers`, `manifest`, and the onboarding plan that no longer lists the 36 shipped rules as added), the clone runtime both working trees are against the pinned 0.44.1 (18: `R-POLISPEC-RUNTIME` ask against deny, the doctor runtime line and exit), `edition_provenance_invalid` while the branch is ahead of local main (doctor exits), the version string, the `against/` scratch-path prefix and the truncation it shifts, generated ids, commit ids and timestamps, the seal tree listing, and `lint --shipped` warning `description_missing` on the seven catalog modules where 0.44.1 warned on its two shipped modules.
+
 ## [0.44.1] - 2026-10-24
 
 ### Fixed
