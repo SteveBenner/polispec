@@ -1,0 +1,6 @@
+schema: polispec.catalog/v1
+name: delete-guard
+summary: Denies deletes that reach the protected system and configuration folders and warns on single-file deletes beneath them and on xargs-fed deletes.
+subspecs:
+  - { id: protected, summary: "Denies deletes that reach the protected folders and warns on single-file deletes beneath them.", module: protected.yml }
+  - { id: xargs, summary: "Warns on deletes whose targets are fed through xargs.", module: xargs.yml }

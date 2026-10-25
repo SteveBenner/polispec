@@ -35,6 +35,8 @@ $defs:
         type: array
         items: { $ref: "#/$defs/project" }
       files: { $ref: "#/$defs/string_map" }
+      catalog: { $ref: "#/$defs/string_list" }
+      catalog_provisioned: { $ref: "#/$defs/string_map" }
   project:
     type: object
     additionalProperties: false

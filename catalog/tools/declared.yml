@@ -1,6 +1,6 @@
 schema: polispec.module/v1
-name: tool-declared
-summary: The tools polispec declares known on every host, composed as the shipped layer above the global shelf; every rule is overridable, so a shelf rule tightens one with a plain verdict and loosens one only by naming it in overrides.
+name: tools-declared
+summary: The harness tools polispec declares known; every rule is overridable, so a shelf rule tightens one with a plain verdict and loosens one only by naming it in overrides.
 rules:
   - { id: TOOL-TODOWRITE, match: { tool: TodoWrite, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
   - { id: TOOL-TODOREAD, match: { tool: TodoRead, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
@@ -32,4 +32,3 @@ rules:
   - { id: TOOL-READ-READ-MANY-FILES, match: { tool: read_many_files, class: [tool.read] }, verdict: allow, overridable: true, reason: "read tool" }
   - { id: TOOL-READ-VIEW-IMAGE, match: { tool: view_image, class: [tool.read] }, verdict: allow, overridable: true, reason: "read tool" }
   - { id: TOOL-OPAQUE-DEVELOPMENT, match: { shape: [opaque_shell], in_development: true }, verdict: allow, overridable: true, reason: "an eval, source or . line in a project in development: every ledger project containing the directory is onboarding, and every command of the line runs in development or in no ledger project" }
-  - { id: G-WEB-AGENT, match: { shape: [web_local] }, verdict: warn, overridable: true, reason: "this call reaches the local polispec web app's mutating API; the person at the browser makes these changes" }

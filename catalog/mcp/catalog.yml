@@ -1,0 +1,6 @@
+schema: polispec.catalog/v1
+name: mcp
+summary: Gates MCP operations no protected control or committed policy declares, and declares the operations of the servers this host configures.
+subspecs:
+  - { id: undeclared, summary: "Gates every MCP operation that no protected control or committed policy declares.", module: undeclared.yml, gate: mcp_undeclared }
+  - { id: declared, summary: "Declares the MCP operations of this host's servers from a file the operator provisions.", module: declared.yml, provision: module }

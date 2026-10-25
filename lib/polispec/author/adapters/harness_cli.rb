@@ -55,7 +55,7 @@ module Polispec
         end
 
         def roots(context)
-          list = [File.join(ROOT, "schemas"), File.join(ROOT, "modules"), File.join(ROOT, "examples")]
+          list = [File.join(ROOT, "schemas"), File.join(ROOT, "catalog"), File.join(ROOT, "examples")]
           project = context[:project].to_s
           unless project.empty?
             entry = Ledger.load.project(project) rescue nil

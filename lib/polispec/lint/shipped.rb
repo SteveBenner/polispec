@@ -6,7 +6,8 @@ module Polispec
     module Shipped
       ROWS = [
         ["schemas/*.yml", "schema_doc"],
-        ["modules/*.yml", "module"],
+        ["catalog/*/catalog.yml", "catalog"],
+        ["catalog/*/*.yml", "module"],
         ["packages/*/package.yml", "package"],
         ["packages/*/behavior.yml", "auto"],
         ["packages/**/*.yml", "template"],

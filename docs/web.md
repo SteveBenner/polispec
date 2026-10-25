@@ -69,7 +69,7 @@ The navigation groups the views by what you are doing. The keyboard shortcuts `g
 
 ### Observe
 
-- **Map** (`g m`). Every ledger project and path entry as a card with its name, summary, description, digest, status and the counts of allow, warn and deny judgments in the window (1 hour, 24 hours or 7 days). The shipped layer, the global shelf and the exceptions file are drawn above the cards, with an edge from each layer and module instance to every project it reaches. Hovering a card highlights what it shares. Card positions you drag are saved. A list view shows the same entries as a table.
+- **Map** (`g m`). Every ledger project and path entry as a card with its name, summary, description, digest, status and the counts of allow, warn and deny judgments in the window (1 hour, 24 hours or 7 days). The catalog layer, the global shelf and the exceptions file are drawn above the cards, with an edge from each layer and module instance to every project it reaches. Hovering a card highlights what it shares. Card positions you drag are saved. A list view shows the same entries as a table.
 - **Pipeline** (`g p`). Per project: the `main`, `test` and `stable` refs with their policy digests, policy not yet promoted, package drift, doctor findings, freezes and the gate to test. Promotion to `test` and every operator action appear as the exact command to run in a terminal.
 - **Sessions** (`g s`). Every harness session seen in the window (1, 6 or 24 hours): harness, agent, start, last call, runtime version, policy digest per project and epoch, with a badge for current, pending, needs reload, stale briefing or untrusted hook (Codex).
 - **Feed** (`g f`). Judgments as they are recorded, streamed with server-sent events from the judgment stream and filterable by verdict, session, project or rule.
@@ -81,7 +81,7 @@ The navigation groups the views by what you are doing. The keyboard shortcuts `g
 - **Playground** (`g y`). Type a tool call or a shell line, or pick a recorded judgment, and see the verdict in every environment of every project with the full rule trace. Read-only.
 - **Explainer** (`g x`). Paste the text of a deny or a warn, or give a judgment id, and see the rule, its layer, its description and the legitimate way forward, with a draft exception and an allow-once id for the operator.
 - **History** (`g i`). A scrubber over a rulebook's git history and release tags. Two refs give a semantic diff of rules, gates, freezes and modules.
-- **Detail**. Reached from a card or a rule. One rulebook's composition: the layer chain from shipped to child, each module instance with its resolved parameters, each rule with its verdict and what it overrides, and the winning rule per environment for a chosen action.
+- **Detail**. Reached from a card or a rule. One rulebook's composition: the layer chain from catalog to child, each module instance with its resolved parameters, each rule with its verdict and what it overrides, and the winning rule per environment for a chosen action.
 - **Blast radius**. While a draft is open, the last 14 days of judgment rows are replayed against it and the counts that would get stricter, looser or stay the same are shown per project, with the largest flip.
 
 ### Change
@@ -126,7 +126,7 @@ An apply that needs a typed id and gets none answers 422 `confirm_required` with
 
 ### G-WEB-AGENT
 
-The web app is for the person at the browser. An agent that calls its API has no one to type a plan id. The classifier family `web_local` recognizes such a call and classifies it `policy.edit`, and the shipped rule `G-WEB-AGENT` (in `modules/tool-declared.yml`) warns on it, so the harness asks the user first. A call is recognized when it is a `curl`, `wget`, `http`, `https` or `xh` line, or a `WebFetch` tool call (recognized by its path alone), to a loopback address on the configured web port or the port of the running server, and either the method is not `GET` or `HEAD` (or a body flag is present) or the path is under `/api/v1/exceptions/`, `/api/v1/author`, `/api/v1/state`, `/api/v1/register` or `/api/v1/session`, or is `/api/v1/plans/<id>/apply`. A plain `GET` to the API classifies as `web.fetch`. The rule is overridable like any warn; an agent never drives the web API, and when it wants the user to make a change it points them to `polispec web`.
+The web app is for the person at the browser. An agent that calls its API has no one to type a plan id. The classifier family `web_local` recognizes such a call and classifies it `policy.edit`, and the catalog rule `G-WEB-AGENT` (the `tools/web-agent` subspec, when active) warns on it, so the harness asks the user first. A call is recognized when it is a `curl`, `wget`, `http`, `https` or `xh` line, or a `WebFetch` tool call (recognized by its path alone), to a loopback address on the configured web port or the port of the running server, and either the method is not `GET` or `HEAD` (or a body flag is present) or the path is under `/api/v1/exceptions/`, `/api/v1/author`, `/api/v1/state`, `/api/v1/register` or `/api/v1/session`, or is `/api/v1/plans/<id>/apply`. A plain `GET` to the API classifies as `web.fetch`. The rule is overridable like any warn; an agent never drives the web API, and when it wants the user to make a change it points them to `polispec web`.
 
 ## The limiter
 

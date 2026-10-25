@@ -2,6 +2,7 @@ schema: polispec.smoke-scenario/v1
 unit: delete_guard
 summary: the shipped delete guard denies recursive deletes that reach a protected folder or the filesystem root, warns on a single-file delete under a protected folder and on an xargs-fed delete, and leaves a delete inside a project and a write to a protected folder to the other rules
 fixture:
+  catalog: [delete-guard]
   enforce: enforce
   global: files
   global_files:

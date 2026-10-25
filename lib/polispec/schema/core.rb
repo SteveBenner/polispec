@@ -6,7 +6,7 @@ require_relative "validator"
 
 module Polispec
   module Schema
-    KINDS = %w[policy environments roster ledger behavior spec waivers global module profiles control smoke smoke-scenario package judgment exceptions delegate_grants editions session change manifest app index contract contract-vocabulary].freeze
+    KINDS = %w[policy environments roster ledger behavior spec waivers global module profiles control smoke smoke-scenario package judgment exceptions delegate_grants editions session change manifest app index contract contract-vocabulary catalog catalog-state].freeze
     CONTROL_EFFECT_KEYS = {
       "deny" => [],
       "ask" => [],

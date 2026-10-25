@@ -8,6 +8,7 @@ module Polispec
       "polispec.promote" => %w[project to from_sha to_sha tag actor gates waived result duration_ms via],
       "polispec.deploy" => %w[project env sha tag steps health pinned_behind actor result via],
       "polispec.pause" => %w[project minutes reason expires_at actor],
+      "polispec.catalog" => %w[action spec subspecs actor],
       "polispec.allow_once" => %w[project id action_class rule_id redeemed_at consumed_by_session],
       "polispec.finding" => %w[project kind detail policy_source],
       "polispec.delegate" => %w[app run_id by argv result exit_code duration_ms],

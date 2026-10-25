@@ -41,7 +41,8 @@ module Polispec
       KINDS = %w[project path global module].freeze
       GIT_ENV = { "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_OPTIONAL_LOCKS" => "0" }.freeze
       REF_FORMAT = %r{\A[A-Za-z0-9][A-Za-z0-9._/-]{0,99}\z}.freeze
-      LAYER_LABELS = { "shipped" => "Shipped", "global" => "Global shelf", "repo" => "Project" }.freeze
+      LAYER_LABELS = { "catalog" => "Catalog", "shipped" => "Shipped", "global" => "Global shelf", "repo" => "Project" }.freeze
+      CHIP_BANDS = { "catalog" => "shipped", "global" => "global" }.freeze
       JUDGMENT_LIMIT = 1000
       QUIET = Mutex.new
 
@@ -119,7 +120,19 @@ module Polispec
       end
 
       def module_name(label)
+        return Catalog.module_name(label) if label.to_s.start_with?("catalog:")
+
         label.to_s[/\A[a-z0-9][a-z0-9-]*/].to_s
+      end
+
+      def catalog_module(name)
+        entry = Catalog.entry_named(name)
+        entry && Layers::Mod.new(name, entry["doc"], entry["text"], {}, :catalog)
+      end
+
+      def module_source(name)
+        entry = Catalog.entry_named(name)
+        entry ? entry["label"] : "modules/#{name}.yml"
       end
 
       def module_params(label)
@@ -206,7 +219,7 @@ module Polispec
       end
 
       def seed_shipped_chips(chips, chain)
-        layer = chain&.layers&.find { |entry| entry.name == "shipped" }
+        layer = chain&.layers&.find { |entry| entry.name == "catalog" }
         layer ||= begin
           Layers.shipped_layer([])
         rescue StandardError
@@ -232,7 +245,7 @@ module Polispec
         return unless chain
 
         chain.layers.each do |layer|
-          band = { "shipped" => "shipped", "global" => "global" }[layer.name]
+          band = CHIP_BANDS[layer.name]
           next unless band
 
           layer.modules.each do |mod|
@@ -247,10 +260,10 @@ module Polispec
         return unless chain
 
         chain.layers.each do |layer|
-          if %w[shipped global].include?(layer.name)
+          if CHIP_BANDS.key?(layer.name)
             layer.modules.each do |mod|
               name = module_name(mod)
-              (chips[layer.name][name] ||= { "id" => name, "name" => name, "reaches" => [] })["reaches"] << entry.id
+              (chips[CHIP_BANDS[layer.name]][name] ||= { "id" => name, "name" => name, "reaches" => [] })["reaches"] << entry.id
             end
           elsif layer.name == "path:#{entry.id}"
             layer.modules.each do |mod|
@@ -572,10 +585,10 @@ module Polispec
 
       def module_context(id)
         name = id.to_s == "global" ? "global" : id
-        found = Layers.store&.find_module(name) || Layers.shipped_store.find_module(name)
+        found = catalog_module(name) || Layers.store&.find_module(name)
         raise NotFound, "no module #{id}" unless found.respond_to?(:doc)
 
-        layer = Layers::Layer.new(name: "module", source: "modules/#{name}.yml", digest: sha_text(found.text), rules: Array(found.doc["rules"]), modules: [name],
+        layer = Layers::Layer.new(name: "module", source: module_source(name), digest: sha_text(found.text), rules: Array(found.doc["rules"]), modules: [name],
                                   extras: Layers.send(:extras_of, [found.doc]))
         extras = layer.extras
         policy = { "freezes" => extras["freezes"], "promotion" => { "to_test" => { "gates" => extras["to_test"] }, "to_stable" => { "gates" => extras["to_stable"] } } }
@@ -586,7 +599,7 @@ module Polispec
       def layer_modules(layer, stores)
         Array(layer.modules).map do |label|
           name = module_name(label)
-          found = stores.compact.map { |store| store.find_module(name) }.find { |item| item.respond_to?(:doc) }
+          found = label.to_s.start_with?("catalog:") ? catalog_module(name) : stores.compact.map { |store| store.find_module(name) }.find { |item| item.respond_to?(:doc) }
           { label: label, name: name, kind: found ? found.origin.to_s : "unknown", params: module_params(label),
             ids: found ? Array(found.doc["rules"]).map { |rule| rule["id"] } : [], rules: found ? Array(found.doc["rules"]).length : 0 }
         end
@@ -606,7 +619,7 @@ module Polispec
           "verdicts" => ENVS.to_h { |name| [name, env.nil? || env == name ? rule["verdict"] : nil] },
           "applies_to" => applies_to(match), "overrides" => rule["overrides"] ? [rule["overrides"]] : [],
           "overridden_by" => overrider ? overrider[2]["id"] : nil, "description" => rule["reason"].to_s,
-          "source" => [layer.source, module_name ? "modules/#{module_name}.yml" : nil].compact.join(" "),
+          "source" => [layer.source, module_name ? module_source(module_name) : nil].compact.join(" "),
           "yaml" => YAML.dump(rule).sub(/\A---\n/, "")
         }
       end

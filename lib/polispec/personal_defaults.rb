@@ -6,7 +6,7 @@ require "yaml"
 
 module Polispec
   module PersonalDefaults
-    DIRS = %w[modules packages config rules skills].freeze
+    DIRS = %w[catalog modules packages config rules skills].freeze
     FILE_LIMIT = 1_048_576
     MIN_ID = 4
     STARTER = "config/ledger.starter.yml"

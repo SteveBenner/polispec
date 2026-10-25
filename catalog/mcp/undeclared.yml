@@ -1,0 +1,4 @@
+schema: polispec.module/v1
+name: mcp-undeclared
+summary: Gates every MCP operation that no protected control or committed policy declares; while active, the call asks under the standard edition and is denied under lock.
+rules: []

@@ -1,0 +1,4 @@
+schema: polispec.module/v1
+name: tools-unknown
+summary: Gates every non-read-only tool polispec cannot positively classify; while active, the call asks under the standard edition and is denied under lock.
+rules: []

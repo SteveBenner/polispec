@@ -70,14 +70,16 @@ Environment policy keeps its existing rule order. Harness controls add an indepe
 
 | Behavior | Standard | Lock |
 |---|---|---|
-| Undeclared MCP call | Ask | Deny |
-| Unknown non-read-only call in enforcing governed scope | Ask | Deny |
+| Undeclared MCP call, while `mcp/undeclared` is active | Ask | Deny |
+| Unknown non-read-only call in enforcing governed scope, while `tools/unknown` is active | Ask | Deny |
 | Requested OS isolation | Restricted paths, open network | Restricted paths, network allowlist |
 | Initial network allowlist | Not applicable | Empty |
 | Missing enforcement evidence | Report limitations | Lock inactive |
 | Root-equivalent container access | Advise, then arm root guard on a distinct follow-up detection | Refuse lock, force root guard, report fallback |
 
-An unknown call is one the classifier gives no class: a non-shell tool with no classified action (class `tool.internal`), a read tool called without a path (class `tool.read`) or an `eval`, `source` or `.` line (class `shell.exec`, shape `opaque_shell`). Since 0.32.0 such a call is declared the way an MCP operation is: by a rule in trusted policy, the shipped layer included, whose `match.tool` names the exact tool (case-insensitive) or whose `match.shape` includes `opaque_shell`, and that matches the action in full. polispec ships those declarations in `modules/tool-declared.yml` (see [the schema reference](schema.md#shipped-layer)); an undeclared call gets the default in the table.
+The undeclared-MCP and unknown-call defaults in the table apply only while the operator has activated `mcp/undeclared` or `tools/unknown` on the host (see [the catalog](operator.md#catalog)). With neither active, those calls get no special verdict from the guard and the rest of the policy judges them as it judges any other call.
+
+An unknown call is one the classifier gives no class: a non-shell tool with no classified action (class `tool.internal`), a read tool called without a path (class `tool.read`) or an `eval`, `source` or `.` line (class `shell.exec`, shape `opaque_shell`). Since 0.32.0 such a call is declared the way an MCP operation is: by a rule in trusted policy, an active catalog spec included, whose `match.tool` names the exact tool (case-insensitive) or whose `match.shape` includes `opaque_shell`, and that matches the action in full. polispec ships those declarations in the catalog spec `tools/declared` (`catalog/tools/declared.yml`) (see [the schema reference](schema.md#shipped-layer)); an undeclared call gets the default in the table.
 
 A native ask remains an ask. A harness without native ask blocks a standard ask pending an exact protected one-use authorization. The authorization binds the request to its tool arguments, working directory, classified actions, complete tagged environment/control ask set, trusted policy digests, effective control digest, generation, user, harness, and actual session. An unavailable authorization service grants nothing. See [the operator guide](operator.md).
 

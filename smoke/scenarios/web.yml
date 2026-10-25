@@ -2,6 +2,7 @@ schema: polispec.smoke-scenario/v1
 unit: commands/web
 summary: polispec web starts on an ephemeral loopback port and prints a one-time link; the code is exchanged once for a session, config and map are read, a tightening plan is created and applied through POST /plans and /plans/:id/apply, a loosening plan without confirm gets 422, a mutating call without the CSRF header or the Origin is refused, the server is stopped by its pid and its port is free; an agent line that posts to the web API warns with G-WEB-AGENT; a release without the web command skips the drive
 fixture:
+  catalog: [tools]
   global: example
   files:
     "web/drive.rb": |

@@ -21,8 +21,8 @@ module Polispec
       end
 
       def module_text(name)
-        shipped = File.join(ROOT, "modules", "#{name}.yml")
-        return [File.read(shipped), "modules/#{name}.yml", "shipped"] if File.file?(shipped)
+        entry = Catalog.entry_named(name)
+        return [entry["text"], entry["label"], "catalog"] if entry
 
         store = Layers.store
         text = store && store.read("modules/#{name}.yml")
@@ -57,7 +57,7 @@ module Polispec
           next unless rule
 
           layer.modules.each do |label|
-            name = label.to_s[/\A[a-z0-9-]+/]
+            name = label.to_s.start_with?("catalog:") ? Catalog.module_name(label) : label.to_s[/\A[a-z0-9-]+/]
             found = name && module_text(name)
             next unless found && found[0].include?(rule_id)
 
@@ -81,7 +81,7 @@ module Polispec
         store = Layers.store
         texts = []
         texts << [store.global_text, "global.yml", "global"] if store && store.global_text
-        Dir.glob(File.join(ROOT, "modules", "*.yml")).sort.each { |file| texts << [File.read(file), "modules/#{File.basename(file)}", "shipped"] }
+        Catalog.shipped_files.each { |sub, path| texts << [File.read(sub.module_path), path, "catalog"] }
         texts.each do |text, path, layer|
           next unless text.include?(rule_id)
 
@@ -89,7 +89,7 @@ module Polispec
           rule = Array(doc["rules"]).find { |item| item.is_a?(Hash) && item["id"] == rule_id }
           next unless rule
 
-          name = layer == "shipped" ? File.basename(path, ".yml") : nil
+          name = layer == "catalog" ? Catalog.module_name(path.delete_prefix("catalog/").delete_suffix(".yml")) : nil
           return describe(layer, rule, text, path, name, doc)
         end
         nil

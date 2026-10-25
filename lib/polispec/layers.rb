@@ -3,6 +3,7 @@
 
 require "pathname"
 require_relative "hook_memo"
+require_relative "catalog"
 
 module Polispec
   module Layers
@@ -18,7 +19,6 @@ module Polispec
     SUBSTITUTION_SKIP = %w[schema name params].freeze
     BUCKETS = %w[freezes to_test to_stable preflight].freeze
     EMPTY_EXTRAS = { "freezes" => [], "hermetic" => {}, "to_test" => [], "to_stable" => [], "preflight" => [] }.freeze
-    SHIPPED_INCLUDES = %w[tool-declared delete-guard].freeze
 
     Source = Struct.new(:kind, :root, :repo, :ref, :path, keyword_init: true) do
       def key
@@ -273,19 +273,21 @@ module Polispec
       end
 
       def shipped_layer_uncached(errors)
-        mods = Shelf.new(nil, shipped_store).expand(SHIPPED_INCLUDES, errors, {})
-        return nil if mods.empty?
+        entries = Catalog.active_modules(errors)
+        return nil if entries.empty?
 
+        docs = entries.map { |entry| entry["doc"] }
         Layer.new(
-          name: "shipped", source: "shipped:#{File.read(File.join(Polispec::ROOT, 'VERSION')).strip}",
-          digest: sha(mods.map(&:instance_text).join("\n--\n")),
-          rules: mods.flat_map { |mod| Array(mod.doc["rules"]) }, modules: mods.map(&:label), extras: extras_of(mods.map(&:doc))
+          name: "catalog", source: "catalog:#{File.read(File.join(Polispec::ROOT, 'VERSION')).strip}",
+          digest: sha(Catalog.digest), rules: docs.flat_map { |doc| Array(doc["rules"]) },
+          modules: entries.map { |entry| entry["label"] }, extras: extras_of(docs)
         )
       end
 
       def shipped_delete_protected
-        @stores ||= {}
-        @stores[:shipped_delete] ||= delete_protected_union(Shelf.new(nil, shipped_store).expand(SHIPPED_INCLUDES, [], {}).map(&:doc))
+        HookMemo.fetch(:catalog_delete_protected) do
+          delete_protected_union(Catalog.active_modules.map { |entry| entry["doc"] })
+        end
       end
 
       def delete_protected_union(docs)

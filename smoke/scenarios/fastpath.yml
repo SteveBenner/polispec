@@ -3,6 +3,7 @@ unit: harness_controls
 summary: through the bin/polispec-guard fast path under a governed baseline, undeclared MCP and unknown tools still reach the guard and ask while harness-internal tools are skipped
 requires: [harness_controls]
 fixture:
+  catalog: [tools, delete-guard, mcp]
   enforce: enforce
   global: files
   global_files:

@@ -29,6 +29,7 @@ module Polispec
       return unless stale?(ledger, context)
 
       FileUtils.mkdir_p(State.home, mode: 0o700)
+      FileUtils.mkdir_p(Catalog.state_dir, mode: 0o700)
       watch_tmp = "#{watch_path}.#{Process.pid}"
       File.write(watch_tmp, watched(ledger).join("\n") + "\n")
       File.rename(watch_tmp, watch_path)
@@ -50,7 +51,8 @@ module Polispec
       list << File.join(config, "rplugin", "polispec", "settings.yml")
       list << NativeSettings.path
       list << "/etc/polispec/active.json"
-      list.reject(&:empty?).map { |file| File.expand_path(file) }.select { |file| File.file?(file) }.uniq
+      list << Catalog.state_dir
+      list.reject(&:empty?).map { |file| File.expand_path(file) }.select { |file| File.exist?(file) }.uniq
     end
 
     def global_files
@@ -100,10 +102,16 @@ module Polispec
     end
 
     def declared_tools
-      rules = Layers.shipped_rules.select { |rule| rule["verdict"] == "allow" && !rule.dig("match", "tool").to_s.empty? }
+      rules = tool_rules.select { |rule| rule["verdict"] == "allow" && !rule.dig("match", "tool").to_s.empty? }
       %w[tool.internal tool.read].map do |klass|
         rules.select { |rule| Array(rule.dig("match", "class")) == [klass] }.map { |rule| rule.dig("match", "tool").to_s.downcase }
       end
+    end
+
+    def tool_rules
+      return [] unless Catalog.active?("tools", "declared") || !Catalog.gate?("unknown_tool")
+
+      Catalog.shipped_rules_of("tools", "declared")
     end
 
     def global_rules

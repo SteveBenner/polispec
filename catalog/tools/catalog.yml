@@ -1,0 +1,7 @@
+schema: polispec.catalog/v1
+name: tools
+summary: Classifies the harness's own tools and reads as known, gates every call polispec cannot positively classify, and warns on agent calls to the local web app.
+subspecs:
+  - { id: declared, summary: "Declares the harness-internal and read tools known and allows an opaque shell line in a project in development.", module: declared.yml }
+  - { id: unknown, summary: "Gates every non-read-only tool polispec cannot positively classify.", module: unknown.yml, gate: unknown_tool }
+  - { id: web-agent, summary: "Warns on agent calls to the local polispec web app's mutating API.", module: web-agent.yml }

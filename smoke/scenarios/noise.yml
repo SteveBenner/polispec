@@ -3,6 +3,7 @@ unit: harness_controls
 summary: with harness controls on, benign built-in tools and read-only shell commands stay allowed in a governed live project while an undeclared MCP call still asks and a declared one is allowed
 requires: [harness_controls]
 fixture:
+  catalog: [tools, delete-guard, mcp]
   enforce: enforce
   global: files
   global_files:

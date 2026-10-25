@@ -2,6 +2,7 @@ schema: polispec.smoke-scenario/v1
 unit: commands/lint
 summary: lint sweeps a project for loader-unsafe YAML, aliases, tabs and drift from the generated files, filters by rule, fails on warnings under --strict, refuses a generator write that would not lint, files doctor findings, passes on the shipped tree and agrees with validate
 fixture:
+  catalog: [tools, delete-guard, mcp]
   global: example
   projects:
     - id: shop

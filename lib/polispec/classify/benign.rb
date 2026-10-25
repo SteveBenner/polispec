@@ -63,7 +63,8 @@ module Polispec
           "export" => JSON_FLAG.merge("--root" => true),
           "render" => JSON_FLAG.merge("--surface" => true, "--root" => true)
         }],
-        "exceptions" => [{ "list" => JSON_FLAG }]
+        "exceptions" => [{ "list" => JSON_FLAG }],
+        "catalog" => [{ "list" => JSON_FLAG, "show" => JSON_FLAG }]
       }.freeze
       WRAPPERS = %w[eval exec source env sudo doas nohup timeout xargs command builtin nice ionice stdbuf setsid unbuffer flock time bash sh zsh dash ksh ash].freeze
       OPAQUE = %w[eval source .].freeze

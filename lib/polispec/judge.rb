@@ -19,7 +19,7 @@ module Polispec
     DEFAULT_IDLE = 1800
     LOG_LIMIT = 1_048_576
     SHELF_FILE_CAP = 2000
-    KEEP_MEMO = %i[ledger_load spec_policy prefetch_policies shipped_layer layers_fingerprint].freeze
+    KEEP_MEMO = %i[ledger_load spec_policy prefetch_policies shipped_layer layers_fingerprint catalog_state catalog_modules catalog_delete_protected].freeze
     HEADER = /\A#{Regexp.escape(PROTOCOL)} (\h{32}) (pretool|session) ([a-z]+) (\S.*) (\d+)\z/.freeze
     REF_SAFE = %r{\A[A-Za-z0-9][A-Za-z0-9._/@+-]*\z}.freeze
 
@@ -77,6 +77,7 @@ module Polispec
         parts << digest(fileread(HarnessControls::Plane::ACTIVE_PATH))
         parts << Polispec.version
         parts << shelf
+        parts << catalog
         parts << project_refs(bytes, ledger_path)
         Digest::SHA256.hexdigest(parts.join("\0"))
       end
@@ -111,6 +112,14 @@ module Polispec
         base = ENV["XDG_STATE_HOME"].to_s
         base = File.join(Dir.home, ".local", "state") if base.empty?
         File.join(base, "rplugin", "polispec", "settings.resolved.json")
+      end
+
+      def catalog
+        dir = Catalog.state_dir
+        files = [Catalog.state_path] + Dir.glob(File.join(dir, Catalog::PROVISION_DIR, "**", "*.yml")).sort
+        Digest::SHA256.hexdigest(files.map { |file| "#{file}\0#{digest(fileread(file))}" }.join("\n"))
+      rescue StandardError, ScriptError => error
+        "catalog:#{error.class}"
       end
 
       def shelf
