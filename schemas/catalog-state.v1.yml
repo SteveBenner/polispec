@@ -1,7 +1,7 @@
 $schema: https://json-schema.org/draft/2020-12/schema
 $id: polispec.catalog-state/v1
 title: Polispec catalog state
-description: "Host-local record of the catalog subspecs the operator activated and provisioned. Lives at catalog/active.yml in the polispec state home."
+description: "Host-local record of the catalog subspecs the operator activated and provisioned. Lives at catalog/active.yml in the polispec state home while unsealed, and source/catalog/active.yml in the protected generation while sealed."
 type: object
 additionalProperties: false
 required: [schema]

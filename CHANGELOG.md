@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.1] - 2026-10-25
+
+### Fixed
+- **Protected-plane provisioning stopped before operator authentication.** The implemented capability still shipped disabled: the installed 0.45.0 refused 1 of 1 measured non-root attempts with `feature_disabled`; this candidate reaches the existing `operator_required` refusal in 1 of 1 equivalent attempts. Enable `sealed_plane` by operator direction (SEALED-ACT-001), retaining root identity, typed confirmation, protected runtime provenance, and fail-closed activation checks. Installation creates no plane generation, starts no service, and grants no authorization; privileged verification remains pending.
+- **Catalog decisions were not bound to protected authority.** The 0.45.0 catalog selected user-writable state independently of the sealed generation. Require an explicit `catalog/active.yml` snapshot, validate its known subspecs and provisioned files through existing schemas, digests, and provisioning rules, and bind sealed catalog lookup to that generation (SEALED-ACT-005). In real sealing previews the old catalog-less bundle is now rejected (`preparation_ready: false`, `catalog_missing`), while a committed snapshot preserving five active host subspecs is accepted for preparation. Old catalog-less operator bundles must add the reviewed snapshot before sealing. Missing or broken protected bindings never fall back to user state.
+
+- **Composition validation could lose its original errors during garbage collection.** Weak-valued maps discarded error arrays while their policy keys were alive; validation then recomposed without the original local source and could report missing modules instead of the missing parameter. A measured actual composition on 0.45.0 lost its one recorded error after `GC.start`; the candidate retains that same error and unchanged serialized policy fields. A Hash-compatible composed-policy value now owns its raw digest and error evidence through readers (SEALED-ACT-006), and the weak side maps are removed.
+
+Validation: final existing smoke suite 49/49 against the installed 0.45.0, with all 64 output differences reviewed: the new catalog requirement, clone-versus-pinned runtime evidence and its runtime-write verdicts, fixture/runtime paths, generated IDs and timestamps, and version output. The failed composition run and earlier storage/layout failures are preserved beside the final report. `rplugin check` reports zero findings; native package projections have zero stale files. Shipped lint retains eight existing missing-description warnings and the existing oversized-smoke-ledger skip. No new tests were written, and no privileged sealing, service operation, production promotion, or enforcement certification is claimed.
+
 ## [0.45.0] - 2026-10-24
 
 ### Added

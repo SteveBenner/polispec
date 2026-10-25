@@ -39,7 +39,20 @@ module Polispec
     end
 
     def state_dir
-      File.join(State.home, "catalog")
+      require_relative "harness_controls/plane"
+      plane = HarnessControls::Plane.resolve
+      case plane["status"]
+      when "unsealed"
+        File.join(State.home, "catalog")
+      when "active"
+        path = plane.dig("paths", "catalog")
+        unless path.is_a?(String) && !path.empty?
+          raise HarnessControls::Authority::Failure.new("sealed_catalog_missing", "sealed authority must bind its catalog directory")
+        end
+        path
+      else
+        raise HarnessControls::Authority::Failure.new("broken_plane", "catalog authority requires a valid protected plane", plane["findings"])
+      end
     end
 
     def state_path

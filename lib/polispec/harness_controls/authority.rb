@@ -11,6 +11,7 @@ require "rbconfig"
 require "shellwords"
 require "find"
 require_relative "../runtime"
+require_relative "../catalog"
 
 module Polispec
   module HarnessControls
@@ -26,7 +27,7 @@ module Polispec
       MAX_FILES = 20_000
       MAX_RUNTIME_BYTES = 67_108_864
       MAX_PROC_BYTES = 65_536
-      ALLOWED_ROOTS = %w[ledger.yml settings.json controls global code_specs].freeze
+      ALLOWED_ROOTS = %w[ledger.yml settings.json controls global code_specs catalog].freeze
       ASSET_IMAGE = %r{\Aassets/.+\.(?:png|jpe?g|gif|svg|webp|ico)\z}i
       SMOKE_LEDGER = "smoke.yml"
       IGNORED_ENV = %w[
@@ -541,6 +542,35 @@ module Polispec
         findings = []
         findings << finding("ledger_missing", "Authority bundle requires ledger.yml.", true) unless paths.include?("ledger.yml")
         findings << finding("controls_missing", "Authority bundle requires at least one controls/HARNESS.json document.", true) if controls.empty?
+        if paths.include?("catalog/active.yml")
+          catalog = parse_yaml(yield("catalog/active.yml"), "catalog/active.yml")
+          errors = Schema.validate("catalog-state", catalog)
+          unless errors.empty?
+            raise Failure.new("invalid_bundle", "catalog/active.yml is invalid: #{errors.first.pointer} #{errors.first.message}")
+          end
+          Array(catalog["active"]).each do |entry|
+            sub = Catalog.subspec(entry["spec"], entry["subspec"])
+            unless sub
+              raise Failure.new("invalid_bundle", "catalog/active.yml names an unknown active subspec")
+            end
+            if sub.provision && !Array(catalog["provisioned"]).any? { |item| item["spec"] == sub.spec && item["subspec"] == sub.id }
+              raise Failure.new("invalid_bundle", "active catalog subspec #{sub.spec}/#{sub.id} has no provisioned authority")
+            end
+          end
+          Array(catalog["provisioned"]).each do |entry|
+            validate_relative!(entry["file"])
+            path = "catalog/#{entry['file']}"
+            raise Failure.new("invalid_bundle", "catalog provision #{path} is missing") unless paths.include?(path)
+            text = yield(path)
+            unless Digest::SHA256.hexdigest(text) == entry["sha256"]
+              raise Failure.new("invalid_bundle", "catalog provision #{path} has a different digest")
+            end
+            errors = Catalog.validate_provision(entry["spec"], entry["subspec"], text)
+            raise Failure.new("invalid_bundle", "catalog provision #{path} is invalid: #{errors.first}") unless errors.empty?
+          end
+        else
+          findings << finding("catalog_missing", "Authority bundle requires an explicit catalog/active.yml snapshot.", true)
+        end
         total = 0
         if paths.include?("ledger.yml")
           ledger = parse_yaml(yield("ledger.yml"), "ledger.yml")

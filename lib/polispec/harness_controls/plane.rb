@@ -543,7 +543,7 @@ module Polispec
         controls = plan.dig("source", "bundle", "controls").keys.each_with_object({}) do |name, result|
           result[name] = "source/controls/#{name}.json"
         end
-        paths = { "ledger" => "source/ledger.yml" }
+        paths = { "ledger" => "source/ledger.yml", "catalog" => "source/catalog" }
         paths["global"] = "source/global" if plan.dig("source", "bundle", "has_global")
         paths["code_specs_repo"] = "source/code_specs" if plan.dig("source", "bundle", "has_code_specs")
         %w[home envs code_state].each do |name|
