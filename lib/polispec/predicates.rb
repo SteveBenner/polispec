@@ -10,6 +10,7 @@ module Polispec
     CONTENTS_LEAVES = %w[* .* .[!.]* ..?* .??*].freeze
     LOCK_MANIFEST = "TMP_AGENT_FILE_LOCKS.yml".freeze
     UNOWNED_WINDOW = 600
+    CALLER = :polispec_caller_pid
     SUPERVISOR_TTL = 60
     SUPERVISOR_TIMEOUT = 1.0
     STALE_FETCH = 3600
@@ -196,7 +197,7 @@ module Polispec
       doc = YAML.safe_load(File.read(manifest), permitted_classes: [Time, Date], aliases: false)
       entries = doc.is_a?(Hash) ? Array(doc["locks"]) : []
       mtime = File.mtime(manifest)
-      mine = ancestors
+      mine = ancestors(Thread.current[CALLER] || Process.pid)
       entries.each do |entry|
         next unless entry.is_a?(Hash) && entry["path"].is_a?(String) && entry["agent_id"].is_a?(String)
         next unless targets.include?(File.expand_path(entry["path"])) || targets.include?(Engine::Envs.canonical(File.expand_path(entry["path"])))
