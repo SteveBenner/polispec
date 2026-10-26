@@ -1,0 +1,94 @@
+schema: polispec.smoke-scenario/v1
+unit: fs_walk
+summary: a recursive walker that starts at the filesystem root or on a slow mount carries the root_walk or slow_mount_walk shape and is denied by a shelf rule on that shape, while a walk confined by -xdev or -x, a walk inside a project, and a non-recursive read stay allowed
+fixture:
+  enforce: enforce
+  global: files
+  global_files:
+    "global.yml": "schema: polispec.global/v1\nsummary: Smoke baseline with two filesystem walk rules.\nrules:\n  - { id: SMOKE-ROOT-WALK, match: { shape: [root_walk] }, verdict: deny, reason: \"smoke: no walk of the filesystem root\" }\n  - { id: SMOKE-SLOW-MOUNT-WALK, match: { shape: [slow_mount_walk] }, verdict: deny, reason: \"smoke: no walk of a slow mount\" }\n"
+  files:
+    "mountinfo-plain": "25 1 8:1 / / rw,relatime - ext4 /dev/sda1 rw\n"
+    "mountinfo-slow": "25 1 8:1 / / rw,relatime - ext4 /dev/sda1 rw\n41 25 8:2 / /run/media/test/DISK rw,relatime - exfat /dev/sdb1 rw\n42 25 0:50 / /home/test/cloud rw,relatime - fuse cloud.fs rw\n43 25 0:51 / /srv/share rw,relatime - nfs4 host:/share rw\n44 25 8:3 / /mnt/old rw,relatime - ext4 /dev/sdc1 rw\n"
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      files:
+        "README.md": "shop\n"
+steps:
+  - name: find from the root is denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "find / -name x 2>/dev/null | head" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-plain" }
+    expect: { decision: deny, rule: SMOKE-ROOT-WALK }
+  - name: bfs from the root is denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "bfs / -name x" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-plain" }
+    expect: { decision: deny, rule: SMOKE-ROOT-WALK }
+  - name: du of the root is denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "du -sh /" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-plain" }
+    expect: { decision: deny, rule: SMOKE-ROOT-WALK }
+  - name: rg from the root is denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rg foo /" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-plain" }
+    expect: { decision: deny, rule: SMOKE-ROOT-WALK }
+  - name: recursive grep from the root is denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "grep -r foo /" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-plain" }
+    expect: { decision: deny, rule: SMOKE-ROOT-WALK }
+  - name: ls -R of the root is denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "ls -R /" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-plain" }
+    expect: { decision: deny, rule: SMOKE-ROOT-WALK }
+  - name: find with -xdev stays on one filesystem and is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "find / -xdev -name x" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-plain" }
+    expect: { decision: allow }
+  - name: du -x stays on one filesystem and is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "du -xsh /" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-plain" }
+    expect: { decision: allow }
+  - name: find inside the project is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "find . -name x" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-plain" }
+    expect: { decision: allow }
+  - name: rg inside the project is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rg foo" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-plain" }
+    expect: { decision: allow }
+  - name: grep without -r on a file is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "grep foo /etc/hosts" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-plain" }
+    expect: { decision: allow }
+  - name: ls of the root without -R is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "ls /" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-plain" }
+    expect: { decision: allow }
+  - name: du of an exFAT mount is denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "du -sh /run/media/test/DISK/data" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-slow" }
+    expect: { decision: deny, rule: SMOKE-SLOW-MOUNT-WALK }
+  - name: rg on a FUSE mount is denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rg foo /home/test/cloud" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-slow" }
+    expect: { decision: deny, rule: SMOKE-SLOW-MOUNT-WALK }
+  - name: find on an NFS mount is denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "find /srv/share -name x" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-slow" }
+    expect: { decision: deny, rule: SMOKE-SLOW-MOUNT-WALK }
+  - name: find under /mnt is denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "find /mnt/old -name x" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-slow" }
+    expect: { decision: deny, rule: SMOKE-SLOW-MOUNT-WALK }
+  - name: find -xdev started on a slow mount is still denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "find /run/media/test/DISK -xdev -name x" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-slow" }
+    expect: { decision: deny, rule: SMOKE-SLOW-MOUNT-WALK }
+  - name: du of a local directory is allowed beside slow mounts
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "du -sh /usr" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-slow" }
+    expect: { decision: allow }
+  - name: a root walk with a slow mount under it is still denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "find / -name x" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-slow" }
+    expect: { decision: deny }

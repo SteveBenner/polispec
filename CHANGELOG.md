@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-10-25
+
+### Added
+- **Recursive filesystem walks are visible to rules as the `fs.walk` action class.** On 2026-10-25 subagent calls such as `find / -name X 2>/dev/null | head` ran for 45 to 65 minutes over a 4.5 TB exFAT disk and a FUSE mount and held host IO at 65% full pressure, and a read-only walk produced no action, so no rule could match it. The classifier now emits one `fs.walk` action per dangerous start path of `find`, `bfs`, `du`, `fd`, `fdfind`, `rg`, recursive `grep`, `egrep` and `fgrep`, `ls -R` and `tree`, tagged `root_walk` (start path `/`, not confined by `-xdev`, `-mount`, `-x` or `--one-file-system`) or `slow_mount_walk` (start path on a fuse, network, exFAT, FAT or NTFS filesystem or under `/run/media`, `/media` or `/mnt`, read from `/proc/self/mountinfo` or the file named by `POLISPEC_MOUNTINFO`). Both shapes are valid in `match.shape` of policy, module, global and control files. Walks inside a project emit nothing and every other read keeps the fast path. No shipped rule matches `fs.walk`, so verdicts are unchanged until a shelf module denies them.
+
 ## [0.45.2] - 2026-10-25
 
 ### Fixed

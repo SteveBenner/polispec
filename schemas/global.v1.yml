@@ -75,7 +75,7 @@ $defs:
     type: array
     items: { type: string, minLength: 1 }
   action_class:
-    enum: [git.commit, git.push, git.tag, git.merge, git.rewrite, git.branch, release.publish, service.control, service.config, fs.write, fs.delete, data.write, data.copy, secrets.read, policy.edit, promote, deploy, control.edit, mcp.call, web.fetch, agent.spawn, shell.exec, tool.internal, tool.read]
+    enum: [git.commit, git.push, git.tag, git.merge, git.rewrite, git.branch, release.publish, service.control, service.config, fs.write, fs.delete, data.write, data.copy, secrets.read, policy.edit, promote, deploy, control.edit, mcp.call, web.fetch, agent.spawn, shell.exec, fs.walk, tool.internal, tool.read]
   match:
     type: object
     additionalProperties: false

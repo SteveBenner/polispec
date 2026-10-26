@@ -18,7 +18,7 @@ module Polispec
   ACTION_CLASSES = %w[
     git.commit git.push git.tag git.merge git.rewrite git.branch release.publish
     service.control service.config fs.write fs.delete data.write data.copy secrets.read
-    policy.edit promote deploy control.edit mcp.call web.fetch agent.spawn shell.exec
+    policy.edit promote deploy control.edit mcp.call web.fetch agent.spawn shell.exec fs.walk
   ].freeze
   ENVIRONMENTS = %w[dev test prod].freeze
   LEVELS = %w[allow warn deny].freeze

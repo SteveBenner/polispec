@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 require_relative "commands/support"
+require_relative "commands/fs_walk"
 
 module Polispec
   module Classify
@@ -261,6 +262,7 @@ module Polispec
 
       def plain?(cmd)
         return false unless read_only_names.include?(cmd.name)
+        return false unless FsWalk.actions(cmd).empty?
 
         args = cmd.args
         positional = Support.split_args(args).first
