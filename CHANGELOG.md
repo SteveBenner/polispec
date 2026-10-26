@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.2] - 2026-10-26
+
+### Fixed
+- **The app spec agrees with the code again.** `specs/app.yml` had drifted across many releases. It was missing 8 of the 31 settings the manifest declares (`polispec.code.enforce`, `check_at` and `inject`, `polispec.global.repo`, `ref` and `path`, `polispec.supervisor.status_command` and `polispec.logs.count_command`). It was also missing 7 shipped schemas (global, profiles, module, package, smoke-scenario, delegate_grants and editions) and listed `author` only as declared, though the manifest also lists it as optional. Every command usage was checked against the command's own usage string. Fixed: validate takes 27 kinds and `--semantic`; `sessions` has no `show`; `manifest` has `badge` and no `--yaml`; `behavior` has `export-package` and `compile --out json`; `web` has `url`, `token set` and `unit`; `plan` and `apply` take different flags; `deploy`, `unregister`, `resolve`, `classify`, `plane`, `pause`, `allow-once`, `roster`, `smoke`, `status`, `digest` and `doctor` show their full options. Other corrections: the Hermes, Pi, DeepSeek, Antigravity, Cowork and OS rows now sit under `harnesses`. Grantable delegate flags include `--verbose`. A divergent judgment head is refused, not forked. A zip with no resolvable output yields no write. The lint shipped table has 27 `{glob, kind, regexp}` rows, and only `unknown_call.ask` decides ask or deny. Host-specific names and paths were replaced with neutral wording.
+- **`docs/VISION.md` rows that had gone stale.** The Codex hook no longer needs a host bridge (since 0.27.0). The sealed plane has been enabled since 0.45.1, not "flags off". The rendered composition map has been built since 0.35.0 (`polispec web`), and the practice-module catalogue is partial since the 0.45.0 catalog.
+
+### Added
+- `specs/app.yml` sections `vision`, `features`, `model` and `wiring`. `vision` holds the arc, the principles, the planned work, the ideas and how far enforcement reaches. `features` indexes 41 built capabilities, each with its first release, surfaces, spec section and limits. `model` holds the engine vocabulary as the code defines it: 23 action classes, the classifier families, 13 shapes, 26 match keys, 9 predicates, composition, the per-action judgment order, built-in rule ids, 9 gate kinds and freezes. `wiring` covers how each harness reaches polispec, the pretool path hop by hop, the session path, the state and sealed paths, events, and which rplugin ports the code actually calls. `smoke.coverage_units` gains `catalog`, `fs_walk` and `verbose`, which scenarios already prove.
+
+### Known
+- `schemas/policy.v1.yml`'s `match.shape` enum lists `opaque_shell` but not `web_local`, which the catalog subspec `tools/web-agent` matches. It is recorded in the spec and not changed here.
+- `specs/editions.yml` describes `mcp_default.ask` as deciding the MCP default; the code uses it only in the fast-path key.
+
 ## [0.47.1] - 2026-10-26
 
 ### Fixed
