@@ -33,7 +33,7 @@ features:
     lock: restricted
     since: 0.23.0
     code: lib/polispec/commands/hook.rb
-    note: "The undeclared MCP default is ask under standard and deny under lock; it applies only while mcp/undeclared is active on the host."
+    note: "Records the undeclared MCP default (ask under standard, deny under lock) in the fast-path key, so an edition change refreshes the fast path. The verdict itself comes from unknown_call.ask, only while mcp/undeclared is active on the host."
   - id: legacy_warn
     standard: included
     lock: restricted
