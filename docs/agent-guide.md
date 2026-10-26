@@ -77,6 +77,7 @@ Plan the work to stay inside what is declared: run a script file by path rather 
 | `polispec judgments list --json` | Per-call rule, class, tool, verdict, outcome | no command text unless `polispec.records.raw` is on; never turn that on without the user's yes |
 | `polispec exceptions list --json` | Entries and recorded ask proposals | proposals last seven days, at most 256, none under lock or while sealed or with exceptions off |
 | `polispec explain` | The verdict a real payload gets | needs the real hook payload |
+| `polispec explain TOOL INPUT [--cwd DIR]` | For a call you type, the classified actions, each matching rule per layer with file, line, module and package, the winner, why it won, and the lever that would change it | judges as the project at `--cwd`; a shell line is classified, not run; a rule with no layer match shows as an engine guard |
 | The harness's own history | What the person kept asking for | read only named paths on one filesystem; never walk from `/`; redact secrets and never read production data or env files |
 
 Codex renders a warn as a deny: read the recorded verdict, not the rendered reply.
