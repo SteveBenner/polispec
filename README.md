@@ -10,6 +10,11 @@
 
 ## Contents
 
+- [Imagine](#imagine)
+  - [The context that was gone](#the-context-that-was-gone)
+  - [One feature, and everything beside it](#one-feature-and-everything-beside-it)
+  - [The push nobody watched](#the-push-nobody-watched)
+  - [The same three days, with polispec](#the-same-three-days-with-polispec)
 - [In plain words](#in-plain-words)
   - [The problem](#the-problem)
   - [What polispec does](#what-polispec-does)
@@ -23,6 +28,12 @@
 - [Composition: specs inside specs](#composition-specs-inside-specs)
 - [Core ideas](#core-ideas)
 - [Feature tour](#feature-tour)
+- [Alignment tactics](#alignment-tactics)
+  - [The alignment loop](#the-alignment-loop)
+  - [Directives in, hooks hold](#directives-in-hooks-hold)
+  - [Tactics you can use today](#tactics-you-can-use-today)
+  - [Where it can go](#where-it-can-go)
+  - [What it cannot do](#what-it-cannot-do)
 - [Looking after polispec itself](#looking-after-polispec-itself)
 - [Install](#install)
 - [Quick start](#quick-start)
@@ -35,6 +46,54 @@
 - [Where polispec is going](#where-polispec-is-going)
 - [Documentation](#documentation)
 - [License](#license)
+
+## Imagine
+
+Imagine you could not see what your coding agent was doing. You would see the tidy summary it writes at the end, but not the calls themselves: every `rm`, every `git push`, every file it opens and sends to its model. An agent runs with your account's rights. Without a guard, it can write every file you can write, push to every repository you can push to, and read every secret you can read.
+
+Most days nothing goes wrong. Now imagine three days when something does.
+
+<p align="center">
+  <img src="assets/imagine/imagine-reach.webp" alt="A colossal white robotic hand hangs in a black sky over a city of glowing glass towers, its fingertips just above a glass vault full of keys, with no one at the controls" width="100%">
+</p>
+
+### The context that was gone
+
+Imagine you spend months designing a software stack in conversation with a hosted AI assistant. One day you ask it about that stack, and it finds nothing. You ask again by name, by component, and by the decisions you made together. Still nothing. Months of context you relied on are not there, and nothing tells you why.
+
+polispec cannot reach into a service someone else runs, and it does not try to. It is built on the rule that day teaches: what you depend on should live in files you own. The rulebook lives in your repository, versioned in git. Every call the guard judges leaves a record on your own disk, chained so that any edit shows.
+
+<p align="center">
+  <img src="assets/imagine/imagine-archive.webp" alt="One small figure stands at a reading desk under a single lamp in an endless dark archive hall whose shelves are all empty, facing a glowing search panel with nothing on it" width="100%">
+</p>
+
+### One feature, and everything beside it
+
+Imagine you ask a coding agent to remove one feature from one application. The scope is explicit: this feature, this code, nothing else.
+
+The agent decides the job needs a stronger tool. It goes to a public skill marketplace, installs a skill built for wiping software, and runs it. The application you named survives. Every application beside it in the same folder does not. Dozens of projects are deleted in seconds, with no question and no confirmation, and none of them come back.
+
+A skill is text that tells an agent which calls to make, and every call it produces passes through the same guard as any other. With polispec, you put the folder that holds your applications on the protected list once. After that, a recursive delete of that folder or of anything in it is refused before it runs, whether it comes as `rm -rf`, `find -delete`, or a script run by path. Once the operator turns on `tools/unknown`, an action the rulebook does not know asks before it runs in a governed project.
+
+<p align="center">
+  <img src="assets/imagine/imagine-wipe.webp" alt="A white robotic hand lifts one tiny tower out of a glass terrarium on a long shelf while a shockwave shatters every other terrarium on the shelf into glittering powder; only the one it touched stays intact" width="100%">
+</p>
+
+### The push nobody watched
+
+Imagine you let agents commit and push to a platform with real users, with almost no supervision. Through those pushes, data that belongs to the people on that platform ends up where it should never have been.
+
+Whatever an agent reads, its model provider receives, and whatever it commits, it can push. polispec refuses agent reads of production data, environment files, and declared secrets, so they never enter the model's context. It refuses copies of data across the classes you declare. It also refuses pushes to `test` and `stable` unless they go through `polispec promote`, and that only works when the gates pass.
+
+<p align="center">
+  <img src="assets/imagine/imagine-leak.webp" alt="A small glass house glows warmly on a dark plain at night; through a crack in the glass pipe leading out of it, thousands of tiny glowing human figures stream up into the sky toward one cold point of light on the horizon" width="100%">
+</p>
+
+### The same three days, with polispec
+
+The archive would still belong to someone else, but the rulebook and the record of every call would be yours. The wipe would stop at its first delete, with a reason and a way forward. The push would stop at the gate.
+
+polispec is a guardrail, not a security boundary. [Honest limits](#honest-limits) says exactly where it stops.
 
 ## In plain words
 
@@ -387,6 +446,194 @@ polispec register ~/tools --id tools
 
 Consumers must also match the current remote environment ref and tag, because branch promotion alone does not prove deployment. The field exposes no state paths, health output, or secrets. It is evidence from deployment time, not continuous health.
 
+## Alignment tactics
+
+polispec cannot make a model want the right thing. It works at the point where an agent's intent becomes an action. It tells the agent the rules before it acts, holds every action to the same rules as it happens, records what happened, and lets a person change the rules only through a previewed, confirmed path. Telling the agent and holding it to the rules use the same rulebook, so the two cannot drift apart.
+
+### The alignment loop
+
+Every session goes around this loop. Directives shape what the agent proposes. Hooks decide what actually runs. The record shows a person where the rules and the work disagree.
+
+```mermaid
+stateDiagram-v2
+    state "Rulebook on the trust ref" as Written
+    state "Agent briefed" as Briefed
+    state "Tool call proposed" as Proposed
+    state "Classified and judged" as Judged
+    state "Judgment recorded" as Recorded
+    state verdict <<choice>>
+    state "Action runs" as Ran
+    state "A person decides" as Asked
+    state "Refused, with the way forward" as Refused
+    state "Evidence reviewed" as Reviewed
+    state "Rule revised through a plan" as Revised
+
+    [*] --> Written
+    Written --> Briefed : session start
+    Briefed --> Proposed
+    Proposed --> Judged : pre-tool hook
+    Judged --> Recorded
+    Recorded --> verdict
+    verdict --> Ran : allow
+    verdict --> Asked : warn
+    verdict --> Refused : deny
+    Asked --> Ran : yes
+    Asked --> Refused : no
+    Refused --> Proposed : agent corrects course
+    Ran --> Proposed : next call
+    Recorded --> Reviewed : digest, heatmap, plan replay
+    Reviewed --> Revised
+    Revised --> Written : operator promotes
+
+    classDef intent fill:#e8eefc,stroke:#2456c9,color:#0b1f4d
+    classDef act fill:#e9f5ea,stroke:#2e7d32,color:#0f3d12
+    classDef ask fill:#fff4dc,stroke:#b7791f,color:#4a3000
+    classDef deny fill:#fde8e6,stroke:#c0392b,color:#4d0f09
+    classDef evidence fill:#f1ecfb,stroke:#6b46c1,color:#2a1452
+    class Written,Briefed,Revised intent
+    class Proposed,Judged,Ran act
+    class Asked ask
+    class Refused deny
+    class Recorded,Reviewed evidence
+```
+
+The judgment is recorded before the harness hears the verdict, so the record holds the answer the agent actually got. A refusal is not a dead end. It names the rule and the next step, and an agent that follows it comes back around the loop with a call that passes.
+
+### Directives in, hooks hold
+
+Directives reach the agent through its instructions, its rules and skills, and text the hooks inject. Hooks are wired into the harness once, at install, and then judge every call. Both read the same trusted sources.
+
+```mermaid
+flowchart TB
+    subgraph sources["Trusted sources"]
+        direction TB
+        pol["Project rulebook<br/>read from the trust ref"]
+        shelf["Global shelf<br/>modules · exceptions"]
+        cat["Catalog specs<br/>activated per host"]
+        code["Code specs<br/>repository"]
+    end
+
+    i1["Hooks wired once, at install<br/>plugin · polispec install<br/>harness install · git hooks"]
+
+    subgraph told["Directives"]
+        direction TB
+        d1["AGENTS.md<br/>ENVS row"]
+        d2["Rules and<br/>skills"]
+        d3["Session start text<br/>from the session hook"]
+        d4["Code-spec directives<br/>before the first write"]
+        d5["Epoch notice<br/>on the next call"]
+    end
+
+    agent(["Agent"])
+
+    subgraph held["Hooks, on every call"]
+        direction LR
+        h1["polispec-guard<br/>fails closed"]
+        h2["Classify<br/>classes · shapes"]
+        h3["Environment policy<br/>catalog → shelf → repo"]
+        h4["Control ceiling<br/>unknown · MCP · protection"]
+        h1 --> h2 --> h3 --> h4
+    end
+
+    verdict{"allow · warn · deny"}
+    reply(["Reply to the agent<br/>rule id · reason · the way forward"])
+    rec[("Judgment record<br/>chained, allows too")]
+
+    sources ==> told
+    told ==> agent
+    agent ==>|every tool call| held
+    i1 ==>|PreToolUse · SessionStart · SubagentStart| held
+    sources ==> held
+    held ==> verdict
+    verdict ==> reply
+    verdict --> rec
+
+    classDef source fill:#e8eefc,stroke:#2456c9,color:#0b1f4d
+    classDef wire fill:#eceff3,stroke:#5b6573,color:#1d232b
+    classDef tell fill:#fff4dc,stroke:#b7791f,color:#4a3000
+    classDef hold fill:#e9f5ea,stroke:#2e7d32,color:#0f3d12
+    classDef proof fill:#f1ecfb,stroke:#6b46c1,color:#2a1452
+    classDef who fill:#1d232b,stroke:#1d232b,color:#ffffff
+    class pol,shelf,cat,code source
+    style sources fill:#f6f8fa,stroke:#9aa5b1,color:#1d232b
+    style told fill:#f6f8fa,stroke:#9aa5b1,color:#1d232b
+    style held fill:#f6f8fa,stroke:#9aa5b1,color:#1d232b
+    class i1 wire
+    class d1,d2,d3,d4,d5 tell
+    class h1,h2,h3,h4,verdict hold
+    class rec proof
+    class agent,reply who
+```
+
+- **At install.** The Claude Code plugin, rplugin, or `polispec install --harness claude|codex` registers `PreToolUse`, `SessionStart`, and `SubagentStart` hooks that run `bin/polispec-guard`. `polispec harness install` adds control-bearing hooks for Claude Code, Codex, Hermes, and Antigravity CLI. `polispec hook git install` covers plain `git` outside any harness. The code-spec hook (`polispec code-hook`) is wired by the host; no shipped hook file registers it.
+- **At session start.** In a live project the session hook injects the project, environment, branch, active pauses and freezes, the policy digest, the guard mode, the roster role, and the policy's own `agents.instructions`, within 1,200 characters. Subagents get the same text when they start.
+- **On every call.** The guard tries its fast path for calls no rule can concern, then a resident judge, then a cold run, and denies any non-read call it cannot get a verdict for. The verdict carries the rule id, the reason, and the next step. Under Codex, which has no native ask, a warn becomes a deny with an allow-once id the operator can redeem.
+- **After a change.** The first call of each session after the rulebook changes carries a one-line notice in Claude Code, and `polispec changes await <id>` reports when every active session has crossed over.
+
+### Tactics you can use today
+
+Each tactic below uses something polispec already ships. They follow the loop: brief the agent, bound what it can do, watch what it does, and revise the rules safely.
+
+**Brief: tell the agent before it acts**
+
+| Tactic | How | Why it helps |
+|---|---|---|
+| Write every reason as an instruction | Give each rule a `reason` that says what to do instead, such as "make the change in the dev checkout and promote it through test". | The refusal arrives at the exact moment the rule applies, and it doubles as the correction. |
+| Brief every session from the rulebook | Put standing guidance in the policy's `agents.instructions`; pauses, freezes, and the roster role come along automatically. | Briefings come from the trusted rulebook, not from a prompt someone forgot to paste. |
+| Keep the environment map in the agent's own instructions | `polispec agents render` writes the `[ENVS]` row into `AGENTS.md` and `.agents/directives/envs.md`; `doctor` reports `agents_drift`. | Every harness that reads `AGENTS.md` learns where `main`, `test`, and `stable` are, and the map cannot silently go stale. |
+| Give each role the right model | `specs/polispec/roster.yml` sets harness, model, and effort per role, injected at session and subagent start. | A reviewer and a bulk worker get different capacity, and both are named in the record. |
+| Inject coding standards before the first write | Code specs per language, injected once per chain (`polispec.code.inject`). | The agent writes to the standard instead of being corrected after the fact. |
+
+**Bound: hold the agent to the rules as it acts**
+
+| Tactic | How | Why it helps |
+|---|---|---|
+| Keep the rulebook out of the agent's reach | polispec reads rules from the trust ref. An agent's edit on `main` is a `policy.edit` (warn) that changes nothing until a person promotes it. For a real boundary, seal the host. | An agent cannot talk its way out of a rule by rewriting it. |
+| Deny what no agent shell should do, warn where a person should decide | `deny` for the live checkout, production secrets, and pushes to `stable`. `warn` for history rewrites, rulebook edits, and real data writes. | Asks stay rare enough that a person reads them. |
+| Separate the copies | Environments with their own branch, checkout, data, and rules (`polispec apply environment-control`). | Agents move fast on `main` while the live copy stays out of reach. |
+| Keep real data out of the context window | Agent reads of production data, env files, and declared secrets are denied; data classes refuse cross-class copies; published release code stays readable. | Whatever an agent reads goes to its model provider, so this one is about what never gets read. |
+| Turn on the catalog | `polispec catalog activate tools`, `mcp`, and `delete-guard` (operator, typed phrase). | Unknown non-read calls and undeclared MCP operations ask; recursive deletes of protected paths are refused. |
+| Name the dangerous shapes | Match `shape` (`xargs_delete`, `tmux_kill`, `bulk_write`, `root_walk`, `slow_mount_walk`, `worktree_force`) and keys like `fsize_unset` and `tree_over` in a shelf module. | A rule can catch the five-word command that stalls a disk or kills a shared server, and its reason can give the fix, such as a `ulimit -f` prefix the agent adds on the next try. |
+| Point at the sanctioned tool | A `text_matches` warn on a hand-built pattern whose reason names the purpose-built command. | The agent stops reinventing a tool that already exists and is already trusted. |
+| Gate the hop, not the keystroke | Gates, soak periods, freezes, and an operator phrase on `promote --to stable`. | The work stays fast; the release stays deliberate. |
+| Hold code to written standards | MUST code-spec violations are refused before the write; SHOULD findings are reported; a ratchet baseline keeps legacy code from blocking. | Standards hold for every agent, not only the careful ones. |
+
+**Watch: see what agents actually do**
+
+| Tactic | How | Why it helps |
+|---|---|---|
+| Start in advise mode | `polispec.enforce advise` logs every verdict and blocks nothing. Read `polispec digest`, `polispec judgments list`, and the web app's heatmap, then switch to `enforce`. | You learn what the rulebook would refuse before it refuses anything. |
+| Record the allows too | Every judged call leaves a chained record; `polispec judgments verify` detects an edit or a gap. | Silence is evidence: you can show what ran, not only what was stopped. |
+| Know when a change has landed | `polispec changes await <id>` and `polispec sessions list`. | No guessing whether a running session is still on yesterday's rules. |
+| Test the guard like code | `polispec smoke run`, `--against` a pinned release to diff every verdict, and `--live` for real headless sessions. | A rule nobody has seen working is a claim, not a control. |
+
+**Revise: change the rules without loosening them by accident**
+
+| Tactic | How | Why it helps |
+|---|---|---|
+| Replay real history before every change | `polispec plan` judges 14 days of recorded actions against the current and the proposed rulebook and classifies the change as tightening, loosening, mixed, or neutral. Loosening needs the person to type the plan id. | You see exactly which past calls a change would have flipped. |
+| Cut repeated asks in order | Declare the tool, then narrow the rule, then add an exception, and use allow-once last. The `polispec-advise` skill suggests the lever; exceptions are typed by the operator, scoped to a project, and stamped on every judgment they lift. | Fewer asks without a blanket allow. A deny is never excepted. |
+| Write once, compose everywhere | Modules with typed parameters on the global or project shelf, profiles, and nested projects. The strictest verdict wins, and a rule loosens only by name. | One well-tested release train or data rule serves every project, and no project can quietly weaken it. |
+| Put user-facing behavior under contract | A behavior contract binds an intent to its guards, messages, positive and negative probes, and approvals tied to its digest; `polispec contract check` and `diff` keep them honest. | What an app promises its users is checked, versioned, and approved like code. |
+
+### Where it can go
+
+polispec is modular, composable, and extensible, so alignment practice can grow the way code libraries do. None of the items below is built; the labels follow [`docs/VISION.md`](docs/VISION.md) and [`ROADMAP.md`](ROADMAP.md).
+
+- **Strictness that follows the stakes** *(Idea).* Conditional includes, such as `when: { serves: real_users }`, would apply a stricter module only where real people are affected.
+- **Shared practice with a lock** *(Idea).* Versioned modules imported across repositories and organisations, recorded in a lock file, so a team's alignment practice is reviewed once and inherited everywhere.
+- **Rules that bring their own proof** *(Idea).* Modules shipping their own negative controls and smoke checks, so a project inherits the evidence obligation along with the rule, and coverage is shown per composed rule.
+- **Provenance on every verdict** *(Idea).* Each verdict naming the include path that brought its rule in (policy → release train → soak).
+- **Layers above one host** *(Idea).* Organisation, team, and service layers above the global shelf, and composable rosters and directive sets.
+- **Exemptions that expire with their rule** *(Planned).* A standing exemption that lapses when the rule it exempts changes, so a revised rule asks again.
+- **Your own tools, made visible** *(mechanism built).* Classifier families, author adapters, and web routes are glob-loaded files. A classifier family for your deploy CLI turns its commands into action classes that rules can match.
+
+### What it cannot do
+
+- **It aligns actions, not intentions.** A directive is advice; only a hook is a control. An agent that ignores a directive is stopped only where a rule matches what it does.
+- **It sees what a call appears to be.** A renamed binary or an interpreter running inline code is judged by its surface. Unknown non-read calls ask once the catalog's `tools/unknown` is active, which narrows that gap without closing it.
+- **Unsealed, it is a guardrail.** Without the sealed plane, a process with your rights can change settings or bypass the hook, and `advise` blocks nothing. [Honest limits](#honest-limits) lists the rest.
+
 ## Looking after polispec itself
 
 polispec guards every agent on the host, so a broken polispec breaks every agent at once. 0.21.0 adds a pattern for changing polispec and its rulebooks safely:
@@ -579,9 +826,6 @@ It is told not to (`rules/polispec-stewardship.md`), and a pinned runtime denies
 
 **What happens if the rulebook is broken?**
 For a live project whose policy cannot be loaded, the guard falls back to the global layer's `fallback_rules` (or the ledger defaults). With no usable rules at all, it refuses non-read actions. A composition error makes `promote` refuse rather than run with fewer gates.
-
-**Do I need the rStack platform or a running service?**
-No. polispec is a plugin built on the rplugin SDK. It also runs from a plain clone with Ruby's standard library. Integrations such as an `rlogs` event sink are optional.
 
 **Can one rulebook cover several projects?**
 Yes. Shared rules go on the global shelf as modules, profiles bundle them by how much a project serves, and nested projects stack beneath their parent. See [composition](#composition-specs-inside-specs).
