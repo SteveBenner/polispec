@@ -7,7 +7,7 @@ require_relative "commands/support"
 module Polispec
   module Classify
     module Shapes
-      NAMES = %w[bulk_stage chained_release latest_flip lockfile_edit pattern_kill cargo_clean worktree_force tmux_kill xargs_delete web_local bulk_write].freeze
+      NAMES = %w[bulk_stage chained_release latest_flip lockfile_edit pattern_kill cargo_clean worktree_force tmux_kill xargs_delete web_local bulk_write root_walk slow_mount_walk].freeze
       LOCKFILES = %w[Cargo.lock Gemfile.lock package-lock.json pnpm-lock.yaml yarn.lock uv.lock poetry.lock].freeze
       CHAIN_CLASSES = %w[git.tag git.push release.publish promote].freeze
       PATTERN_PRODUCERS = %w[pgrep].freeze
@@ -182,6 +182,8 @@ module Polispec
 
       def applies?(name, action)
         return action.action_class == "fs.write" && action.env_hint["unknown"] != true if name == "bulk_write"
+        return action.action_class == "fs.walk" && action.env_hint["walk"] == "root" if name == "root_walk"
+        return action.action_class == "fs.walk" && action.env_hint["walk"] == "slow_mount" if name == "slow_mount_walk"
         return true unless name == "lockfile_edit"
 
         path = action.env_hint["path"]

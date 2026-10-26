@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 require_relative "support"
+require_relative "fs_walk"
 
 module Polispec
   module Classify
@@ -28,7 +29,7 @@ module Polispec
       class << self
         def classify(cmd)
           writes = write_paths(cmd).map { |path| Support.write_action(path, cmd.text) }
-          writes + unresolved_mkdirs(cmd) + redirect_writes(cmd) + deletes(cmd)
+          writes + unresolved_mkdirs(cmd) + redirect_writes(cmd) + deletes(cmd) + FsWalk.actions(cmd)
         end
 
         def to_stdout?(cmd)
@@ -49,6 +50,7 @@ module Polispec
           found << "cargo_clean" if cargo_clean?(cmd)
           found << "lockfile_edit" if lockfile_writer?(cmd)
           found << "xargs_delete" if cmd.xargs && DELETERS.include?(cmd.name)
+          found.concat(FsWalk.shapes(cmd))
           found
         end
 
