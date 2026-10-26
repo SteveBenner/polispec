@@ -6,6 +6,7 @@ import "../components/ps-drawer.js";
 import "../components/ps-state.js";
 import { endpoints } from "../core/api.js";
 import { loadView } from "../core/cache.js";
+import { currentRoute } from "../core/router.js";
 import { middleTruncate } from "../core/format.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -207,6 +208,9 @@ export async function render(container, params, signal) {
   container.replaceChildren(section);
 
   const byId = new Map();
+  const route = currentRoute();
+  const focus = (route && route.query && route.query.change) || "";
+  let focused = false;
 
   function openChange(id, opener) {
     const change = byId.get(id);
@@ -283,6 +287,10 @@ export async function render(container, params, signal) {
     }
     table.rows = rows;
     table.setAttribute("state", "ready");
+    if (focus && !focused && byId.has(focus) && section.isConnected) {
+      focused = true;
+      openChange(focus, null);
+    }
   }
 
   let loaded = false;

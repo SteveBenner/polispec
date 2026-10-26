@@ -1,4 +1,4 @@
-import { BANDS, entryKey } from "../map/layout.js";
+import { BANDS, chipHref, entryKey } from "../map/layout.js";
 import { middleTruncate } from "../core/format.js";
 import { shortCount } from "./ps-map-card.js";
 
@@ -37,7 +37,7 @@ function entryNode(entry, model, prefix) {
         id: `${prefix}:${key}:inh:${band.key}`,
         label: band.label,
         secondary: plural(chips.length, "module instance"),
-        children: chips.map((chip) => ({ id: `${prefix}:${key}:inh:${chip.key}`, label: chip.name, mono: true, href: `#/detail/module/${encodeURIComponent(chip.id)}` })),
+        children: chips.map((chip) => ({ id: `${prefix}:${key}:inh:${chip.key}`, label: chip.name, mono: true, href: chipHref(chip) })),
       });
     }
   }
@@ -73,7 +73,7 @@ export function buildTree(model) {
         label: chip.name,
         mono: true,
         secondary: `reaches ${plural(chip.reaches.length, "entry", "entries")}`,
-        href: `#/detail/module/${encodeURIComponent(chip.id)}`,
+        href: chipHref(chip),
         children: chip.reaches.map((key) => {
           const entry = model.byKey.get(key);
           return { id: `chip:${chip.key}:${key}`, label: entry.id, secondary: entry.status, href: `#/detail/${encodeURIComponent(entry.kind)}/${encodeURIComponent(entry.id)}`, counts: entry.counts };

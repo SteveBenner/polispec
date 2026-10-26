@@ -178,15 +178,16 @@ class PsPalette extends HTMLElement {
     }
     for (const row of this.data.projects.rows) {
       const id = typeof row === "string" ? row : row.id;
+      const kind = (typeof row === "string" ? "" : row.kind) || "project";
       if (!id) continue;
       entries.push({
-        id: `project:${id}`,
+        id: `${kind}:${id}`,
         group: "Projects",
-        label: `Open project ${id}`,
+        label: kind === "path" ? `Open path entry ${id}` : `Open project ${id}`,
         keywords: `${id} detail`,
         icon: "layers",
-        hint: "Project",
-        run: () => navigate(`detail/${id}`),
+        hint: kind === "path" ? "Path entry" : "Project",
+        run: () => navigate(`detail/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`),
       });
     }
     for (const row of this.data.rulebooks.rows) {

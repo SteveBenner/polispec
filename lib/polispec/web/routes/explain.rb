@@ -52,7 +52,23 @@ module Polispec
         side = Probes.resolved(project, ledger)
         return nil unless side.chain
 
-        side.chain.layers.each do |layer|
+        found = search_layers(side.chain, rule_id) { |layer| [policy_text(project), layer.name == "repo" ? project.policy : layer.source.to_s] }
+        found&.merge("project" => project.id)
+      end
+
+      def search_shelf(ledger, rule_id)
+        store = Layers.store
+        search_layers(Layers.load(nil, nil, ledger: ledger), rule_id) do |layer|
+          entry = layer.name.start_with?("path:") ? ledger.path_entry(layer.name.delete_prefix("path:")) : nil
+          if entry then [store&.read(entry.policy), entry.policy]
+          elsif layer.name == "global" then [store&.global_text, "global.yml"]
+          else [nil, layer.source.to_s]
+          end
+        end
+      end
+
+      def search_layers(chain, rule_id)
+        chain.layers.each do |layer|
           rule = Array(layer.rules).find { |item| item.is_a?(Hash) && item["id"] == rule_id }
           next unless rule
 
@@ -61,9 +77,10 @@ module Polispec
             found = name && module_text(name)
             next unless found && found[0].include?(rule_id)
 
-            return describe(layer.name, rule, found[0], found[1], name, doc_of(found[0])).merge("project" => project.id)
+            return describe(layer.name, rule, found[0], found[1], name, doc_of(found[0]))
           end
-          return describe(layer.name, rule, policy_text(project), layer.name == "repo" ? project.policy : layer.source.to_s, nil, doc_of(policy_text(project))).merge("project" => project.id)
+          text, path = yield(layer)
+          return describe(layer.name, rule, text, path, nil, doc_of(text))
         end
         nil
       end
@@ -104,7 +121,7 @@ module Polispec
         rescue StandardError
           next
         end
-        search_files(rule_id)
+        search_files(rule_id) || search_shelf(ledger, rule_id)
       rescue StandardError
         nil
       end

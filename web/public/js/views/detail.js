@@ -96,6 +96,18 @@ export async function render(container, params, signal) {
   if (signal && signal.aborted) return;
   container.replaceChildren(section);
 
+  if (!kind) {
+    const state = document.createElement("ps-state");
+    state.setAttribute("kind", "empty_first_run");
+    state.setAttribute("glyph", "question");
+    state.setAttribute("heading", "Pick an entry");
+    state.setAttribute("body", "Open a project, path entry or module from the map to see its detail.");
+    state.setAttribute("action", "Open map");
+    state.addEventListener("ps-action", () => navigate("map"));
+    body.append(state);
+    return;
+  }
+
   const loading = node("div", "ps-detail-loading");
   loading.setAttribute("aria-busy", "true");
   const lanes = node("div", "ps-detail-lane-skeleton");

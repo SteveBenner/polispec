@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.5] - 2026-10-26
+
+### Fixed
+- **An exception chip on the web map opened a missing module.** Every chip linked to `#/detail/module/<id>`, so an exception chip asked for the detail of a module named `aex_…` and showed not found; the host's web log recorded it on 2026-10-26. Exception chips on the map and in list mode now open that exception in the exceptions view (`chipHref` in `web/public/js/map/layout.js`).
+- **The command palette's "Open project" went nowhere.** It opened `#/detail/<id>`, which the detail view reads as kind and id both, so the request was `/rulebooks/teach/teach/composition` and the view said "No teach named teach". It now opens `#/detail/<kind>/<id>` for every map entry and names a path entry as one. A detail route with no kind shows "Pick an entry" instead of requesting `/rulebooks///composition`.
+- **The explainer found no rule for a judgment whose target was `global` or a path entry.** It searched only the judgment's project chain, which is none for those targets, then `global.yml` and the catalog files, so a rule that lives in a shelf module (such as `G-SCRATCH-CAP-PAD` from `scratch-cap`) gave "No rule or judgment found", and the feed's Explain link was dead for every such call. The locator now also searches the shelf chain (the global layer's modules and the path layers) and answers with the module, its file and line.
+- **The timeline took about 9 s to load.** `GET /changes` built every change's session list by re-reading `changes.jsonl` and recomputing the epoch for each change and session; a 30-day window on this host took 8.7 s. Each session's badges are now computed once per request: 1.0 s, with a byte-identical response.
+- **"Open timeline" after an apply did not show the change.** The plan sheet links to `#/timeline?change=<id>`, and the timeline ignored the parameter; it now opens that change's drawer.
+- **The sessions view never counted the global target as in step.** Calls judged against the shelf alone record the `global` target with `Layers.fingerprint` as their digest, and the view compared it with nothing, so every session showed one project out of step. The global and path targets now compare with the current fingerprint.
+- **The author offered no shelf modules to the drafting model.** `polispec author draft` and the web author route listed the release's `modules/`, empty since 0.45.0; both now list the configured shelf's modules (`Author.shelf_modules`).
+
 ## [0.47.4] - 2026-10-26
 
 ### Fixed

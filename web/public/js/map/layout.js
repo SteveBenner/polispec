@@ -23,6 +23,11 @@ export function entryKey(entry) {
   return entry.kind + ":" + entry.id;
 }
 
+export function chipHref(chip) {
+  if (chip.band === "exceptions") return `#/exceptions/${encodeURIComponent(chip.id)}`;
+  return `#/detail/module/${encodeURIComponent(chip.id)}`;
+}
+
 export function sortEntries(entries) {
   return [...entries].sort((a, b) => {
     const rank = (STATUS_ORDER[a.status] ?? 3) - (STATUS_ORDER[b.status] ?? 3);
