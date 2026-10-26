@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.4] - 2026-10-26
+
+### Fixed
+- **A smoke run no longer leaves a resident judge behind.** A launcher step finds no judge in the scenario's scratch state home and starts one detached, and nothing stopped it, so every run left a `polispec judge serve` process per launcher scenario and pass, idle for up to 30 minutes; four were running on this host after one day of test promotions, each health check adding two. `Smoke::Run#execute` now stops, after a scenario's steps and on the `--against` pass too, the judge recorded in that scenario's state home or its scratch `xdg-state/polispec`, sending TERM only to a pid whose `/proc/<pid>/cmdline` reads `judge serve` (`lib/polispec/smoke/run.rb`). The launcher scenarios (`guard-shim`, `guard-failclosed`, `fastpath`, `fastpath-reads`, `judgments` and the rest of their units) left one judge before the change and none after, on both passes.
+- **The resident judge answered `error` to every request in a process where nothing had loaded `Predicates`.** Since 0.47.1 `Judge::Server#judge` sets `Thread.current[Predicates::CALLER]` before calling the hook, and `lib/polispec/judge.rb` never required `predicates`, so the first reference raised `NameError` and so did the `ensure` that clears it. In every smoke fixture each judged call logged `error:NameError` and took the cold path; this host's judge answered normally because something earlier in its start had loaded the constant. Verdicts never changed, since the launcher falls back to the cold path. `judge.rb` now requires `predicates`; in the fixture the judge serves `guard-shim` and `fastpath` calls with status 0, and its replies match the 0.47.3 cold path byte for byte (no `--against` difference in `guard-shim`).
+
 ## [0.47.3] - 2026-10-26
 
 ### Fixed
