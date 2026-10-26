@@ -65,6 +65,21 @@ module Polispec
         File.join(State.home, "author")
       end
 
+      def shelf_modules
+        store = Layers.store
+        return [] unless store
+
+        src = store.source
+        names = if src.kind == :dir
+                  base = File.join(src.root, "modules")
+                  File.directory?(base) ? Dir.children(base) : []
+                else
+                  path = [src.path, "modules"].reject { |part| part.to_s.empty? }.join("/")
+                  Environments.git(src.repo, "ls-tree", "--name-only", "#{src.ref}:#{path}").to_s.lines.map(&:chomp)
+                end
+        names.filter_map { |name| name.delete_suffix(".yml") if name.end_with?(".yml") }.sort
+      end
+
       def kill_switch?
         !Engine::Settings.author_enabled?
       end

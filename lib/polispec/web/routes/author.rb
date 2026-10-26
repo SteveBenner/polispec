@@ -205,7 +205,7 @@ module Polispec
         def context_for(session, supplied)
           target = supplied.is_a?(Hash) && supplied["target"].is_a?(Hash) ? supplied["target"] : session.target
           context = { project: session.project, target_file: target ? "#{target['kind']}/#{target['id']}" : session.target_file, schema_id: "polispec.#{session.kind}/v1" }
-          context[:shelf_modules] = Dir.glob(File.join(ROOT, "modules", "*.yml")).map { |file| File.basename(file, ".yml") }.sort
+          context[:shelf_modules] = Author.shelf_modules
           if target
             begin
               tgt = Proposals.resolve_target(target["kind"], target["id"])

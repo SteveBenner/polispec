@@ -1000,7 +1000,7 @@ module Polispec
         { "window" => label, "projects" => projects.map { |p| { "id" => p.id, "envs" => ENVS } }, "rules" => rules, "no_rule" => no_rule, "dead" => dead }
       end
 
-      def changes_for(sessions, change)
+      def changes_for(sessions, change, badges)
         at = Sessions.stamp(change["ts"])
         classes = Array(change["effects"]).map { |item| item["class"] }
         sessions.map do |session|
@@ -1014,17 +1014,20 @@ module Polispec
           elsif classes.include?("trust") && session["harness"] == "codex" then status = :flagged
           elsif crossed then status = :crossed
           end
-          [status, { "id" => session["session_id"], "harness" => session["harness"], "badges" => session_badges(session, epoch(nil), Changes.records) }]
+          [status, { "id" => session["session_id"], "harness" => session["harness"], "badges" => badges[session["session_id"]] }]
         end
       end
 
       def changes(since_text)
         _, seconds = seconds_of(since_text, nil, "24h")
         cutoff = Time.now - seconds
-        records = Changes.records.select { |entry| (at = Sessions.stamp(entry["ts"])) && at >= cutoff }
+        all_changes = Changes.records
+        records = all_changes.select { |entry| (at = Sessions.stamp(entry["ts"])) && at >= cutoff }
         sessions = cached("active_sessions", 5) { Sessions.active(86_400) }
+        now_epoch = epoch(nil)
+        badges = sessions.to_h { |session| [session["session_id"], session_badges(session, now_epoch, all_changes)] }
         rows = records.reverse.map do |entry|
-          grouped = changes_for(sessions, entry)
+          grouped = changes_for(sessions, entry, badges)
           entry.reject { |key, _| %w[schema prev digest].include?(key) }.merge(
             "crossed" => grouped.select { |s, _| s == :crossed }.map(&:last), "pending" => grouped.select { |s, _| s == :pending }.map(&:last),
             "flagged" => grouped.select { |s, _| s == :flagged }.map(&:last)
@@ -1057,7 +1060,11 @@ module Polispec
             record = meta[item["session_id"]] || {}
             projects = item["projects"].map do |pid, seen|
               project = current.project(pid)
-              digests[pid] ||= project && project.status != "retired" ? PolicySource.resolve(project, ledger: current).digest : nil
+              digests[pid] ||= if project
+                                 project.status == "retired" ? nil : PolicySource.resolve(project, ledger: current).digest
+                               elsif pid == "global" || current.path_entry(pid)
+                                 Layers.fingerprint
+                               end
               { "id" => pid, "policy_digest_seen" => seen, "current_digest" => digests[pid], "in_step" => !seen.nil? && seen == digests[pid] }
             end
             { "id" => item["session_id"], "harness" => item["harness"], "agent_type" => record["agent_type"], "started" => item["first_seen"],

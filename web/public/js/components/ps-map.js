@@ -5,7 +5,7 @@ import "./ps-skeleton.js";
 import "./ps-chip.js";
 import "./ps-digest.js";
 import { announce } from "../core/announce.js";
-import { BANDS, COLLAPSED_KEY, buildModel, computeLayout, defaultMetrics, skeletonLayout } from "../map/layout.js";
+import { BANDS, COLLAPSED_KEY, buildModel, chipHref, computeLayout, defaultMetrics, skeletonLayout } from "../map/layout.js";
 import { EDGE_HIDE_ABOVE, blastEdges, buildEdges, createSvg, pathD, renderEdges } from "../map/edges.js";
 import { PanZoom, bindPointerPan, bindWheel } from "../map/pan.js";
 
@@ -333,7 +333,7 @@ class PsMap extends HTMLElement {
           holder.dataset.toggle = "expand";
           holder.setAttribute("aria-expanded", "false");
         } else {
-          holder.href = `#/detail/module/${encodeURIComponent(chip.id)}`;
+          holder.href = chipHref({ band: band.key, id: chip.id });
         }
         holder.textContent = chip.name;
         holder.title = chip.name;

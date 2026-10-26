@@ -99,15 +99,11 @@ module Polispec
         kind = opts[:positional].first
         return usage unless opts[:positional].length == 1 && Author::KINDS.include?(kind) && opts[:intent] && !opts[:intent].strip.empty?
 
-        context = { project: opts[:for], target_file: nil, current_yaml: nil, shelf_modules: shelf_modules, schema_id: kind == "description" ? nil : "polispec.#{kind}/v1" }
+        context = { project: opts[:for], target_file: nil, current_yaml: nil, shelf_modules: Author.shelf_modules, schema_id: kind == "description" ? nil : "polispec.#{kind}/v1" }
         port = Author.port(adapter: opts[:adapter])
         result = port.draft(kind: kind, intent: opts[:intent], context: context)
         port.close(result[:session])
         report(opts, kind, result)
-      end
-
-      def shelf_modules
-        Dir.glob(File.join(ROOT, "modules", "*.yml")).map { |file| File.basename(file, ".yml") }.sort
       end
 
       def report(opts, kind, result)
