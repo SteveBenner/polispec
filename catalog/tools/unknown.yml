@@ -1,4 +1,5 @@
 schema: polispec.module/v1
 name: tools-unknown
 summary: Gates every non-read-only tool polispec cannot positively classify; while active, the call asks under the standard edition and is denied under lock.
+description: "This module marks the unknown-tool gate: it carries no rules because the unknown_tool gate of the catalog supplies the verdict, which asks under the standard edition and denies under lock while the spec is active. A tool call that polispec cannot positively classify as read-only must never be allowed silently, and only the operator, never an agent, decides to activate or deactivate the spec."
 rules: []

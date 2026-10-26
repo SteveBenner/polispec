@@ -75,7 +75,7 @@ module Polispec
     def write(data)
       target = path
       require_relative "lint"
-      Lint.guard_write!("#{JSON.pretty_generate(data)}\n", path: target, format: :json)
+      Lint.guard_write!("#{JSON.pretty_generate(data)}\n", path: target, kind: "deployments", format: :json)
       Trace.step("write deployments.json", path: Trace.path(target), entries: data["entries"].length) do
         temporary = "#{target}.#{Process.pid}.tmp"
         File.write(temporary, "#{JSON.pretty_generate(data)}\n")

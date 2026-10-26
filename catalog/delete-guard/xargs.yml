@@ -1,5 +1,6 @@
 schema: polispec.module/v1
 name: delete-guard-xargs
 summary: Warns on deletes whose targets are fed through xargs, which polispec cannot see.
+description: "This module is the xargs half of the delete guard. G-DELETE-XARGS warns when a delete takes its targets from xargs, because polispec reads the command line and cannot see which paths xargs will pass to the delete. A delete fed that way must never run unconfirmed, since it could reach a folder that G-DELETE-PROTECTED would deny if the paths were written out."
 rules:
   - { id: G-DELETE-XARGS, match: { shape: [xargs_delete] }, verdict: warn, overridable: true, reason: "polispec cannot see targets fed through xargs; confirm before deleting" }

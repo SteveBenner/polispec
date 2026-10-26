@@ -1,6 +1,7 @@
 schema: polispec.module/v1
 name: tools-declared
 summary: The harness tools polispec declares known; every rule is overridable, so a shelf rule tightens one with a plain verdict and loosens one only by naming it in overrides.
+description: "This module declares the harness-internal tools and the read tools known to polispec, so that rules such as TOOL-SKILL and TOOL-TODOWRITE allow them and the unknown-tool gate does not fire on them. It also carries TOOL-OPAQUE-DEVELOPMENT, which allows an opaque shell line only in a project in development. A tool that can write, run code or reach the network must never be declared here as known, and an opaque shell line must never be allowed in a project that serves users."
 rules:
   - { id: TOOL-TODOWRITE, match: { tool: TodoWrite, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
   - { id: TOOL-TODOREAD, match: { tool: TodoRead, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
