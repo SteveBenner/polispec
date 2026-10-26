@@ -56,7 +56,7 @@ The step after composition is distribution. A clinic, a school, and a shop all w
 | Capability | Status | Notes |
 |---|---|---|
 | Versioned imports: `{ module: release-train, from: <repo>@<version> }`, resolved to a digest and recorded in a lock file | **Idea** | Today modules come from the host's global shelf or the project's own shelf. |
-| A catalogue of practice modules: release trains, quiet hours, data residency, de-identification, on-call rotations, regulated-data handling | **Idea** | The clinic example's `release-train`, `soak`, `quiet-hours`, and `patient-data` are the seed. |
+| A catalogue of practice modules: release trains, quiet hours, data residency, de-identification, on-call rotations, regulated-data handling | **Partial** | Since 0.45.0 polispec ships a catalog that an operator activates per host (`tools`, `delete-guard`, `mcp`); practice modules like these are not in it yet. The clinic example's `release-train`, `soak`, `quiet-hours`, and `patient-data` are the seed. |
 | Upgrade review: when an imported module changes, show which rules tighten or loosen before the project accepts it | **Partial** | Since 0.21.0 `polispec plan` classifies any project, global or ledger change, and package upgrades keep edited files as conflicts; versioned module imports do not exist yet. |
 | Signed modules, and a sealed host that accepts only signed imports | **Idea** | The sealed plane already pins the global shelf to an exact commit. |
 
@@ -83,7 +83,7 @@ A deep rulebook needs equally good tools for reading it.
 | Verdicts name the rule id and the layer that decided | **Built** | |
 | Rule provenance: for any verdict, the include path that brought the rule in (policy → release-train → soak) | **Idea** | |
 | What-if replay: run recorded tool calls against a proposed rulebook before it is promoted, and list every verdict that would change | **Built** | Since 0.21.0: `polispec plan` replays synthetic probes and recent judged actions; since 0.25.0 every judged call is recorded (`polispec judgments`), so the replay needs no setting. |
-| A rendered map of the composition tree for a project | **Idea** | |
+| A rendered map of the composition tree for a project | **Built** | Since 0.35.0 the `polispec web` map and detail views draw every layer, module instance, and the projects each one reaches. |
 
 ## Proving the rulebook holds
 
@@ -102,11 +102,11 @@ A rule nobody can show working is a claim, not a control.
 
 | Capability | Status | Notes |
 |---|---|---|
-| Guard hook for Claude Code and Codex | **Built** | Since 0.22.0 Claude Code gets it from the plugin's native install; Codex still calls the shim from a host bridge. |
+| Guard hook for Claude Code and Codex | **Built** | Since 0.22.0 Claude Code gets it from the plugin's native install; since 0.27.0 both are also wired by `polispec install` and their plugin marketplaces, without rplugin. |
 | Native artifacts for Hermes and Antigravity CLI | **Partial** | Generated; native runtime enforcement unverified on the release host. |
 | Pi and DeepSeek TUI | **Partial** | Skills only; no native control backend. |
 | OS sandbox (Bubblewrap) launch | **Partial** | Planning only; launch unavailable on the release host. |
-| Sealed authority plane and lock edition | **Partial** | Built and published with feature flags off; no lock certification claimed. |
+| Sealed authority plane and lock edition | **Partial** | Built, and enabled since 0.45.1; installing polispec seals no host, and no lock certification is claimed. |
 
 ## Beyond one host
 
