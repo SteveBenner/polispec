@@ -153,7 +153,11 @@ module Polispec
           return finish(result, scratch, "blocked", "fixture: #{e.message}")
         end
         result["layout"] = layout
-        run_steps(scenario, layout, result)
+        begin
+          run_steps(scenario, layout, result)
+        ensure
+          stop_judges(layout)
+        end
         verdict = steps_verdict(result["steps"])
         reason = result["steps"].find { |item| item["blocked"] }&.fetch("blocked", nil)
         reason ||= result["steps"].find { |item| item["inconclusive"] }&.fetch("inconclusive", nil) if verdict == "inconclusive"
@@ -187,6 +191,30 @@ module Polispec
           result["steps"] << outcome
           break if !outcome["ok"] && !outcome["blocked"] && outcome["stop"]
         end
+      end
+
+      def stop_judges(layout)
+        [layout.state, File.join(layout.scratch, "xdg-state", "polispec")].each do |home|
+          pid = judge_pid(File.join(home, "judge.json"))
+          next unless pid
+
+          ::Process.kill("TERM", pid)
+          Polispec::Trace.info("scenario judge stopped", pid: pid) if Polispec::Trace.on?
+        rescue Errno::ESRCH, Errno::EPERM => e
+          Polispec::Trace.info("scenario judge not stopped", pid: pid, reason: e.class.name) if Polispec::Trace.on?
+        end
+      end
+
+      def judge_pid(path)
+        return nil unless File.file?(path)
+
+        pid = JSON.parse(File.read(path))["pid"]
+        return nil unless pid.is_a?(Integer) && pid.positive?
+
+        cmdline = File.binread("/proc/#{pid}/cmdline")
+        cmdline.split("\0").each_cons(2).include?(%w[judge serve]) ? pid : nil
+      rescue JSON::ParserError, TypeError, SystemCallError
+        nil
       end
 
       def live_step(step, scenario, layout)

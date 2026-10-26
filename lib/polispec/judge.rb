@@ -9,6 +9,7 @@ require "fileutils"
 require "open3"
 require "time"
 require_relative "commands/hook"
+require_relative "predicates"
 
 module Polispec
   module Judge
