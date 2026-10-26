@@ -5,9 +5,9 @@ require_relative "../lint"
 
 module Polispec
   class LintCommand
-    USAGE = "usage: polispec lint [PATH...] [--host] [--shipped] [--only RULE[,RULE]...] [--strict] [--json]"
+    USAGE = "usage: polispec lint [PATH...] [--host] [--shipped] [--ref REF] [--only RULE[,RULE]...] [--strict] [--json]"
 
-    Options = Struct.new(:roots, :files, :host, :shipped, :only, :strict, :json)
+    Options = Struct.new(:roots, :files, :host, :shipped, :only, :strict, :json, :ref)
 
     def self.run(args)
       new.run(args)
@@ -19,8 +19,8 @@ module Polispec
 
       roots = options.roots
       roots = [default_root] if roots.empty? && options.files.empty? && !options.host && !options.shipped
-      Polispec::Trace.info("lint options", roots: roots.map { |root| Polispec::Trace.path(root) }, files: options.files.length, host: options.host, shipped: options.shipped, only: options.only, strict: options.strict, json: options.json) if Polispec::Trace.on?
-      report = Lint.run(roots: roots, files: options.files, host: options.host, shipped: options.shipped, only: options.only)
+      Polispec::Trace.info("lint options", roots: roots.map { |root| Polispec::Trace.path(root) }, files: options.files.length, host: options.host, shipped: options.shipped, ref: options.ref, only: options.only, strict: options.strict, json: options.json) if Polispec::Trace.on?
+      report = Lint.run(roots: roots, files: options.files, host: options.host, shipped: options.shipped, only: options.only, ref: options.ref)
       strict = options.strict || Engine::Settings.lint_strict?
       ok = report.ok?(strict)
       options.json ? puts(JSON.generate(report.to_h(ok))) : print_text(report)
@@ -38,10 +38,15 @@ module Polispec
     end
 
     def parse(args)
-      options = Options.new([], [], false, false, [], false, false)
+      options = Options.new([], [], false, false, [], false, false, nil)
       until args.empty?
         arg = args.shift
         case arg
+        when "--ref"
+          value = args.shift
+          return nil if value.nil? || value.empty? || value.start_with?("-")
+
+          options.ref = value
         when "--json" then options.json = true
         when "--host" then options.host = true
         when "--shipped" then options.shipped = true

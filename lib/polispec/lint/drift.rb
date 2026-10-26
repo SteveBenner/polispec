@@ -15,7 +15,7 @@ module Polispec
         require_relative "../manifest"
         roots = Array(scope[:roots]).map { |root| File.expand_path(root) }.uniq
         out = []
-        roots.each do |root|
+        (roots - Array(scope[:ref_roots])).each do |root|
           out.concat(agents_drift(root)) unless for_doctor
           out.concat(manifest_drift(root)) unless for_doctor
         end

@@ -1,6 +1,7 @@
 schema: polispec.module/v1
 name: delete-guard-protected
 summary: Denies deletes that reach the protected system and configuration folders and warns on single-file deletes beneath them; every rule is overridable.
+description: "This module is the protected-folder half of the delete guard: it lists the exact system folders and the home configuration trees that a delete must never reach, and the two rules that act on them. G-DELETE-PROTECTED denies a delete that reaches one of those folders, and G-DELETE-PROTECTED-FILE asks for confirmation when a single file beneath one is deleted. An agent must never delete the system root, the home folder, /etc, /usr, ~/.ssh, ~/.claude or ~/.polispec without the operator, and the lists must never be shortened silently."
 delete_protected:
   exact: ["/", "~", /home, /etc, /usr, /var, /boot, /bin, /sbin, /lib, /lib64, /opt, /root, /sys, /proc, /dev, /usr/bin, /usr/sbin, /usr/lib, /usr/lib64]
   tree: ["~/.ssh", "~/.claude", "~/.config", "~/.rplugins", "~/.polispec"]

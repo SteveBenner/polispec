@@ -10,24 +10,26 @@ module Polispec
   module Lint
     module Sweep
       MAX_BYTES = 5 * 1024 * 1024
-      HYGIENE_ONLY = %w[schema_doc template hygiene deployments].freeze
+      HYGIENE_ONLY = %w[schema_doc template hygiene].freeze
 
       module_function
 
-      def call(roots: [], files: [], host: false, shipped: false, only: RULES, for_doctor: false)
+      def call(roots: [], files: [], host: false, shipped: false, only: RULES, for_doctor: false, ref: nil)
         only = Array(only).map(&:to_s)
         notes = []
         host_roots = []
         labels = {}
         scratch = []
+        rewrites = {}
         targets = []
         Trace.step("collect targets") do
-          roots.each { |root| targets.concat(Targets.project(root, notes: notes)) }
+          roots.each { |root| targets.concat(Targets.project(root, notes: notes, ref: ref.is_a?(String) ? ref : nil, scratch: scratch, rewrites: rewrites)) }
+          roots = roots.reject { |root| ref.is_a?(String) && File.directory?(root) }
           files.each do |file|
             path = File.expand_path(file)
             targets << Targets.target(path: path, kind: "auto", format: Lint.format_for(path), descriptions: true)
           end
-          targets.concat(Targets.host(for_doctor: for_doctor, notes: notes, roots: host_roots, labels: labels, scratch: scratch)) if host
+          targets.concat(Targets.host(for_doctor: for_doctor, notes: notes, roots: host_roots, labels: labels, scratch: scratch, ref: ref, rewrites: rewrites)) if host
           targets.concat(Targets.shipped(notes: notes)) if shipped
           targets = targets.uniq { |target| [target.path, target.kind] }
           Trace.info("targets collected", project_roots: roots.length, files: files.length, host: host, shipped: shipped, targets: targets.length, rules: only) if Trace.on?
@@ -44,7 +46,7 @@ module Polispec
             Trace.info("target checked", error: found.count(&:error?), warn: found.count { |item| item.severity == "warn" }, info: found.count { |item| item.severity == "info" }) if Trace.on?
           end
         end
-        scope = { roots: (roots.map { |root| File.expand_path(root) } + host_roots).uniq, host: host, shipped: shipped, targets: targets }
+        scope = { roots: (roots.map { |root| File.expand_path(root) } + rewrites.keys + host_roots).uniq, ref_roots: rewrites.keys, host: host, shipped: shipped, targets: targets }
         Trace.step("drift") do
           before = findings.length
           findings.concat(Drift.check(scope, only: only, for_doctor: for_doctor))
@@ -54,6 +56,11 @@ module Polispec
           before = findings.length
           findings.concat(Refs.check(scope, only: only, for_doctor: for_doctor))
           Trace.info("refs checked", findings: findings.length - before) if Trace.on?
+        end
+        findings.each do |item|
+          rewrites.each do |dir, label|
+            item.path = "#{label}#{item.path.delete_prefix("#{dir}/")}" if item.path.to_s.start_with?("#{dir}/")
+          end
         end
         Trace.step("summary") do
           report = Report.new(Lint.finalize(findings), targets.length)
@@ -74,7 +81,7 @@ module Polispec
         elsif text.bytesize > MAX_BYTES
           return [Finding.new("info", "hygiene", "file_too_large", target.path, nil, nil, "larger than #{MAX_BYTES} bytes; not checked", target.project)]
         end
-        custom = %w[schema_doc deployments].include?(target.kind)
+        custom = target.kind == "schema_doc"
         effective = HYGIENE_ONLY.include?(target.kind) ? retarget(target) : target
         out = Documents.check(effective, text, only: only, description_error: description_error)
         out.concat(custom_findings(target, text)) if custom && only.include?("schema") && out.none? { |item| item.error? && Documents::STOPPING.include?(item.code) }
@@ -95,8 +102,6 @@ module Polispec
         unless data.is_a?(Hash)
           return [Finding.new("error", "schema", "schema_invalid", target.path, nil, "", "the document must be a mapping", target.project)]
         end
-
-        return Schema::Validator.new(Schema::Document.load(File.join(Schema::DIR, "deployments.v1.yml"))).call(data).map { |error| Finding.new("error", "schema", "schema_invalid", target.path, nil, error.pointer, error.message, target.project) } if target.kind == "deployments"
 
         Schema::Validator.new(data).call(nil)
         []

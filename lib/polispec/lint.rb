@@ -111,9 +111,9 @@ module Polispec
       text
     end
 
-    def run(roots: [], files: [], host: false, shipped: false, only: RULES, for_doctor: false)
+    def run(roots: [], files: [], host: false, shipped: false, only: RULES, for_doctor: false, ref: nil)
       require_relative "lint/sweep"
-      Sweep.call(roots: roots, files: files, host: host, shipped: shipped, only: only, for_doctor: for_doctor)
+      Sweep.call(roots: roots, files: files, host: host, shipped: shipped, only: only, for_doctor: for_doctor, ref: ref)
     end
   end
 end

@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require "open3"
 require "tmpdir"
 require_relative "shipped"
 
@@ -123,10 +124,69 @@ module Polispec
         false
       end
 
-      def project(root, notes: [], descriptions: true)
+      def project(root, notes: [], descriptions: true, ref: nil, scratch: [], rewrites: {}, strict: true)
         root = File.expand_path(root)
-        ledger = load_ledger
-        id = ledger_project(ledger, root)
+        id = ledger_project(load_ledger, root)
+        return project_tree(root, id, notes, descriptions) if ref.nil?
+
+        dir = materialize(root, ref, id, notes, scratch, strict)
+        return [] unless dir
+
+        rewrites[dir] = "#{File.basename(root)}@#{ref}:"
+        project_tree(dir, id, notes, descriptions)
+      end
+
+      def materialize(root, ref, id, notes, scratch, strict)
+        ref = ref.to_s
+        commit = ref.empty? || ref.start_with?("-") ? nil : Environments.git(root, "rev-parse", "--verify", "--quiet", "#{ref}^{commit}")
+        if commit.to_s.strip.empty?
+          raise Polispec::Error, "ref #{ref} not found in #{root}" if strict
+
+          notes << Finding.new("info", "refs", "ref_missing", root, nil, nil, "ref #{ref} not found; not linted", id)
+          return nil
+        end
+        listing = Environments.git(root, "ls-tree", "-r", "-z", "--name-only", commit.strip)
+        raise Polispec::Error, "cannot list #{ref} in #{root}" if listing.nil?
+
+        names = listing.split("\0").select { |relative| !relative.include?("\n") && eligible?(relative) }
+        if names.length > CANDIDATE_CAP
+          notes << Finding.new("info", "refs", "too_many_files", root, nil, nil, "#{names.length} candidate files at #{ref}; only the first #{CANDIDATE_CAP} were examined", id)
+          names = names.first(CANDIDATE_CAP)
+        end
+        dir = Dir.mktmpdir("polispec-lint-")
+        scratch << dir
+        read_blobs(root, commit.strip, names) do |relative, text|
+          path = File.join(dir, relative)
+          FileUtils.mkdir_p(File.dirname(path))
+          File.binwrite(path, text)
+        end
+        dir
+      end
+
+      def read_blobs(root, commit, names)
+        Open3.popen2(Layers::GIT_ENV, "git", "-C", root, "cat-file", "--batch", err: File::NULL) do |input, output, _thread|
+          input.binmode
+          output.binmode
+          names.each do |relative|
+            input.write("#{commit}:#{relative}\n")
+            input.flush
+            header = output.gets
+            break if header.nil?
+
+            fields = header.split
+            next unless fields.length == 3 && fields[1] == "blob"
+
+            size = fields[2].to_i
+            body = output.read(size)
+            output.read(1)
+            yield relative, body if body && size <= CANDIDATE_BYTES
+          end
+        end
+      rescue SystemCallError, IOError
+        nil
+      end
+
+      def project_tree(root, id, notes, descriptions)
         listed = candidates(root).select { |relative| eligible?(relative) }
         if listed.length > CANDIDATE_CAP
           notes << Finding.new("info", "refs", "too_many_files", root, nil, nil, "#{listed.length} candidate files; only the first #{CANDIDATE_CAP} were examined", id)
@@ -160,7 +220,7 @@ module Polispec
         target(**fields)
       end
 
-      def host(for_doctor: false, notes: [], roots: [], labels: {}, scratch: [])
+      def host(for_doctor: false, notes: [], roots: [], labels: {}, scratch: [], ref: nil, rewrites: {})
         require_relative "../deployments"
         require_relative "../native_settings"
         out = []
@@ -181,8 +241,15 @@ module Polispec
             repo = File.expand_path(entry.repo)
             next unless File.directory?(repo)
 
-            roots << repo
-            out.concat(project(repo, notes: notes, descriptions: !for_doctor))
+            at = ref == :trust ? entry.trust_ref.to_s : ref.to_s
+            if at.empty?
+              roots << repo
+              out.concat(project(repo, notes: notes, descriptions: !for_doctor))
+            else
+              before = rewrites.keys
+              out.concat(project(repo, notes: notes, descriptions: !for_doctor, ref: at, scratch: scratch, rewrites: rewrites, strict: false))
+              roots.concat(rewrites.keys - before)
+            end
           end
         end
         out
