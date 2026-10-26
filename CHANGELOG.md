@@ -16,9 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `specs/app.yml` sections `vision`, `features`, `model` and `wiring`. `vision` holds the arc, the principles, the planned work, the ideas and how far enforcement reaches. `features` indexes 41 built capabilities, each with its first release, surfaces, spec section and limits. `model` holds the engine vocabulary as the code defines it: 23 action classes, the classifier families, 13 shapes, 26 match keys, 9 predicates, composition, the per-action judgment order, built-in rule ids, 9 gate kinds and freezes. `wiring` covers how each harness reaches polispec, the pretool path hop by hop, the session path, the state and sealed paths, events, and which rplugin ports the code actually calls. `smoke.coverage_units` gains `catalog`, `fs_walk` and `verbose`, which scenarios already prove.
 
+- **`specs/editions.yml` said `mcp_default.ask` decides the undeclared MCP default.** The code reads that row only into the fast-path key (`lib/polispec/commands/hook.rb`, `lib/polispec/fastpath.rb`); the verdict comes from `unknown_call.ask`. Only the note changed; no verdict changes.
+- **An independent review of the first draft corrected the new wiring and model text.** A pause covers one target project, not the whole call. Actions outside every live project get an environment judgment only when a global baseline exists. MultiEdit splits per edit entry. Under advise, injected control context and the epoch notice still render. The launcher's ordinary allow is exit 0 with no output. `polispec.authorization` is listed, and two harness-control emits are named as having no `events.jsonl` fallback. code-hook accepts every harness name. The counts that restated code constants were dropped, so the spec names each constant and says the constant wins.
+
 ### Known
-- `schemas/policy.v1.yml`'s `match.shape` enum lists `opaque_shell` but not `web_local`, which the catalog subspec `tools/web-agent` matches. It is recorded in the spec and not changed here.
-- `specs/editions.yml` describes `mcp_default.ask` as deciding the MCP default; the code uses it only in the fast-path key.
+- `schemas/policy.v1.yml`'s `match.shape` enum lists `opaque_shell` but not `web_local`, which the catalog subspec `tools/web-agent` matches. It is recorded in the spec and not changed here, because a schema change alters what validates.
 
 ## [0.47.1] - 2026-10-26
 
