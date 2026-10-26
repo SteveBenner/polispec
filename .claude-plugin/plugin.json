@@ -1,10 +1,11 @@
 {
   "name": "polispec",
-  "version": "0.46.0",
+  "version": "0.47.0",
   "description": "Spec-based policy guardrails for agentic development and operations: committed environment policies and deterministic harness controls, with explicit backend capabilities and enforcement limits.",
   "repository": "https://github.com/SteveBenner/polispec",
   "skills": [
     "./skills/polispec",
+    "./skills/polispec-advise",
     "./skills/polispec-register",
     "./skills/polispec-specs",
     "./skills/polispec-uninstall"

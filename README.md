@@ -437,11 +437,13 @@ polispec starts in `advise` mode: it logs every verdict and blocks nothing. When
 
 ## Agent skills
 
-The plugin packages three skills for AI models:
+The plugin packages five skills for AI models:
 
-- [`polispec`](skills/polispec/SKILL.md) locates the installed CLI, resolves the target environment and governing layers, explains verdicts, and routes operational tasks.
+- [`polispec`](skills/polispec/SKILL.md) is a lean router: what polispec is and where it reaches, the rules that always hold, installed CLI discovery, a table of every verb by who may run it, and the triggers for creating, modifying, deleting, moving or registering a spec. It sends detail to [`docs/agent-guide.md`](docs/agent-guide.md) and [`docs/cli.md`](docs/cli.md).
+- [`polispec-advise`](skills/polispec-advise/SKILL.md) reads an agent's history, a project or named files, read-only, and suggests specs and directives for the use case, with the fewest distinct asks, as drafts for `polispec-specs` and advisory text. Its pattern catalog is [`patterns.md`](skills/polispec-advise/patterns.md).
 - [`polispec-specs`](skills/polispec-specs/SKILL.md) creates and modifies specs through the appropriate validation, planning, approval, and release workflow. It distinguishes environment rulebooks, application behavioral policies, code-spec packs, and ordinary application contracts.
 - [`polispec-register`](skills/polispec-register/SKILL.md) registers software or directories outside governed repositories without editing the ledger or shelf directly.
+- [`polispec-uninstall`](skills/polispec-uninstall/SKILL.md) runs the clean-uninstall dry run and hands the person the real command.
 
 Skills refer to the installed plugin's documentation and schemas, preserve the user's authorization boundaries, and distinguish a validated draft from the trusted policy in effect. They ship through the plugin installers; no personal skill-directory copy is required.
 
@@ -465,6 +467,8 @@ The ledger is the list of projects polispec governs on this host. `polispec inst
 `--with-stewardship` first makes sure the host is safe to change: the installed plugin carries the stewardship rule, and the polispec runtime is pinned to a read-only release ([stewardship](#looking-after-polispec-itself)). Add `--commit` to commit exactly the scaffold files on main, and add `--push` to publish main, test, and stable as well. Replace the placeholder health check before the first deploy. The operator flips the ledger status to `live` when the rulebook is ready to enforce.
 
 ## Commands
+
+[`docs/cli.md`](docs/cli.md) lists every verb with who may run it; `polispec help` is authoritative for the installed version.
 
 | Command | Purpose |
 |---|---|

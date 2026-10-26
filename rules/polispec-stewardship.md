@@ -37,6 +37,17 @@ Every change to a rulebook is planned first and applied through polispec:
 - Anything else — **loosening**, **mixed**, any global-shelf change, a status flip (`onboarding` → `live`, retirement), a profile, trust-ref or repo change — needs the user's explicit yes first. Ask with the question tool, show the plan id and the reasons, and only then run `apply … --confirm <plan-id>`. The guard also asks the user when it sees `--confirm`. Never confirm a plan yourself, and never reshape a change so that it classifies differently.
 - A plan id binds the exact proposal. If anything changes, plan again; a stale id is refused.
 
+## When a spec should change
+
+Raise it with the user instead of editing; the `polispec` and `polispec-advise` skills carry the full table.
+
+- **Create** when a project starts serving real users with no `specs/polispec/`, or a new tool, MCP server, service or secret store becomes routine.
+- **Modify** when one rule asks or denies benign calls across sessions, or a verdict surprised the user.
+- **Delete** a rule or exception that no recent judgment hit, or on retiring a project or path. A removal loosens.
+- **Move** a rule between layers, or follow a renamed path, as two plans: add first, remove second. The removal loosens.
+- **Register** a path outside a governed repository with `polispec-register`.
+- Prefer fewer distinct asks over more exceptions: declare the legitimate thing, then narrow the rule, then an exception the operator records, then allow-once last.
+
 ## What agents never do here
 
 - Edit the ledger, the global shelf, `specs/polispec/**`, the plugin store or the polispec runtime by hand.
@@ -44,4 +55,4 @@ Every change to a rulebook is planned first and applied through polispec:
 - Remove, rename or bypass a gate, freeze, rule or module to get a change through.
 - Run `git worktree remove --force`, `rm -r`, `git clean` or `find -delete` on polispec trees, releases or backups. Back up in place first.
 - Delete a pinned release; older releases are the rollback.
-- Put personal policy (a host's own paths, project ids, hostnames or operator name) into the shipped `modules/`, `packages/`, `config/` or `catalog/`; it belongs on the global shelf or in the ledger unless the operator chose to ship it. `polispec doctor` and `polispec steward --check` report it as `personal_default`.
+- Put personal policy (a host's own paths, project ids, hostnames or operator name) into the shipped `modules/`, `packages/`, `config/`, `catalog/`, `rules/` or `skills/`; it belongs on the global shelf or in the ledger unless the operator chose to ship it. `polispec doctor` and `polispec steward --check` report it as `personal_default`.

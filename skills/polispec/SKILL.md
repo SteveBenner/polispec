@@ -1,111 +1,75 @@
 ---
 name: polispec
 description: >
-  Find and use polispec to inspect governing rules, explain a guard verdict,
-  validate or modify specs, promote a development release to test, or preview
-  harness controls. Routes spec authoring to polispec-specs and non-repository
-  path registration to polispec-register. Use for polispec operations, not
-  generic product specifications that do not use polispec.
+  Find and use polispec, the guard and rulebook tooling that judges agent tool
+  calls (allow, warn, deny) in governed projects. Use it to inspect governing
+  rules, explain a verdict, cut repeated asks, decide when a spec should be
+  created, modified, deleted, moved or registered, validate specs, promote a
+  release to test, or preview harness controls. Routes spec authoring to
+  polispec-specs, path registration to polispec-register, and use-case
+  suggestions to polispec-advise. Not for generic product specifications.
 ---
 
 # polispec
 
-## When to use it
+polispec is a versioned rulebook plus a guard that gives every agent tool call in a governed project one verdict: `allow`, `warn` or `deny`, with a reason and a next step. Dev work on `main` is frictionless; `test` and `stable` (prod) are promoted by fast-forward. It works on Claude Code and Codex through hooks, on Hermes through a native backend, and as skills only on Pi, DeepSeek TUI and Antigravity. Full picture: `docs/agent-guide.md`.
 
-- The user asks what is allowed in a live project, which branch is production, or why a command was denied or warned.
-- The user wants a policy, roster, ledger, or behavioral policy file checked.
-- The user wants to create or modify a rulebook, application behavioral policy, or code-spec pack. Use [polispec-specs](../polispec-specs/SKILL.md).
-- The user asks how code moves from `main` to `test` to `stable`.
-- The user wants deterministic harness controls, a native installation preview, or an explanation of sealed authority and lock prerequisites.
-- The user wants to see or change policy in a browser: which rulebooks govern which project, why a call was denied or warned, what a change would flip, who an exception reaches, or what a new project should register.
-- The user wants to put software, a directory, or their home directory that is not a git repository under polispec. Use the `polispec-register` skill (`skills/polispec-register/SKILL.md`).
+## Rules that always hold
 
-Moving `stable`, deploying production, pausing the guard, redeeming an allow-once ID, recording an exception to an ask (`polispec exceptions promote|add|remove`; the ask text names the proposal id), sealing, activating projects, and removing or loosening controls are operator actions. Give the operator the exact command. Sealed actions require authenticated privilege through the protected launcher; an interactive terminal and typed phrase alone do not establish that authority.
+- Before writing in a project: `polispec resolve .` and obey the verdict.
+- `allow` proceeds. `warn` needs the user's explicit yes through the question tool, naming what and why. `deny` stops: relay the next step.
+- Never retry a refused call in another shape or tool, never edit the ledger or `specs/polispec/**` to change a verdict, never self-redeem `allow-once`, never push or tag `test` or `stable`, never touch a production checkout, its secrets or data, never edit the running polispec.
+- Promote to `stable`, deploy stable, pause, `allow-once`, exceptions, catalog changes, sealing and plane activation are the operator's. Give the exact command; sealed actions also need authenticated privilege.
+- A draft is not trusted policy. The trust ref in effect, and observed enforcement, decide. Generated files prove neither.
+- Under the lock edition there is no web app, no author, no exceptions and no delegate: give the command-line route.
 
 ## Find the installed CLI first
 
-Run `command -v polispec`, then `polispec version` and `polispec help`. Use the installed command for host operations; a repository's `bin/polispec` is a development candidate, not proof of what protects the host.
+`command -v polispec`, then `polispec version`, `polispec doctor`, `polispec help`. The installed command is the host runtime; a repository's `bin/polispec` is a development candidate. If it is not on PATH, try `<plugin root>/bin/polispec`, `~/.rplugins/polispec/bin/polispec`, `~/.local/bin/polispec`. Take the plugin root from this skill's location. rplugin is optional. Never download a replacement to get past a denial. `docs/`, `schemas/`, `rules/` live in the plugin root, not the user's project. `polispec doctor` reports the runtime as pinned, clone, sealed or unknown and exits nonzero with findings worth reading.
 
-If it is not on PATH, check the known installation you actually have: `<plugin root>/bin/polispec`, `~/.rplugins/polispec/bin/polispec`, or `~/.local/bin/polispec`. Obtain the plugin root from the loaded skill's location or the harness's plugin context; do not assume a personal checkout path or that rplugin is installed. If none exists, use the plugin's README installation instructions within the user's authorized scope. Never download or install a replacement merely to get past a denial.
+## What to do
 
-Read `rules/polispec.md` and `rules/polispec-stewardship.md` relative to that plugin root. Resolve `docs/`, `schemas/`, and `examples/` there too, not in the user's unrelated project. `polispec doctor` reports the runtime root and its pinned, clone, or sealed status; it can exit nonzero with useful findings, so read them before proceeding. Development of polispec uses a separate worktree and scratch `POLISPEC_*` state as stewardship specifies.
-
-## Inspect the target before writing
-
-Run these in the target project, not the plugin directory:
-
-```sh
-polispec resolve .
-polispec resolve . --layers
-polispec status
-```
-
-Use the reported project id, environment, trust ref, layer chain, and roster. `not ledgered` does not authorize unrelated host changes. A working-tree edit does not replace the trusted policy. Obey `allow`, ask for the user's explicit approval on `warn`, and stop on `deny`; do not retry a refused operation through another tool or change settings to evade it. Respect specific approvals already given for the same action.
-
-To explain a refused call, use the read-only command `polispec explain --harness HARNESS --json < CALL.json`, where `CALL.json` contains the actual harness hook payload. Do not invent a tool name or change its arguments to obtain a different verdict. Use `polispec judgments show ID` when a judgment id is available. Report the winning rule and its legitimate next step; a rule file's presence alone is not evidence that a harness is enforcing it.
-
-## Choose the task
-
-| Request | Route |
+| Request or signal | Route |
 | --- | --- |
-| Create or edit environment rules, a roster, modules, the ledger, a behavioral policy, or code specs | [polispec-specs](../polispec-specs/SKILL.md) |
-| Register or retire software or a directory outside a governed repository | [polispec-register](../polispec-register/SKILL.md) |
-| Promote a release to test | Read `docs/operator.md`; use `polispec promote PROJECT --to test`, never push the test branch directly |
-| Change polispec itself, its runtime, or its installation | Read `rules/polispec-stewardship.md` before acting |
-| Native harness control or sealed authority | Read the harness-controls section below and `docs/harness-controls.md` |
+| Why was this denied or asked? | `polispec explain --harness H --json < CALL.json` with the real payload, or `judgments show ID`. Report the winning rule and its legitimate next step. |
+| Too many asks, unattended runs blocked | `polispec-advise`; levers in `docs/agent-guide.md` |
+| Recommend specs for a project or from history | `polispec-advise` |
+| Create, modify, delete, move a rule, module, roster, behavior or code spec | `polispec-specs` |
+| Put software or a directory outside a repository under polispec | `polispec-register` |
+| New project serving users | `polispec plan environment-control --repo R --variant service\|distributed`, then `apply` with the same arguments |
+| Check a file | `polispec validate auto FILE`, then `polispec lint` and read its findings |
+| Watch an operation | add `--verbose` to promote, deploy, apply, pin, install, doctor or smoke |
+| Promote to test | `polispec promote PROJECT --to test` (tags; never push `test`) |
+| Change polispec itself, its install, a package, the shelf or the ledger | `rules/polispec-stewardship.md`: plan first, user's yes for anything not tightening |
+| Browser view of policy | Tell the person to run `polispec web`; never run it or call its API (`G-WEB-AGENT` warns when that subspec is active) |
+| Native harness controls, sealed authority | Below, and `docs/harness-controls.md` |
 
-## Validate and inspect
+## Spec change triggers
 
-- `polispec validate auto <file>` checks a policy, roster, ledger, or behavioral policy file against its schema and prints every violation with a JSON pointer. Add `--json` for machine output.
-- After generating or editing spec files, run `polispec lint` (project scope) and read its findings: a clean lint proves loader-safe YAML and agreement with source, not safe composition.
-- To watch what an operation does while it runs (promote, deploy, `exceptions add`, `apply`, `pin`, `install`, `doctor`, `smoke run`), add `--verbose` (or `--verbose=json` for NDJSON, `-v`, or `POLISPEC_VERBOSE=1`). The trace goes to stderr only; stdout, `--json` output and the exit status do not change. It never prints environment values, tokens or the typed confirmation. The `hook` verbs ignore it.
-- `polispec behavior compile <file>` emits deterministic compiled JSON and its content digest. It does not sign, publish, or install policy. The receiving application owns authentication and enforcement.
-- `polispec behavior decide <file> <event> <facts.json>` evaluates declarative deny predicates; missing facts deny. Native bindings and advisory guidance are not executed by this command.
-- `polispec version` prints the installed version.
-- `docs/schema.md` documents every key with an example.
-- `polispec help` lists the commands installed in this version.
+| Event | Signal | Route |
+| --- | --- | --- |
+| create | project serves users with no `specs/polispec/`; new tool, MCP server, service, secret or data environment used repeatedly | environment-control plan, or `polispec-specs` |
+| modify | the same rule warns or denies benign calls across sessions; a surprising verdict; wrong role harness or model | `polispec-specs`, project or global plan |
+| delete | a rule or exception no recent judgment hit; a retired project or path | removal loosens: user's yes and `--confirm` |
+| move | a rule belongs in a wider or narrower layer; a repo path or id changed | two plans; the web Manager does it as one for the person |
+| register | a non-repository path needs governing | `polispec-register` |
 
-## The web app
+## Commands
 
-`polispec web` is a local web app for the person: a map of governed projects, the pipeline, live judgments, a playground and explainer for why a call was judged, and a manager that changes a rulebook through a plan with its effect shown first. `docs/web.md` documents it.
+Authority per verb; subcommand detail in `docs/cli.md`.
 
-- Point the user to it; do not run it. Tell them to run `polispec web` in their own terminal (add `--read-only` to look without changing anything). It prints a link that works once, for two minutes, on `127.0.0.1:7421`. `polispec web url` prints a new link for a server already running.
-- The agent never drives the web API. A `curl`, `wget`, HTTP client, or `WebFetch` call that changes anything at `/api/v1`, or that reaches its exceptions, author, state, register, session, or plan-apply routes, classifies as `policy.edit` and warns with `G-WEB-AGENT`. Do not retry it in another shape, and do not read or write `launch.secret` or `delegate.token` under the polispec state home.
-- A change made there is a plan the person applies: a tightening plan on one click, a loosening, global, move, or status plan only after they type its plan id, and promotion to `stable`, deploy, pause, allow-once, seal, and plane only as commands for the operator to run. Say which view to open (Map, Pipeline, Explainer, Manager, Exceptions, Register, Manifest) and what to look for; the plan id is theirs to type.
-- Under the lock edition there is no web app, no author, and no exceptions delegate; give the command-line route instead.
-
-## Smoke tests
-
-- After showing that a spec or sub-spec works for real, record it: `polispec smoke record --spec FILE --at PATH --verdict pass|fail|partial|blocked|inconclusive --summary TEXT` with `--step-file` and `--evidence`. Judge the verdict from evidence outside yourself (hook logs, git state, exit codes), never from your own account.
-- `polispec smoke verify` checks the chain; `polispec smoke coverage` lists units without a current pass. Never edit `smoke.yml` by hand. `docs/smoke.md` documents it.
-- Every call the guard judges leaves a chained record: `polispec judgments list [--since 24h] [--session ID] [--project ID]` shows them, `show <id>` prints one, and `verify` exits 1 on a digest mismatch, a broken chain or truncation. The record names the rulebook digest, the rule, the polispec that judged and the reply the harness received, with no command text unless `polispec.records.raw` is on. Never edit `judgments.jsonl` by hand.
-
-## Environments
-
-- A live repository's environment facts (branches, checkouts, audience, exposure, operators, rollback) are in `specs/polispec/environments.yml`, read from the stable ref like the policy; `docs/environments.md` documents it.
-- `polispec resolve .` names the environment the current directory is in; run it before writing in a live repository and obey the verdict.
-- The `[ENVS]` row in a repository's `AGENTS.md` and `.agents/directives/envs.md` are generated by `polispec agents render`; edit `environments.yml` or `policy.yml`, never the output.
-- Putting a new user-serving project under polispec is `polispec plan environment-control --repo <repo> --variant service|distributed`, then `polispec apply` with the same arguments; add `--commit` (with `--push`) to commit the scaffold on main and publish main, test and stable. `onboard` was removed in 0.21.0.
-- Any change to polispec itself, its installation, a package, a project's specs, the global shelf or the ledger follows `rules/polispec-stewardship.md` in the polispec plugin directory (`polispec doctor` prints it as the runtime root): plan first, apply tightening plans directly, and get the user's yes before `apply --confirm <plan-id>` for anything else.
-
-## What it needs
-
-- Ruby; no gems beyond the standard library.
-- The ledger of governed projects. Unsealed resolution uses `POLISPEC_LEDGER`, then `polispec.ledger`, then `~/.config/polispec/ledger.yml`; sealed resolution uses the verified fixed authority plane and ignores those redirects.
-- An install. Without rplugin: `polispec pin` (a read-only release under `~/.local/share/polispec`, with `~/.local/bin/polispec`), then `polispec install --harness claude|codex`. As a Claude Code or Codex plugin, the hooks and this skill come from the plugin cache; when asked to "set up polispec stewardship" there, run `<plugin root>/bin/polispec steward`, which pins a release and links the rules. With rplugin (1.17.0 or later for this release): install a tagged release with `rplugin install REPO --ref TAG`; never replace a pinned guard with an unpinned development clone. `polispec doctor` reports what is missing.
-- Settings, changed with `polispec settings set <key> <value>` (or `rplugin settings` on an rplugin host): `polispec.enforce` (`advise` or `enforce`, default `advise`), `polispec.ledger`, `polispec.operator` (how messages name the person who promotes to stable) and `polispec.code.specs_repo`.
+| Who | Verbs |
+| --- | --- |
+| agent | `resolve` `status` `doctor` `explain` `classify` `digest` `judgments` `changes` `sessions` `editions` `deployments` `version` `validate` `lint` `plan` `behavior` `contract` (not `approve`) `code` `roster` `agents render` `smoke` `author` `ledger init` `manifest` `specs` `judge status\|stop` `promote --to test` `deploy test` `register` `unregister` (plan) `apply` (tightening, non-global) `settings list\|get` `catalog list\|show` `exceptions list` `harness grammar\|parse\|plan\|verify\|scan` and tightening `install` `plane status\|verify` `authorizations status` `delegate list\|status\|unit` |
+| agent + yes | `apply --confirm PLAN_ID` (loosening, mixed, global, status flip) `pin` `install` `uninstall --harness` `steward` `settings set\|unset` `contract approve` `register --confirm` |
+| operator | `promote --to stable` `deploy stable` `pause` `allow-once` `exceptions add\|promote\|remove` `catalog activate\|deactivate\|provision` `delegate grant\|revoke\|serve` `authorizations serve\|unit\|recover` `uninstall --all` `restore` `manifest index --publish` `harness uninstall` and loosening `web` `specs link` (repoint) |
+| sealed operator | `seal` `plane activate\|rollback` |
+| internal | `hook` `code-hook` `judge serve` |
 
 ## Harness controls
 
-Since 0.23.0, `harness_controls` ships enabled; `sealed_plane` remains disabled by default. Inspect the installed release and existing authority before acting. Installation is not activation, and neither a flag nor generated artifacts prove native enforcement. Never enable a feature, seal a plane, or activate a project just to make a command succeed; those require the operator's authorization and prerequisites.
+Read `polispec harness grammar --json`, write a control with only that vocabulary, `polispec validate control FILE`, `polispec harness plan FILE --harness H --scope project --project ABS --json`, inspect every disposition, preview with `harness install --dry-run`. Agents add only provably tightening user or project controls. Installation is not activation, and artifacts are not observed enforcement. Report them separately. Never seal, activate or enable a feature to make a command succeed. Control denials, protected paths, the root guard and lock defaults bind even when policy is paused.
 
-1. Read `polispec harness grammar --json`. Translate the user's intent using only its published vocabulary; the guard never invokes a model to decide a control.
-2. Validate the YAML with `polispec validate control FILE --json`, then run `polispec harness plan FILE --harness HARNESS --scope project --project /absolute/project --json`. User scope omits `--project`.
-3. Inspect every disposition and finding. Agents may install provably tightening user/project controls; managed scope, removal, uncertain comparisons, and loosening require the operator. Preview with `harness install ... --dry-run --json` before installation.
-4. Verify the installation ID. Report artifact integrity separately from observed native enforcement. Missing runtime evidence, unsealed authority, or unsupported control axes prevent lock certification.
+## Needs
 
-A control deny, protected-path refusal, root guard, broken authority, or lock default remains binding even when environment policy is paused or a legacy warning has been authorized. Standard asks without native consent block pending an exact protected one-use authorization. Never substitute a synthetic session, redeem your own request, or change its arguments to reuse a grant.
-
-`harness scan` reports container exposure and records distinct scan transitions; a read-only scan does not arm anything. Rootless and root-equivalent access are separate observations. No scan alone certifies containment.
-
-Read `docs/harness-controls.md` for native boundaries and `docs/operator.md` for the explicit sealed setup, service, and recovery procedures. New projects serving real users stay onboarding until an authenticated operator activates them against a verified plane.
+Ruby with the standard library. A ledger of governed projects (`POLISPEC_LEDGER`, then `polispec.ledger`, then `~/.config/polispec/ledger.yml`). An install: `polispec pin` then `polispec install --harness claude|codex`, the plugin marketplaces, or `rplugin install REPO --ref TAG`. Settings: `polispec settings set` for `polispec.enforce` (`advise` default or `enforce`), `polispec.ledger`, `polispec.operator`, `polispec.code.specs_repo`. New projects serving users stay onboarding until the operator activates them.
