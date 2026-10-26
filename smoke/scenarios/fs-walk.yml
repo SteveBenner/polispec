@@ -8,7 +8,7 @@ fixture:
     "global.yml": "schema: polispec.global/v1\nsummary: Smoke baseline with two filesystem walk rules.\nrules:\n  - { id: SMOKE-ROOT-WALK, match: { shape: [root_walk] }, verdict: deny, reason: \"smoke: no walk of the filesystem root\" }\n  - { id: SMOKE-SLOW-MOUNT-WALK, match: { shape: [slow_mount_walk] }, verdict: deny, reason: \"smoke: no walk of a slow mount\" }\n"
   files:
     "mountinfo-plain": "25 1 8:1 / / rw,relatime - ext4 /dev/sda1 rw\n"
-    "mountinfo-slow": "25 1 8:1 / / rw,relatime - ext4 /dev/sda1 rw\n41 25 8:2 / /run/media/test/DISK rw,relatime - exfat /dev/sdb1 rw\n42 25 0:50 / /home/test/cloud rw,relatime - fuse cloud.fs rw\n43 25 0:51 / /srv/share rw,relatime - nfs4 host:/share rw\n44 25 8:3 / /mnt/old rw,relatime - ext4 /dev/sdc1 rw\n"
+    "mountinfo-slow": "25 1 8:1 / / rw,relatime - ext4 /dev/sda1 rw\n41 25 8:2 / /run/media/test/DISK rw,relatime - exfat /dev/sdb1 rw\n42 25 0:50 / /home/test/cloud rw,relatime - fuse cloud.fs rw\n43 25 0:51 / /srv/share rw,relatime - nfs4 host:/share rw\n44 25 8:3 / /mnt/old rw,relatime - ext4 /dev/sdc1 rw\n45 25 259:1 / /boot/efi rw,relatime - vfat /dev/nvme0n1p1 rw\n"
   projects:
     - id: shop
       variant: service
@@ -92,3 +92,15 @@ steps:
     hook: { harness: claude, event: pretool, tool: Bash, input: { command: "find / -name x" }, cwd: "{{project.shop}}" }
     env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-slow" }
     expect: { decision: deny }
+  - name: a walk of a local vfat partition outside removable roots is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "ls -R /boot/efi" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-slow" }
+    expect: { decision: allow }
+  - name: a walk of a home directory with a FUSE mount under it is denied
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "find /home/test -name x" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-slow" }
+    expect: { decision: deny, rule: SMOKE-SLOW-MOUNT-WALK }
+  - name: the same home walk with -xdev is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "find /home/test -xdev -name x" }, cwd: "{{project.shop}}" }
+    env: { POLISPEC_MOUNTINFO: "{{files}}/mountinfo-slow" }
+    expect: { decision: allow }
