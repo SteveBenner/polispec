@@ -24,7 +24,7 @@ module Polispec
       GREP_RECURSIVE = %w[--recursive --dereference-recursive --directories=recurse].freeze
       LS_VALUE = %w[-I -w -T --ignore --width --tabsize --block-size --time-style --format --sort --color --indicator-style --hide --quoting-style --time].freeze
       TREE_VALUE = %w[-L -P -I -o --charset --filelimit --sort --timefmt --fromfile --matchdirs --level --prune --ignore].freeze
-      SLOW_TYPES = %w[fuse fuseblk nfs nfs4 cifs smb3 smbfs sshfs 9p exfat vfat msdos ntfs ntfs3].freeze
+      SLOW_TYPES = %w[fuse fuseblk nfs nfs4 cifs smb3 smbfs sshfs 9p].freeze
       SLOW_ROOTS = %w[/run/media /media /mnt].freeze
       MOUNTINFO = "/proc/self/mountinfo"
 
@@ -51,18 +51,30 @@ module Polispec
 
       def walks(cmd, start, stay)
         return [] if start.nil?
-        return whole_tree(cmd) if root?(start) && !stay
 
         path = root?(start) ? "/" : start
+        found = []
+        found << Support.act("fs.walk", cmd.text, "path" => "/", "walk" => "root", "command" => cmd.name) if path == "/" && !stay
         mount = owner(path)
-        mount && slow?(mount) ? [slow_action(cmd, path, mount.type)] : []
+        if mount && slow?(mount)
+          found << slow_action(cmd, path, mount.type)
+        elsif !stay
+          under = slow_under(path)
+          found << slow_action(cmd, under.point, under.type) if under
+        end
+        found
       end
 
-      def whole_tree(cmd)
-        found = [Support.act("fs.walk", cmd.text, "path" => "/", "walk" => "root", "command" => cmd.name)]
-        under = mounts.select { |mount| slow?(mount) }.min_by(&:point)
-        found << slow_action(cmd, under.point, under.type) if under
-        found
+      def slow_under(path)
+        real = resolve(path)
+        prefix = real == "/" ? "/" : "#{real}/"
+        mounts.select { |mount| mount.point != real && mount.point.start_with?(prefix) && slow?(mount) }.min_by(&:point)
+      end
+
+      def resolve(path)
+        File.realpath(path)
+      rescue SystemCallError
+        path
       end
 
       def slow_action(cmd, path, type)
@@ -164,11 +176,7 @@ module Polispec
       end
 
       def owner(path)
-        real = begin
-          File.realpath(path)
-        rescue SystemCallError
-          path
-        end
+        real = resolve(path)
         mounts.select { |mount| mount.point == "/" || real == mount.point || real.start_with?("#{mount.point}/") }.max_by { |mount| mount.point.length }
       end
 
