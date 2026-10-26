@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.1] - 2026-10-26
+
+### Fixed
+- **An agent is no longer denied `G-LOCK-HELD` on a file it locked itself when the resident judge answers.** A Claude Code session (pid 2130520) took `reaper lock acquire` on `~/.ai/.rproject/WIP.md`, and its own Edit of that file was denied "locked by agent checkin-589b14c2 (pid 2130520)", served `via: judge`. `Predicates#live_holder` compared an owned entry's `owner_pid` with `ancestors(Process.pid)`, and under the judge that pid is the detached `polispec judge serve`, whose parents never include the harness; the cold path, a child of the launcher, was right. The launcher now sends `caller=<its pid>` in the `POLISPEC/1` header, the judge keeps it only when `/proc/<pid>` exists and belongs to its own uid, and `lock_held` walks that pid's parents (`bin/polispec-guard`, `lib/polispec/judge.rb`, `lib/polispec/predicates.rb`). A missing or rejected caller keeps the judge's parents, so an owned lock stays held, and a judge older than 0.47.1 reads the field as part of the runtime directory, answers `stale` and exits. Measured with the real launchers against scratch state homes: through the 0.47.0 judge the holder's own Edit is denied and through the 0.47.1 judge it is allowed; a lock owned by another live process is denied by both, cold and judged; a 0.47.0 launcher is still served by the new judge with the old result; a 0.47.1 launcher against a 0.47.0 judge logs `judge_stale`, the old judge exits, and its replacement allows the call.
+
+### Changed
+- `specs/app.yml` (`resident_judge`) and `docs/operator.md` ("The resident judge") describe the `caller=` field.
+
 ## [0.47.0] - 2026-10-26
 
 ### Added

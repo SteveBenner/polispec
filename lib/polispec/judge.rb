@@ -20,7 +20,7 @@ module Polispec
     LOG_LIMIT = 1_048_576
     SHELF_FILE_CAP = 2000
     KEEP_MEMO = %i[ledger_load spec_policy prefetch_policies shipped_layer layers_fingerprint catalog_state catalog_modules catalog_delete_protected].freeze
-    HEADER = /\A#{Regexp.escape(PROTOCOL)} (\h{32}) (pretool|session) ([a-z]+) (\S.*) (\d+)\z/.freeze
+    HEADER = /\A#{Regexp.escape(PROTOCOL)} (\h{32}) (pretool|session) ([a-z]+) (\S.*?)(?: caller=(\d+))? (\d+)\z/.freeze
     REF_SAFE = %r{\A[A-Za-z0-9][A-Za-z0-9._/@+-]*\z}.freeze
 
     module_function
@@ -321,7 +321,7 @@ module Polispec
         match = HEADER.match(line)
         return reply(conn, "error", "") unless match
 
-        token, mode, harness, runtime, bytes = match.captures
+        token, mode, harness, runtime, caller_text, bytes = match.captures
         return reply(conn, "error", "") unless token.bytesize == @token.bytesize && same_token?(token)
 
         bytes = bytes.to_i
@@ -336,7 +336,7 @@ module Polispec
         payload = read_payload(conn, bytes)
         return reply(conn, "error", "") unless payload
 
-        status, body, changed = judge(mode, harness, payload)
+        status, body, changed = judge(mode, harness, payload, caller_pid(caller_text))
         reply(conn, status.to_s, body)
         log(mode, harness, payload, status, started, changed, "judge")
       rescue StandardError, ScriptError => error
@@ -410,14 +410,25 @@ module Polispec
         nil
       end
 
-      def judge(mode, harness, payload)
+      def judge(mode, harness, payload, caller_pid)
         changed = refresh
         Thread.current[HookMemo::SLOT] = @memo
+        Thread.current[Predicates::CALLER] = caller_pid
         status, body = HookCommand.new.judge_request(mode, harness, payload)
         [status, body, changed]
       ensure
         prune
         Thread.current[HookMemo::SLOT] = nil
+        Thread.current[Predicates::CALLER] = nil
+      end
+
+      def caller_pid(text)
+        pid = text.to_i
+        return nil unless pid.positive? && File.stat("/proc/#{pid}").uid == Process.uid
+
+        pid
+      rescue SystemCallError
+        nil
       end
 
       def refresh
