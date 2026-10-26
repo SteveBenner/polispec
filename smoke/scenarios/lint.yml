@@ -71,8 +71,20 @@ steps:
     expect:
       exit: 0
       stdout_excludes: [lint_failed]
-  - name: doctor reports a repeated key from the host sweep
+  - name: doctor lints the trust ref, so a repeated key only in the checkout is no doctor finding
     run: [sh, -c, 'printf "schema: polispec.roster/v1\nschema: polispec.roster/v1\n" > specs/polispec/probe-dup.yml && "$0" doctor --json', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: [0, 1]
+      stdout_excludes: [lint_yaml_duplicate_key]
+  - name: lint --host still reports the repeated key in the checkout
+    run: ["{{polispec}}", lint, --host]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 1
+      stdout_includes: [yaml_duplicate_key, probe-dup.yml]
+  - name: doctor reports a repeated key once it is on the trust ref
+    run: [sh, -c, 'git checkout -q stable && git add specs/polispec/probe-dup.yml && git commit -q -m probe && "$0" doctor --json', "{{polispec}}"]
     cwd: "{{project.shop}}"
     expect:
       exit: [0, 1]
@@ -85,7 +97,7 @@ steps:
       exit: [0, 1]
       stdout_excludes: [lint_yaml_duplicate_key]
   - name: the shipped tree lints with no error
-    run: [sh, -c, 'rm specs/polispec/probe-dup.yml && "$0" lint --shipped', "{{polispec}}"]
+    run: [sh, -c, 'git checkout -q main && "$0" lint --shipped', "{{polispec}}"]
     cwd: "{{project.shop}}"
     expect:
       exit: 0
