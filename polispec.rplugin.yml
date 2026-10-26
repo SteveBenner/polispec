@@ -1,7 +1,7 @@
 schema: rplugin/v1
 id: polispec
 name: Polispec
-version: 0.46.0
+version: 0.47.0
 rplugin: ">= 1.17.0"
 native: true
 description: "Spec-based policy guardrails for agentic development and operations: committed environment policies and deterministic harness controls, with explicit backend capabilities and enforcement limits."
@@ -51,6 +51,7 @@ settings:
 contents:
   skills:
     - { id: polispec, path: skills/polispec/SKILL.md }
+    - { id: polispec-advise, path: skills/polispec-advise/SKILL.md }
     - { id: polispec-register, path: skills/polispec-register/SKILL.md }
     - { id: polispec-specs, path: skills/polispec-specs/SKILL.md }
     - { id: polispec-uninstall, path: skills/polispec-uninstall/SKILL.md }
@@ -59,6 +60,8 @@ contents:
     - { path: specs/app.yml }
   scripts: []
   docs:
+    - { path: docs/cli.md }
+    - { path: docs/agent-guide.md }
     - { path: docs/schema.md }
     - { path: docs/behavior.md }
     - { path: docs/code-specs.md }

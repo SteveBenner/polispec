@@ -18,6 +18,10 @@ Every tool call in a live project gets one verdict from the policy: `allow`, `wa
 
 On a `warn` verdict, ask the user with the question tool. State what you are about to do and why, and proceed only on an explicit yes. Never self-redeem `polispec allow-once`, never retry the call in another shape, and never edit the ledger or `specs/polispec/**` to change a verdict (those edits are `warn` tier themselves).
 
+## Fewer asks
+
+Every ask blocks unattended runs, so aim at fewer distinct asks, not faster approvals. Name tools and commands plainly, run scripts by path rather than `eval`, `source` or `.`, and keep a command to one parseable line when planning. Never rework a call that was refused. When the same ask keeps recurring, tell the user which lever fits and who confirms it: declare the tool or MCP operation, narrow the rule, a persisted exception the operator records, allow-once last. A deny has no exception. The `polispec-advise` skill and `docs/agent-guide.md` hold the table.
+
 ## Promotion paths
 
 Branches run main (dev) to test to stable (prod). Test fast-forwards only from main, and stable fast-forwards only from test; neither is ever rewritten. An agent promotes with `polispec promote <repo> --to test`, which allows on a green gate and denies on red, and tags the release. An agent never pushes `test` or `stable` directly. Only the operator (the person named by the `polispec.operator` setting) runs `polispec promote <repo> --to stable`, `polispec deploy <repo> stable`, `polispec pause`, and `polispec allow-once`, each with its required confirmation. Sealed actions also require authenticated privilege through the protected launcher; a TTY alone is insufficient. The operator may hotfix stable directly; the drift rule then forces the patch back into main before the next promotion.

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-10-26
+
+### Added
+- **`polispec-advise`, a read-only skill that suggests specs and directives from history, a project or named files.** It matches what it finds against `skills/polispec-advise/patterns.md` (repeated asks, denies that point to a sanctioned tool, first policies, hygiene domains, spec lifecycle, reading history, classification, minimum versions per key) and answers with a spec draft for `polispec-specs` to validate, lint and plan, advisory directive text aimed at the canonical behavior directive, or both. Each suggestion names its evidence, its lever, its classification and its confirmer. Levers against repeated asks are keyed on the source of the ask (`POLISPEC-TOOL-UNKNOWN`, `POLISPEC-MCP-UNDECLARED`, an environment rule warn, a deny) in the order declare, narrow, exception, allow-once, and drop what the edition, the sealed plane or a kill switch removes. It writes nothing, applies nothing, records no proposal, never coaches evasion and never suggests overriding the delete-guard, web-agent, runtime or control-protection rules. It adds no verb and no library code.
+- **`docs/cli.md` and `docs/agent-guide.md`.** The first lists every verb by family with who may run it (agent, agent with the user's yes, operator, sealed operator, internal) and the document that explains it. The second holds positioning, reach, layers from posture to match, the anatomy of an ask, the lever order, evidence sources, edition differences and the never-override list.
+- **A trigger table for creating, modifying, deleting, moving and registering a spec** in the `polispec` skill and the stewardship rule, and a short "Fewer asks" digest in `rules/polispec.md`.
+
+### Changed
+- **`skills/polispec/SKILL.md` is a lean router.** Positioning and reach, the rules that always hold, CLI discovery, a routing table, the trigger table and one table of every verb by authority replace the long reference prose, which moved to the two new docs. The never list, warn handling and operator boundaries stay in the router because only a native Claude Code install links the rule files; Codex, Hermes, Pi, DeepSeek TUI and Antigravity reach the content through the skills.
+- `specs/app.yml`: the `agent_skills` block describes the router, the advise skill, the awareness digest, the reference docs and the uninstall skill; seven commands (web, manifest, register, changes, sessions, editions, author) no longer read `status: planned`, though they shipped in 0.35.0; `G-WEB-AGENT` is described as the catalog subspec `tools/web-agent`, not a rule of the removed shipped module.
+- `rules/polispec-stewardship.md` lists `rules/` and `skills/` among the shipped directories that carry no personal policy, as the `personal_defaults` check already enforced.
+- `.claude-plugin/plugin.json` lists the new skill; it was regenerated with `rplugin package` from `contents.skills`.
+
+### Notes
+- The verb table in the router and in `docs/cli.md` is maintained by hand and can drift from `polispec help`; check it at each release. `lint --shipped` and `personal_defaults` do not read `docs/`, so the two new docs were checked by hand for host paths, project ids and names.
+- Existing installs link the new skill only when `polispec install --harness claude|codex` is run again, and a new skill appears in a new session. `rules/` links follow the `current` pin and update on `polispec pin`.
+- No verb, library, schema or verdict changes. The evidence for the lever order came from 256 recorded asks on one host since 2026-10-22, 216 of them control asks, mostly shell lines starting with a directory change or running `eval`, `source` or `.`, and about a dozen undeclared MCP calls.
+
 ## [0.46.0] - 2026-10-25
 
 ### Added
