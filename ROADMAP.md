@@ -11,14 +11,13 @@ The qualification work from the independent review of 0.19.1. The two P0 items a
 - **P1:** cross-harness execution matrix; race, recovery, and consistency.
 - **P2:** usability and overhead benchmark.
 
-## Standing exemptions
+## Standing exemptions: what remains after 0.29.0
 
-When polispec blocks or warns, the user can answer *yes, and stop asking* to create a standing exemption. Today an allow-once covers a single action, so the same prompt comes back on the next matching call. An exemption stops that rule from firing again for the same kind of action until the exemption is retired.
+0.29.0 built the core of this item as persistent exceptions (`polispec exceptions list|add|promote|remove`, `exceptions.yml` on the global shelf). An ask records a proposal, and the operator promotes it from a separate terminal with a typed phrase. Each grant and removal is a planned and applied commit on the shelf, a lifted call's judgment record carries the exception id, and an agent can never grant, widen or renew one. Exceptions lift only asks and warns, never a deny, and match the unexpanded command text, scoped to one project or the whole host. What the original plan named and is still unbuilt:
 
-- **Scope:** one exemption covers one rule, in one project, for one action class and one target pattern, such as a path glob or a command family. It never covers the whole rule, and never other projects.
-- **Granted by a person:** the exemption is created only from the user's explicit yes at the prompt. An agent can never grant, widen, or renew one, in the same way it can never redeem an allow-once. In a live project, and under the sealed plane, granting follows the same operator authority as other loosening.
-- **Recorded and versioned:** every grant and every retirement is a recorded polispec change. Each change is a commit on the project's polispec specs and an event, carrying who granted it, when, the verdict it answered, its scope, and the reason. `polispec plan` classifies it as loosening, and the history of what was exempted, and when, stays in git.
-- **Retirement:** `polispec exemption retire <id>`, recorded like the grant. An exemption also lapses on its own when the rule it exempts changes (its digest moves), so the prompt returns for the new rule. Every `promote` preview lists the open exemptions, so they are reviewed on a regular rhythm.
-- **Visibility:** `polispec status` and `doctor` list open exemptions, and a verdict that an exemption suppressed is still logged with the exemption id.
+- **Grant at the prompt:** the user's *yes, and stop asking* at the ask itself creates the exception, under the same operator authority as other loosening in a live project or under the sealed plane.
+- **Lapse with the rule:** an exception lapses on its own when the rule it lifts changes (its digest moves), so the prompt returns for the new rule.
+- **Target patterns beyond command text:** a scope by action class and path glob, so a file tool's ask can be lifted for one directory rather than by the text of a shell line.
+- **Review rhythm:** every `promote` preview lists the open exceptions, and `polispec status` and `doctor` list them, not only invalid ones.
 
-Open questions: whether an exemption granted on `main` takes effect at once or only after promotion, like other policy edits; and how exemptions interact with the strictest-verdict-wins composition when the exempted rule comes from the global shelf.
+Open question: how an exception should interact with the strictest-verdict-wins composition when the asking rule comes from a project policy rather than the shelf the exception lives on.
