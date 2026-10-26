@@ -198064,3 +198064,446 @@ entries:
     policy_digest: sha256:99bf4d45bfd810dd194a4a9985ca2229bf2a5c2ebf61b8cc3e55019ca8f6b3a9
   prev: f85589bd9eb88369b054d87d0523ed29c2ae51e48dacc62563a92fa1b2bb06b4
   digest: a37e8c7daeb39965af803525034f743b96534b5121854826e0d3215e924381be
+- id: smk_c6687a851443
+  recorded_at: '2026-10-26T13:36:28Z'
+  started_at: '2026-10-26T13:35:56Z'
+  finished_at: '2026-10-26T13:36:09Z'
+  proves:
+    spec: specs/app.yml
+    at: catalog
+    spec_digest: 494e36ab18da51e47e7a5ca745448f5af3854ff5e041807175192a775080b7c9
+    at_digest: dabf80ebc584272c0cfd6abf5c549414022717ea0891f30f15887bc71b78de68
+  verdict: pass
+  summary: 'a scenario fixture activates catalog specs and provisions mcp/declared
+    before its steps run, and doctor reports the catalog state it finds; with no catalog
+    spec active the guard gives no special verdict to MCP calls, unknown tools, protected
+    deletes or the local web app, each spec returns its verdicts once the operator
+    activates it on a terminal, mcp/declared needs a provisioned file, and the verbs
+    refuse without a terminal (suite: 33/33 steps passed)'
+  steps:
+  - run: "{{polispec}} catalog list"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["tools/declared  active","tools/unknown  active","delete-guard/protected  active","mcp/undeclared  active","mcp/declared  provisioned"]}'
+    observed: exit=0 ok
+  - run: hook pretool --harness claude CronCreate {}
+    exit: 0
+    expect: '{"decision":"ask","rule":"POLISPEC-TOOL-UNKNOWN"}'
+    observed: decision=ask rule=POLISPEC-TOOL-UNKNOWN exit=0 ok
+  - run: hook pretool --harness claude mcp__srv__op {}
+    exit: 0
+    expect: '{"decision":"ask","rule":"POLISPEC-MCP-UNDECLARED"}'
+    observed: decision=ask rule=POLISPEC-MCP-UNDECLARED exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"rm -rf {{home}}/.ssh"}
+    exit: 0
+    expect: '{"decision":"deny","rule":"G-DELETE-PROTECTED"}'
+    observed: decision=deny rule=G-DELETE-PROTECTED exit=0 ok
+  - run: "{{polispec}} catalog activate mcp/declared"
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: sh -c "\"$0\" doctor --json; exit 0" {{polispec}}
+    exit: 0
+    expect: '{"exit":0,"stdout_excludes":["catalog_none_active","catalog_state_invalid","catalog_provision_missing"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} catalog list"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["tools/declared  inactive","tools/unknown  inactive","tools/web-agent  inactive","delete-guard/protected  inactive","delete-guard/xargs  inactive","mcp/undeclared  inactive","mcp/declared  not_provisioned"]}'
+    observed: exit=0 ok
+  - run: sh -c "\"$0\" doctor --json; exit 0" {{polispec}}
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["catalog_none_active"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} catalog show delete-guard"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["G-DELETE-PROTECTED","G-DELETE-XARGS"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} catalog show nothing"
+    exit: 2
+    expect: '{"exit":2}'
+    observed: exit=2 ok
+  - run: hook pretool --harness claude mcp__srv__op {}
+    exit: 0
+    expect: '{"decision":"allow"}'
+    observed: decision=allow rule=- exit=0 ok
+  - run: hook pretool --harness claude CronCreate {}
+    exit: 0
+    expect: '{"decision":"allow"}'
+    observed: decision=allow rule=- exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"rm -rf {{home}}/.ssh"}
+    exit: 0
+    expect: '{"decision":"allow","stdout_excludes":["G-DELETE-PROTECTED"]}'
+    observed: decision=allow rule=- exit=0 ok
+  - run: "{{polispec}} catalog activate tools"
+    exit: 1
+    expect: '{"exit":1,"stderr_includes":["not_tty"]}'
+    observed: exit=1 ok
+  - run: "{{polispec}} catalog list"
+    exit: 0
+    expect: '{"exit":0,"stdout_excludes":["  active"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} catalog activate tools --dry-run"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["dry run"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} catalog activate tools"
+    exit: 1
+    expect: '{"exit":1,"stdout_includes":["confirmation_failed"]}'
+    observed: exit=1 ok
+  - run: "{{polispec}} catalog activate tools"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["tools/declared","tools/unknown","tools/web-agent"]}'
+    observed: exit=0 ok
+  - run: hook pretool --harness claude CronCreate {}
+    exit: 0
+    expect: '{"decision":"ask","rule":"POLISPEC-TOOL-UNKNOWN"}'
+    observed: decision=ask rule=POLISPEC-TOOL-UNKNOWN exit=0 ok
+  - run: hook pretool --harness claude TodoWrite {}
+    exit: 0
+    expect: '{"decision":"allow"}'
+    observed: decision=allow rule=- exit=0 ok
+  - run: hook pretool --harness claude mcp__srv__op {}
+    exit: 0
+    expect: '{"decision":"allow"}'
+    observed: decision=allow rule=- exit=0 ok
+  - run: "{{polispec}} catalog activate delete-guard"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["delete-guard/protected","delete-guard/xargs"]}'
+    observed: exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"rm -rf {{home}}/.ssh"}
+    exit: 0
+    expect: '{"decision":"deny","rule":"G-DELETE-PROTECTED"}'
+    observed: decision=deny rule=G-DELETE-PROTECTED exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"echo x | xargs rm -rf"}
+    exit: 0
+    expect: '{"decision":"ask","rule":"G-DELETE-XARGS"}'
+    observed: decision=ask rule=G-DELETE-XARGS exit=0 ok
+  - run: "{{polispec}} catalog deactivate delete-guard/xargs"
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"echo x | xargs rm -rf"}
+    exit: 0
+    expect: '{"decision":"allow"}'
+    observed: decision=allow rule=- exit=0 ok
+  - run: "{{polispec}} catalog activate mcp/declared"
+    exit: 1
+    expect: '{"exit":1,"stdout_includes":["not_provisioned"]}'
+    observed: exit=1 ok
+  - run: "{{polispec}} catalog provision mcp/declared --from {{files}}/bad.yml"
+    exit: 1
+    expect: '{"exit":1,"stdout_includes":["provision_invalid"]}'
+    observed: exit=1 ok
+  - run: "{{polispec}} catalog provision mcp/declared --from {{files}}/declared.yml"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["provisioned: mcp/declared"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} catalog activate mcp"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["mcp/undeclared","mcp/declared"]}'
+    observed: exit=0 ok
+  - run: hook pretool --harness claude mcp__desk__page {}
+    exit: 0
+    expect: '{"decision":"allow"}'
+    observed: decision=allow rule=- exit=0 ok
+  - run: hook pretool --harness claude mcp__desk__restore {}
+    exit: 0
+    expect: '{"decision":"ask","rule":"POLISPEC-MCP-UNDECLARED"}'
+    observed: decision=ask rule=POLISPEC-MCP-UNDECLARED exit=0 ok
+  - run: sh -c "\"$0\" doctor --json; exit 0" {{polispec}}
+    exit: 0
+    expect: '{"exit":0,"stdout_excludes":["catalog_none_active","catalog_state_invalid","catalog_provision_missing"]}'
+    observed: exit=0 ok
+  evidence:
+  - path: report.json
+    sha256: 38dc99d05ce5a3614cbe107db15b8c961263c04dea1c2a4a3b89a62e850529f3
+    bytes: 9116
+    kind: report
+  - path: smoke/scenarios/catalog-fixture.yml
+    sha256: 32fdba0fdc5e62e39502b1e2e43861767bcc9e60cad30c7f987f0b6046af7d3c
+    bytes: 2377
+    kind: scenario
+  - path: report.json
+    sha256: f4e55e980581f2ad6cec0b71a146da2ccbc2df4463c2311ab62599f2d2f8f827
+    bytes: 30351
+    kind: report
+  - path: smoke/scenarios/catalog.yml
+    sha256: f5860890b72ccc4c6ab03cb445d45b13437e0e109e9cc39d73b685e17d4bb8e3
+    bytes: 7559
+    kind: scenario
+  runner:
+    kind: suite
+    harness:
+    harness_version:
+    model:
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-38-generic
+    arch: x86_64
+    platform: x86_64-linux
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 4.0.6
+      platform: x86_64-linux
+    polispec:
+      version: 0.47.2
+      edition: standard
+      commit: 6ed3b7ffa7e56362ba0cee297c46534ef1979974
+      dirty: true
+      install: clone
+    rplugin: 1.19.0
+    enforce: enforce
+  target:
+    commit: 6ed3b7ffa7e56362ba0cee297c46534ef1979974
+    branch: main
+    dirty: true
+    project: polispec
+    env: dev
+    policy_digest: sha256:99bf4d45bfd810dd194a4a9985ca2229bf2a5c2ebf61b8cc3e55019ca8f6b3a9
+  prev: a37e8c7daeb39965af803525034f743b96534b5121854826e0d3215e924381be
+  digest: a938caf3e7d2143343b1332b82eaab34fcb69c4f9296be48c78e65833f965a4e
+- id: smk_c15e9477a901
+  recorded_at: '2026-10-26T13:36:30Z'
+  started_at: '2026-10-26T13:36:17Z'
+  finished_at: '2026-10-26T13:36:20Z'
+  proves:
+    spec: specs/app.yml
+    at: effect
+    spec_digest: 494e36ab18da51e47e7a5ca745448f5af3854ff5e041807175192a775080b7c9
+    at_digest: 1d71bd582caffac9a742bf7a7479fd8b009cdbaf2c3061e47ab3fa79aa851c5e
+  verdict: pass
+  summary: 'every judgment carries the epoch, a registered path writes a chained change
+    record whose epoch_after the next judgment carries, the first pretool call after
+    the change adds one notice line and the next adds none, session hooks leave session
+    records, and changes await exits 1 for a session with no call since and 0 after
+    one (suite: 13/13 steps passed)'
+  steps:
+  - run: hook session --harness claude
+    exit: 0
+    expect: '{"decision":"context"}'
+    observed: decision=context rule=- exit=0 ok
+  - run: hook session --harness claude
+    exit: 0
+    expect: '{"decision":"allow"}'
+    observed: decision=allow rule=- exit=0 ok
+  - run: sh -c "grep -q \"\\\"event\\\":\\\"SessionStart\\\"\" \"$1\" && grep -q \"\\\"project\\\":\\\"shop\\\"\"
+      \"$1\" && grep -q \"\\\"harness\\\":\\\"claude\\\"\" \"$1\" && grep -q \"\\\"project\\\":null\"
+      \"$1\" && grep -q \"\\\"epoch\\\":\\\"ep_\" \"$1\"" sh {{scratch}}/state/sessions.jsonl
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"ls"}
+    exit: 0
+    expect: '{"decision":"allow"}'
+    observed: decision=allow rule=- exit=0 ok
+  - run: sh -c "grep -q \"\\\"epoch\\\":\\\"ep_[0-9a-f]\\{16\\}\\\"\" \"$1\"" sh {{scratch}}/state/judgments.jsonl
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: mkdir -p {{files}}/tools
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: "{{polispec}} register {{files}}/tools --id tools"
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: "{{polispec}} changes verify"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["chain ok"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} changes list"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["register id=tools","next call (host)"]}'
+    observed: exit=0 ok
+  - run: sh -c "id=$(\"$1\" changes list | awk \"/ register /{print \\$2}\" | tail
+      -n 1); out=$(\"$1\" changes await \"$id\" --timeout 1); code=$?; printf \"%s\\n\"
+      \"$out\"; test \"$code\" -eq 1 && printf \"%s\" \"$out\" | grep -q \"pending
+      smoke\"" sh {{polispec}}
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"ls"}
+    exit: 0
+    expect: '{"decision":"context","stdout_includes":["polispec: register tools landed"]}'
+    observed: decision=context rule=- exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"ls"}
+    exit: 0
+    expect: '{"decision":"allow","stdout_excludes":["landed"]}'
+    observed: decision=allow rule=- exit=0 ok
+  - run: sh -c "id=$(\"$1\" changes list | awk \"/ register /{print \\$2}\" | tail
+      -n 1); \"$1\" changes await \"$id\" --timeout 5" sh {{polispec}}
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  evidence:
+  - path: report.json
+    sha256: 3d32dc8c3e453e5e5697405bd6c8ce01d505a5d81466e460c069d38fb643f455
+    bytes: 14517
+    kind: report
+  - path: smoke/scenarios/effect.yml
+    sha256: c395f8444f73c8bc6b803046014f3965b823d04b98757a606fa75198a171167d
+    bytes: 3580
+    kind: scenario
+  runner:
+    kind: suite
+    harness:
+    harness_version:
+    model:
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-38-generic
+    arch: x86_64
+    platform: x86_64-linux
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 4.0.6
+      platform: x86_64-linux
+    polispec:
+      version: 0.47.2
+      edition: standard
+      commit: 6ed3b7ffa7e56362ba0cee297c46534ef1979974
+      dirty: true
+      install: clone
+    rplugin: 1.19.0
+    enforce: enforce
+  target:
+    commit: 6ed3b7ffa7e56362ba0cee297c46534ef1979974
+    branch: main
+    dirty: true
+    project: polispec
+    env: dev
+    policy_digest: sha256:99bf4d45bfd810dd194a4a9985ca2229bf2a5c2ebf61b8cc3e55019ca8f6b3a9
+  prev: a938caf3e7d2143343b1332b82eaab34fcb69c4f9296be48c78e65833f965a4e
+  digest: bbe09a61d42f3d83504c9b7d5d37de5b10c4cde44761cc8ff3dac4327b7e6ccf
+- id: smk_8bd20b499b9c
+  recorded_at: '2026-10-26T13:36:31Z'
+  started_at: '2026-10-26T13:36:23Z'
+  finished_at: '2026-10-26T13:36:26Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/validate
+    spec_digest: 494e36ab18da51e47e7a5ca745448f5af3854ff5e041807175192a775080b7c9
+    at_digest: 35aacb005f47d2f7dc0c6e141f1b84c8c45d7362ca2298184e89d5fda901928c
+  verdict: pass
+  summary: 'every shipped example validates with its own kind, a corrupted copy fails
+    with the pointer, and auto detection agrees (suite: 13/13 steps passed)'
+  steps:
+  - run: "{{polispec}} validate ledger {{tree}}/examples/ledger.example.yml"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["ok (polispec.ledger/v1)"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} validate policy {{tree}}/examples/policy.shop.yml"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["ok (polispec.policy/v1 + environments.yml)"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} validate environments {{tree}}/examples/environments.shop.yml"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["ok (polispec.environments/v1)"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} validate roster {{tree}}/examples/roster.shop.yml"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["ok (polispec.roster/v1)"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} validate control {{tree}}/examples/controls.minimal.yml"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["ok (polispec.control/v1)"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} validate control {{tree}}/examples/controls.scheduled.yml"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["ok (polispec.control/v1)"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} validate module {{tree}}/examples/clinic/modules/soak.yml"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["ok (polispec.module/v1)"]}'
+    observed: exit=0 ok
+  - run: sh -c "for f in \"$1\"/examples/*.yml \"$1\"/examples/clinic/*.yml \"$1\"/examples/clinic/modules/*.yml;
+      do \"$2\" validate auto \"$f\" || exit 1; done" sh {{tree}} {{polispec}}
+    exit: 0
+    expect: '{"exit":0,"stdout_excludes":["invalid"]}'
+    observed: exit=0 ok
+  - run: 'sh -c "sed \"s/verdict: allow/verdict: maybe/\" \"$1/examples/ledger.example.yml\"
+      > \"$2/bad-ledger.yml\"" sh {{tree}} {{files}}'
+    exit: 0
+    expect: '{"exit":0,"files_exist":["{{files}}/bad-ledger.yml"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} validate ledger {{files}}/bad-ledger.yml"
+    exit: 1
+    expect: '{"exit":1,"stdout_includes":["invalid (polispec.ledger/v1)","/defaults/rules/4/verdict","must
+      be one of allow, warn, deny"]}'
+    observed: exit=1 ok
+  - run: "{{polispec}} validate auto {{files}}/bad-ledger.yml --json"
+    exit: 1
+    expect: '{"exit":1,"json":{"ok":false,"schema":"polispec.ledger/v1"}}'
+    observed: exit=1 ok
+  - run: "{{polispec}} validate roster {{tree}}/examples/ledger.example.yml"
+    exit: 1
+    expect: '{"exit":1,"stdout_includes":["invalid (polispec.roster/v1)"]}'
+    observed: exit=1 ok
+  - run: "{{polispec}} validate nonsense {{tree}}/examples/ledger.example.yml"
+    exit: 2
+    expect: '{"exit":[1,2],"stderr_includes":["usage: polispec validate"]}'
+    observed: exit=2 ok
+  evidence:
+  - path: report.json
+    sha256: bea9604f62a2f58b956710876899bd929243f2c2e11f3546722c461c6ad723e2
+    bytes: 15662
+    kind: report
+  - path: smoke/scenarios/validate.yml
+    sha256: 414238ded383af7ae449b5c2f30bd915d6e76c50343e1d766ae7f7cb910f8835
+    bytes: 3169
+    kind: scenario
+  runner:
+    kind: suite
+    harness:
+    harness_version:
+    model:
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-38-generic
+    arch: x86_64
+    platform: x86_64-linux
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 4.0.6
+      platform: x86_64-linux
+    polispec:
+      version: 0.47.2
+      edition: standard
+      commit: 6ed3b7ffa7e56362ba0cee297c46534ef1979974
+      dirty: true
+      install: clone
+    rplugin: 1.19.0
+    enforce: enforce
+  target:
+    commit: 6ed3b7ffa7e56362ba0cee297c46534ef1979974
+    branch: main
+    dirty: true
+    project: polispec
+    env: dev
+    policy_digest: sha256:99bf4d45bfd810dd194a4a9985ca2229bf2a5c2ebf61b8cc3e55019ca8f6b3a9
+  prev: bbe09a61d42f3d83504c9b7d5d37de5b10c4cde44761cc8ff3dac4327b7e6ccf
+  digest: 8f87c73d78e20e1d3ef7521af4be364e121682de7ca51040d4a0629d62d7caf0
