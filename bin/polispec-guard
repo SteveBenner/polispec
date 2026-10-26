@@ -216,7 +216,9 @@ judge_attempt() {
   return 1
 }
 if [ "${POLISPEC_JUDGE:-on}" != off ]; then
-  bindir="$(cd "$(dirname "$bin")" 2>/dev/null && pwd -P)"
+  resolved="$(readlink -f -- "$bin" 2>/dev/null)" || resolved=""
+  [ -n "$resolved" ] || resolved="$bin"
+  bindir="$(cd "$(dirname "$resolved")" 2>/dev/null && pwd -P)"
   saved_lc="${LC_ALL-}"
   saved_lc_set="${LC_ALL+x}"
   LC_ALL=C

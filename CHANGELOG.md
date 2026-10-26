@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.3] - 2026-10-26
+
+### Fixed
+- **A re-pin now reaches the resident judge, and launchers that find one release through different links share it.** The launcher told the judge its runtime as the directory of the `polispec` it found, without following a file symlink, so with rplugin's `~/.local/bin/polispec` link the runtime was always `~/.local/bin`. After the re-pin to 0.47.2 the 0.47.1 judge kept answering every call with 0.47.1 code (`polispec judge status` reported 0.47.1 on the pinned 0.47.2) until it was stopped by hand; it would otherwise have run until 30 idle minutes, which a busy host never reaches. On this host `/usr/local/bin/polispec` is a second link to the same release, and a session that found it first made the judge answer `stale` for everyone else: 49 `judge_stale` rows in `launcher.jsonl` on 2026-10-26, each followed by cold starts. `bin/polispec-guard` now resolves the binary with `readlink -f` (falling back to the path as found) before taking its directory, for the header and for `POLISPEC_JUDGE_RUNTIME`. Measured with real launchers against scratch state homes through rplugin's two-link layout: re-pinning 0.47.1 to 0.47.2 left the 0.47.1 judge serving; re-pinning into the candidate made it answer `stale`, exit and be replaced by a 0.47.3 judge, and so did a re-pin from one candidate copy to another; calls between re-pins stayed on the judge. Alternating two links into one release gave 7 `judge_stale` in 8 calls with the 0.47.2 launcher and 0 with the candidate, which served 7 of 8 from the judge. A judge started by an older launcher records the unresolved directory, so the first 0.47.3 call after this upgrade retires it.
+
 ## [0.47.2] - 2026-10-26
 
 ### Fixed
