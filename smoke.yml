@@ -198621,3 +198621,321 @@ entries:
     policy_digest: sha256:99bf4d45bfd810dd194a4a9985ca2229bf2a5c2ebf61b8cc3e55019ca8f6b3a9
   prev: 8f87c73d78e20e1d3ef7521af4be364e121682de7ca51040d4a0629d62d7caf0
   digest: c94c738869f8e90472a8d75bc450daf2131b3a922f634a68d686f7634e3b763d
+- id: smk_1783b2571d79
+  recorded_at: '2026-10-26T16:25:55Z'
+  started_at: '2026-10-26T16:25:41Z'
+  finished_at: '2026-10-26T16:25:43Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/author
+    spec_digest: db35d8328a799248b1e9ed2bb39f1fc09b640da65d6937e11307400af534eec8
+    at_digest: 2e2403d07394f8b65032cf6a26f43901c0b6a825a4ec579771b127700f907023
+  verdict: pass
+  summary: 'author draft drives a persistent stream-json claude session replayed by
+    a fake binary - a Read inside the project is allowed, a Bash is denied, the draft
+    is extracted and validated, the kill switch and the lock edition refuse before
+    any spawn, a fourth concurrent session is busy and the eleventh turn in a minute
+    is rate limited (suite: 10/10 steps passed)'
+  steps:
+  - run: chmod +x {{files}}/bin/claude
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: "{{polispec}} author draft module --intent x --for shop --json"
+    exit: 0
+    expect: '{"exit":0,"json":{"ok":true,"kind":"module","adapter":"harness-cli","findings":[]},"stdout_includes":["schema:
+      polispec.module/v1","NFP-FORCE","One deny rule keeps prod history intact."]}'
+    observed: exit=0 ok
+  - run: grep -c "event":"spawn" {{files}}/log.jsonl
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["1"]}'
+    observed: exit=0 ok
+  - run: grep -c "state":null,"ledger":null {{files}}/log.jsonl
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["1"]}'
+    observed: exit=0 ok
+  - run: grep -c req_read1.*"behavior":"allow" {{files}}/log.jsonl
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["1"]}'
+    observed: exit=0 ok
+  - run: grep -c "req_bash1.*\"behavior\":\"deny\".*drafts only" {{files}}/log.jsonl
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["1"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} author draft module --intent x"
+    exit: 2
+    expect: '{"exit":2,"stderr_includes":["kill_switch"],"files_absent":["{{files}}/off.jsonl"]}'
+    observed: exit=2 ok
+  - run: "{{polispec}} author draft module --intent x --json"
+    exit: 2
+    expect: '{"exit":2,"json":{"ok":false,"error":"edition_excluded"},"files_absent":["{{files}}/lock.jsonl"]}'
+    observed: exit=2 ok
+  - run: 'ruby -I{{tree}}/lib -e "require \"polispec\"\nrequire \"polispec/author\"\nport
+      = Polispec::Author.port\n3.times { port.draft(kind: \"module\", intent: \"x\",
+      context: {}) }\nbegin\n  port.draft(kind: \"module\", intent: \"x\", context:
+      {})\n  puts \"no busy\"\n  exit 1\nrescue Polispec::Author::Busy => e\n  puts
+      \"busy \#{e.reason}\"\nend\nport.close_all\n"'
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["busy busy"]}'
+    observed: exit=0 ok
+  - run: sh -c "i=0\nwhile [ $i -lt 6 ]; do\n  \"$0\" author draft module --intent
+      x >/dev/null || exit 9\n  i=$((i+1))\ndone\n\"$0\" author draft module --intent
+      x\n" {{polispec}}
+    exit: 2
+    expect: '{"exit":2,"stderr_includes":["rate_limited"]}'
+    observed: exit=2 ok
+  evidence:
+  - path: report.json
+    sha256: 75106e74a155753840cbc1d24090e762631a67a6ea8cecf03512e81d82f3721f
+    bytes: 10851
+    kind: report
+  - path: smoke/scenarios/author.yml
+    sha256: 524e839ba5f2249a58c62d843140502da73ea9a6d7911c150a3a3215a04fa363
+    bytes: 10312
+    kind: scenario
+  runner:
+    kind: suite
+    harness:
+    harness_version:
+    model:
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-38-generic
+    arch: x86_64
+    platform: x86_64-linux
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 4.0.6
+      platform: x86_64-linux
+    polispec:
+      version: 0.47.5
+      edition: standard
+      commit: 6c7de84ac87d1eed707b39b4748d6275f3d0a8a6
+      dirty: false
+      install: clone
+    rplugin: 1.19.0
+    enforce: enforce
+  target:
+    commit: 6c7de84ac87d1eed707b39b4748d6275f3d0a8a6
+    branch: main
+    dirty: false
+    project: polispec
+    env: dev
+    policy_digest: sha256:99bf4d45bfd810dd194a4a9985ca2229bf2a5c2ebf61b8cc3e55019ca8f6b3a9
+  prev: c94c738869f8e90472a8d75bc450daf2131b3a922f634a68d686f7634e3b763d
+  digest: 48ad93c6b2fe6db7a1a341754182adf8f909a09b0150bd2d7940dc947a44f826
+- id: smk_c5d885519dca
+  recorded_at: '2026-10-26T16:25:57Z'
+  started_at: '2026-10-26T16:25:46Z'
+  finished_at: '2026-10-26T16:25:48Z'
+  proves:
+    spec: specs/app.yml
+    at: effect
+    spec_digest: db35d8328a799248b1e9ed2bb39f1fc09b640da65d6937e11307400af534eec8
+    at_digest: 77d5d79b335fdd88c3087ce0e61cde9fddfb641531968b85abffbccec0c21ab8
+  verdict: pass
+  summary: 'every judgment carries the epoch, a registered path writes a chained change
+    record whose epoch_after the next judgment carries, the first pretool call after
+    the change adds one notice line and the next adds none, session hooks leave session
+    records, and changes await exits 1 for a session with no call since and 0 after
+    one (suite: 13/13 steps passed)'
+  steps:
+  - run: hook session --harness claude
+    exit: 0
+    expect: '{"decision":"context"}'
+    observed: decision=context rule=- exit=0 ok
+  - run: hook session --harness claude
+    exit: 0
+    expect: '{"decision":"allow"}'
+    observed: decision=allow rule=- exit=0 ok
+  - run: sh -c "grep -q \"\\\"event\\\":\\\"SessionStart\\\"\" \"$1\" && grep -q \"\\\"project\\\":\\\"shop\\\"\"
+      \"$1\" && grep -q \"\\\"harness\\\":\\\"claude\\\"\" \"$1\" && grep -q \"\\\"project\\\":null\"
+      \"$1\" && grep -q \"\\\"epoch\\\":\\\"ep_\" \"$1\"" sh {{scratch}}/state/sessions.jsonl
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"ls"}
+    exit: 0
+    expect: '{"decision":"allow"}'
+    observed: decision=allow rule=- exit=0 ok
+  - run: sh -c "grep -q \"\\\"epoch\\\":\\\"ep_[0-9a-f]\\{16\\}\\\"\" \"$1\"" sh {{scratch}}/state/judgments.jsonl
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: mkdir -p {{files}}/tools
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: "{{polispec}} register {{files}}/tools --id tools"
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: "{{polispec}} changes verify"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["chain ok"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} changes list"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["register id=tools","next call (host)"]}'
+    observed: exit=0 ok
+  - run: sh -c "id=$(\"$1\" changes list | awk \"/ register /{print \\$2}\" | tail
+      -n 1); out=$(\"$1\" changes await \"$id\" --timeout 1); code=$?; printf \"%s\\n\"
+      \"$out\"; test \"$code\" -eq 1 && printf \"%s\" \"$out\" | grep -q \"pending
+      smoke\"" sh {{polispec}}
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"ls"}
+    exit: 0
+    expect: '{"decision":"context","stdout_includes":["polispec: register tools landed"]}'
+    observed: decision=context rule=- exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"ls"}
+    exit: 0
+    expect: '{"decision":"allow","stdout_excludes":["landed"]}'
+    observed: decision=allow rule=- exit=0 ok
+  - run: sh -c "id=$(\"$1\" changes list | awk \"/ register /{print \\$2}\" | tail
+      -n 1); \"$1\" changes await \"$id\" --timeout 5" sh {{polispec}}
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  evidence:
+  - path: report.json
+    sha256: b5de73c9f24449fec29c7d370cd33253ee5e8cb19e8c87c7ffe3732c21c3bf12
+    bytes: 14552
+    kind: report
+  - path: smoke/scenarios/effect.yml
+    sha256: c395f8444f73c8bc6b803046014f3965b823d04b98757a606fa75198a171167d
+    bytes: 3580
+    kind: scenario
+  runner:
+    kind: suite
+    harness:
+    harness_version:
+    model:
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-38-generic
+    arch: x86_64
+    platform: x86_64-linux
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 4.0.6
+      platform: x86_64-linux
+    polispec:
+      version: 0.47.5
+      edition: standard
+      commit: 6c7de84ac87d1eed707b39b4748d6275f3d0a8a6
+      dirty: true
+      install: clone
+    rplugin: 1.19.0
+    enforce: enforce
+  target:
+    commit: 6c7de84ac87d1eed707b39b4748d6275f3d0a8a6
+    branch: main
+    dirty: false
+    project: polispec
+    env: dev
+    policy_digest: sha256:99bf4d45bfd810dd194a4a9985ca2229bf2a5c2ebf61b8cc3e55019ca8f6b3a9
+  prev: 48ad93c6b2fe6db7a1a341754182adf8f909a09b0150bd2d7940dc947a44f826
+  digest: c459d0d5dab62c8295923f0ec6034573be437ed8f70380dd797796d174c30ea3
+- id: smk_249b0330020f
+  recorded_at: '2026-10-26T16:25:58Z'
+  started_at: '2026-10-26T16:25:51Z'
+  finished_at: '2026-10-26T16:25:53Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/web
+    spec_digest: db35d8328a799248b1e9ed2bb39f1fc09b640da65d6937e11307400af534eec8
+    at_digest: d171dbfd590afbb91082a183d9c8fdedbd21b011c7dc61409c9511cc1900b8e7
+  verdict: pass
+  summary: 'polispec web starts on an ephemeral loopback port and prints a one-time
+    link; the code is exchanged once for a session, config and map are read, a tightening
+    plan is created and applied through POST /plans and /plans/:id/apply, a loosening
+    plan without confirm gets 422, a mutating call without the CSRF header or the
+    Origin is refused, the server is stopped by its pid and its port is free; an agent
+    line that posts to the web API warns with G-WEB-AGENT; a release without the web
+    command skips the drive (suite: 2/2 steps passed)'
+  steps:
+  - run: ruby {{files}}/web/drive.rb {{polispec}}
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["ok server announced a loopback port and
+      a one-time code","ok the code is exchanged for a session","ok the same code
+      is refused a second time","ok config reads the standard edition","ok map lists
+      the shop project","ok a tightening plan needs no typed id","ok the tightening
+      plan applies on one call","ok applying the same plan again is a conflict","ok
+      the apply hands the stable promotion to the operator as a command","ok the manager
+      edits main, which is ahead of the trust ref until the operator promotes","ok
+      a plan that loosens is classified against the trust ref and needs its id typed","ok
+      a loosening plan without confirm gets 422","ok a loosening plan with another
+      plan id gets 409","ok a mutating call without the CSRF header is refused","ok
+      a mutating call without an Origin is refused","ok the server is stopped","ok
+      the port is free","web smoke ok"],"stdout_excludes":["FAIL ","web smoke failed"]}'
+    observed: exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"curl -s -X POST http://127.0.0.1:7421/api/v1/plans/plan_000000000000000000000000/apply"}
+    exit: 0
+    expect: '{"decision":"ask","rule":"G-WEB-AGENT"}'
+    observed: decision=ask rule=G-WEB-AGENT exit=0 ok
+  evidence:
+  - path: report.json
+    sha256: a8b5e96a8019b446b88ef7c1c9192529f7ef9d47000cc529ede53710efd7383b
+    bytes: 6481
+    kind: report
+  - path: smoke/scenarios/web.yml
+    sha256: 9a75edf6b57e0369826cf6504498178a4beebd22c60cd0ab15e5d9819e7a97f1
+    bytes: 9195
+    kind: scenario
+  runner:
+    kind: suite
+    harness:
+    harness_version:
+    model:
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-38-generic
+    arch: x86_64
+    platform: x86_64-linux
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 4.0.6
+      platform: x86_64-linux
+    polispec:
+      version: 0.47.5
+      edition: standard
+      commit: 6c7de84ac87d1eed707b39b4748d6275f3d0a8a6
+      dirty: true
+      install: clone
+    rplugin: 1.19.0
+    enforce: enforce
+  target:
+    commit: 6c7de84ac87d1eed707b39b4748d6275f3d0a8a6
+    branch: main
+    dirty: false
+    project: polispec
+    env: dev
+    policy_digest: sha256:99bf4d45bfd810dd194a4a9985ca2229bf2a5c2ebf61b8cc3e55019ca8f6b3a9
+  prev: c459d0d5dab62c8295923f0ec6034573be437ed8f70380dd797796d174c30ea3
+  digest: ba90dc27d8352fa3c25f454873d153bf1085a19243b868b830f9b912b0c67599
