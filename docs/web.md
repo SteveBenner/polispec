@@ -38,7 +38,9 @@ open this link within 120 seconds, it works once:
 http://127.0.0.1:7421/#k=<one-time code>
 ```
 
-Only one server runs per state home. The server records itself in `<state home>/web/server.json` (`pid`, `port`, `bind`, `started_at`); a second start exits 1 with `already_running`, and a record whose process is gone is renamed aside. Ctrl-C or SIGTERM closes any open author sessions and shuts the server down; the exit also removes `server.json`.
+Only one server runs per state home. The server records itself in `<state home>/web/server.json` (`pid`, `port`, `bind`, `started_at`, and since 0.48.0 `version` and `root`); a second start exits 1 with `already_running`, and a record whose process is gone is renamed aside. Ctrl-C or SIGTERM closes any open author sessions and shuts the server down; the exit also removes `server.json`.
+
+The server loads its code and `web/public` once, from the release it started in. Since 0.48.0 it re-resolves the launcher it was started through every 30 seconds (its process name with every link resolved, else the release root) and compares the release root and `VERSION` it names with the ones it started in. When a re-pin changes them, it prints `the installed release changed from X to Y`, logs it, emits the `polispec.web` event `release_changed`, shuts down and exits 75, so a supervisor that restarts on failure (`polispec web unit` writes `Restart=on-failure`) starts the new release. `polispec doctor` reports `web_stale` (warn) while the recorded running server is older than the installed release or recorded no version.
 
 - `polispec web url` prints a fresh one-time link for the server that is already running. It signs the code with the same launch secret, so it needs no contact with the server process.
 - `polispec web token set` asks, on a terminal and without echo, for the delegate token that lets the web app relay `exceptions` requests (see [Exceptions through the delegate runner](#exceptions-through-the-delegate-runner)). It stores it at `<state home>/web/delegate.token` with mode 0600.
@@ -195,7 +197,7 @@ There is no database. Everything the web app shows is read from files polispec a
 | File | Holds |
 | --- | --- |
 | `launch.secret` | the secret that signs one-time codes, mode 0600 |
-| `server.json` | pid, port, bind and start time of the running server |
+| `server.json` | pid, port, bind, start time, release version and release root of the running server |
 | `server.log`, `server.log.1` | the access and error log, rotated at 4 MiB |
 | `delegate.token` | the delegate token stored by `polispec web token set`, mode 0600 |
 | `layout.json` | the positions of the map cards you dragged (JSON, at most 2000 entries) |
