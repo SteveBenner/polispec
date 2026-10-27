@@ -15,6 +15,7 @@ require_relative "../effect"
 require_relative "../sessions"
 require_relative "../notice"
 require_relative "../fastpath"
+require_relative "../shadow"
 require_relative "../classify/benign"
 require_relative "../classify/shapes"
 
@@ -259,6 +260,7 @@ module Polispec
       @input = input
       @diagnostic_read = diagnostic_input?(adapter, input)
       output = decide(adapter, input, started, options)
+      Shadow.handoff(harness: adapter.name, raw: raw, entry: @judgment, verdict: @judged && @judged["verdict"])
       [output, adapter.exit_status.to_i]
     end
 
@@ -267,7 +269,7 @@ module Polispec
       @rule_lifts = []
       output = judge(adapter, input, options)
       output = noticed(adapter, input, output)
-      record_judgment(adapter, input, started, output)
+      @judgment = record_judgment(adapter, input, started, output)
       output
     end
 

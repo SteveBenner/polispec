@@ -26,6 +26,8 @@ Read-only means no file, ledger, shelf or state write. `--json` is accepted wher
 | `classify < hook.json` | The actions a payload classifies as | agent | reads |
 | `digest [--since 24h]` | Warn and deny counts by rule | agent | reads |
 | `judgments list\|show\|verify` | The chained record of every judged call | agent | reads |
+| `replay --runtime TREE [--days N] [--json]` | Replay the recorded judgment corpus through a candidate tree and list every verdict that changes; exit 1 when a change is not named in the candidate's CHANGELOG section | agent | reads |
+| `shadow status\|report [--json]` | Where a candidate runtime running in shadow disagrees with the live guard | agent | reads |
 | `changes list\|show\|verify\|await` | Effect records of rulebook changes | agent | reads |
 | `sessions list` | Recent sessions and the policy each started under | agent | reads |
 | `editions [--check]` | What the standard and lock editions allow | agent | reads |
@@ -56,7 +58,8 @@ Plan targets: a package (`environment-control` and others), `project:ID`, `globa
 
 | Verb | Use | Authority | Reads or writes |
 | --- | --- | --- | --- |
-| `pin [--ref TAG]` | Install a read-only release and swap `current` | agent + yes | writes the data home |
+| `pin [--ref TAG] [--dry-run]` | Install a read-only release and swap `current`, after replaying the judgment corpus through it; refuses with `pin_unexplained_verdicts` | agent + yes | writes the data home |
+| `shadow start --runtime TREE`, `shadow stop` | Run a candidate runtime in shadow beside the live guard, then end it | agent + yes | writes `shadow.json` in the state home |
 | `install --harness H` | Wire hooks and skill links | agent + yes | writes harness settings, with backups |
 | `uninstall --harness H` | Remove marked hooks and links | agent + yes | writes |
 | `uninstall --all`, `restore` | Remove or restore every deployment | operator | writes, needs `uninstall polispec` or `restore polispec` |

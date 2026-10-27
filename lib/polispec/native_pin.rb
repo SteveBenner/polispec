@@ -91,7 +91,7 @@ module Polispec
       end
     end
 
-    def pin!(ref: nil, source: nil, dry_run: false)
+    def pin!(ref: nil, source: nil, dry_run: false, gate: nil)
       ref = (ref || default_ref).to_s
       raise Polispec::Error, "invalid ref #{ref.inspect}" unless REF_PATTERN.match?(ref)
 
@@ -154,6 +154,7 @@ module Polispec
         Trace.step("archive release", commit: commit[0, 12], into: Trace.path(release)) { extract!(path, commit, ref, given, release) } unless dry_run
       end
 
+      Trace.step("gate the pin") { gate.call(result) } if gate && !dry_run
       steps << "point #{current_link} at releases/#{commit}"
       Trace.step("swap current link", link: Trace.path(current_link), target: "releases/#{commit}") { swap_current(commit) } unless dry_run
 
