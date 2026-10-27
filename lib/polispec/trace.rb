@@ -208,7 +208,10 @@ module Polispec
     end
 
     def compact(fields)
-      fields.reject { |_, value| value.nil? }
+      fields.each_with_object({}) do |(key, value), memo|
+        value = value.call if value.respond_to?(:call)
+        memo[key] = value unless value.nil?
+      end
     end
 
     def one_line(text)

@@ -366,30 +366,36 @@ module Polispec
       stdout = stderr = nil
       status = nil
       timed_out = false
-      Open3.popen3(*words, chdir: root, pgroup: true) do |stdin, out, err, thread|
-        writer = Thread.new do
-          begin
-            stdin.write(input)
-          rescue SystemCallError, IOError
-            nil
-          ensure
+      Trace.step("contract runner", command: -> { Shellwords.join(words) }, probes: requests.length, timeout_s: RUNNER_TIMEOUT, root: -> { Trace.path(root) }) do
+        Trace.command(words, chdir: root)
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        Open3.popen3(*words, chdir: root, pgroup: true) do |stdin, out, err, thread|
+          writer = Thread.new do
             begin
-              stdin.close
-            rescue IOError
+              stdin.write(input)
+            rescue SystemCallError, IOError
               nil
+            ensure
+              begin
+                stdin.close
+              rescue IOError
+                nil
+              end
             end
           end
+          readers = [Thread.new { out.read }, Thread.new { err.read }]
+          if thread.join(RUNNER_TIMEOUT)
+            status = thread.value
+            Trace.exit_line(status.exitstatus || -1, (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000)
+          else
+            timed_out = true
+            Trace.info("runner timed out, killing its process group", pid: thread.pid)
+            Process.kill("KILL", -thread.pid) rescue nil
+            thread.join
+          end
+          writer.kill
+          stdout, stderr = readers.map { |reader| reader.join(1) && reader.value }
         end
-        readers = [Thread.new { out.read }, Thread.new { err.read }]
-        if thread.join(RUNNER_TIMEOUT)
-          status = thread.value
-        else
-          timed_out = true
-          Process.kill("KILL", -thread.pid) rescue nil
-          thread.join
-        end
-        writer.kill
-        stdout, stderr = readers.map { |reader| reader.join(1) && reader.value }
       end
       return requests.to_h { |request| [request, "the runner timed out after #{RUNNER_TIMEOUT} seconds"] } if timed_out
       return requests.to_h { |request| [request, "the runner exited #{status.exitstatus}: #{stderr.to_s.strip[0, 200]}"] } unless status.success?

@@ -79,7 +79,7 @@ module Polispec
     end
 
     def toplevel
-      out, status = Open3.capture2(GIT_ENV, "git", "rev-parse", "--show-toplevel", err: File::NULL)
+      out, status = Trace.capture2(GIT_ENV, "git", "rev-parse", "--show-toplevel", err: File::NULL, trace: :quiet)
       status.success? ? out.strip : nil
     rescue SystemCallError
       nil
@@ -183,7 +183,7 @@ module Polispec
     end
 
     def ancestor?(cwd, older, newer)
-      _out, _err, status = Open3.capture3(GIT_ENV, "git", "-C", cwd, "merge-base", "--is-ancestor", older, newer)
+      _out, _err, status = Trace.capture3(GIT_ENV, "git", "-C", cwd, "merge-base", "--is-ancestor", older, newer, trace: :quiet)
       status.success?
     rescue SystemCallError
       false

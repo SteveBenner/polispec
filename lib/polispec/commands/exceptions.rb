@@ -203,7 +203,7 @@ module Polispec
       raise Operator::Failure.new("global_unconfigured", "no global layer is configured (polispec.global.repo)") unless source
       raise Operator::Failure.new("global_not_repo", "exceptions are recorded in a git shelf; the global layer is a plain directory") unless source.kind == :repo
 
-      Trace.info("global source", kind: source.kind, ref: source.ref, repo: Trace.path(source.repo), path: source.path)
+      Trace.info("global source", kind: source.kind, ref: source.ref, repo: -> { Trace.path(source.repo) }, path: source.path)
 
       git = Operator::Git.new(source.repo)
       branch = git.current_branch
@@ -222,7 +222,7 @@ module Polispec
       Exceptions.reset!
       loaded = Trace.step("load exceptions") do
         result = Exceptions.load
-        Trace.info("exceptions loaded", path: Trace.path(Exceptions.path), entries: result.entries.length, problems: result.problems.length)
+        Trace.info("exceptions loaded", path: -> { Trace.path(Exceptions.path) }, entries: -> { result.entries.length }, problems: -> { result.problems.length })
         result
       end
       raise Operator::Failure.new("exceptions_invalid", "#{Exceptions::FILE} is invalid: #{loaded.problems.first}") unless loaded.problems.empty?
@@ -272,22 +272,31 @@ module Polispec
       target = File.join(source.repo, source.path, Exceptions::FILE)
       original = File.file?(target) ? File.binread(target) : nil
       plan_id = nil
-      Trace.step("write exceptions.yml", path: Trace.path(target), bytes: text.bytesize) do
+      Trace.step("write exceptions.yml", path: -> { Trace.path(target) }, bytes: text.bytesize) do
         Lint.guard_write!(text, path: target, kind: "exceptions")
         begin
           write_atomic(target, text)
-          plan_id = apply_global
         rescue StandardError, ScriptError => e
-          Trace.step("restore previous bytes", path: Trace.path(target), had_original: original ? "yes" : "no") { restore(source, target, original) }
-          warn "polispec: exceptions_failed: #{e.message}" unless e.is_a?(Operator::Failure)
+          roll_back(source, target, original, e)
           raise
         end
+      end
+      begin
+        plan_id = apply_global
+      rescue StandardError, ScriptError => e
+        roll_back(source, target, original, e)
+        raise
       end
       Trace.step("forget proposals", ids: proposals) { Exceptions.forget(proposals) } unless proposals.empty?
       puts "exceptions: #{verb} #{ids.join(' ')} (plan #{plan_id}, committed in #{source.repo})"
       0
     ensure
       Exceptions.reset!
+    end
+
+    def roll_back(source, target, original, error)
+      Trace.step("restore previous bytes", path: -> { Trace.path(target) }, had_original: original ? "yes" : "no") { restore(source, target, original) }
+      warn "polispec: exceptions_failed: #{error.message}" unless error.is_a?(Operator::Failure)
     end
 
     def apply_global
@@ -298,13 +307,11 @@ module Polispec
       end
       captured = StringIO.new
       previous = $stdout
-      status = Trace.step("apply global", plan_id: plan.plan_id) do
-        begin
-          $stdout = captured
-          ApplyCommand.new.run(["global", "--confirm", plan.plan_id])
-        ensure
-          $stdout = previous
-        end
+      status = begin
+        $stdout = captured
+        ApplyCommand.new.run(["global", "--confirm", plan.plan_id])
+      ensure
+        $stdout = previous
       end
       raise Operator::Failure.new("apply_failed", "apply global did not complete (exit #{status})") unless status.zero?
 
