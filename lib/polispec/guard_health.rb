@@ -11,6 +11,7 @@ module Polispec
     LAUNCHER = "launcher"
     WINDOW_BYTES = 262_144
     FILES = 2
+    ERROR_CHARS = 160
 
     module_function
 
@@ -25,7 +26,9 @@ module Polispec
 
     def line
       current = status
-      current ? "guard failing since #{current['since']}: #{current['error']}" : nil
+      current ? "guard failing since #{current['since']}: #{current['error'].to_s[0, ERROR_CHARS]}" : nil
+    rescue SystemCallError, Polispec::Error, TypeError, ArgumentError, NoMethodError
+      nil
     end
 
     def judged
