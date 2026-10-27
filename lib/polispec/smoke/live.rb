@@ -294,7 +294,8 @@ module Polispec
         loop do
           attempts += 1
           Live.launched += 1
-          result = Exec.run(argv, env: env, chdir: cwd, timeout: timeout)
+          result = Polispec::Trace.step("live session #{File.basename(argv.first.to_s)}", attempt: attempts, timeout: timeout) { Exec.run(argv, env: env, chdir: cwd, timeout: timeout) }
+          trace_children(log) if Polispec::Trace.on?
           File.write(File.join(dir, "harness.stdout.jsonl"), result.stdout)
           File.write(File.join(dir, "harness.stderr.txt"), result.stderr)
           retryable = attempts == 1 && !result.timed_out && (result.error || result.exit != 0) && log_entries(log).empty? && Live.launched < cap
@@ -303,6 +304,15 @@ module Polispec
           sleep(rand(RETRY_WAIT))
         end
         [result, attempts]
+      end
+
+      def trace_children(log)
+        entries = log_entries(log)
+        Polispec::Trace.step("hook wrapper runs", count: entries.length, log: Polispec::Trace.path(log)) do
+          entries.each do |entry|
+            Polispec::Trace.info("hook wrapper child", source: entry["source"], event: entry["event"], tool: entry["tool"], exit: entry["exit"], argv: Array(entry["argv"]).first(3).join(" "))
+          end
+        end
       end
 
       def log_entries(log)
