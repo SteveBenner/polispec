@@ -48,12 +48,12 @@ module Polispec
     HOOK_BUDGET = 7.0
     AUTH_MATERIAL_LIMIT = 262_144
     FIXED_DENIALS = {
-      "claude" => ["{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[POLISPEC internal] guard unavailable; call denied.\"}}\n", 0],
-      "codex" => ["{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[POLISPEC internal] guard unavailable; call denied.\"}}\n", 0],
-      "hermes" => ["{\"action\":\"block\",\"message\":\"[POLISPEC internal] guard unavailable; call denied.\"}\n", 2],
-      "antigravity" => ["{\"decision\":\"deny\",\"reason\":\"[POLISPEC internal] guard unavailable; call denied.\"}\n", 0],
-      "pi" => ["{\"decision\":\"block\",\"reason\":\"[POLISPEC internal] guard unavailable; call denied.\"}\n", 0],
-      "deepseek" => ["{\"decision\":\"block\",\"reason\":\"[POLISPEC internal] guard unavailable; call denied.\"}\n", 0]
+      "claude" => ["{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[POLISPEC internal] guard unavailable; call denied. Run polispec doctor\"}}\n", 0],
+      "codex" => ["{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[POLISPEC internal] guard unavailable; call denied. Run polispec doctor\"}}\n", 0],
+      "hermes" => ["{\"action\":\"block\",\"message\":\"[POLISPEC internal] guard unavailable; call denied. Run polispec doctor\"}\n", 2],
+      "antigravity" => ["{\"decision\":\"deny\",\"reason\":\"[POLISPEC internal] guard unavailable; call denied. Run polispec doctor\"}\n", 0],
+      "pi" => ["{\"decision\":\"block\",\"reason\":\"[POLISPEC internal] guard unavailable; call denied. Run polispec doctor\"}\n", 0],
+      "deepseek" => ["{\"decision\":\"block\",\"reason\":\"[POLISPEC internal] guard unavailable; call denied. Run polispec doctor\"}\n", 0]
     }.freeze
     OVERSIZE_REASON = "hook input exceeds 8 MiB; call denied. Split the change into smaller calls."
     USAGE = "usage: polispec hook pretool|session --harness <claude|codex|hermes|pi|deepseek|antigravity>\n       polispec hook git <pre-commit|pre-push|reference-transaction|install|uninstall> [args...]"
@@ -391,7 +391,7 @@ module Polispec
     def hard_deny(harness, error)
       return usage unless @subcommand == "pretool" && HARNESSES.include?(harness)
       bytes, status = FIXED_DENIALS.fetch(harness)
-      bytes = bytes.sub("guard unavailable; call denied.", OVERSIZE_REASON) if error.is_a?(Polispec::InputTooLarge)
+      bytes = bytes.sub("guard unavailable; call denied. Run polispec doctor", OVERSIZE_REASON) if error.is_a?(Polispec::InputTooLarge)
       $stdout.write(bytes)
       record_failure(harness, error, bytes)
       status
@@ -896,7 +896,7 @@ module Polispec
       Events.emit("polispec.finding", project: nil, kind: "internal", detail: "#{error.class}: #{error.message.to_s[0, 200]}", policy_source: nil)
       return nil unless input && enforcing? && deny_on_error?(adapter, input)
 
-      adapter.render_deny("[POLISPEC internal] the guard failed while judging this call (#{error.class}) and fails closed for it. Run `polispec doctor`, or ask #{Engine::Settings.operator}.")
+      adapter.render_deny("[POLISPEC internal] the guard failed while judging this call (#{error.class}) and fails closed for it. Ask #{Engine::Settings.operator}, or run polispec doctor")
     rescue StandardError
       nil
     end
@@ -983,7 +983,7 @@ module Polispec
       end
 
       def to_s
-        required = [headline, branches, state_line, policy_line].compact
+        required = [headline, GuardHealth.line, branches, state_line, policy_line].compact
         optional = [role_line, roles_line] + instructions
         fit(required, optional.compact)
       end

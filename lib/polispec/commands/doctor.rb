@@ -43,6 +43,7 @@ module Polispec
       traced_check("check release", findings) { check_release(findings) }
       traced_check("check plane", findings) { check_plane(findings) }
       traced_check("check judgments", findings) { check_judgments(findings) }
+      traced_check("check guard health", findings) { check_guard_health(findings) }
       traced_check("check exceptions", findings) { check_exceptions(findings) }
       traced_check("check editions", findings) { check_editions(findings) }
       traced_check("check effect", findings) { check_effect(findings) }
@@ -460,6 +461,11 @@ module Polispec
       end
     rescue StandardError => error
       findings << finding(nil, "judgments_unreadable", "#{error.class}: #{error.message}")
+    end
+
+    def check_guard_health(findings)
+      current = GuardHealth.line
+      findings << finding(nil, "guard_failing", current) if current
     end
 
     def check_exceptions(findings)
