@@ -38,7 +38,7 @@ module Polispec
 
         outcome = row["outcome"].is_a?(Hash) ? row["outcome"] : {}
         internal = outcome["rule_id"] == Judgments::INTERNAL_RULE && outcome["verdict"] == "deny"
-        { at: stamp, ts: row["ts"], ok: !internal, error: outcome["error"] || "unrecorded error" }
+        { at: stamp, ts: row["ts"], ok: !internal && outcome["error"].nil?, error: outcome["error"] || "unrecorded error" }
       end
     end
 
