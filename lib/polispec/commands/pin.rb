@@ -2,8 +2,12 @@
 # SPDX-License-Identifier: MIT
 
 require "json"
+require "tmpdir"
+require "open3"
+require "fileutils"
 require_relative "../native_pin"
 require_relative "../changes"
+require_relative "../replay"
 
 module Polispec
   class PinCommand
@@ -19,17 +23,91 @@ module Polispec
 
       before = options[:dry_run] ? nil : Changes.epoch
       previous = options[:dry_run] ? nil : current_release
-      result = Trace.step("pin", ref: options[:ref], dry_run: options[:dry_run] ? true : nil) { NativePin.pin!(ref: options[:ref], source: options[:source], dry_run: options[:dry_run]) }
+      result = Trace.step("pin", ref: options[:ref], dry_run: options[:dry_run] ? true : nil) { NativePin.pin!(ref: options[:ref], source: options[:source], dry_run: options[:dry_run], gate: gate(options)) }
       record_change(result, before, previous) unless options[:dry_run]
+      preview = options[:dry_run] ? dry_replay(result, options) : nil
       if options[:json]
-        puts JSON.generate(result.reject { |key, _| %w[steps notes].include?(key) })
+        puts JSON.generate(result.reject { |key, _| %w[steps notes].include?(key) }.merge(preview ? { "replay" => preview[:report] } : {}))
       else
         report(result, options[:dry_run])
+        render_preview(preview) if preview
       end
-      0
+      preview && preview[:unexplained] ? 1 : 0
+    rescue Operator::Failure => e
+      e.report(json: options ? options[:json] : false)
+      1
     end
 
     private
+
+    def gate(options)
+      lambda do |result|
+        failure = nil
+        shown = nil
+        begin
+          outcome = Replay.run(runtime: result["release"])
+          next if outcome.unexplained.empty?
+
+          failure = Replay.failure(outcome)
+          shown = outcome
+        rescue Replay::Unavailable => e
+          failure = Operator::Failure.new("pin_replay_failed", "the candidate could not be replayed against the judgment corpus: #{e.message}")
+        end
+        override!(failure, shown, options)
+      end
+    end
+
+    def override!(failure, outcome, options)
+      raise failure unless Operator::Tty.terminal? && !options[:json]
+
+      Replay.render(outcome, out: $stderr) if outcome
+      warn failure.message
+      begin
+        Operator::Tty.confirm!(Replay::OVERRIDE_PHRASE)
+      rescue Operator::Tty::NotTty, Operator::Tty::PhraseMismatch
+        raise failure
+      end
+    end
+
+    def dry_replay(result, options)
+      tree = candidate_tree(result, options[:source])
+      return { report: { "skipped" => "no candidate tree to replay yet; run the pin to fetch it" }, text: "replay: skipped, no candidate tree to replay before the fetch", unexplained: false } unless tree
+
+      outcome = Replay.run(runtime: tree[:path])
+      { report: outcome.to_h, outcome: outcome, unexplained: !outcome.unexplained.empty? }
+    rescue Replay::Unavailable => e
+      { report: { "error" => e.message }, text: "replay: #{e.message}", unexplained: true }
+    ensure
+      FileUtils.remove_entry(tree[:temp]) if tree && tree[:temp] && File.directory?(tree[:temp])
+    end
+
+    def candidate_tree(result, given)
+      release = result["release"]
+      return { path: release } if release && File.directory?(release) && NativePin.release_valid?(release)
+
+      commit = result["commit"]
+      return nil unless commit
+
+      source = (given || NativePin.default_source).to_s
+      path = NativePin.url?(source) ? NativePin.source_cache : File.expand_path(source)
+      return nil unless File.directory?(path)
+
+      temp = Dir.mktmpdir("polispec-pin-replay-")
+      statuses = Open3.pipeline(["git", "-C", path, "archive", "--format=tar", commit], ["tar", "-x", "-C", temp])
+      return { path: temp, temp: temp } if statuses.all?(&:success?)
+
+      FileUtils.remove_entry(temp)
+      nil
+    end
+
+    def render_preview(preview)
+      if preview[:outcome]
+        Replay.render(preview[:outcome])
+        puts "the pin would be refused: pin_unexplained_verdicts" if preview[:unexplained]
+      else
+        puts preview[:text]
+      end
+    end
 
     def current_release
       File.realpath(NativePin.current_link)
