@@ -9,6 +9,7 @@ require_relative "fixture"
 require_relative "step"
 require_relative "parity"
 require_relative "host_copy"
+require_relative "prune"
 
 module Polispec
   module Smoke
@@ -30,6 +31,7 @@ module Polispec
       def call
         against = options.against ? validated_against(options.against) : nil
         out = prepare_out
+        pruned = @pruned || []
         Polispec::Trace.info("smoke run", tree: Polispec::Trace.path(tree), against: against && Polispec::Trace.path(against), out: Polispec::Trace.path(out), units: options.units, record: options.record, host_copy: options.host_copy, live: options.live) if Polispec::Trace.on?
         results = []
         host = nil
@@ -49,10 +51,11 @@ module Polispec
           Polispec::Trace.info("diffs", count: diffs.length)
         end
         ok = finish_ok?(results, diffs)
-        payload = { "schema" => SCHEMA, "tree" => tree, "against" => against, "out" => out, "scenarios" => results.map { |item| public_result(item) },
+        payload = { "schema" => SCHEMA, "tree" => tree, "against" => against, "out" => out, "out_bytes" => Prune.size(out), "pruned" => pruned, "scenarios" => results.map { |item| public_result(item) },
                     "recorded" => recorded || [], "diffs" => diffs, "ok" => ok }
         payload["host_copy"] = host if host
         options.json ? puts(JSON.generate(payload)) : render(payload, results, host)
+        render_out(payload) unless options.json
         ok ? 0 : 1
       end
 
@@ -74,7 +77,8 @@ module Polispec
       end
 
       def prepare_out
-        out = File.expand_path(options.out || File.join(Dir.tmpdir, "polispec-smoke", "#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}-#{SecureRandom.hex(3)}"))
+        out = File.expand_path(options.out || File.join(Prune.root, "#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}-#{SecureRandom.hex(3)}"))
+        @pruned = options.out ? [] : Prune.run(current: out)
         FileUtils.mkdir_p(out)
         out
       end
@@ -359,6 +363,11 @@ module Polispec
         puts "suite: #{counts.fetch('pass', 0)}/#{results.length} scenarios passed, #{counts.fetch('fail', 0) + counts.fetch('error', 0)} failed, #{counts.fetch('blocked', 0)} blocked" \
              "#{counts.key?('inconclusive') ? ", #{counts['inconclusive']} inconclusive" : ''}" \
              "#{payload['against'] ? ", #{payload['diffs'].length} diff(s)" : ''}#{payload['recorded'].empty? ? '' : ", #{payload['recorded'].length} recorded"}"
+      end
+
+      def render_out(payload)
+        puts "pruned #{payload['pruned'].length} old run(s) under #{Prune.root}" unless payload["pruned"].empty?
+        puts "run directory: #{payload['out']} (#{Prune.human(payload['out_bytes'])})"
       end
 
       def render_host(host)
