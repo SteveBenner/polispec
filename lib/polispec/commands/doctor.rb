@@ -10,6 +10,7 @@ require_relative "../editions"
 require_relative "../personal_defaults"
 require_relative "../lint"
 require_relative "../catalog"
+require_relative "../web"
 
 module Polispec
   class DoctorCommand
@@ -53,6 +54,7 @@ module Polispec
       traced_check("check contracts", findings) { check_contracts(ledger, findings) } if ledger
       traced_check("check personal defaults", findings) { check_personal_defaults(ledger, findings) }
       traced_check("check catalog", findings) { check_catalog(findings) }
+      traced_check("check web", findings) { check_web(findings) }
       blocking = findings.reject { |item| NONBLOCKING.include?(item["severity"]) }
       json ? puts(JSON.generate("ok" => blocking.empty?, "runtime" => runtime_info, "findings" => findings)) : print_text(findings)
       blocking.empty? ? 0 : 1
@@ -512,6 +514,11 @@ module Polispec
       end
     rescue StandardError => e
       findings << finding(nil, "catalog_state_invalid", "#{e.class}: #{e.message}")
+    end
+
+    def check_web(findings)
+      detail = Web::Server.stale
+      findings << finding(nil, "web_stale", "#{detail}; restart polispec web so it serves the installed release").merge("severity" => "warn") if detail
     end
 
     def check_personal_defaults(ledger, findings)

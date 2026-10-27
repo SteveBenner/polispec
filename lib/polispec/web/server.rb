@@ -10,6 +10,8 @@ module Polispec
     class Server
       LOG_LIMIT = 4 * 1024 * 1024
       ACCESS_FORMAT = "%t %m %U %s %{X-Request-Id}o".freeze
+      WATCH_INTERVAL = 30
+      RELEASE_EXIT = 75
 
       class Refused < Polispec::Error
         attr_reader :code
@@ -82,7 +84,26 @@ module Polispec
         info && alive?(info["pid"]) ? info : nil
       end
 
+      def self.stale(info = running)
+        return nil unless info
+
+        recorded = info["version"].to_s
+        installed = Polispec.version
+        return "the running server (pid #{info['pid']}) recorded no release; the installed release is #{installed}" if recorded.empty?
+
+        older = Gem::Version.new(recorded) < Gem::Version.new(installed)
+        older ? "the running server (pid #{info['pid']}) serves #{recorded}; the installed release is #{installed}" : nil
+      rescue ArgumentError
+        "the running server (pid #{info['pid']}) recorded an unreadable release #{recorded.inspect}; the installed release is #{installed}"
+      end
+
+      attr_reader :exit_status
+
       def initialize(bind:, port:, read_only:, exposed:)
+        @exit_status = 0
+        @launcher = launcher_path
+        @root = real_root(Polispec::ROOT)
+        @version = Polispec.version
         @bind = bind
         @port = port
         @read_only = read_only
@@ -126,6 +147,7 @@ module Polispec
           Web.context.port = port
           write_info(port)
           install_traps
+          start_watch
           Events.emit("polispec.web", event: "start", bind: @bind, port: port, read_only: @read_only)
           on_ready&.call(Info.new(@bind, port, Process.pid, auth, @public_origin))
         end
@@ -144,6 +166,60 @@ module Polispec
         def url(code = auth.mint)
           "#{public_origin || "http://#{url_host}:#{port}"}/#k=#{code}"
         end
+      end
+
+      def launcher_path
+        File.expand_path($PROGRAM_NAME)
+      rescue ArgumentError
+        nil
+      end
+
+      def real_root(path)
+        File.realpath(path)
+      rescue SystemCallError
+        path
+      end
+
+      def release_version(root)
+        File.read(File.join(root, "VERSION")).strip
+      end
+
+      def installed_release
+        root = Polispec::ROOT
+        if @launcher && File.exist?(@launcher)
+          candidate = File.dirname(File.dirname(File.realpath(@launcher)))
+          root = candidate if File.file?(File.join(candidate, "VERSION"))
+        end
+        root = File.realpath(root)
+        [root, release_version(root)]
+      rescue SystemCallError
+        nil
+      end
+
+      def release_label(root, version)
+        "#{version} at #{root}"
+      end
+
+      def start_watch
+        @watcher = Thread.new do
+          loop do
+            sleep WATCH_INTERVAL
+            root, version = installed_release
+            next if root.nil? || (root == @root && version == @version)
+
+            release_changed(release_label(@root, @version), release_label(root, version))
+            break
+          end
+        end
+      end
+
+      def release_changed(from, to)
+        message = "the installed release changed from #{from} to #{to}; exiting so the supervisor restarts it"
+        warn "polispec web: #{message}"
+        @log << "#{Time.now.utc.iso8601} release changed #{from} -> #{to}\n"
+        Events.emit("polispec.web", event: "release_changed", bind: @bind, port: Web.context.port, from: from, to: to)
+        @exit_status = RELEASE_EXIT
+        stop
       end
 
       def install_traps
@@ -183,7 +259,7 @@ module Polispec
       def write_info(port)
         path = self.class.info_path
         temp = "#{path}.#{Process.pid}.tmp"
-        record = { "pid" => Process.pid, "port" => port, "bind" => @bind, "public_origin" => @public_origin, "started_at" => Time.now.utc.iso8601 }
+        record = { "pid" => Process.pid, "port" => port, "bind" => @bind, "public_origin" => @public_origin, "started_at" => Time.now.utc.iso8601, "version" => @version, "root" => @root }
         File.open(temp, File::WRONLY | File::CREAT | File::TRUNC, 0o600) { |file| file.write(JSON.generate(record)) }
         File.rename(temp, path)
       end

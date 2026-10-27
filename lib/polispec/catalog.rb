@@ -66,11 +66,16 @@ module Polispec
     def active?(spec_name, subspec_id)
       sub = subspec(spec_name, subspec_id)
       return false unless sub
+      return true if forced?(sub)
 
       current = state
       return sub.provision.nil? if current.key?("invalid")
 
       current["active"].any? { |entry| entry["spec"] == sub.spec && entry["subspec"] == sub.id }
+    end
+
+    def forced?(sub)
+      !sub.gate.nil? && !Editions.allowed?("catalog.gate_optional")
     end
 
     def gate?(name)
@@ -132,6 +137,9 @@ module Polispec
 
     def deactivate!(spec_name, subspec_ids)
       subs = resolve(spec_name, subspec_ids)
+      held = subs.select { |sub| forced?(sub) }
+      raise Polispec::Error, "gate_forced: #{held.map { |sub| "#{sub.spec}/#{sub.id}" }.join(', ')} cannot be deactivated under the lock edition" unless held.empty?
+
       mutate do |current|
         current["active"].reject! { |entry| subs.any? { |sub| entry["spec"] == sub.spec && entry["subspec"] == sub.id } }
         current
