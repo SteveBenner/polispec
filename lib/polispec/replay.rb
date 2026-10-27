@@ -20,7 +20,7 @@ module Polispec
 
     class Unavailable < Polispec::Error; end
 
-    Result = Struct.new(:runtime, :version, :days, :rows, :compared, :skipped_policy, :skipped_unjudged, :changes, :explained_by, keyword_init: true) do
+    Result = Struct.new(:runtime, :baseline, :version, :days, :rows, :compared, :skipped_policy, :skipped_unjudged, :changes, :explained_by, keyword_init: true) do
       def unexplained
         changes.reject { |change| change["explained"] }
       end
@@ -31,7 +31,7 @@ module Polispec
 
       def to_h
         {
-          "runtime" => runtime, "version" => version, "days" => days, "rows" => rows, "compared" => compared,
+          "runtime" => runtime, "baseline" => baseline, "version" => version, "days" => days, "rows" => rows, "compared" => compared,
           "skipped_policy_moved" => skipped_policy, "skipped_unjudged" => skipped_unjudged,
           "changed" => changes.sum { |change| change["count"] }, "unexplained" => unexplained.sum { |change| change["count"] },
           "changelog_section" => explained_by, "changes" => changes
@@ -41,13 +41,40 @@ module Polispec
 
     module_function
 
-    def run(runtime:, days: DEFAULT_DAYS, now: Time.now)
+    def run(runtime:, days: DEFAULT_DAYS, baseline: nil, now: Time.now)
       tree = File.expand_path(runtime.to_s)
-      raise Unavailable, "#{runtime} is not a polispec tree (no bin/polispec)" unless File.file?(File.join(tree, "bin", "polispec")) && File.file?(File.join(tree, "VERSION"))
+      raise Unavailable, "#{runtime} is not a polispec tree (no bin/polispec)" unless tree?(tree)
+
+      base = File.expand_path((baseline || installed_root || ROOT).to_s)
+      raise Unavailable, "#{baseline} is not a polispec tree (no bin/polispec)" unless tree?(base)
 
       items, rows = collect(days, now)
       verdicts = items.empty? ? { "version" => version_of(tree), "projects" => {} } : evaluate(tree, items)
-      compare(tree, days, rows, items, verdicts)
+      before = items.empty? || same_tree?(base, tree) ? verdicts : evaluate(base, items)
+      compare(tree, base, days, rows, items, verdicts, before)
+    end
+
+    def tree?(tree)
+      File.file?(File.join(tree, "bin", "polispec")) && File.file?(File.join(tree, "VERSION"))
+    end
+
+    def installed_root
+      candidates = [ENV.fetch("POLISPEC_BIN", nil)] + ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).map { |dir| File.join(dir, "polispec") }
+      candidates.compact.reject(&:empty?).each do |path|
+        next unless File.file?(path) && File.executable?(path)
+
+        root = File.dirname(File.dirname(File.realpath(path)))
+        return root if tree?(root)
+      rescue SystemCallError
+        next
+      end
+      nil
+    end
+
+    def same_tree?(left, right)
+      File.realpath(left) == File.realpath(right)
+    rescue SystemCallError
+      false
     end
 
     def version_of(tree)
@@ -89,12 +116,12 @@ module Polispec
         payload = { "projects" => projects.transform_values { |list| list.map { |item, index| item["spec"].merge("key" => index) } } }
         File.write(input, JSON.generate(payload))
         out, err, status = capture([RbConfig.ruby, CHILD, tree, input])
-        raise Unavailable, "the candidate engine could not replay the corpus (exit #{status&.exitstatus.inspect}): #{err.to_s.strip.lines.last.to_s.strip[0, 200]}" unless status&.success?
+        raise Unavailable, "the engine of #{tree} could not replay the corpus (exit #{status&.exitstatus.inspect}): #{err.to_s.strip.lines.last.to_s.strip[0, 200]}" unless status&.success?
 
         JSON.parse(out)
       end
     rescue JSON::ParserError
-      raise Unavailable, "the candidate engine returned output that is not JSON"
+      raise Unavailable, "the engine of #{tree} returned output that is not JSON"
     end
 
     def capture(argv)
@@ -107,24 +134,27 @@ module Polispec
       raise Unavailable, "cannot run the candidate engine: #{e.message}"
     end
 
-    def compare(tree, days, total, items, verdicts)
+    def compare(tree, base, days, total, items, verdicts, before)
       version = verdicts["version"] || version_of(tree)
       section = changelog_section(tree, version)
       buckets = {}
       compared = skipped_policy = skipped_unjudged = 0
       items.values.each_with_index do |item, index|
         project = verdicts.dig("projects", item["project"])
-        item["groups"].each do |(digest, level, rule), group|
+        baseline = before.dig("projects", item["project"])
+        item["groups"].each do |(digest, _recorded_level, _recorded_rule), group|
           outcome = project && project["outcomes"][index.to_s]
-          unless outcome
+          prior = baseline && baseline["outcomes"][index.to_s]
+          unless outcome && prior
             skipped_unjudged += group["count"]
             next
           end
-          if project["digest"] != digest
+          if baseline["digest"] != digest
             skipped_policy += group["count"]
             next
           end
           compared += group["count"]
+          level, rule = prior
           after_level, after_rule = outcome
           next if after_level == level && after_rule == rule
 
@@ -136,7 +166,7 @@ module Polispec
       end
       changes = buckets.values.sort_by { |change| [-change["count"], change["rule_before"].to_s, change["rule_after"].to_s] }
       changes.each { |change| change["explained"] = explained?(section, change) }
-      Result.new(runtime: tree, version: version, days: days, rows: total, compared: compared, skipped_policy: skipped_policy,
+      Result.new(runtime: tree, baseline: base, version: version, days: days, rows: total, compared: compared, skipped_policy: skipped_policy,
                  skipped_unjudged: skipped_unjudged, changes: changes, explained_by: section ? "## [#{version}]" : nil)
     end
 
@@ -156,6 +186,7 @@ module Polispec
 
     def render(result, out: $stdout)
       out.puts "replay of #{result.runtime} (#{result.version}) over the last #{result.days} days"
+      out.puts "rulebook digests from #{result.baseline} (#{version_of(result.baseline)})"
       out.puts "rows: #{result.rows}, compared: #{result.compared}, skipped because the rulebook moved: #{result.skipped_policy}, skipped because the project is not judged: #{result.skipped_unjudged}"
       out.puts "changelog section for #{result.version}: #{result.explained_by || 'none'}"
       out.puts "changed: #{result.changes.sum { |change| change['count'] }}, unexplained: #{result.unexplained.sum { |change| change['count'] }}"

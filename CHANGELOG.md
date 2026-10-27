@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.1] - 2026-10-26
+
+### Fixed
+- **Replay compared nothing for a release that changed an active catalog module.** 0.48.0's replay decided whether a project's rulebook had moved since a row was recorded with the candidate's own digest, and compared the candidate's verdict with the recorded one. 0.48.0 added descriptions to the catalog modules this host has active (`tools/*`, `delete-guard/*`), so the candidate's catalog layer digest, and with it every project's, differed from every recorded digest: on this host's 14-day corpus of 349,447 rows, replay of 0.48.0 compared 0 and passed, which would have let any verdict change through the gate. Replay now also judges the rows with a baseline tree, `--baseline TREE`, by default the installed runtime (`POLISPEC_BIN`, then `PATH`, links resolved, else the running tree). The baseline's digest decides whether the rulebook moved, and a change is a candidate verdict or rule that differs from the baseline's, so a rule that matches on text a row does not keep no longer shows as a change (`lib/polispec/replay.rb`, `commands/replay.rb`). On the same corpus against the pinned 0.47.5, an export of v0.48.0 compares 5,746 rows with 0 changes (exit 0). A copy that turns every `R-DEV` allow into a warn reports 5,601 unexplained changes across six projects (exit 1), and the pinned tree replayed against itself reports none. Comparing with recorded verdicts instead had shown 10 rule-only differences in teach (`R-DESK-ISSUE-*` and `TOOL-SUBAGENTHANDBACK`) that the 0.47.5 engine reproduces as well. Replaying a working clone as the candidate still shows its own repository's writes as `R-POLISPEC-RUNTIME` changes, because a clone is a runtime root, so the docs and the stewardship rule now say to replay a release export or pinned tree.
+
 ## [0.48.0] - 2026-10-26
 
 ### Added

@@ -7,7 +7,7 @@ require_relative "../replay"
 
 module Polispec
   class ReplayCommand
-    USAGE = "usage: polispec replay --runtime <tree> [--days N] [--json]"
+    USAGE = "usage: polispec replay --runtime <tree> [--baseline <tree>] [--days N] [--json]"
 
     def self.run(args)
       new.run(args)
@@ -17,7 +17,7 @@ module Polispec
       options = parse(args)
       return usage unless options
 
-      result = Replay.run(runtime: options[:runtime], days: options[:days])
+      result = Replay.run(runtime: options[:runtime], baseline: options[:baseline], days: options[:days])
       options[:json] ? puts(JSON.generate(result.to_h)) : Replay.render(result)
       result.unexplained.empty? ? 0 : 1
     rescue Replay::Unavailable => e
@@ -28,7 +28,7 @@ module Polispec
     private
 
     def parse(args)
-      options = { runtime: nil, days: Replay::DEFAULT_DAYS, json: false }
+      options = { runtime: nil, baseline: nil, days: Replay::DEFAULT_DAYS, json: false }
       queue = args.dup
       until queue.empty?
         arg = queue.shift
@@ -43,6 +43,11 @@ module Polispec
           return nil if value.to_s.empty? || options[:runtime]
 
           options[:runtime] = value
+        when "--baseline"
+          value = inline || queue.shift
+          return nil if value.to_s.empty? || options[:baseline]
+
+          options[:baseline] = value
         when "--days"
           value = inline || queue.shift
           return nil unless value.to_s.match?(/\A[1-9][0-9]{0,3}\z/)

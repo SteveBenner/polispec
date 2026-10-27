@@ -26,7 +26,7 @@ Read-only means no file, ledger, shelf or state write. `--json` is accepted wher
 | `classify < hook.json` | The actions a payload classifies as | agent | reads |
 | `digest [--since 24h]` | Warn and deny counts by rule | agent | reads |
 | `judgments list\|show\|verify` | The chained record of every judged call | agent | reads |
-| `replay --runtime TREE [--days N] [--json]` | Replay the recorded judgment corpus through a candidate tree and list every verdict that changes; exit 1 when a change is not named in the candidate's CHANGELOG section | agent | reads |
+| `replay --runtime TREE [--baseline TREE] [--days N] [--json]` | Replay the recorded judgment corpus through a candidate tree and the installed runtime and list every verdict that changes; exit 1 when a change is not named in the candidate's CHANGELOG section | agent | reads |
 | `shadow status\|report [--json]` | Where a candidate runtime running in shadow disagrees with the live guard | agent | reads |
 | `changes list\|show\|verify\|await` | Effect records of rulebook changes | agent | reads |
 | `sessions list` | Recent sessions and the policy each started under | agent | reads |
