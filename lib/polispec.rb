@@ -37,6 +37,7 @@ module Polispec
   autoload :Fastpath, File.join(LIB, "fastpath")
   autoload :Canonical, File.join(LIB, "canonical")
   autoload :Judgments, File.join(LIB, "judgments")
+  autoload :GuardHealth, File.join(LIB, "guard_health")
   autoload :Journal, File.join(LIB, "journal")
   autoload :Freeze, File.join(LIB, "freeze")
   autoload :Roster, File.join(LIB, "roster")

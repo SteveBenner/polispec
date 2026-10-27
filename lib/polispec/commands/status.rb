@@ -86,6 +86,8 @@ module Polispec
 
     def print_text(report)
       puts "ledger #{report['ledger']}; guard mode #{report['enforce']}"
+      health = GuardHealth.line
+      puts health if health
       report["projects"].each do |entry|
         puts "#{entry['id']}: #{entry['status']} trust_ref=#{entry['trust_ref']}"
         Array(entry["packages"]).each { |item| puts "  package #{item['name']} #{item['version']}#{item['variant'] ? " (#{item['variant']})" : ''} applied #{item['applied_at']}" }

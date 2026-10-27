@@ -93,19 +93,19 @@ deny_unavailable() {
   [ "$decision" = pass ] && exit 0
   case "$harness" in
     claude | codex)
-      printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"[POLISPEC internal] guard unavailable; call denied."}}'
+      printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"[POLISPEC internal] guard unavailable; call denied. Run polispec doctor"}}'
       exit 0 ;;
     hermes)
-      printf '%s\n' '{"action":"block","message":"[POLISPEC internal] guard unavailable; call denied."}'
+      printf '%s\n' '{"action":"block","message":"[POLISPEC internal] guard unavailable; call denied. Run polispec doctor"}'
       exit 2 ;;
     antigravity)
-      printf '%s\n' '{"decision":"deny","reason":"[POLISPEC internal] guard unavailable; call denied."}'
+      printf '%s\n' '{"decision":"deny","reason":"[POLISPEC internal] guard unavailable; call denied. Run polispec doctor"}'
       exit 0 ;;
     pi | deepseek)
-      printf '%s\n' '{"decision":"block","reason":"[POLISPEC internal] guard unavailable; call denied."}'
+      printf '%s\n' '{"decision":"block","reason":"[POLISPEC internal] guard unavailable; call denied. Run polispec doctor"}'
       exit 0 ;;
   esac
-  echo "[POLISPEC internal] guard unavailable; call denied." >&2
+  echo "[POLISPEC internal] guard unavailable; call denied. Run polispec doctor" >&2
   exit 2
 }
 if [ -z "$bin" ]; then deny_unavailable no_binary; fi
