@@ -329,6 +329,7 @@ module Polispec
       end
       legacy = outcomes.max_by { |outcome| outcome.verdict.severity }
       unless control_gate
+        refresh_fastpath(ledger) unless @explain
         @judged["governed"] = governed || !legacy.nil?
         @judged["verdict"] = legacy && legacy.verdict
         stamp_exceptions({})
@@ -844,6 +845,16 @@ module Polispec
         (@judged["exception_rows"] ||= []) << { "row" => offset + index, "entry" => @rule_lifts.delete_at(found).last }
       end
     rescue StandardError
+      nil
+    end
+
+    def refresh_fastpath(ledger)
+      edition = HarnessControls::Plane.requested_edition
+      Fastpath.refresh(ledger, { "plane" => @plane, "control_digest" => nil, "edition" => edition,
+                                 "fail_mode" => "closed_mutations",
+                                 "root_guard" => !Editions.allowed?("root_guard.optional", edition) || Engine::Settings.root_guard,
+                                 "mcp_default" => Editions.included?("mcp_default.ask", edition) ? "ask" : "deny" })
+    rescue Polispec::Error, SystemCallError
       nil
     end
 

@@ -85,7 +85,7 @@ module Polispec
       Web.load!
       server = Web::Server.new(bind: bind, port: port, read_only: options[:read_only], exposed: exposed)
       server.run { |info| announce(info, options) }
-      0
+      server.exit_status
     end
 
     def parse(args)

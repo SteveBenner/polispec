@@ -148,6 +148,9 @@ module Polispec
       state = Catalog.state
       skipped = []
       ids = if sub
+              if action == :deactivate && Catalog.forced?(sub)
+                raise Refused.new("gate_forced", "#{spec.name}/#{sub.id} is in effect under the lock edition and cannot be deactivated")
+              end
               if action == :activate && sub.provision && !provisioned?(spec.name, sub.id, state)
                 raise Refused.new("not_provisioned", "#{spec.name}/#{sub.id} has no provisioned file; run polispec catalog provision #{spec.name}/#{sub.id} --from FILE first")
               end
@@ -156,14 +159,21 @@ module Polispec
               spec.subspecs.each_with_object([]) do |item, kept|
                 if action == :activate && item.provision && !provisioned?(spec.name, item.id, state)
                   skipped << item.id
+                elsif action == :deactivate && Catalog.forced?(item)
+                  skipped << item.id
                 else
                   kept << item.id
                 end
               end
             end
-      raise Refused.new("not_provisioned", "#{spec.name} has no subspec to activate until #{skipped.join(', ')} is provisioned") if ids.empty?
+      if ids.empty?
+        raise Refused.new("gate_forced", "#{spec.name} has no subspec to deactivate: #{skipped.join(', ')} is in effect under the lock edition") if action == :deactivate
 
-      puts "#{action} #{spec.name}: #{ids.join(', ')}#{skipped.empty? ? '' : " (skipped, not provisioned: #{skipped.join(', ')})"}"
+        raise Refused.new("not_provisioned", "#{spec.name} has no subspec to activate until #{skipped.join(', ')} is provisioned")
+      end
+
+      reason = action == :deactivate ? "kept, in effect under the lock edition" : "skipped, not provisioned"
+      puts "#{action} #{spec.name}: #{ids.join(', ')}#{skipped.empty? ? '' : " (#{reason}: #{skipped.join(', ')})"}"
       if dry
         puts "dry run: nothing written"
         return 0
