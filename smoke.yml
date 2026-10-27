@@ -205648,3 +205648,500 @@ entries:
     policy_digest: sha256:94601a47680fd7a85a2e4f8fe8ec1ebec7130f7052a25dbaf90faa4c9161c8b7
   prev: b8d68cb4c965db24ec3f1d1e95d62316319105ee12d3445959391d28f9088783
   digest: 711824b0981f7ff60ae0d08ff9776ee401a7c0d265730ad97b1a5ef6c5fbd3cb
+- id: smk_f5a0b910ef7f
+  recorded_at: '2026-10-27T02:25:51Z'
+  started_at: '2026-10-27T02:25:34Z'
+  finished_at: '2026-10-27T02:25:37Z'
+  proves:
+    spec: specs/app.yml
+    at: judgments
+    spec_digest: 74e90abf01e8961cd020a66d1e3b00eaf54fbe2107d1803c6c6cab3247a7b04c
+    at_digest: 59ec26f28f2dbc1953850865ae041d4f3746ca736fae0e8d9b67e88be4865406
+  verdict: pass
+  summary: 'every judged hook call lands one chained judgment record carrying the
+    verdict the harness received, the target''s rulebook digest and the engine identity
+    without command text; raw text appears only with polispec.records.raw on; verify
+    passes, fails on a tampered record, and counts the fast-path skips the shim traces
+    (suite: 15/15 steps passed)'
+  steps:
+  - run: ln -sfn {{polispec}} {{files}}/polispec
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"git push origin main:stable"}
+    exit: 0
+    expect: '{"decision":"deny","rule":"R-PROD-GIT"}'
+    observed: decision=deny rule=R-PROD-GIT exit=0 ok
+  - run: hook pretool --harness claude Write {"file_path":"{{project.shop}}/lib/new.rb","content":"puts
+      1\n"}
+    exit: 0
+    expect: '{"decision":"allow"}'
+    observed: decision=allow rule=- exit=0 ok
+  - run: sh -c "test \"$(wc -l < \"$1\")\" -eq 2 && ! grep -q \"main:stable\" \"$1\"
+      && grep -q \"\\\"rule_id\\\":\\\"R-PROD-GIT\\\"\" \"$1\" && grep -q \"\\\"policy_digest\\\":\\\"sha256:\"
+      \"$1\" && grep -q \"\\\"call_digest\\\":\\\"\" \"$1\" && grep -q \"\\\"runtime\\\":\\\"\"
+      \"$1\" && grep -q \"\\\"rendered\\\":\\\"deny\\\"\" \"$1\" && grep -q \"\\\"verdict\\\":\\\"allow\\\"\"
+      \"$1\"" sh {{scratch}}/state/judgments.jsonl
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: sh -c "head -n 1 \"$1\" > \"$2/one.json\" && \"$3\" validate judgment \"$2/one.json\"
+      && tail -n 1 \"$1\" > \"$2/two.json\" && \"$3\" validate judgment \"$2/two.json\""
+      sh {{scratch}}/state/judgments.jsonl {{files}} {{polispec}}
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: "{{polispec}} judgments list"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["last 24h: 2","deny R-PROD-GIT claude:Bash
+      shop/prod rendered=deny","allow R-DEV claude:Write shop/dev rendered=none"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} judgments verify"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["2 records in 1 file; chain ok","skips:
+      0"]}'
+    observed: exit=0 ok
+  - run: sh -c "test ! -e \"$1/verdicts.jsonl\" && test ! -e \"$1/journal.jsonl\""
+      sh {{scratch}}/state
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"git push origin main:stable"}
+    exit: 0
+    expect: '{"decision":"deny","rule":"R-PROD-GIT"}'
+    observed: decision=deny rule=R-PROD-GIT exit=0 ok
+  - run: sh -c "test \"$(grep -c \"\\\"raw\\\":\" \"$1\")\" -eq 1 && tail -n 1 \"$1\"
+      | grep -q \"\\\"raw\\\":\\\"git push origin main:stable\\\"\"" sh {{scratch}}/state/judgments.jsonl
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: "{{tree}}/bin/polispec-guard pretool --harness claude"
+    exit: 0
+    expect: '{"exit":0,"stdout_excludes":["permissionDecision"]}'
+    observed: exit=0 ok
+  - run: sh -c "test \"$(wc -l < \"$1\")\" -eq 1 && grep -q \"\\\"tool\\\":\\\"skill\\\"\"
+      \"$1\" && grep -q \"\\\"session\\\":\\\"skip-session\\\"\" \"$1\" && grep -Eq
+      \"\\\"key\\\":\\\"[0-9a-f]{64}\\\"\" \"$1\" && grep -q \"\\\"skip\\\":\\\"no_match\\\"\"
+      \"$1\" && test \"$(wc -l < \"$2\")\" -eq 3" sh {{scratch}}/state/skips.jsonl
+      {{scratch}}/state/judgments.jsonl
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: "{{polispec}} judgments verify"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["3 records in 1 file; chain ok","skips:
+      1 across 1 fast-path key"]}'
+    observed: exit=0 ok
+  - run: sh -c "sed -i \"1s/\\\"rendered\\\":\\\"deny\\\"/\\\"rendered\\\":\\\"none\\\"/\"
+      \"$1\" && \"$2\" judgments verify; code=$?; \"$2\" doctor | grep -q judgments_chain_broken
+      && test \"$code\" -eq 1" sh {{scratch}}/state/judgments.jsonl {{polispec}}
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["digest_mismatch"]}'
+    observed: exit=0 ok
+  - run: sh -c "rm -f \"$1/judgments.head.json\" && \"$2\" judgments verify; test
+      $? -eq 1" sh {{scratch}}/state {{polispec}}
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["truncated"]}'
+    observed: exit=0 ok
+  evidence:
+  - path: report.json
+    sha256: 1232d6fc0cae82b843036fe7536be5397a0a0665e7a3e88956cc805d8f8b3f5c
+    bytes: 17222
+    kind: report
+  - path: smoke/scenarios/judgments.yml
+    sha256: b39aae15fe8af2bfe8125c9e1f92a7ead3d23f3d67d80a5e7c0f3600dd014032
+    bytes: 5269
+    kind: scenario
+  runner:
+    kind: suite
+    harness:
+    harness_version:
+    model:
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-38-generic
+    arch: x86_64
+    platform: x86_64-linux
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 4.0.6
+      platform: x86_64-linux
+    polispec:
+      version: 0.48.1
+      edition: standard
+      commit: b3b1ea20b995cb7f123624b16811954b172922d7
+      dirty: false
+      install: clone
+    rplugin: 1.19.1
+    enforce: enforce
+  target:
+    commit: b3b1ea20b995cb7f123624b16811954b172922d7
+    branch: main
+    dirty: false
+    project: polispec
+    env: dev
+    policy_digest: sha256:94601a47680fd7a85a2e4f8fe8ec1ebec7130f7052a25dbaf90faa4c9161c8b7
+  prev: 711824b0981f7ff60ae0d08ff9776ee401a7c0d265730ad97b1a5ef6c5fbd3cb
+  digest: 728b07ae637a4261f5221b71599c3dc577045cd0b173a234956b37d743effee5
+- id: smk_0dc488207750
+  recorded_at: '2026-10-27T02:25:53Z'
+  started_at: '2026-10-27T02:25:40Z'
+  finished_at: '2026-10-27T02:25:40Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/steward
+    spec_digest: 74e90abf01e8961cd020a66d1e3b00eaf54fbe2107d1803c6c6cab3247a7b04c
+    at_digest: fc99cf5dd7cef1b2a4bdc2f5a10b7b3d41f3b0e519107cb062d68c46cc31059c
+  verdict: pass
+  summary: 'steward --check reports the stewardship steps against a scratch host without
+    changing it, and steward sets up the rule through a scratch rplugin binary and
+    store link, logging every rplugin call and touching nothing outside scratch (suite:
+    7/7 steps passed)'
+  steps:
+  - run: 'sh -c "mkdir -p \"$1/bin\" \"$1/store\" && printf \"%s\\n\" \"#!/bin/sh\"
+      \"echo \\\"\\$@\\\" >> \\\"$1/calls.log\\\"\" \"if [ \\\"\\$1\\\" = install
+      ]; then mkdir -p \\\"$1/store\\\" && ln -sfn \\\"\\$2\\\" \\\"$1/store/polispec\\\";
+      fi\" \"exit 0\" > \"$1/bin/rplugin\" && chmod 755 \"$1/bin/rplugin\" && : >
+      \"$1/calls.log\"" sh {{scratch}}/steward-host'
+    exit: 0
+    expect: '{"exit":0,"files_exist":["{{scratch}}/steward-host/bin/rplugin","{{scratch}}/steward-host/calls.log"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} steward --check"
+    exit: 1
+    expect: '{"exit":1,"stdout_includes":["stewardship_1: missing ","would run rplugin
+      install ","stewardship_2: ok R-POLISPEC-RUNTIME protects ","stewardship_3: "],"files_absent":["{{scratch}}/steward-host/store/polispec"]}'
+    observed: exit=1 ok
+  - run: "{{polispec}} steward --check --json"
+    exit: 1
+    expect: '{"exit":1,"json":{"ok":false,"steps":[{"step":"stewardship_1","status":"missing"},{"step":"stewardship_2","status":"ok"},{"step":"stewardship_3"},{"step":"stewardship_4"}]}}'
+    observed: exit=1 ok
+  - run: "{{polispec}} steward --bogus"
+    exit: 2
+    expect: '{"exit":2,"stderr_includes":["polispec: unknown argument --bogus","usage:
+      polispec steward [--check] [--json]"]}'
+    observed: exit=2 ok
+  - run: "{{polispec}} steward"
+    exit: 1
+    expect: '{"exit":[0,1],"stdout_includes":["stewardship_1: installed rplugin install
+      ","stewardship_2: ok R-POLISPEC-RUNTIME protects "],"files_exist":["{{scratch}}/steward-host/store/polispec"]}'
+    observed: exit=1 ok
+  - run: sh -c "head -1 \"$1/calls.log\" | cut -d\" \" -f1 && ! grep -v \"^install
+      \\|^version\" \"$1/calls.log\"" sh {{scratch}}/steward-host
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["install"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} steward --check"
+    exit: 1
+    expect: '{"exit":[0,1],"stdout_includes":["stewardship_1: ok polispec-stewardship
+      is installed through "]}'
+    observed: exit=1 ok
+  evidence:
+  - path: report.json
+    sha256: 74911ed60891946afcd2c65d93a299be89944c89ac39fe2411e949f1a89f5a7e
+    bytes: 10644
+    kind: report
+  - path: smoke/scenarios/steward.yml
+    sha256: f6359182698f1663307a2846ec1aaa21912e9ae6df354cfc7c0be3b1e8646fe0
+    bytes: 3637
+    kind: scenario
+  runner:
+    kind: suite
+    harness:
+    harness_version:
+    model:
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-38-generic
+    arch: x86_64
+    platform: x86_64-linux
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 4.0.6
+      platform: x86_64-linux
+    polispec:
+      version: 0.48.1
+      edition: standard
+      commit: b3b1ea20b995cb7f123624b16811954b172922d7
+      dirty: true
+      install: clone
+    rplugin: 1.19.1
+    enforce: enforce
+  target:
+    commit: b3b1ea20b995cb7f123624b16811954b172922d7
+    branch: main
+    dirty: false
+    project: polispec
+    env: dev
+    policy_digest: sha256:94601a47680fd7a85a2e4f8fe8ec1ebec7130f7052a25dbaf90faa4c9161c8b7
+  prev: 728b07ae637a4261f5221b71599c3dc577045cd0b173a234956b37d743effee5
+  digest: d3859321a52eb10e1b01f47d96297f012342d152e7373f5bb32b9891b3731566
+- id: smk_58819d59152c
+  recorded_at: '2026-10-27T02:25:55Z'
+  started_at: '2026-10-27T02:25:41Z'
+  finished_at: '2026-10-27T02:25:46Z'
+  proves:
+    spec: specs/app.yml
+    at: stewardship
+    spec_digest: 74e90abf01e8961cd020a66d1e3b00eaf54fbe2107d1803c6c6cab3247a7b04c
+    at_digest: 3da352fa6bedeae0e6ee3d71467fa378ce211134f589c5077135b2ceef657445
+  verdict: pass
+  summary: 'a plan is classified tightening, loosening, mixed or neutral with a plan
+    id, apply runs a tightening plan and refuses confirm_required for a mixed one,
+    an invalid proposed policy is refused, apply --confirm is a guarded policy edit,
+    journal replay is reported when the journal is on, and the protected runtime root
+    warns in a clone tree (suite: 23/23 steps passed)'
+  steps:
+  - run: "{{polispec}} doctor"
+    exit: 0
+    expect: '{"exit":[0,1],"stdout_includes":["runtime: clone "]}'
+    observed: exit=0 ok
+  - run: hook pretool --harness claude Write {"file_path":"{{tree}}/lib/polispec/scratch_marker.rb","content":"x"}
+    exit: 0
+    expect: '{"decision":"ask","rule":"R-POLISPEC-RUNTIME","stdout_includes":["this
+      tree is the live polispec guard for this host","build in a worktree","rplugin
+      install <repo> --ref <tag>"]}'
+    observed: decision=ask rule=R-POLISPEC-RUNTIME exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"git commit -m x"}
+    exit: 0
+    expect: '{"decision":"ask","rule":"R-POLISPEC-RUNTIME"}'
+    observed: decision=ask rule=R-POLISPEC-RUNTIME exit=0 ok
+  - run: hook pretool --harness codex Write {"file_path":"{{tree}}/lib/polispec/scratch_marker.rb","content":"x"}
+    exit: 0
+    expect: '{"decision":"deny","rule":"R-POLISPEC-RUNTIME","stdout_includes":["polispec
+      allow-once alo_"]}'
+    observed: decision=deny rule=R-POLISPEC-RUNTIME exit=0 ok
+  - run: hook pretool --harness claude Read {"file_path":"{{tree}}/lib/polispec/scratch_marker.rb"}
+    exit: 0
+    expect: '{"decision":"allow"}'
+    observed: decision=allow rule=- exit=0 ok
+  - run: hook pretool --harness claude Write {"file_path":"{{files}}/elsewhere.rb","content":"x"}
+    exit: 0
+    expect: '{"decision":"allow"}'
+    observed: decision=allow rule=- exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"polispec apply project:shop
+      --confirm plan_0123456789abcdef01234567"}
+    exit: 0
+    expect: '{"decision":"ask","rule":"R-POLICY","stdout_includes":["policy.edit:
+      polispec apply project:shop --confirm"]}'
+    observed: decision=ask rule=R-POLICY exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"polispec plan project:shop"}
+    exit: 0
+    expect: '{"decision":"allow","stdout_excludes":["POLISPEC-TOOL-UNKNOWN"]}'
+    observed: decision=allow rule=- exit=0 ok
+  - run: "{{polispec}} plan project:shop --json"
+    exit: 0
+    expect: '{"exit":0,"json":{"schema":"polispec.plan/v1","classification":"neutral","needs_confirm":false}}'
+    observed: exit=0 ok
+  - run: 'sh -c "sed -i \"s/^  - { id: R-DEV, match: { env: dev }, verdict: allow
+      }/  - { id: R-NEW, match: { env: prod, class: [fs.delete] }, verdict: deny,
+      reason: \\\"new\\\" }\\n&/\" specs/polispec/policy.yml && git diff --stat |
+      tail -1"'
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["1 file changed, 1 insertion(+)"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} plan project:shop"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["classification: tightening; needs_confirm:
+      false","tighten: shop adds rule repo/R-NEW","policy shop: rules +1","-> deny
+      R-NEW","journal: 1 replayed, 0 changed"]}'
+    observed: exit=0 ok
+  - run: 'sh -c "cp specs/polispec/policy.yml \"$1\" && sed -i \"s/class: \\[fs.delete\\]/class:
+      [fs.nothing]/\" specs/polispec/policy.yml && \"$0\" plan project:shop; code=$?;
+      cp \"$1\" specs/polispec/policy.yml; exit $code" {{polispec}} {{scratch}}/policy.backup.yml'
+    exit: 1
+    expect: '{"exit":1,"stderr_includes":["policy_invalid: the proposed policy for
+      shop does not validate","must be one of git.commit"]}'
+    observed: exit=1 ok
+  - run: sh -c "\"$0\" apply project:shop && git log -1 --format=%s" {{polispec}}
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["committed specs/polispec/policy.yml","Apply
+      polispec plan plan_"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} plan project:shop --json"
+    exit: 0
+    expect: '{"exit":0,"json":{"classification":"tightening"}}'
+    observed: exit=0 ok
+  - run: 'sh -c "sed -i \"/id: R-TEST-REWRITE/d; s/^  - { id: R-DEV, match: { env:
+      dev }, verdict: allow }/  - { id: R-NEW2, match: { env: prod, class: [data.copy]
+      }, verdict: deny, reason: \\\"new two\\\" }\\n&/\" specs/polispec/policy.yml
+      && git diff --stat | tail -1"'
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: "{{polispec}} plan project:shop"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["classification: mixed; needs_confirm: true","loosen:
+      shop removes rule repo/R-TEST-REWRITE","tighten: shop adds rule repo/R-NEW2","loosen:
+      shop probe git.rewrite test (test): deny R-TEST-REWRITE -> allow NO-RULE"]}'
+    observed: exit=0 ok
+  - run: "{{polispec}} apply project:shop"
+    exit: 1
+    expect: '{"exit":1,"stderr_includes":["confirm_required: this plan is mixed and
+      needs confirmation","classification: mixed"]}'
+    observed: exit=1 ok
+  - run: sh -c "git checkout -q -b side && id=$(\"$0\" plan project:shop --json |
+      sed -n \"s/.*\\\"plan_id\\\":\\\"\\([^\\\"]*\\)\\\".*/\\1/p\") && \"$0\" apply
+      project:shop --confirm \"$id\"; code=$?; git checkout -q main; exit $code" {{polispec}}
+    exit: 1
+    expect: '{"exit":1}'
+    observed: exit=1 ok
+  - run: sh -c "id=$(\"$0\" plan project:shop --json | sed -n \"s/.*\\\"plan_id\\\":\\\"\\([^\\\"]*\\)\\\".*/\\1/p\")
+      && \"$0\" apply project:shop --confirm \"$id\" && git log -1 --format=%s" {{polispec}}
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["Apply polispec plan plan_"]}'
+    observed: exit=0 ok
+  - run: hook pretool --harness claude Bash {"command":"git push origin main:stable"}
+    exit: 0
+    expect: '{"decision":"deny","rule":"R-PROD-GIT"}'
+    observed: decision=deny rule=R-PROD-GIT exit=0 ok
+  - run: 'sh -c "sed -i \"s/verdict: deny, reason: \\\"the production branch moves/verdict:
+      allow, reason: \\\"the production branch moves/\" specs/polispec/policy.yml
+      && \"$0\" plan project:shop" {{polispec}}'
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["classification: mixed; needs_confirm: true","loosen:
+      shop probe journal git.push stable","journal: 2 replayed, 1 changed"]}'
+    observed: exit=0 ok
+  - run: sh -c "mkdir -p \"$2/rt\" && tar --exclude=.git -C \"$1\" -cf - . | tar -C
+      \"$2/rt\" -xf - && touch \"$2/rt/.git\" && test -x \"$2/rt/bin/polispec\"" sh
+      {{tree}} {{checkout.shop.stable}}
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  - run: "{{checkout.shop.stable}}/rt/bin/polispec hook pretool --harness claude"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["R-PROD-FS","deny"],"stdout_excludes":["R-POLISPEC-RUNTIME"]}'
+    observed: exit=0 ok
+  evidence:
+  - path: report.json
+    sha256: a4e3649aa737b942f1994640f61cd78d96b763c5d47db9eaa9e453cd3dddec3a
+    bytes: 47107
+    kind: report
+  - path: smoke/scenarios/stewardship.yml
+    sha256: 1a1f4f2421b6808cc22b5103374f1601e4d6ce52e3e264bcfd370b185bed4eb5
+    bytes: 8252
+    kind: scenario
+  runner:
+    kind: suite
+    harness:
+    harness_version:
+    model:
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-38-generic
+    arch: x86_64
+    platform: x86_64-linux
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 4.0.6
+      platform: x86_64-linux
+    polispec:
+      version: 0.48.1
+      edition: standard
+      commit: b3b1ea20b995cb7f123624b16811954b172922d7
+      dirty: true
+      install: clone
+    rplugin: 1.19.1
+    enforce: enforce
+  target:
+    commit: b3b1ea20b995cb7f123624b16811954b172922d7
+    branch: main
+    dirty: false
+    project: polispec
+    env: dev
+    policy_digest: sha256:94601a47680fd7a85a2e4f8fe8ec1ebec7130f7052a25dbaf90faa4c9161c8b7
+  prev: d3859321a52eb10e1b01f47d96297f012342d152e7373f5bb32b9891b3731566
+  digest: c4b73d56ab331e42d68f05e3af9940f3cf26879ab011cdfbb80aacad09daf264
+- id: smk_19d315f0a2f9
+  recorded_at: '2026-10-27T02:25:56Z'
+  started_at: '2026-10-27T02:25:51Z'
+  finished_at: '2026-10-27T02:25:51Z'
+  proves:
+    spec: specs/app.yml
+    at: commands/version
+    spec_digest: 74e90abf01e8961cd020a66d1e3b00eaf54fbe2107d1803c6c6cab3247a7b04c
+    at_digest: 04f0496104abe4772df3e5e2896bfcb48f8f3b1436c96d9db3ef4a15ce4056e7
+  verdict: pass
+  summary: 'version prints the polispec release recorded in VERSION (suite: 2/2 steps
+    passed)'
+  steps:
+  - run: "{{polispec}} version"
+    exit: 0
+    expect: '{"exit":0,"stdout_includes":["polispec "]}'
+    observed: exit=0 ok
+  - run: sh -c "[ \"polispec $(cat \"$1/VERSION\")\" = \"$(\"$2\" version)\" ]" sh
+      {{tree}} {{polispec}}
+    exit: 0
+    expect: '{"exit":0}'
+    observed: exit=0 ok
+  evidence:
+  - path: report.json
+    sha256: 366eb521532dc78f20f99779f68b3785d63cb1654253b51110317c937e1f5966
+    bytes: 1606
+    kind: report
+  - path: smoke/scenarios/version.yml
+    sha256: 260f66803b84c32f5eaa66be3d6d4e68d088a47378673fe40686fba19e603bc4
+    bytes: 451
+    kind: scenario
+  runner:
+    kind: suite
+    harness:
+    harness_version:
+    model:
+    effort:
+  runtime:
+    os:
+      id: ubuntu
+      name: Ubuntu
+      version: '26.04'
+    kernel: 7.0.0-38-generic
+    arch: x86_64
+    platform: x86_64-linux
+    container: false
+    wsl: false
+    tz: PDT
+    locale: en_US.UTF-8
+    ruby:
+      engine: ruby
+      version: 4.0.6
+      platform: x86_64-linux
+    polispec:
+      version: 0.48.1
+      edition: standard
+      commit: b3b1ea20b995cb7f123624b16811954b172922d7
+      dirty: true
+      install: clone
+    rplugin: 1.19.1
+    enforce: enforce
+  target:
+    commit: b3b1ea20b995cb7f123624b16811954b172922d7
+    branch: main
+    dirty: false
+    project: polispec
+    env: dev
+    policy_digest: sha256:94601a47680fd7a85a2e4f8fe8ec1ebec7130f7052a25dbaf90faa4c9161c8b7
+  prev: c4b73d56ab331e42d68f05e3af9940f3cf26879ab011cdfbb80aacad09daf264
+  digest: 84e3538da856b5dc1740f80394f97a2e9acf16b1fe821e7b3d3b7064211ec0f1
