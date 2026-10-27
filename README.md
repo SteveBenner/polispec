@@ -351,7 +351,7 @@ The same idea runs through [code specs](docs/code-specs.md). A spec is a tree of
 
 ## Feature tour
 
-**Environment guard.** One guard hook per harness judges every tool call ([operator guide](docs/operator.md)). `polispec.enforce` is `advise` by default (log only) and `enforce` to apply verdicts. Once the operator activates the catalog specs `mcp/undeclared` and `tools/unknown`, undeclared MCP calls and unknown non-read actions in governed scope ask (standard edition) or deny (lock edition); until then they get no special verdict.
+**Environment guard.** One guard hook per harness judges every tool call ([operator guide](docs/operator.md)). `polispec.enforce` is `advise` by default (log only) and `enforce` to apply verdicts. Once the operator activates the catalog specs `mcp/undeclared` and `tools/unknown`, undeclared MCP calls and unknown non-read actions in governed scope ask; until then they get no special verdict. The lock edition forces both specs on and denies those calls.
 
 **Promotion and deploy.** `polispec promote <project> --to <env>` fast-forwards one hop (main → test → stable, or any named hops such as a canary ring). It runs that hop's gates and preflight, checks freezes and the soak, tags the release, and runs the deploy. `polispec deploy` runs the environment's steps, a health check, and an automatic rollback for `release_dirs` deploys. A policy that deploys without a health check is refused. The operator may waive a soak (`--waive-soak`) with a typed phrase, and the waiver is recorded.
 
