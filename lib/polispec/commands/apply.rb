@@ -135,6 +135,7 @@ module Polispec
 
       prefix = source.path.to_s.empty? ? "" : "#{source.path}/"
       paths = plan.data["files"].select { |item| %w[add replace].include?(item["action"]) }.map { |item| item["path"] }
+      removed = plan.data["files"].select { |item| item["action"] == "remove" }.map { |item| item["path"] }
       if artifacts[:from] == "worktree"
         Trace.info("files come from the worktree; nothing is written", files: paths.length)
       else
@@ -147,8 +148,12 @@ module Polispec
             write_atomic(target, text)
           end
         end
+        removed.each do |relative|
+          target = File.join(source.repo, relative)
+          Trace.step("remove #{relative}") { File.delete(target) if File.file?(target) }
+        end
       end
-      commit(git, paths, plan, "global")
+      commit(git, paths + removed, plan, "global")
     end
 
     def apply_ledger(plan, parsed)

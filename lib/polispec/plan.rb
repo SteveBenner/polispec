@@ -267,12 +267,18 @@ module Polispec
       end
     end
 
-    def file_rows(current, proposed, prefix = "")
-      proposed.map do |path, text|
+    def file_rows(current, proposed, prefix = "", removals: false)
+      rows = proposed.map do |path, text|
         old = current[path]
         action = old.nil? ? "add" : (old == text ? "unchanged" : "replace")
         { "path" => "#{prefix}#{path}", "action" => action, "diff" => action == "unchanged" ? "" : Packages.unified_diff("#{prefix}#{path}", old, text), "digest" => Packages.sha(text) }
       end
+      return rows unless removals
+
+      (current.keys - proposed.keys).sort.each do |path|
+        rows << { "path" => "#{prefix}#{path}", "action" => "remove", "diff" => Packages.unified_diff("#{prefix}#{path}", current[path], ""), "digest" => Packages.sha(current[path]) }
+      end
+      rows
     end
 
     def digests(map)
@@ -693,7 +699,7 @@ module Polispec
       end
       @artifacts.merge!(source: source, from: from, proposed_files: proposed_files)
       {
-        target: "global", files: file_rows(current_files, proposed_files, source.kind == :repo && !source.path.to_s.empty? ? "#{source.path}/" : ""),
+        target: "global", files: file_rows(current_files, proposed_files, source.kind == :repo && !source.path.to_s.empty? ? "#{source.path}/" : "", removals: source.kind == :repo),
         proposed: digests(proposed_files), current: digests(current_files), global: true
       }
     end

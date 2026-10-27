@@ -17,7 +17,7 @@ module Polispec
         end
         existing[pack.source.tree_id] = { "ref" => pack.source.ref, "ok" => failed.zero?, "failed" => failed, "total" => outcomes.length, "at" => Time.now.utc.iso8601 }
         existing = existing.to_a.last(20).to_h
-        Code.write_atomic(path, JSON.pretty_generate(existing))
+        Trace.step("write controls record", path: -> { Trace.path(path) }, tree: pack.source.tree_id, failed: failed, total: outcomes.length) { Code.write_atomic(path, JSON.pretty_generate(existing)) }
       rescue SystemCallError
         nil
       end

@@ -95,7 +95,7 @@ module Polispec
           "repo_key" => key, "repo" => repo || previous["repo"], "pack" => pack || previous["pack"],
           "recorded" => previous["recorded"] || Time.now.utc.iso8601, "updated" => Time.now.utc.iso8601, "entries" => list.sort_by { |item| [item["policy"], item["path"]] }
         }
-        Code.write_atomic(path, JSON.pretty_generate(document))
+        Trace.step("write baseline", path: -> { Trace.path(path) }, entries: list.length) { Code.write_atomic(path, JSON.pretty_generate(document)) }
         @counts = entries
       end
     end

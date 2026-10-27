@@ -138,7 +138,7 @@ module Polispec
     end
 
     def git(repo, *args)
-      out, status = Open3.capture2(GIT_ENV, "git", "-C", repo, *args, err: File::NULL)
+      out, status = Trace.capture2(GIT_ENV, "git", "-C", repo, *args, err: File::NULL, trace: :quiet)
       status.success? ? out : nil
     rescue SystemCallError
       nil

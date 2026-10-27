@@ -23,11 +23,15 @@ module Polispec
         if replaces
           raise Operator::Tty::NotTty, "replacing #{link} (#{replaces}) with #{target} needs an interactive terminal; an agent shell cannot run it" unless Operator::Tty.terminal?
 
-          Operator::Tty.confirm!("relink #{target}", prompt: "Repoint #{link} from #{replaces} to #{target}.")
+          Trace.step("relink phrase", phrase: "relink #{target}", link: -> { Trace.path(link) }, replaces: -> { Trace.path(replaces) }) do
+            Operator::Tty.confirm!("relink #{target}", prompt: "Repoint #{link} from #{replaces} to #{target}.")
+          end
         end
-        FileUtils.mkdir_p(File.dirname(link))
-        File.delete(link) if replaces
-        File.symlink(target, link)
+        Trace.step("link specs", link: -> { Trace.path(link) }, target: -> { Trace.path(target) }, replaces: replaces && -> { Trace.path(replaces) }) do
+          FileUtils.mkdir_p(File.dirname(link))
+          File.delete(link) if replaces
+          File.symlink(target, link)
+        end
         { "link" => link, "target" => target, "changed" => true, "replaced" => replaces }
       end
 
