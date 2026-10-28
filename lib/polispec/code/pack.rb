@@ -60,6 +60,11 @@ module Polispec
         execution["enforcer"].is_a?(Hash) ? execution["enforcer"] : nil
       end
 
+      def requires
+        list = enforcer && enforcer["requires"]
+        list.is_a?(Array) ? list.select { |entry| entry.is_a?(Hash) } : []
+      end
+
       def lens
         execution["lens"].is_a?(Hash) ? execution["lens"] : nil
       end
