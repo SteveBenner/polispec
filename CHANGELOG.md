@@ -7,14 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.50.2] - 2026-10-28
+## [0.51.1] - 2026-10-28
 
 ### Added
 - **`polispec smoke run --strict`.** It exits 1 when a scenario was blocked or inconclusive, or when no scenario matched the filters. Without it, those runs still exit 0. polispec's six live `per_target` proof runs (claude-code and codex) now pass `--strict`. Before this, a live Codex session that never attempted the forbidden action was recorded as inconclusive, `smoke run` exited 0, and `proof run` signed the cell as a rung-3 pass. Because the manifest change alters those runs' argv, the three codex records signed that way are now stale. `smoke-suite.yml` asserts both strict exits and the unchanged default.
 
 ### Fixed
-- **`polispec proof run --target T` works.** Since 0.49.0, `--target` was parsed as repeatable for `proof except`, so `run` passed a list where it expected one id and every `--target` refused `target_unmatched`, which made the harness-only targets unreachable. `run` now takes one `--target` and answers a second with its usage, exit 2 (`lib/polispec/commands/proof.rb`). The `proof` scenario now runs `--target`, an unknown target and a repeated one.
 - **A slow host probe no longer prints a thread error.** When a command in `Smoke.command` (the runtime capture behind smoke and proof records, such as a harness `--version`) passed its 2 second timeout, the child was killed and the pipe closed under the reader thread, which died printing `IOError: stream closed in another thread`. The reader is now stopped and joined before the call returns `nil` (`lib/polispec/smoke.rb`); the result was already `nil` and is unchanged.
+
+## [0.51.0] - 2026-10-28
+
+### Added
+- **A behavior directive can be scoped to code or document slices.** The directive `slice` enum in `schemas/behavior.v1.yml` and `schemas/behavior.v2.yml` adds `code` and `document` beside `all`, `backend`, `panel` and `verification`, so an application whose course has written-work (document) assignments beside code ones can mark which directives apply to each. polispec compiles the value through unchanged; the application filters by it. No verdict changes.
+
+## [0.50.2] - 2026-10-27
+
+### Fixed
+- **`polispec proof run --target T` works.** Since 0.49.0, `--target` was parsed as repeatable for `proof except`, so `run` passed a list where it expected one id and every `--target` refused `target_unmatched`, which made the harness-only targets unreachable. `run` now takes one `--target` and answers a second with its usage, exit 2 (`lib/polispec/commands/proof.rb`). The `proof` scenario now runs `--target`, an unknown target and a repeated one.
 
 ### Changed
 - **A release no longer stales every polispec proof.** polispec's `specs/features.yml` listed `VERSION` in `shared`, so each version bump changed every feature's digest; it now sits in `ignore`, and a release re-proves only the features whose files changed (`commands.version` and the owner of `polispec.rplugin.yml` still change with each bump). The operator confirms this weakening change at `promote --to stable`.
