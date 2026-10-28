@@ -11,6 +11,7 @@ require_relative "../personal_defaults"
 require_relative "../lint"
 require_relative "../catalog"
 require_relative "../web"
+require_relative "../plugin_store"
 
 module Polispec
   class DoctorCommand
@@ -56,6 +57,7 @@ module Polispec
       traced_check("check personal defaults", findings) { check_personal_defaults(ledger, findings) }
       traced_check("check catalog", findings) { check_catalog(findings) }
       traced_check("check web", findings) { check_web(findings) }
+      traced_check("check code enforcers", findings) { check_code_enforcers(findings) }
       blocking = findings.reject { |item| NONBLOCKING.include?(item["severity"]) }
       json ? puts(JSON.generate("ok" => blocking.empty?, "runtime" => runtime_info, "findings" => findings)) : print_text(findings)
       blocking.empty? ? 0 : 1
@@ -562,6 +564,41 @@ module Polispec
       end
     rescue StandardError => error
       findings << finding(nil, "lint_unavailable", "#{error.class}: #{error.message}").merge("severity" => "info")
+    end
+
+    def check_code_enforcers(findings)
+      pack = code_pack
+      return unless pack
+
+      pack.rules.select(&:active?).each do |rule|
+        rule.requires.each do |entry|
+          id = entry["plugin"].to_s
+          root = PluginStore.root(id)
+          unless root
+            findings << finding(nil, "code_enforcer_unresolved", "#{rule.id} enforcer #{rule.enforcer['ref']} requires plugin #{id}, not installed at #{PluginStore.path(id)}")
+            next
+          end
+
+          requirement = entry["version"].to_s
+          installed = PluginStore.version(root)
+          next if PluginStore.satisfies?(installed, requirement)
+
+          findings << finding(nil, "code_enforcer_version_skew", "#{rule.id} requires #{id} #{requirement}, installed #{installed || 'no VERSION file'}")
+        end
+      end
+    rescue StandardError => error
+      findings << finding(nil, "code_enforcer_unavailable", "#{error.class}: #{error.message}").merge("severity" => "info")
+    end
+
+    def code_pack
+      require_relative "../code/core"
+      require_relative "../harness_controls/plane"
+      plane = HarnessControls::Plane.respond_to?(:resolve) ? HarnessControls::Plane.resolve : { "status" => "unsealed" }
+      ref = plane["status"] == "active" ? nil : ENV["POLISPEC_CODE_REF"]
+      pack = Code::Pack.load(ref: ref)
+      pack.specs.empty? ? nil : pack
+    rescue Code::Error, SystemCallError
+      nil
     end
 
     def check_ledger_runtime(ledger, findings)

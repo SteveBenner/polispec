@@ -4,6 +4,7 @@
 require_relative "operator/git"
 require_relative "native_pin"
 require_relative "personal_defaults"
+require_relative "plugin_store"
 
 module Polispec
   module Stewardship
@@ -28,8 +29,7 @@ module Polispec
     end
 
     def plugins_home
-      value = ENV["RPLUGINS_HOME"].to_s
-      File.expand_path(value.empty? ? "~/.rplugins" : value)
+      PluginStore.home
     end
 
     def store_link

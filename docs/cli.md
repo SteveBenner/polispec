@@ -20,7 +20,7 @@ Read-only means no file, ledger, shelf or state write. `--json` is accepted wher
 | --- | --- | --- | --- |
 | `resolve PATH [--layers]` | Which project, environment, layers and digest govern a path | agent | reads |
 | `status [PROJECT]` | Project state, packages, findings | agent | reads |
-| `doctor` | Runtime, wiring, ledger, shelf, lint and drift findings | agent | reads |
+| `doctor` | Runtime, wiring, ledger, shelf, lint, drift and code-enforcer plugin (`code_enforcer_unresolved`, `code_enforcer_version_skew`) findings | agent | reads |
 | `explain --harness H < hook.json` | The verdict a real hook payload would get, with exceptions applied | agent | reads, records nothing |
 | `explain TOOL INPUT [--cwd DIR] [--json]` | The classified actions, every rule that matched in every layer with file, line, module instance and package, the winner and why, and the `plan` invocation or other lever that would change it; INPUT is the shell command for Bash, else a JSON object of tool input (a bare path for Read, Write and Edit) | agent | reads, records nothing |
 | `classify < hook.json` | The actions a payload classifies as | agent | reads |

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-10-27
+
+### Added
+- **A code-spec enforcer can declare the rplugin plugins it needs.** `execution.enforcer.requires` is an optional list of `{plugin, version}` entries (`schemas/spec.v1.yml`, `$defs.enforcer`; `plugin` matches `^[a-z][a-z0-9-]*$`, `version` is a RubyGems requirement). Before a `script` enforcer runs, the runner resolves each plugin under `RPLUGINS_HOME` (else `~/.rplugins`) and passes its real path as `POLISPEC_PLUGIN_<ID>_ROOT`; an uninstalled plugin is an enforcer error that never blocks. `polispec doctor` reads the pack the hooks read and reports `code_enforcer_unresolved` and `code_enforcer_version_skew`, both blocking, one per policy and plugin. Before, an enforcer that located its tool by a hard-coded path failed non-blocking with no finding anyone saw.
+
+### Changed
+- **One plugin-store helper.** `Polispec::PluginStore` (`lib/polispec/plugin_store.rb`) resolves the store, a plugin root and its `VERSION`; `Stewardship.plugins_home`, the runner and doctor all use it.
+
 ## [0.49.0] - 2026-10-27
 
 ### Added

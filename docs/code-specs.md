@@ -56,10 +56,28 @@ Waivers are read from `specs/polispec/code-waivers.yml` at the repository's HEAD
 | ripper | a Ruby script in the pack defining `check(source, path)` returning `[[line, message], ...]`, loaded with `load` into an anonymous module |
 | grep | `enforcer.pattern` as a regular expression against each line |
 | rubocop | the pack's bundled RuboCop through `bundle exec` in the pack directory, `--server` when it works, `--stdin <path> --format json --only <cops>`, configured by `enforcers/rubocop/base.yml` or a config generated on the fly |
-| script | `enforcer.ref` executed with the path as argv and the text on stdin, JSON lines `{"line":N,"message":"..."}` out |
+| script | `enforcer.ref` executed with the path as argv and the text on stdin, JSON lines `{"line":N,"message":"..."}` out; each `requires` plugin's root is passed as `POLISPEC_PLUGIN_<ID>_ROOT` |
 | hook | recorded only; names an existing guard that polispec does not execute |
 
 An enforcer that crashes, times out (`budget_ms`) or is missing never blocks: the check reports it and emits `polispec.code.finding`.
+
+### Required plugins
+
+Any enforcer may declare `requires`, a list of `{plugin, version}` entries (`plugin` an rplugin id matching `^[a-z][a-z0-9-]*$`, `version` an optional RubyGems requirement string such as `"= 0.15.0"`). Only `script` and `ripper` enforcers consume it at run time.
+
+```
+enforcer:
+  kind: script
+  ref: enforcers/web/ratelier_lint.rb
+  decides: part
+  requires:
+    - plugin: ratelier
+      version: "= 0.15.0"
+```
+
+A plugin resolves to the real path of `<store>/<plugin>`, where the store is `RPLUGINS_HOME` when non-empty, else `~/.rplugins`; its installed version is the stripped content of `<root>/VERSION`. Before a `script` enforcer runs, the runner resolves every entry and passes the root in the environment variable `POLISPEC_PLUGIN_<ID>_ROOT` (`<ID>` is the plugin id upcased with `-` replaced by `_`, for example `POLISPEC_PLUGIN_RATELIER_ROOT`). A plugin that is not installed raises `enforcer <ref> requires plugin <id>, not installed at <path>`, reported as an enforcer error like any other and never a block. The runtime does not compare versions.
+
+`polispec doctor` reads the pack exactly as the hooks load it (same repository and `POLISPEC_CODE_REF`, default `stable`) and, for each active rule, reports two blocking findings, one per policy and plugin: `code_enforcer_unresolved` (the plugin is not installed) and `code_enforcer_version_skew` (the installed `VERSION` does not satisfy the requirement, or there is no `VERSION` file). A host with no code specs pack gets no new finding.
 
 A hybrid rule's findings are candidates (`candidate: true`) and never block. A contextual rule asks the `decide` port whether it applies; a probability below `confidence_floor`, or a missing port, defers the rule to task-end review.
 

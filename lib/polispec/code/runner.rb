@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require_relative "../plugin_store"
+
 module Polispec
   module Code
     Hit = Struct.new(:rule, :line, :message, keyword_init: true)
@@ -71,7 +73,19 @@ module Polispec
         { "policy" => rule.id, "enforcer" => rule.enforcer["kind"], "message" => Code.squash(message) }
       end
 
+      def plugin_roots(rule)
+        ref = rule.enforcer["ref"].to_s
+        rule.requires.to_h do |entry|
+          id = entry["plugin"].to_s
+          root = PluginStore.root(id)
+          raise Error, "enforcer #{ref} requires plugin #{id}, not installed at #{PluginStore.path(id)}" unless root
+
+          [PluginStore.env_name(id), root]
+        end
+      end
+
       def ripper(rule, text, path)
+        plugin_roots(rule)
         checker = checker_for(rule)
         out = checker.call(text, path, rule.enforcer["config"])
         Array(out).map do |item|
@@ -116,7 +130,7 @@ module Polispec
         raise Error, "enforcer #{ref} not found in the pack" unless real
 
         File.chmod(0o700, real) if @pack.source.kind == :dir && !File.executable?(real)
-        out, err, status = Open3.capture3(*[real, path, *Array(rule.enforcer["args"])], stdin_data: text)
+        out, err, status = Open3.capture3(plugin_roots(rule), *[real, path, *Array(rule.enforcer["args"])], stdin_data: text)
         raise Error, "script exited #{status.exitstatus}: #{err.to_s[0, 160]}" unless status.success? || !out.strip.empty?
 
         out.each_line.map do |line|
