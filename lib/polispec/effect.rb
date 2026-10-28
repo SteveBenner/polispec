@@ -286,7 +286,7 @@ module Polispec
           allowlist = File.join(home, ".hermes", "shell-hooks-allowlist.json")
           return "no hook in #{config} reaches polispec" unless mentions?(config)
 
-          mentions?(allowlist) ? "wired and allowlisted, but no call was judged" : "wired in #{config} but absent from #{allowlist}; approve it with `hermes hooks` and start a new Hermes session"
+          mentions?(allowlist) ? "wired and allowlisted, but no call was judged" : "wired in #{config} but absent from #{allowlist}; start `hermes` at a terminal and approve the polispec-guard hooks at its first-use prompt (`hermes hooks list` shows their consent)"
         when "antigravity"
           hooks = File.join(home, ".gemini", "config", "hooks.json")
           mentions?(hooks) ? "wired in #{hooks}, but no call was judged" : "no hook in #{hooks} reaches polispec; Antigravity loads no plugin hooks.json, so the guard must be wired there or in a workspace .agents/hooks.json"
