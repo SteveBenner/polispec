@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-10-28
+
+### Added
+- **A behavior directive can be scoped to code or document slices.** The directive `slice` enum in `schemas/behavior.v1.yml` and `schemas/behavior.v2.yml` adds `code` and `document` beside `all`, `backend`, `panel` and `verification`, so an application whose course has written-work (document) assignments beside code ones can mark which directives apply to each. polispec compiles the value through unchanged; the application filters by it. No verdict changes.
+
 ## [0.50.2] - 2026-10-27
 
 ### Fixed
