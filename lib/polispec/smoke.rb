@@ -34,12 +34,15 @@ module Polispec
       Open3.popen2(*argv, **options) do |stdin, stdout, thread|
         stdin.close
         reader = Thread.new { stdout.read }
+        reader.report_on_exception = false
         unless thread.join(COMMAND_TIMEOUT)
           begin
             Process.kill("KILL", thread.pid)
           rescue SystemCallError
             nil
           end
+          reader.kill
+          reader.join
           return nil
         end
         status = thread.value
