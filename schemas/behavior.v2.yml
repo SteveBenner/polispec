@@ -82,7 +82,7 @@ $defs:
       opcode: {type: string, pattern: "^[A-Z][A-Z0-9]{2,9}$"}
       alias: {type: string, pattern: "^[A-Z]$"}
       tier: {enum: [public, private]}
-      slice: {enum: [all, backend, panel, verification]}
+      slice: {enum: [all, backend, panel, verification, code, document]}
       scope: {enum: [everywhere, slice, extracurricular, course_root, repo]}
       spaces: {$ref: '#/$defs/strings'}
       rule: {type: string, minLength: 1}
