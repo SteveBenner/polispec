@@ -148,19 +148,42 @@ module Polispec
         listing = Environments.git(root, "ls-tree", "-r", "-z", "--name-only", commit.strip)
         raise Polispec::Error, "cannot list #{ref} in #{root}" if listing.nil?
 
-        names = listing.split("\0").select { |relative| !relative.include?("\n") && (eligible?(relative) || relative.start_with?("specs/polispec/")) }
+        listed = listing.split("\0").reject { |relative| relative.include?("\n") }
+        names = listed.select { |relative| eligible?(relative) || relative.start_with?("specs/polispec/") }
         if names.length > CANDIDATE_CAP
           notes << Finding.new("info", "refs", "too_many_files", root, nil, nil, "#{names.length} candidate files at #{ref}; only the first #{CANDIDATE_CAP} were examined", id)
           names = names.first(CANDIDATE_CAP)
         end
         dir = Dir.mktmpdir("polispec-lint-")
         scratch << dir
+        targets = []
         read_blobs(root, commit.strip, names) do |relative, text|
-          path = File.join(dir, relative)
-          FileUtils.mkdir_p(File.dirname(path))
-          File.binwrite(path, text)
+          export_blob(dir, relative, text)
+          targets.concat(surface_targets(text, relative))
         end
+        extra = (targets.uniq & listed) - names
+        read_blobs(root, commit.strip, extra) { |relative, text| export_blob(dir, relative, text) } unless extra.empty?
         dir
+      end
+
+      def export_blob(dir, relative, text)
+        path = File.join(dir, relative)
+        FileUtils.mkdir_p(File.dirname(path))
+        File.binwrite(path, text)
+      end
+
+      def surface_targets(text, relative)
+        return [] unless text.include?("surfaces")
+
+        data = begin
+          Schema::Document.parse(text.dup.force_encoding("UTF-8"), relative)
+        rescue Schema::Document::ParseError
+          nil
+        end
+        surfaces = data.is_a?(Hash) ? data["surfaces"] : nil
+        return [] unless surfaces.is_a?(Hash)
+
+        surfaces.values.filter_map { |spec| spec["target"] if spec.is_a?(Hash) && spec["target"].is_a?(String) }
       end
 
       def read_blobs(root, commit, names)

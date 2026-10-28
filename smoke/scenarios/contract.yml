@@ -262,6 +262,12 @@ steps:
     expect:
       exit: 0
       stdout_includes: ['0 errors']
+  - name: lint --ref compares a surface target of any extension at the ref and reports a committed hand edit
+    run: [sh, -c, 'rm -rf "$2" && mkdir -p "$2/specs/polispec" && sed "s|target: out/en.yml|target: out/en.txt|" "$1/behavior.yml" > "$2/specs/polispec/behavior.yml" && cd "$2" && "$0" behavior render specs/polispec/behavior.yml --surface locale_en --root . --write >/dev/null && "$0" behavior render specs/polispec/behavior.yml --surface bundle --root . --write >/dev/null && git init -q -b main && git add specs out && git -c user.name=s -c user.email=s@s commit -q -m base && "$0" lint --ref HEAD; echo "clean=$?"; echo hand >> out/en.txt && git -c user.name=s -c user.email=s@s commit -q -m edit -- out/en.txt && "$0" lint --ref HEAD; echo "edited=$?"', "{{polispec}}", "{{files}}", "{{scratch}}/surfref"]
+    expect:
+      exit: 0
+      stdout_includes: ['clean=0', 'out/en.txt', 'surface locale_en expected sha256', 'edited=1']
+      stdout_excludes: ['actual missing']
   - name: a contract in enforce without an approval is refused
     run: [sh, -c, 'sed -i "s/^lifecycle: advise/lifecycle: enforce/" "$1/demo-gate.yml" && "$0" contract render "$1" --write --root "$2" >/dev/null; "$0" contract check "$1" --root "$2" --runner "ruby $2/runner.rb"; echo "exit=$?"', "{{polispec}}", "{{files}}/contracts", "{{files}}"]
     expect:

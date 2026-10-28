@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.1] - 2026-10-28
+
+### Fixed
+- **`lint --ref` exports the target of every behavior surface.** Once 0.52.0 exported the `.tpl` templates, rEach's surfaces compiled at its trust ref and the drift check compared them with targets the export never carried (`AGENTS.md`, `agents/*.md`, `rules/*.md`, `skills/*/SKILL.md`), so `doctor` reported 18 false `behavior_surface_drift` errors with `actual missing` where 0.51.2 reported one warn. The ref reader now reads the `surfaces` of each exported document and exports each named target that exists at the ref (`lib/polispec/lint/targets.rb`). rEach at `stable` lints with no drift finding, and a surface changed at a ref is still reported with its actual digest.
+
 ## [0.52.0] - 2026-10-28
 
 ### Fixed
