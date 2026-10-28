@@ -147,7 +147,7 @@ module Polispec
         argv = harness == "claude-code" ? claude_argv(live, dir, wrapper, log, layout, code_hooks, controls, sandbox_off) : codex_argv(live, cwd, wrapper, log, layout, code_hooks, controls)
         File.write(File.join(dir, "argv.json"), JSON.pretty_generate(argv))
         bin = link_binary(layout)
-        env = layout.env({ "POLISPEC_BIN" => bin }.merge(expanded["env"] || {})).merge(harness == "claude-code" ? nested_env : {})
+        env = layout.env({ "POLISPEC_BIN" => bin }.merge(expanded["env"] || {})).merge(harness == "claude-code" ? nested_env : codex_env)
         shas = Step.git_before(expect["git"])
         version = harness_version(BINARIES.fetch(harness), cwd)
         result, attempts = launch(argv, env, cwd, timeout, log, dir)
@@ -209,6 +209,10 @@ module Polispec
 
       def nested_env
         ENV.keys.grep(NESTED_ENV).to_h { |key| [key, nil] }
+      end
+
+      def codex_env
+        { "CODEX_HOME" => ENV["CODEX_HOME"] }
       end
 
       def write_wrapper(dir)
@@ -384,7 +388,7 @@ module Polispec
         limit = step.dig("live", "max_turns")
         checks << Step.item("turns", facts["turns"] <= limit, "#{facts['turns']} turns, limit #{limit}") if limit && facts["turns"]
         checks.concat(Step.check(expect.reject { |key, _| key == "hook_log" }, result, nil, shas, nil))
-        auth = entries.empty? && !result.timed_out && AUTH_FAILURE.match?("#{result.stderr}\n#{result.stdout}")
+        auth = seen.empty? && !result.timed_out && AUTH_FAILURE.match?("#{result.stderr}\n#{result.stdout}")
         first_deny = seen.find { |item| item["decision"] == "deny" }
         not_attempted = !result.timed_out && result.error.nil? && !auth && declined?(checks)
         outcome = base(step, live).merge(
