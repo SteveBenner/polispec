@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.50.2] - 2026-10-27
+## [0.50.2] - 2026-10-28
+
+### Added
+- **`polispec smoke run --strict`.** It exits 1 when a scenario was blocked or inconclusive, or when no scenario matched the filters. Without it, those runs still exit 0. polispec's six live `per_target` proof runs (claude-code and codex) now pass `--strict`. Before this, a live Codex session that never attempted the forbidden action was recorded as inconclusive, `smoke run` exited 0, and `proof run` signed the cell as a rung-3 pass. Because the manifest change alters those runs' argv, the three codex records signed that way are now stale. `smoke-suite.yml` asserts both strict exits and the unchanged default.
 
 ### Fixed
 - **`polispec proof run --target T` works.** Since 0.49.0, `--target` was parsed as repeatable for `proof except`, so `run` passed a list where it expected one id and every `--target` refused `target_unmatched`, which made the harness-only targets unreachable. `run` now takes one `--target` and answers a second with its usage, exit 2 (`lib/polispec/commands/proof.rb`). The `proof` scenario now runs `--target`, an unknown target and a repeated one.

@@ -19,7 +19,7 @@ module Polispec
       SEVERITY = %w[pass inconclusive partial blocked fail].freeze
       SUITE_RUNNER = { "kind" => "suite", "harness" => nil, "harness_version" => nil, "model" => nil, "effort" => nil }.freeze
 
-      Options = Struct.new(:units, :scenarios, :against, :host_copy, :live, :out, :record, :accept, :json, keyword_init: true)
+      Options = Struct.new(:units, :scenarios, :against, :host_copy, :live, :out, :record, :accept, :json, :strict, keyword_init: true)
 
       attr_reader :options, :tree
 
@@ -330,7 +330,10 @@ module Polispec
       end
 
       def finish_ok?(results, diffs)
-        scenarios_ok = results.all? { |item| %w[pass blocked inconclusive].include?(item["verdict"]) && !item["record_error"] }
+        return false if options.strict && results.empty?
+
+        accepted = options.strict ? %w[pass] : %w[pass blocked inconclusive]
+        scenarios_ok = results.all? { |item| accepted.include?(item["verdict"]) && !item["record_error"] }
         scenarios_ok && (diffs.empty? || options.accept)
       end
 
