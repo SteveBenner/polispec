@@ -1,0 +1,217 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/uninstall --all, restore
+summary: uninstall --all --dry-run lists what it would back up and remove without writing a backup, --keep narrows it and an unknown class is refused, the real run without a terminal is refused with not_tty naming the phrase and changes nothing, restore --list is empty then names a backup that exists, restore of an unknown or malformed id is refused, restore --dry-run lists the rewire and bytes plans without touching anything, the real restore without a terminal is refused, and bad arguments are usage errors
+fixture:
+  enforce: enforce
+  projects:
+    - id: wired
+      variant: service
+      status: live
+steps:
+  - name: restore --list with no backups says so
+    run: ["{{polispec}}", restore, --list]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["no backups under {{scratch}}/polispec-data/backups"]
+  - name: restore --list --json is an empty list
+    run: ["{{polispec}}", restore, --list, --json]
+    home: true
+    expect:
+      exit: 0
+      json: { backups: [] }
+  - name: uninstall --all --dry-run with nothing deployed lists no steps
+    run: ["{{polispec}}", uninstall, --all, --dry-run]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["dry run: uninstall --all would write the backup bkp_", "keep: nothing", "files it would copy into the backup:", "steps in order:", "restore with: {{tree}}/bin/polispec restore bkp_"]
+  - name: a project install gives uninstall --all something to list
+    run: ["{{polispec}}", install, --harness, codex, --scope, project, --project, "{{project.wired}}"]
+    home: true
+    expect:
+      exit: 0
+      files_exist: ["{{project.wired}}/.codex/config.toml"]
+  - name: uninstall --all --dry-run lists the hooks deployment and the file it would copy
+    run: ["{{polispec}}", uninstall, --all, --dry-run]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["dry run: uninstall --all would write the backup bkp_", "  {{project.wired}}/.codex/config.toml", "hooks: remove polispec hooks, links and receipt for codex (project) at "]
+  - name: the dry run --json carries the backup id, the files, the steps and the restore command
+    run: ["{{polispec}}", uninstall, --all, --dry-run, --json]
+    home: true
+    expect:
+      exit: 0
+      json: { ok: true, dry_run: true, keep: [] }
+      stdout_includes: ['"backup_id":"bkp_', '"backup_dir":"{{scratch}}/polispec-data/backups/bkp_', '"files":[', '"steps":[{', '"kind":"hooks"', '"restore_command":"{{tree}}/bin/polispec restore bkp_']
+  - name: --keep wiring leaves the hooks deployment out of the steps
+    run: ["{{polispec}}", uninstall, --all, --dry-run, --keep, wiring]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["keep: wiring"]
+      stdout_excludes: ["hooks: remove polispec hooks"]
+  - name: an unknown --keep class is refused
+    run: ["{{polispec}}", uninstall, --all, --dry-run, --keep, bogus]
+    home: true
+    expect:
+      exit: 2
+      stderr_includes: ["--keep takes wiring, pins, rplugin, data; unknown bogus"]
+  - name: --keep without a value is a usage error
+    run: ["{{polispec}}", uninstall, --all, --keep]
+    home: true
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec uninstall --harness claude|codex|all"]
+  - name: an unknown argument with --all is a usage error
+    run: ["{{polispec}}", uninstall, --all, --nope]
+    home: true
+    expect:
+      exit: 2
+      stderr_includes: ["unknown argument --nope"]
+  - name: the real uninstall --all without a terminal is refused naming the phrase
+    run: ["{{polispec}}", uninstall, --all]
+    home: true
+    expect:
+      exit: 1
+      stderr_includes: ["polispec: not_tty:", "needs an interactive terminal"]
+      files_exist: ["{{project.wired}}/.codex/config.toml"]
+  - name: the refused run --json says not_tty
+    run: ["{{polispec}}", uninstall, --all, --json]
+    home: true
+    expect:
+      exit: 1
+      json: { ok: false, error: not_tty }
+      stdout_includes: ["needs an interactive terminal"]
+  - name: a wrong phrase on a terminal is refused with phrase_mismatch
+    run: ["{{polispec}}", uninstall, --all]
+    home: true
+    tty: ["not the phrase"]
+    expect:
+      exit: 1
+      stdout_includes: ["phrase_mismatch", "did not match"]
+  - name: the refusal removed nothing and wrote no backup
+    run: [sh, -c, 'grep -c "polispec hooks" "$1/.codex/config.toml"; ls "$2/polispec-data/backups" 2>&1 || true', sh, "{{project.wired}}", "{{scratch}}"]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["2"]
+      stdout_excludes: ["bkp_"]
+  - name: restore --list is still empty after the refusals
+    run: ["{{polispec}}", restore, --list]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["no backups under "]
+  - name: a backup manifest is written into the data home
+    run:
+      - sh
+      - -c
+      - |
+        set -e
+        dir="$1/polispec-data/backups/bkp_0123456789ab"
+        mkdir -p "$dir/files/seed" "$dir/data/seed"
+        printf 'kept\n' > "$dir/files/seed/original.txt"
+        printf 'moved\n' > "$dir/data/seed/moved.txt"
+        cat > "$dir/backup.json" <<JSON
+        {"schema":"polispec.backup/v1","id":"bkp_0123456789ab","created_at":"2026-10-27T00:00:00Z","polispec_version":"0.50.0","runtime_root":"$2","keep":["pins"],"entries":[{"id":"dep_one","kind":"hooks","target":"$3/.codex/config.toml","class":"wiring","status":"active","details":{}}],"files":[{"entry":"dep_one","original":"$1/seed/original.txt","stored":"files/seed/original.txt","mode":420,"kind":"file","sha256_before":"x","sha256_after":null}],"data":[{"entry":"dep_two","original":"$1/seed/moved.txt","stored":"data/seed/moved.txt","kind":"file","method":"rename"}],"steps":[{"entry":"dep_one","kind":"hooks","target":"$3/.codex/config.toml","status":"ok","detail":"rewrite"}],"restore_command":"restore bkp_0123456789ab","restored_at":null}
+        JSON
+        echo written
+      - sh
+      - "{{scratch}}"
+      - "{{tree}}"
+      - "{{project.wired}}"
+    expect:
+      exit: 0
+      stdout_includes: [written]
+      files_exist: ["{{scratch}}/polispec-data/backups/bkp_0123456789ab/backup.json"]
+  - name: restore --list names the backup
+    run: ["{{polispec}}", restore, --list]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["bkp_0123456789ab  2026-10-27T00:00:00Z  entries 1  not restored"]
+  - name: restore --list --json carries the id, the keep list and the restore command
+    run: ["{{polispec}}", restore, --list, --json]
+    home: true
+    expect:
+      exit: 0
+      json:
+        backups:
+          - { id: bkp_0123456789ab, restored_at: null, keep: [pins], entries: 1 }
+  - name: restore --dry-run in the default rewire mode lists the data copy and the hooks rewire
+    run: ["{{polispec}}", restore, bkp_0123456789ab, --dry-run]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["dry run: restore bkp_0123456789ab (rewire) would", "data (bytes): copy data/seed/moved.txt back to ", "rewire hooks: "]
+  - name: restore --dry-run --mode bytes lists the file copy
+    run: ["{{polispec}}", restore, bkp_0123456789ab, --dry-run, --mode, bytes, --json]
+    home: true
+    expect:
+      exit: 0
+      json: { ok: true, dry_run: true, backup_id: bkp_0123456789ab, mode: bytes }
+      stdout_includes: ["bytes: copy files/seed/original.txt back to "]
+  - name: the restore dry runs wrote nothing
+    run: [sh, -c, 'test ! -e "$1/seed/original.txt" && test ! -e "$1/seed/moved.txt" && echo untouched', sh, "{{scratch}}"]
+    expect:
+      exit: 0
+      stdout_includes: [untouched]
+  - name: the real restore without a terminal is refused naming the phrase
+    run: ["{{polispec}}", restore, bkp_0123456789ab]
+    home: true
+    expect:
+      exit: 1
+      stderr_includes: ["polispec: not_tty:", "needs an interactive terminal"]
+  - name: a wrong phrase on a terminal is refused for restore as well
+    run: ["{{polispec}}", restore, bkp_0123456789ab]
+    home: true
+    tty: ["not the phrase"]
+    expect:
+      exit: 1
+      stdout_includes: ["phrase_mismatch", "did not match"]
+  - name: the refused restore left the backup unrestored
+    run: ["{{polispec}}", restore, --list, --json]
+    home: true
+    expect:
+      exit: 0
+      json:
+        backups:
+          - { id: bkp_0123456789ab, restored_at: null }
+  - name: restore of an id that no backup holds is refused
+    run: ["{{polispec}}", restore, bkp_ffffffffffff, --dry-run]
+    home: true
+    expect:
+      exit: 1
+      stderr_includes: ["polispec: error: no backup bkp_ffffffffffff at "]
+  - name: restore of a malformed id is refused
+    run: ["{{polispec}}", restore, "../etc", --dry-run]
+    home: true
+    expect:
+      exit: 1
+      stderr_includes: ["is not a backup id (bkp_ and 12 hex digits)"]
+  - name: restore with an unknown mode is a usage error
+    run: ["{{polispec}}", restore, bkp_0123456789ab, --mode, sideways]
+    home: true
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec restore <bkp_id>"]
+  - name: restore with no id and no --list is a usage error
+    run: ["{{polispec}}", restore]
+    home: true
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec restore <bkp_id>"]
+  - name: restore --list with an id is a usage error
+    run: ["{{polispec}}", restore, --list, bkp_0123456789ab]
+    home: true
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec restore <bkp_id>"]
+  - name: an unknown restore flag is a usage error
+    run: ["{{polispec}}", restore, --nope]
+    home: true
+    expect:
+      exit: 2
+      stderr_includes: ["unknown argument --nope"]

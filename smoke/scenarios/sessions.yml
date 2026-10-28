@@ -1,0 +1,83 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/sessions
+summary: sessions list with no hook call prints an empty active count, a session-start hook and a pretool hook register a session that list shows in text and json with its harness, epoch and no epoch history, a second harness adds a second session, a zero window hides them, and a bad verb, flag or window prints usage with exit 2
+requires: [harness_controls]
+fixture:
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+steps:
+  - name: list before any hook call counts none
+    run: ["{{polispec}}", sessions, list]
+    expect:
+      exit: 0
+      stdout_includes: ["polispec sessions, active within 3600s: 0"]
+  - name: list in json before any hook call is an empty array
+    run: ["{{polispec}}", sessions, list, --json]
+    expect:
+      exit: 0
+      stdout_includes: ["[]"]
+  - name: a claude session start registers a session
+    hook:
+      harness: claude
+      event: session
+      cwd: "{{project.shop}}"
+    expect:
+      decision: context
+  - name: a claude pretool call keeps it active
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "ls" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: list shows one active session with its harness
+    run: ["{{polispec}}", sessions, list, --active, 1h]
+    expect:
+      exit: 0
+      stdout_includes: ["polispec sessions, active within 3600s: 1", " claude first ", " last ", " epoch ep_"]
+  - name: list in json carries the session fields and drops the epoch history
+    run: ["{{polispec}}", sessions, list, --active, 1h, --json]
+    expect:
+      exit: 0
+      stdout_includes: ["\"session_id\":\"", "\"harness\":\"claude\"", "\"first_seen\":\"", "\"last_call\":\"", "\"epoch\":\"ep_"]
+      stdout_excludes: ["\"epochs\""]
+  - name: a codex pretool call with its own session id adds a second session
+    run: ["{{polispec}}", hook, pretool, --harness, codex]
+    stdin: "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"second\"}"
+    expect:
+      exit: 0
+  - name: list now shows both harnesses
+    run: ["{{polispec}}", sessions, list, --json]
+    expect:
+      exit: 0
+      stdout_includes: ["\"session_id\":\"smoke\"", "\"session_id\":\"second\"", "\"harness\":\"codex\""]
+  - name: the inline window form is accepted
+    run: ["{{polispec}}", sessions, list, "--active=2h"]
+    expect:
+      exit: 0
+      stdout_includes: ["active within 7200s: 2"]
+  - name: a zero window hides every session
+    run: ["{{polispec}}", sessions, list, --active, 0s]
+    expect:
+      exit: 0
+      stdout_includes: ["active within 0s: 0"]
+  - name: a bad window prints usage
+    run: ["{{polispec}}", sessions, list, --active, soon]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec sessions list [--active 1h] [--json]"]
+  - name: an unknown flag prints usage
+    run: ["{{polispec}}", sessions, list, --bogus]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec sessions list"]
+  - name: an unknown verb prints usage
+    run: ["{{polispec}}", sessions, bogus]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec sessions list"]

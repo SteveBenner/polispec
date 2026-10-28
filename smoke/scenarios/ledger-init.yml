@@ -1,0 +1,56 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/ledger init
+summary: ledger init with the ledger path missing previews with --dry-run and writes nothing, the real run writes a 0600 ledger in a 0700 directory with no projects that validates, and a second run keeps the existing ledger untouched
+steps:
+  - name: dry run on a missing ledger writes nothing
+    run: ["{{polispec}}", ledger, init, --dry-run]
+    env: { POLISPEC_LEDGER: "{{scratch}}/fresh/ledger.yml" }
+    expect:
+      exit: 0
+      stdout_includes: ["would create", "fresh/ledger.yml", "no projects yet"]
+      files_absent: ["{{scratch}}/fresh/ledger.yml"]
+  - name: dry run as json reports created and dry_run
+    run: ["{{polispec}}", ledger, init, --dry-run, --json]
+    env: { POLISPEC_LEDGER: "{{scratch}}/fresh/ledger.yml" }
+    expect:
+      exit: 0
+      json: { created: true, dry_run: true }
+      files_absent: ["{{scratch}}/fresh/ledger.yml"]
+  - name: an unknown flag is a usage error
+    run: ["{{polispec}}", ledger, init, --nope]
+    env: { POLISPEC_LEDGER: "{{scratch}}/fresh/ledger.yml" }
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec ledger init"]
+  - name: the real run creates the starter ledger
+    run: ["{{polispec}}", ledger, init]
+    env: { POLISPEC_LEDGER: "{{scratch}}/fresh/ledger.yml" }
+    expect:
+      exit: 0
+      stdout_includes: ["created", "fresh/ledger.yml"]
+      files_exist: ["{{scratch}}/fresh/ledger.yml"]
+  - name: the ledger is 0600 in a 0700 directory
+    run: [sh, -c, 'test "$(stat -c %a "$1")" = 600 && test "$(stat -c %a "$(dirname "$1")")" = 700 && echo modes-ok', sh, "{{scratch}}/fresh/ledger.yml"]
+    expect:
+      exit: 0
+      stdout_includes: ["modes-ok"]
+  - name: the ledger lists no projects
+    run: [grep, -E, '^projects: \[\]', "{{scratch}}/fresh/ledger.yml"]
+    expect:
+      exit: 0
+  - name: the ledger validates
+    run: ["{{polispec}}", validate, ledger, "{{scratch}}/fresh/ledger.yml"]
+    expect:
+      exit: 0
+  - name: a second run keeps the existing ledger
+    run: ["{{polispec}}", ledger, init]
+    env: { POLISPEC_LEDGER: "{{scratch}}/fresh/ledger.yml" }
+    expect:
+      exit: 0
+      stdout_includes: ["kept", "a ledger is already there"]
+  - name: a second run as json reports created false
+    run: ["{{polispec}}", ledger, init, --json]
+    env: { POLISPEC_LEDGER: "{{scratch}}/fresh/ledger.yml" }
+    expect:
+      exit: 0
+      json: { created: false, dry_run: false }

@@ -1,0 +1,93 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/delegate
+summary: delegate list is empty on a fresh host in text and json, unit renders the systemd unit and its install commands to stdout without installing, status reports the runner and the empty grants, grant validates the app, verbs, targets and ledger projects before asking, a valid grant without a terminal is refused with not_tty and exit 3 and writes nothing, revoke of an unknown app is refused, and an unknown verb prints usage with exit 2
+fixture:
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+steps:
+  - name: list is empty on a fresh host
+    run: ["{{polispec}}", delegate, list]
+    expect:
+      exit: 0
+      stdout_includes: ["no delegation grants"]
+  - name: list in json carries empty grants and problems
+    run: ["{{polispec}}", delegate, list, --json]
+    expect:
+      exit: 0
+      stdout_includes: ["{\"grants\":[],\"problems\":[]}"]
+  - name: unit renders the service to stdout
+    run: ["{{polispec}}", delegate, unit]
+    expect:
+      exit: 0
+      stdout_includes: ["[Unit]", "Description=polispec delegate runner", "delegate serve", "WantedBy=default.target", "write the unit to ~/.config/systemd/user/polispec-delegate.service", "systemctl --user daemon-reload && systemctl --user enable --now polispec-delegate"]
+  - name: unit in json names the path and the commands
+    run: ["{{polispec}}", delegate, unit, --json]
+    expect:
+      exit: 0
+      stdout_includes: ["\"unit\":\"[Unit]", "\"path\":\"~/.config/systemd/user/polispec-delegate.service\"", "\"commands\":["]
+  - name: rendering the unit installed nothing
+    run: [sh, -c, 'test ! -e "$1/.config/systemd/user/polispec-delegate.service"', sh, "{{home}}"]
+    expect: { exit: 0 }
+  - name: status names the runner and the empty grants
+    run: ["{{polispec}}", delegate, status]
+    expect:
+      exit: 0
+      stdout_includes: ["delegate runner:", "no delegation grants"]
+  - name: status in json carries the socket, the running flag and the grants
+    run: ["{{polispec}}", delegate, status, --json]
+    expect:
+      exit: 0
+      stdout_includes: ["\"running\":", "\"socket\":", "\"grants\":[]", "\"problems\":[]"]
+  - name: a valid grant without a terminal is refused with not_tty
+    run: ["{{polispec}}", delegate, grant, shopapp, --projects, shop, --verbs, "promote,deploy", --targets, test]
+    expect:
+      exit: 3
+      stderr_includes: ["polispec: not_tty:"]
+  - name: the refused grant left no grant behind
+    run: ["{{polispec}}", delegate, list]
+    expect:
+      exit: 0
+      stdout_includes: ["no delegation grants"]
+  - name: a grant with an unknown verb is refused
+    run: ["{{polispec}}", delegate, grant, shopapp, --projects, shop, --verbs, bogus, --targets, test]
+    expect:
+      exit: 1
+      stderr_includes: ["polispec: invalid: verbs must be a non-empty subset of promote, deploy, exceptions-add, exceptions-promote, exceptions-remove"]
+  - name: a grant for an unknown ledger project is refused
+    run: ["{{polispec}}", delegate, grant, shopapp, --projects, nosuch, --verbs, promote, --targets, test]
+    expect:
+      exit: 1
+      stderr_includes: ["polispec: invalid: unknown ledger project: nosuch"]
+  - name: a grant to a target outside test and stable is refused
+    run: ["{{polispec}}", delegate, grant, shopapp, --projects, shop, --verbs, promote, --targets, main]
+    expect:
+      exit: 1
+      stderr_includes: ["polispec: invalid: targets must be a non-empty subset of test, stable"]
+  - name: a grant to an app name that is not valid is refused
+    run: ["{{polispec}}", delegate, grant, "Bad App", --projects, shop, --verbs, promote, --targets, test]
+    expect:
+      exit: 1
+      stderr_includes: ["polispec: invalid: app must match"]
+  - name: a grant without targets prints usage
+    run: ["{{polispec}}", delegate, grant, shopapp, --projects, shop, --verbs, promote]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec delegate grant APP"]
+  - name: revoke of an app with no grant is refused
+    run: ["{{polispec}}", delegate, revoke, shopapp]
+    expect:
+      exit: 1
+      stderr_includes: ["polispec: not_found: no grant for shopapp"]
+  - name: an unknown verb prints usage
+    run: ["{{polispec}}", delegate, bogus]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec delegate grant APP --projects P[,P] --verbs V[,V] --targets T[,T]"]
+  - name: serve with an argument prints usage
+    run: ["{{polispec}}", delegate, serve, extra]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec delegate"]

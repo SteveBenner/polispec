@@ -1,0 +1,71 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/settings
+summary: settings list names each value's source, set writes a known key to the settings file and get returns it, unset restores the default, an unknown key and an invalid value are refused, and --json carries the file and the rows
+steps:
+  - name: list names a source for every value
+    run: ["{{polispec}}", settings, list]
+    expect:
+      exit: 0
+      stdout_includes: ["polispec.enforce = ", "polispec.exceptions = ", "polispec.web.port = 7421 (", "polispec.ledger = ", "(env:POLISPEC_LEDGER)"]
+  - name: get a key at its default
+    run: ["{{polispec}}", settings, get, polispec.web.port]
+    expect:
+      exit: 0
+      stdout_includes: ["7421"]
+  - name: set a known key
+    run: ["{{polispec}}", settings, set, polispec.web.port, "7777"]
+    expect:
+      exit: 0
+      stdout_includes: ["set polispec.web.port = 7777 in ", "settings.yml"]
+      files_exist: ["{{scratch}}/settings.yml"]
+  - name: get returns the set value
+    run: ["{{polispec}}", settings, get, polispec.web.port]
+    expect:
+      exit: 0
+      stdout_includes: ["7777"]
+  - name: list names the file as the source of the set value
+    run: ["{{polispec}}", settings, list]
+    expect:
+      exit: 0
+      stdout_includes: ["polispec.web.port = 7777 (file)"]
+  - name: the file is carried by list --json with the row source
+    run: ["{{polispec}}", settings, list, --json]
+    expect:
+      exit: 0
+      stdout_includes: ["\"file\":", "settings.yml", "\"key\":\"polispec.web.port\",\"value\":\"7777\",\"source\":\"file\""]
+  - name: an environment variable outranks the file
+    run: ["{{polispec}}", settings, get, polispec.web.port]
+    env: { RPLUGIN_POLISPEC_POLISPEC_WEB_PORT: "8888" }
+    expect:
+      exit: 0
+      stdout_includes: ["8888"]
+  - name: unset restores the default
+    run: ["{{polispec}}", settings, unset, polispec.web.port]
+    expect:
+      exit: 0
+      stdout_includes: ["unset polispec.web.port in "]
+  - name: get after unset returns the default
+    run: ["{{polispec}}", settings, get, polispec.web.port]
+    expect:
+      exit: 0
+      stdout_includes: ["7421"]
+  - name: an unknown key is refused on get with the known keys listed
+    run: ["{{polispec}}", settings, get, polispec.nope]
+    expect:
+      exit: 2
+      stderr_includes: ["polispec: unknown setting polispec.nope", "polispec.enforce"]
+  - name: an unknown key is refused on set
+    run: ["{{polispec}}", settings, set, polispec.nope, x]
+    expect:
+      exit: 2
+      stderr_includes: ["unknown setting polispec.nope"]
+  - name: an invalid value is refused and names the options
+    run: ["{{polispec}}", settings, set, polispec.enforce, bogus]
+    expect:
+      exit: 1
+      stderr_includes: ["polispec.enforce must be one of advise, enforce"]
+  - name: a missing verb is a usage error
+    run: ["{{polispec}}", settings]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec settings list|get <key>|set <key> <value>|unset <key> [--json]"]

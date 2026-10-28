@@ -1,0 +1,62 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/authorizations
+summary: authorizations status reports a missing service as a blocked result with the unavailable code and exit 3, unit refuses to render without an active plane, recover refuses without privilege and writes nothing, the json shape is the harness result envelope, and an unknown verb or a misplaced flag prints usage with exit 2
+fixture:
+  enforce: enforce
+steps:
+  - name: status without a service is a blocked result
+    run: ["{{polispec}}", authorizations, status, --json]
+    expect:
+      exit: [0, 3]
+      stdout_includes: ["\"schema\":\"polispec.harness.result/v1\"", "\"operation\":\"authorizations.status\"", "\"data\":{\"schema\":\"polispec.authorization/v1\""]
+  - name: the text form names the operation
+    run: ["{{polispec}}", authorizations, status]
+    expect:
+      exit: [0, 3]
+      stdout_includes: ["polispec authorizations.status:"]
+  - name: unit without an active plane is refused with exit 3
+    run: ["{{polispec}}", authorizations, unit]
+    expect:
+      exit: 3
+      stdout_includes: ["polispec authorizations.unit: blocked", "plane_unavailable", "authorization unit requires an active plane"]
+  - name: unit in json names the code and carries no unit text
+    run: ["{{polispec}}", authorizations, unit, --json]
+    expect:
+      exit: 3
+      stdout_includes: ["\"ok\":false", "\"operation\":\"authorizations.unit\"", "\"code\":\"plane_unavailable\""]
+      stdout_excludes: ["[Service]"]
+  - name: recover without privilege is refused and names the requirement
+    run: ["{{polispec}}", authorizations, recover]
+    expect:
+      exit: 3
+      stdout_includes: ["polispec authorizations.recover: blocked", "operator_required", "requires effective uid 0"]
+  - name: recover --dry-run is refused the same way in json
+    run: ["{{polispec}}", authorizations, recover, --dry-run, --json]
+    expect:
+      exit: 3
+      stdout_includes: ["\"ok\":false", "\"operation\":\"authorizations.recover\"", "\"code\":\"operator_required\""]
+  - name: an unknown verb prints usage and exits 2
+    run: ["{{polispec}}", authorizations, bogus]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec authorizations (serve | status [--json] | unit [--json] | recover [--dry-run] [--json])"]
+  - name: no verb prints usage and exits 2
+    run: ["{{polispec}}", authorizations]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec authorizations"]
+  - name: --dry-run on a verb that has none prints usage
+    run: ["{{polispec}}", authorizations, unit, --dry-run]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec authorizations"]
+  - name: a repeated flag prints usage as json
+    run: ["{{polispec}}", authorizations, status, --json, --json]
+    expect:
+      exit: 2
+      stdout_includes: ["\"code\":\"invalid_arguments\"", "usage: polispec authorizations"]
+  - name: serve with --json prints usage
+    run: ["{{polispec}}", authorizations, serve, --json]
+    expect:
+      exit: 2
+      stdout_includes: ["\"code\":\"invalid_arguments\""]
