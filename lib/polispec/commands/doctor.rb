@@ -15,12 +15,13 @@ require_relative "../plugin_store"
 
 module Polispec
   class DoctorCommand
-    USAGE = "usage: polispec doctor [--json]"
+    USAGE = "usage: polispec doctor [--json] [--all]".freeze
     FILE_LIMIT = 1_048_576
     GIT_LIMIT = 65_536
     GIT_TIMEOUT = 5
     NONBLOCKING = %w[info warn].freeze
     OID = /\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/
+    REF_NAME = %r{\A[A-Za-z0-9][A-Za-z0-9._/+-]*\z}.freeze
     GitResult = Struct.new(:stdout, :stderr, :status)
 
     class GitFailure < StandardError; end
@@ -32,6 +33,7 @@ module Polispec
     def run(args)
       args = args.dup
       json = args.delete("--json")
+      all = args.delete("--all")
       return usage unless args.empty?
 
       findings = []
@@ -59,7 +61,7 @@ module Polispec
       traced_check("check web", findings) { check_web(findings) }
       traced_check("check code enforcers", findings) { check_code_enforcers(findings) }
       blocking = findings.reject { |item| NONBLOCKING.include?(item["severity"]) }
-      json ? puts(JSON.generate("ok" => blocking.empty?, "runtime" => runtime_info, "findings" => findings)) : print_text(findings)
+      json ? puts(JSON.generate("ok" => blocking.empty?, "runtime" => runtime_info, "findings" => findings)) : print_text(findings, all)
       blocking.empty? ? 0 : 1
     end
 
@@ -102,6 +104,7 @@ module Polispec
         findings << finding(project.id, "repo_missing", "#{project.repo} is not a directory")
         return
       end
+      check_trust_ref(project, findings)
       loaded = PolicySource.resolve(project, ledger: ledger)
       findings << finding(project.id, loaded.finding["kind"], loaded.finding["detail"]) if loaded.finding
       defaults = loaded.source == "defaults"
@@ -116,6 +119,28 @@ module Polispec
       AgentsRender.drift(project.repo, project.trust_ref, project).each { |detail| findings << finding(project.id, "agents_drift", detail) } unless defaults
       findings << finding(project.id, "not_live", "status #{project.status}: the guard does not enforce this project") unless project.status == "live"
       check_packages(project, findings)
+    end
+
+    def check_trust_ref(project, findings)
+      ref = project.trust_ref.to_s
+      return if ref.empty? || !REF_NAME.match?(ref)
+
+      repo = File.expand_path(project.repo)
+      local = Environments.git(repo, "rev-parse", "--verify", "-q", "refs/heads/#{ref}^{commit}").to_s.strip
+      remote = Environments.git(repo, "rev-parse", "--verify", "-q", "refs/remotes/origin/#{ref}^{commit}").to_s.strip
+      return if local.empty? || remote.empty? || local == remote
+
+      behind = !Environments.git(repo, "merge-base", "--is-ancestor", local, remote).nil?
+      ahead = !Environments.git(repo, "merge-base", "--is-ancestor", remote, local).nil?
+      return if ahead && !behind
+
+      state, step =
+        if behind
+          ["behind", "the operator fast-forwards it with `git -C #{project.repo} fetch origin #{ref}:#{ref}`"]
+        else
+          ["diverged from", "the operator reconciles the two before the next promotion"]
+        end
+      findings << finding(project.id, "trust_ref_stale", "the guard judges #{project.id} from local #{ref} #{local[0, 12]}, which is #{state} origin/#{ref} #{remote[0, 12]}; #{step}").merge("severity" => "warn")
     end
 
     def check_proof(project, loaded, findings)
@@ -463,10 +488,23 @@ module Polispec
     end
 
     def check_judgments(findings)
-      Judgments.verify(schema: false)["findings"].each do |item|
+      result = Judgments.verify(schema: false)
+      result["findings"].each do |item|
+        if item["acknowledged"]
+          note = item["acknowledged"]
+          findings << info(nil, "judgments_acknowledged", "#{item['kind']} #{item['id']}: acknowledged by #{note['by']} at #{note['at']}#{note['reason'] ? ": #{note['reason']}" : ''}")
+          next
+        end
         kind = item["kind"] == "truncated" ? "judgments_truncated" : "judgments_chain_broken"
-        findings << finding(nil, kind, "#{item['kind']} #{item['id'] || '-'}: #{item['detail']}")
+        step = item["id"] ? "; once examined, the operator records it with `polispec judgments acknowledge #{item['id']}`" : ""
+        findings << finding(nil, kind, "#{item['kind']} #{item['id'] || '-'}: #{item['detail']}#{step}")
       end
+      torn = result["interrupted"].count { |item| item["kind"].start_with?("torn") }
+      findings << info(nil, "judgments_interrupted", "#{torn} append#{torn == 1 ? ' was' : 's were'} cut off mid-write and never anchored; the chain is intact around them; polispec judgments verify lists each") if torn.positive?
+      stalled = result["stalled"]
+      return unless stalled
+
+      findings << finding(nil, "judgments_stalled", "#{stalled['count']} judgment#{stalled['count'] == 1 ? '' : 's'} since #{stalled['first_at']} (last #{stalled['last_at']}) could not be recorded: #{stalled['error']}; the verdicts were delivered unrecorded; the next successful append clears this")
     rescue StandardError => error
       findings << finding(nil, "judgments_unreadable", "#{error.class}: #{error.message}")
     end
@@ -549,6 +587,7 @@ module Polispec
 
     def check_effect(findings)
       findings.concat(Effect.doctor_findings)
+      findings.concat(Effect.coverage_findings(findings))
     end
 
     def check_lint(findings)
@@ -624,7 +663,7 @@ module Polispec
       { "kind" => Runtime.kind, "commit" => Runtime.commit, "root" => Runtime.root, "release_ref" => Runtime.release && Runtime.release["ref"] }
     end
 
-    def print_text(findings)
+    def print_text(findings, all = false)
       puts "runtime: #{Runtime.kind}#{Runtime.release_kind == 'native' ? ' (native)' : ''} #{Runtime.commit ? Runtime.commit[0, 12] : '-'} #{Runtime.root}"
       blocking = findings.reject { |item| NONBLOCKING.include?(item["severity"]) }
       if findings.empty?
@@ -632,7 +671,13 @@ module Polispec
       else
         notes = findings.length - blocking.length
         puts "polispec doctor: #{findings.length} finding#{'s' unless findings.length == 1}#{" (#{blocking.length} blocking, #{notes} info)" if notes.positive?}"
-        findings.each { |item| puts "  #{item['project'] || '-'}  #{item['kind']}#{NONBLOCKING.include?(item['severity']) ? " (#{item['severity']})" : ''}  #{item['detail']}" }
+        shown = all ? findings : findings.reject { |item| item["severity"] == "info" }
+        shown.each { |item| puts "  #{item['project'] || '-'}  #{item['kind']}#{NONBLOCKING.include?(item['severity']) ? " (#{item['severity']})" : ''}  #{item['detail']}" }
+        folded = findings - shown
+        unless folded.empty?
+          counts = folded.group_by { |item| item["kind"] }.map { |kind, items| "#{kind} x#{items.length}" }
+          puts "  -  info  #{folded.length} info finding#{'s' unless folded.length == 1} folded: #{counts.join(', ')}; polispec doctor --all lists them"
+        end
       end
     end
 

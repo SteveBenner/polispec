@@ -169,7 +169,7 @@ judge_attempt() {
   judge_start="${EPOCHREALTIME//[!0-9]/}"
   judge_deadline=$(( judge_start + budget_us ))
   judge_wait="${POLISPEC_JUDGE_WAIT-}"
-  case "$judge_wait" in [0-8]) ;; *) judge_wait=6 ;; esac
+  case "$judge_wait" in [0-8]) ;; *) judge_wait=$(( deadline - 1 )) ;; esac
   [ "$judge_wait" -lt "$deadline" ] || judge_wait=$(( deadline - 1 ))
   trap '' PIPE
   if ! { exec 3<>"/dev/tcp/127.0.0.1/$jport"; } 2>/dev/null; then judge_cause=judge_refused; return 1; fi
@@ -234,6 +234,7 @@ if [ "${POLISPEC_JUDGE:-on}" != off ]; then
     trap - PIPE
     launcher_note "$judge_cause"
     case "$judge_cause" in judge_absent | judge_refused | judge_stale) judge_spawn ;; esac
+    if [ "$judge_cause" = judge_timeout ] && [ "$judge_extended" = 1 ] && [ "$deadline" -lt 2 ]; then deny_unavailable judge_timeout; fi
   fi
 fi
 if command -v timeout >/dev/null 2>&1; then

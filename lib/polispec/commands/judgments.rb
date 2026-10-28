@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 require_relative "../judgments"
+require_relative "../operator/tty"
 
 module Polispec
   class JudgmentsCommand
@@ -9,9 +10,10 @@ module Polispec
       usage: polispec judgments list [--since 24h] [--session ID] [--project ID] [--json]
              polispec judgments show <id> [--json]
              polispec judgments verify [--json]
+             polispec judgments acknowledge <id> [--reason TEXT] [--json]
     TEXT
     UNITS = { "m" => 60, "h" => 3600, "d" => 86_400 }.freeze
-    VALUE_FLAGS = { "list" => %w[--since --session --project], "show" => [], "verify" => [] }.freeze
+    VALUE_FLAGS = { "list" => %w[--since --session --project], "show" => [], "verify" => [], "acknowledge" => %w[--reason] }.freeze
 
     def self.run(args)
       new.run(args)
@@ -115,10 +117,41 @@ module Polispec
         cut = result["interrupted"].length
         chain += "; #{cut} interrupted append#{cut == 1 ? '' : 's'}" if cut.positive?
         puts "judgments: #{result['records']} record#{result['records'] == 1 ? '' : 's'} in #{result['files'].length} file#{result['files'].length == 1 ? '' : 's'}; #{chain}"
-        (result["findings"] + result["interrupted"]).each { |item| puts "  #{item['kind']} #{item['id'] || '-'}: #{item['detail']}" }
+        (result["findings"] + result["interrupted"]).each { |item| puts "  #{item['kind']} #{item['id'] || '-'}: #{item['detail']}#{item['acknowledged'] ? " (acknowledged by #{item['acknowledged']['by']} at #{item['acknowledged']['at']})" : ''}" }
         puts "skips: #{skips['total']} across #{skips['by_key'].length} fast-path key#{skips['by_key'].length == 1 ? '' : 's'}#{skips['malformed'].positive? ? " (#{skips['malformed']} malformed)" : ''}"
       end
       result["ok"] ? 0 : 1
+    end
+
+    def run_acknowledge(opts)
+      id = opts[:rest].first
+      return usage unless id && opts[:rest].length == 1
+
+      item = Judgments.verify(schema: false)["findings"].find { |entry| entry["id"] == id }
+      unless item
+        warn "polispec judgments: no verify finding names #{id}; polispec judgments verify lists them"
+        return 1
+      end
+      if item["acknowledged"]
+        warn "polispec judgments: #{id} is already acknowledged by #{item['acknowledged']['by']} at #{item['acknowledged']['at']}"
+        return 1
+      end
+
+      Operator::Tty.confirm!("acknowledge judgment #{id}", prompt: "Record #{item['kind']} at #{id} as examined (#{item['detail']}). doctor then lists it as judgments_acknowledged (info).")
+      entry = Judgments.acknowledge!(id, kind: item["kind"], detail: item["detail"], reason: opts[:values]["--reason"], actor: "operator")
+      Events.emit("polispec.judgments", action: "acknowledge", id: id, kind: item["kind"], actor: "operator")
+      if opts[:json]
+        puts JSON.generate({ "id" => id }.merge(entry))
+      else
+        puts "polispec judgments: acknowledged #{item['kind']} #{id} at #{entry['at']}"
+      end
+      0
+    rescue Operator::Tty::NotTty => e
+      warn "polispec judgments: not_tty: #{e.message}"
+      1
+    rescue Operator::Tty::PhraseMismatch => e
+      warn "polispec judgments: confirmation_failed: #{e.message}"
+      1
     end
 
     def window_seconds(text)
@@ -133,4 +166,4 @@ module Polispec
   end
 end
 
-Polispec::CLI.register("judgments", Polispec::JudgmentsCommand, summary: "list, show and verify the chained judgment records, and count fast-path skips")
+Polispec::CLI.register("judgments", Polispec::JudgmentsCommand, summary: "list, show and verify the chained judgment records, count fast-path skips, and acknowledge an examined chain break")

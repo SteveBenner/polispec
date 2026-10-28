@@ -21,12 +21,24 @@ require_relative "../classify/shapes"
 
 module Polispec
   module DeferredEvents
-    @active = false
-    @queue = []
+    SLOT = :polispec_deferred_events
 
     class << self
-      attr_accessor :active
-      attr_reader :queue
+      def state
+        Thread.current[SLOT] ||= { active: false, queue: [] }
+      end
+
+      def active
+        state[:active]
+      end
+
+      def active=(value)
+        state[:active] = value
+      end
+
+      def queue
+        state[:queue]
+      end
     end
 
     def emit(type, fields = {})
@@ -200,6 +212,7 @@ module Polispec
           exit!(0)
         end
       end
+      Process.detach(pid) if pid
       !pid.nil?
     rescue NotImplementedError, SystemCallError
       false

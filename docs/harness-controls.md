@@ -37,7 +37,7 @@ controls:
 
 Effects may need `effect_params`; the schema validates their shape. Every control appears in the plan with its canonical digest and backend disposition, including unsupported controls. Scheduled verification refers to an existing control ID. A scheduler accepting a job is distinct from observing its installation and its eventual execution.
 
-IR input is limited to 1 MiB and 256 controls. Hook input is limited to 64 KiB; the hook budget is ten seconds. Invalid, oversized, or unsupported input produces an explicit error rather than silently dropping a control.
+IR input is limited to 1 MiB and 256 controls. Hook input is limited to 8 MiB; the hook's own budget is 7 seconds, inside the launcher's 8 second deadline and the harness's 10 second hook timeout. Invalid, oversized, or unsupported input produces an explicit error rather than silently dropping a control.
 
 ## Install and verify
 

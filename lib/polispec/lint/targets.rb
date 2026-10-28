@@ -148,7 +148,7 @@ module Polispec
         listing = Environments.git(root, "ls-tree", "-r", "-z", "--name-only", commit.strip)
         raise Polispec::Error, "cannot list #{ref} in #{root}" if listing.nil?
 
-        names = listing.split("\0").select { |relative| !relative.include?("\n") && eligible?(relative) }
+        names = listing.split("\0").select { |relative| !relative.include?("\n") && (eligible?(relative) || relative.start_with?("specs/polispec/")) }
         if names.length > CANDIDATE_CAP
           notes << Finding.new("info", "refs", "too_many_files", root, nil, nil, "#{names.length} candidate files at #{ref}; only the first #{CANDIDATE_CAP} were examined", id)
           names = names.first(CANDIDATE_CAP)

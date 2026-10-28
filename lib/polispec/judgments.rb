@@ -12,6 +12,9 @@ module Polispec
     SKIPS = "skips"
     HEAD = "judgments.head.json"
     LOCK = "judgments.lock"
+    STALLED = "judgments.stalled.json".freeze
+    ACKNOWLEDGED = "judgments.acknowledged.json".freeze
+    RECORD_START = "{\"schema\":\"#{SCHEMA}\"".freeze
     ROTATE_BYTES = 16 * 1024 * 1024
     TAIL_BYTES = 262_144
     RAW_KEY = "polispec.records.raw"
@@ -32,6 +35,36 @@ module Polispec
 
     def lock_path
       File.join(State.home, LOCK)
+    end
+
+    def stalled_path
+      File.join(State.home, STALLED)
+    end
+
+    def acknowledged_path
+      File.join(State.home, ACKNOWLEDGED)
+    end
+
+    def acknowledged
+      return {} unless File.file?(acknowledged_path)
+
+      data = JSON.parse(File.read(acknowledged_path))
+      data.is_a?(Hash) ? data.select { |id, entry| id.is_a?(String) && entry.is_a?(Hash) && entry["kind"].is_a?(String) } : {}
+    rescue JSON::ParserError, SystemCallError
+      {}
+    end
+
+    def acknowledge!(id, kind:, detail:, reason:, actor:)
+      State.ensure_dirs
+      File.open(lock_path, File::RDWR | File::CREAT, 0o600) do |lock|
+        lock.flock(File::LOCK_EX)
+        entry = { "kind" => kind, "detail" => detail, "reason" => reason, "at" => Time.now.utc.iso8601, "by" => actor }
+        data = acknowledged.merge(id => entry)
+        temp = "#{acknowledged_path}.#{Process.pid}.tmp"
+        File.write(temp, "#{JSON.pretty_generate(data)}\n", perm: 0o600)
+        File.rename(temp, acknowledged_path)
+        entry
+      end
     end
 
     def skips_path
@@ -171,10 +204,40 @@ module Polispec
     end
 
     def unrecorded(error)
+      note_stall(error)
       Events.emit("polispec.finding", project: nil, kind: "judgment_unrecorded", detail: "#{error.class}: #{error.message.to_s[0, 200]}", policy_source: nil)
       nil
     rescue StandardError
       nil
+    end
+
+    def note_stall(error)
+      now = Time.now.utc.iso8601
+      current = stalled
+      data = {
+        "count" => current ? current["count"].to_i + 1 : 1, "first_at" => current ? current["first_at"] : now, "last_at" => now,
+        "error" => "#{error.class}: #{error.message.to_s[0, 200]}"
+      }
+      temp = "#{stalled_path}.#{Process.pid}.#{Thread.current.object_id}.tmp"
+      File.write(temp, JSON.generate(data), perm: 0o600)
+      File.rename(temp, stalled_path)
+    rescue SystemCallError, JSON::GeneratorError => failure
+      Trace.info("stall marker not written", error: "#{failure.class}: #{failure.message}") if Trace.on?
+    end
+
+    def stalled
+      return nil unless File.file?(stalled_path)
+
+      data = JSON.parse(File.read(stalled_path))
+      data.is_a?(Hash) && data["count"].is_a?(Integer) ? data : nil
+    rescue JSON::ParserError, SystemCallError
+      nil
+    end
+
+    def clear_stall
+      File.delete(stalled_path) if File.file?(stalled_path)
+    rescue SystemCallError => failure
+      Trace.info("stall marker not cleared", error: "#{failure.class}: #{failure.message}") if Trace.on?
     end
 
     def emit(entry)
@@ -195,21 +258,53 @@ module Polispec
         head = read_head
         rotate! if File.file?(path) && File.size(path) > ROTATE_BYTES
         entry = seal(body.merge("prev" => head && head["digest"]))
-        line = "#{JSON.generate(entry)}\n"
+        line = "#{torn_tail?(path) ? "\n" : ''}#{JSON.generate(entry)}\n"
         File.open(path, File::WRONLY | File::APPEND | File::CREAT, 0o600) do |file|
           written = file.syswrite(line)
           raise Polispec::Error, "judgment append was incomplete; the head anchor was not advanced" unless written == line.bytesize
         end
         write_head("digest" => entry["digest"], "count" => (head ? head["count"].to_i : 0) + 1, "file" => File.basename(path))
         rotate_skips
+        clear_stall
         entry
       end
+    end
+
+    def torn_tail?(file)
+      return false unless File.file?(file)
+
+      size = File.size(file)
+      return false if size.zero?
+
+      File.open(file, "rb") do |handle|
+        handle.seek(size - 1)
+        handle.read(1) != "\n"
+      end
+    rescue SystemCallError
+      false
+    end
+
+    def complete_bytes(file)
+      return 0 unless file && File.file?(file)
+
+      size = File.size(file)
+      return 0 if size.zero?
+      return size unless torn_tail?(file)
+
+      chunk = File.open(file, "rb") do |handle|
+        handle.seek([size - TAIL_BYTES, 0].max)
+        handle.read
+      end
+      index = chunk.rindex("\n")
+      index ? size - (chunk.bytesize - index - 1) : 0
+    rescue SystemCallError
+      0
     end
 
     def read_head
       stored = head_file
       tail = tail_digest
-      raise Polispec::Error, "judgment journal tail is unreadable; preserve the journal and investigate before appending" if tail.nil? && files.last && File.size(files.last).positive?
+      raise Polispec::Error, "judgment journal tail is unreadable; preserve the journal and investigate before appending" if tail.nil? && complete_bytes(files.last).positive?
       return stored if stored && (tail.nil? || tail == stored["digest"])
       return nil unless tail
       return { "digest" => tail, "count" => count_records, "file" => File.basename(path) } unless stored
@@ -252,7 +347,7 @@ module Polispec
     end
 
     def tail_digest
-      parsed = State.parse_line(tail_lines.last.to_s)
+      parsed = parse_record(tail_lines.last.to_s)
       parsed && parsed["digest"].is_a?(String) ? parsed["digest"] : nil
     rescue SystemCallError
       nil
@@ -260,7 +355,7 @@ module Polispec
 
     def tail_records
       tail_lines.filter_map do |line|
-        parsed = State.parse_line(line)
+        parsed = parse_record(line)
         parsed if parsed && parsed["digest"].is_a?(String)
       end
     rescue SystemCallError
@@ -278,7 +373,27 @@ module Polispec
         handle.seek([size - TAIL_BYTES, 0].max)
         handle.read
       end
-      chunk.split("\n").reject { |text| text.strip.empty? }
+      index = chunk.rindex("\n")
+      return [] unless index
+
+      chunk[0, index].split("\n").reject { |text| text.strip.empty? }
+    end
+
+    def parse_record(line)
+      State.parse_line(line) || recovered_record(line)
+    end
+
+    def recovered_record(line)
+      text = line.to_s
+      start = text.rindex(RECORD_START)
+      return nil unless start && start.positive?
+
+      parsed = State.parse_line(text[start..])
+      parsed && parsed["digest"].is_a?(String) ? parsed : nil
+    end
+
+    def record_like?(line)
+      line.to_s.lstrip.start_with?(RECORD_START)
     end
 
     def count_records
@@ -318,7 +433,16 @@ module Polispec
       files.each do |file|
         File.foreach(file).with_index(1) do |line, number|
           parsed = State.parse_line(line)
-          yield parsed, file, number if parsed || include_malformed
+          note = nil
+          unless parsed
+            parsed = recovered_record(line)
+            note = if parsed then "joined"
+                   elsif !record_like?(line) then "malformed"
+                   elsif line.end_with?("\n") then "torn"
+                   else "torn_tail"
+                   end
+          end
+          yield parsed, file, number, note if parsed || include_malformed
         end
       end
     end
@@ -379,11 +503,23 @@ module Polispec
       parent = nil
       seen = {}
       count = 0
+      joined = 0
       last = nil
-      each_record(include_malformed: true) do |entry, file, number|
-        unless entry
-          findings << finding("malformed_record", nil, "#{File.basename(file)}:#{number} is not a JSON object; historical bytes were preserved")
+      each_record(include_malformed: true) do |entry, file, number, note|
+        where = "#{File.basename(file)}:#{number}"
+        case note
+        when "malformed"
+          findings << finding("malformed_record", nil, "#{where} is not a JSON object; historical bytes were preserved")
           next
+        when "torn"
+          interrupted << finding("torn_record", nil, "#{where} is a record cut off mid-write; it never advanced the head anchor and the chain continues past it")
+          next
+        when "torn_tail"
+          interrupted << finding("torn_tail", nil, "#{where} is a record cut off mid-write at the end of the stream; it never advanced the head anchor and the next append starts on a new line")
+          next
+        when "joined"
+          joined += 1
+          interrupted << finding("torn_record", entry["id"], "#{where} starts with a record cut off mid-write; the record appended after it on the same line is read from its own start and counted as unanchored")
         end
         count += 1
         id = entry["id"]
@@ -403,7 +539,7 @@ module Polispec
         last = entry
       end
       head = head_file
-      anchored = count - interrupted.length
+      anchored = count - interrupted.count { |item| item["kind"] == "interrupted_append" } - joined
       if last && head.nil?
         findings << finding("truncated", last["id"], "the head anchor #{HEAD} is missing")
       elsif last && (head["digest"] != last["digest"] || head["count"].to_i != anchored)
@@ -411,7 +547,13 @@ module Polispec
       elsif last.nil? && head
         findings << finding("truncated", nil, "the head anchor records #{head['count']} records but the stream is empty")
       end
-      { "ok" => findings.empty?, "records" => count, "files" => files.map { |file| File.basename(file) }, "findings" => findings, "interrupted" => interrupted, "skips" => skip_counts }
+      known = acknowledged
+      findings.each do |item|
+        entry = item["id"] && known[item["id"]]
+        item["acknowledged"] = entry if entry && entry["kind"] == item["kind"]
+      end
+      open = findings.reject { |item| item["acknowledged"] }
+      { "ok" => open.empty?, "records" => count, "files" => files.map { |file| File.basename(file) }, "findings" => findings, "interrupted" => interrupted, "stalled" => stalled, "skips" => skip_counts }
     end
 
     def finding(kind, id, detail)

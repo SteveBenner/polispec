@@ -1,0 +1,39 @@
+schema: polispec.environments/v1
+project: "{{project}}"
+recorded: "{{date}}"
+summary: "{{project}} environments: main is dev, test and stable are checkouts of the tagged release; nothing runs, so a deploy only moves the checkout."
+environments:
+  dev:
+    branch: main
+    checkout: repo
+    tier: dev
+    worktrees: [".{{repo_name}}-wt/*"]
+    audience: [operator]
+    exposure: loopback
+    data_classes: [synthetic, operational]
+  test:
+    branch: test
+    checkout: "{{envs_root}}/{{project}}/test"
+    tier: test
+    audience: [operator]
+    exposure: none
+    data_classes: [synthetic, operational]
+    deploy:
+      steps: ["true"]
+      health:
+        run: "true"
+    operators: [agent, operator]
+  prod:
+    branch: stable
+    checkout: "{{envs_root}}/{{project}}/stable"
+    tier: prod
+    runs: tag
+    audience: [users]
+    exposure: none
+    data_classes: [operational]
+    deploy:
+      steps: ["true"]
+      health:
+        run: "true"
+    operators: [operator]
+    rollback: "polispec deploy {{project}} stable --tag vPREV"
