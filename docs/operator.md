@@ -264,7 +264,7 @@ Since 0.49.0 a project that serves real users can require, before `promote --to 
 
 ### Enabling the gate
 
-Upgrade the project to `environment-control` 1.2.0 with the `proof` param set to `report` or `enforce` (default `off`):
+Pin 0.49.0 or later on every host that judges or promotes the project first: an older runtime rejects the `proof` module with `policy_invalid`, even with the param at `off`. Then upgrade the project to `environment-control` 1.2.0 with the `proof` param set to `report` or `enforce` (default `off`):
 
 ```
 polispec plan environment-control --repo <repo> --variant service --param proof=report
