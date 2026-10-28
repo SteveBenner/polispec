@@ -5,7 +5,7 @@ require_relative "editions"
 
 module Polispec
   module Predicates
-    NAMES = %w[lock_held live_binary delete_protected delete_protected_file supervised pin_regress tag_claimed base_unpushed in_development].freeze
+    NAMES = %w[lock_held live_binary delete_protected delete_protected_file supervised pin_regress tag_claimed base_unpushed public_remote public_path push_unscanned in_development].freeze
     BUDGET = 2.0
     CONTENTS_LEAVES = %w[* .* .[!.]* ..?* .??*].freeze
     LOCK_MANIFEST = "TMP_AGENT_FILE_LOCKS.yml".freeze
@@ -15,6 +15,8 @@ module Polispec
     SUPERVISOR_TIMEOUT = 1.0
     STALE_FETCH = 3600
     ZERO = /\A0+\z/.freeze
+    BLUEPRINT_NAMES = %w[*.impl.yml DECISIONS.md TOKENS.jsonl WIP.md NOTES.md].freeze
+    BLUEPRINT_DIRS = %w[.rproject .scratch .specstory].freeze
 
     Result = Struct.new(:match, :note, :finding)
 
@@ -531,6 +533,140 @@ module Polispec
 
       ahead = git_ok(repo, "rev-list", "--count", "#{upstream}..#{branch}").to_i
       ahead.positive? ? yes("#{branch} has #{ahead} commit#{'s' unless ahead == 1} not on #{upstream}") : no
+    end
+
+    def check_public_remote(action, _ctx)
+      klass = action.action_class
+      return no unless klass.start_with?("git.", "fs.")
+
+      data = hint(action)
+      url = klass == "git.push" ? push_target_url(data) : repo_origin_url(data["path"])
+      return no if url.nil? && klass != "git.push"
+
+      return no unless Visibility.public?(url)
+
+      norm = Visibility.normalize(url)
+      yes(norm.empty? ? "the remote of this push is unknown and treated as public" : "the remote #{norm} is public")
+    end
+
+    def check_public_path(action, _ctx)
+      return no unless action.action_class == "fs.write"
+
+      path = hint(action)["path"]
+      return no if path.to_s.empty?
+
+      top = toplevel(path)
+      return no unless top
+
+      target = File.expand_path(path)
+      relative = target.delete_prefix("#{top}/")
+      reason = blueprint_reason(relative)
+      return no unless reason
+
+      url = repo_origin_url(top)
+      return no unless url && Visibility.public?(url)
+
+      _, status = git(top, "check-ignore", "-q", "--", target)
+      return no if status.success?
+
+      yes("#{relative} is #{reason} in a repository whose origin is public, and it is not ignored")
+    end
+
+    def blueprint_reason(relative)
+      segments = relative.split("/")
+      name = segments.last.to_s
+      return "a design note (#{name})" if BLUEPRINT_NAMES.any? { |glob| File.fnmatch(glob, name) }
+
+      dir = (segments[0...-1] & BLUEPRINT_DIRS).first
+      dir ? "under #{dir}, a working directory" : nil
+    end
+
+    def check_push_unscanned(action, _ctx)
+      data = hint(action)
+      case action.action_class
+      when "git.push" then unscanned_push(data)
+      when "git.commit" then data["contents"] ? unscanned_contents(data) : no
+      else no
+      end
+    end
+
+    def repo_origin_url(path)
+      return nil if path.to_s.empty?
+
+      top = toplevel(path)
+      top ? Visibility.remote_url(top, "origin") : nil
+    end
+
+    def push_target_url(data)
+      return Visibility.remote_url(data["path"], data["remote"]) unless data["remote"].to_s.empty? && data["repo"]
+
+      "github.com/#{data['repo']}"
+    end
+
+    def unscanned_contents(data)
+      url = data["repo"] ? "github.com/#{data['repo']}" : repo_origin_url(data["path"])
+      return no unless url && Visibility.public?(url)
+
+      yes("a contents API write to a public repository bypasses the exposure scan; commit locally and push after #{scan_hint(data['path'], nil, data['ref'])}")
+    end
+
+    def scan_hint(repo, remote, ref)
+      parts = ["polispec exposure scan #{repo}"]
+      parts << "--remote #{remote}" unless remote.to_s.empty?
+      parts << "--ref #{ref}" unless ref.to_s.empty?
+      parts.join(" ")
+    end
+
+    def unscanned_push(data)
+      return no if data["delete"] || data["deleting"]
+
+      dir = data["path"]
+      return no if dir.to_s.empty?
+
+      url = push_target_url(data)
+      return no unless Visibility.public?(url)
+
+      name = Visibility.remote_name(dir, data["remote"])
+      return yes("a push of every ref to a public remote cannot be scanned as one; push each ref by name after #{scan_hint(dir, name, '<ref>')}") if data["ref"] == "*" || data["tag"] == "*"
+
+      ref = data["tag"] || data["ref"]
+      return no if ref.to_s.empty?
+
+      repo_key = Visibility.normalize(repo_origin_url(dir) || url)
+      if data["tag"] || tag_only?(dir, ref)
+        unscanned_tag(dir, repo_key, ref, name)
+      else
+        unscanned_branch(dir, repo_key, Visibility.normalize(url), name, ref)
+      end
+    end
+
+    def tag_only?(dir, ref)
+      _, heads = git(dir, "show-ref", "--verify", "--quiet", "refs/heads/#{ref}")
+      return false if heads.success?
+
+      _, tags = git(dir, "show-ref", "--verify", "--quiet", "refs/tags/#{ref}")
+      tags.success?
+    end
+
+    def unscanned_tag(dir, repo_key, tag, name)
+      commit = git_ok(dir, "rev-parse", "-q", "--verify", "refs/tags/#{tag}^{commit}")
+      return no unless commit
+      return no if Exposure.covers_commit?(repo_key, commit)
+
+      yes("tag #{tag} (#{commit[0, 9]}) has no exposure scan for this repository; run #{scan_hint(dir, name, tag)}")
+    end
+
+    def unscanned_branch(dir, repo_key, remote_key, name, ref)
+      local = git_ok(dir, "rev-parse", "-q", "--verify", "refs/heads/#{ref}^{commit}") || git_ok(dir, "rev-parse", "-q", "--verify", "HEAD^{commit}")
+      return no unless local
+
+      tip = Visibility.url_like?(name) ? nil : git_ok(dir, "rev-parse", "-q", "--verify", "refs/remotes/#{name}/#{ref}^{commit}")
+      return no if tip == local
+
+      from = tip || Exposure.empty_tree(dir)
+      return no if Exposure.covers_branch?(repo_key, remote_key, ref, from, local)
+
+      yes("#{ref} at #{local[0, 9]} has no exposure scan against #{tip ? tip[0, 9] : 'an empty remote'}; run #{scan_hint(dir, name, ref)}")
     end
   end
 end

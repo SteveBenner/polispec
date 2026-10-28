@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-10-28
+
+### Added
+- **Three match predicates for public repositories: `public_remote`, `public_path` and `push_unscanned`** (`lib/polispec/predicates.rb`, `lib/polispec/visibility.rb`, `lib/polispec/exposure.rb`).
+  - **How visibility is decided.** A remote is normalised to host/owner/repo. It is public on a `public_remotes` match and private on a `private_remotes` match in the file named by the new setting `polispec.exposure.visibility_file` (default `~/.config/release-gate/visibility.yml`). Otherwise a github.com remote is decided by `gh repo view --json visibility`, with a 1 s timeout and a one-hour cache in the cache directory. Everything else counts as public, including an unknown host, a missing `gh`, an error and a timeout.
+  - **`public_remote`** matches a push to a public remote, and any git or file action in a repository whose origin is public.
+  - **`public_path`** matches a file write in such a repository when the path is not ignored and is blueprint-like. That means a basename of `*.impl.yml`, `DECISIONS.md`, `TOKENS.jsonl`, `WIP.md` or `NOTES.md`, or a path under `.rproject/`, `.scratch/` or `.specstory/`.
+  - **`push_unscanned`** matches a push to a public remote that no exposure attestation covers. A push of every ref (`--all`, `--mirror`, `--tags`, `--follow-tags`) and a `gh api` contents write to a public repository always match. A branch deletion, a dry run and an up-to-date push never do.
+- **`polispec exposure scan [<repo-dir>] [--remote R] [--ref REF] [--json]`** (`lib/polispec/commands/exposure.rb`).
+  - It runs the command named by the new setting `polispec.exposure.audit_command` (argv, no shell, 600 s timeout) over the remote-tracking tip to the local tip. The command gets `POLISPEC_EXPOSURE_REPO`, `_FROM`, `_TO` and `_REMOTE`.
+  - When the command exits 0, the verb appends an attestation to `exposure/<repo-id>.jsonl` in the state directory. A failed or timed-out command records nothing.
+  - An attestation covers a push only for the same remote, ref, both tips and audit-command digest.
+  - A private remote needs no scan. An unset command exits 2 and names the setting.
+- The `gh api .../contents/` classification carries the hint `contents`, and a branch-deleting push carries `deleting`, so the predicate can tell them apart.
+
+### Changed
+- The design blueprints (`specs/*.impl.yml`, 27 files) are no longer kept in this repository; their history remains. The references in `specs/app.yml`, `docs/harness-controls.md`, `NEXT.md` and `specs/features.yml` now say the notes are kept outside the repository.
+
+### Verdict changes
+- None on their own: the three predicates are inert until a rulebook names them. A rule-free scratch global gave the same verdicts under 0.52.2 and 0.53.0 for a push to stable, a push to main, `push --all`, `git tag`, `git commit` and a gh contents write.
+
 ## [0.52.3] - 2026-10-28
 
 ### Fixed

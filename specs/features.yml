@@ -1747,7 +1747,6 @@ ignore:
 - ".rproject/**/*"
 - web/**/*.md
 - specs/app.yml
-- specs/*.impl.yml
 - specs/*.verification.yml
 - skills/**/*.md
 - config.yml

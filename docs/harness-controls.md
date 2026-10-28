@@ -2,7 +2,7 @@
 
 polispec compiles a deterministic control language into native harness artifacts and records what it owns. Planning, installation, artifact integrity, native enforcement, and lock certification are separate results. A generated configuration is not evidence that a harness enforced it.
 
-The control schema is [`polispec.control/v1`](../schemas/control.v1.yml). The implementation contract is [`specs/harness-controls.impl.yml`](../specs/harness-controls.impl.yml). The calling agent translates a user's request into this grammar or YAML; no model runs inside the control decision path.
+The control schema is [`polispec.control/v1`](../schemas/control.v1.yml). Its design notes are kept outside this repository. The calling agent translates a user's request into this grammar or YAML; no model runs inside the control decision path.
 
 ## Grammar and preview
 

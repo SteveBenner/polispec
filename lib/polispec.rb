@@ -60,6 +60,8 @@ module Polispec
   autoload :Chain, File.join(LIB, "chain")
   autoload :Trace, File.join(LIB, "trace")
   autoload :Proof, File.join(LIB, "proof")
+  autoload :Visibility, File.join(LIB, "visibility")
+  autoload :Exposure, File.join(LIB, "exposure")
 
   module HarnessControls
     autoload :Contracts, File.join(LIB, "harness_controls", "contracts")

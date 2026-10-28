@@ -30,6 +30,8 @@ module Polispec
       LEDGER_KEY = "polispec.ledger"
       SMOKE_KEY = "polispec.smoke.path"
       SUPERVISOR_KEY = "polispec.supervisor.status_command"
+      EXPOSURE_AUDIT_KEY = "polispec.exposure.audit_command"
+      EXPOSURE_VISIBILITY_KEY = "polispec.exposure.visibility_file"
       ROOT_GUARD_KEY = "polispec.root_guard"
       EXCEPTIONS_KEY = "polispec.exceptions"
       RELAX_DEV_KEY = "polispec.relax.dev"
