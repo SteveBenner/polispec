@@ -1403,5 +1403,8 @@ ignore:
 - specs/*.verification.yml
 - skills/**/*.md
 - config.yml
-trusted_producers: []
+trusted_producers:
+- id: host-SVEN-F1L1
+  key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC112KGe5nLi4FmcWId4nMl+4U1UZxW3SPID9jcdAypx polispec-proof@SVEN-F1L1
+  kind: host
 exceptions: []
