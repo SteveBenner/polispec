@@ -41,6 +41,27 @@ steps:
     expect:
       exit: 0
       stdout_includes: ["dry run: shop to test at ", "gate G-CLEAN: pass", "gate G-VHOMES: pass"]
+  - name: main regains its deploy blocks while stable still declares none
+    run: [sh, -c, 'sed "s/run: polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml/run: \"true\"/" "$1" > specs/polispec/environments.yml && git add specs/polispec/environments.yml && git commit -q -m redeploy -- specs/polispec/environments.yml && git push -q origin main', sh, "{{scratch}}/environments.orig.yml"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+  - name: promote to test deploys test with the deploy block from origin/test
+    run: ["{{polispec}}", promote, shop, --to, test]
+    expect:
+      exit: 0
+      stdout_includes: ["promoted: shop to test at ", "deploy test: health ok, 1 steps"]
+  - name: a direct test deploy names the bootstrapped deploy block and records its source
+    run: [sh, -c, '"$0" deploy shop test && grep -c "\"deploy_source\":\"bootstrap:origin/test:" "$1/deploys.jsonl"', "{{polispec}}", "{{scratch}}/state"]
+    expect:
+      exit: 0
+      stdout_includes: ["deployed shop test ", "  deploy block: bootstrap:origin/test:", "health: ok"]
+  - name: a stable deploy never borrows a deploy block
+    run: ["{{polispec}}", deploy, shop, stable, --dry-run]
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 1
+      stderr_includes: ["no_deploy: policy declares no deploy steps for stable"]
   - name: the environments gain their deploy blocks again on stable
     run: [sh, -c, 'git checkout -q stable && cp "$1" specs/polispec/environments.yml && git add specs/polispec/environments.yml && git commit -q -m deploy -- specs/polispec/environments.yml && git checkout -q main', sh, "{{scratch}}/environments.orig.yml"]
     cwd: "{{project.shop}}"

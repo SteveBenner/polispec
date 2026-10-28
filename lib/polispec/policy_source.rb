@@ -57,11 +57,17 @@ module Polispec
       end
 
       def bootstrap(project, ref)
+        at_ref(project, ref) do |source|
+          Events.emit("polispec.finding", project: project.id, kind: "policy_bootstrap", detail: "#{project.trust_ref} carries no policy; using #{ref}:#{project.policy}", policy_source: source)
+        end
+      end
+
+      def at_ref(project, ref)
         outcome = lookup(project, project.policy, "policy", ref)
         return nil unless outcome.is_a?(Blob) && outcome.errors.nil?
 
         source = "bootstrap:#{ref}:#{outcome.sha}"
-        Events.emit("polispec.finding", project: project.id, kind: "policy_bootstrap", detail: "#{project.trust_ref} carries no policy; using #{ref}:#{project.policy}", policy_source: source)
+        yield source if block_given?
         ledger = begin
           Ledger.load
         rescue Polispec::Error

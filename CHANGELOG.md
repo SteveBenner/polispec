@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.3] - 2026-10-28
+
+### Fixed
+- **A project whose stable policy declares no test deploy can promote again.** A release that adds deploy blocks to `environments.yml` could not reach stable: `polispec deploy <project> test` read the deploy block from the trust ref (stable), which had none, and failed `no_deploy`, so G-TESTED never passed and the only path to stable was the operator hand-moving the branch (rdemo and rharnessfactory). A test deploy whose trust-ref policy declares no test deploy block now fetches the remote and uses the test deploy block at `origin/test`, the way a project with no policy at all already bootstraps from it. It never replaces a block the trust ref declares and never applies to stable. It emits a `deploy_bootstrap` finding and records the block's source as `deploy_source` in `deploys.jsonl`, the deploy result and `deploy --dry-run`; the text output prints `deploy block: <source>`. `PolicySource.at_ref` composes the policy at a ref without the `policy_bootstrap` finding (`lib/polispec/operator/deploy.rb`, `lib/polispec/policy_source.rb`). The `gate_unreachable` texts for test add `unless origin/test declares one, which a test deploy then uses`.
+
 ## [0.52.2] - 2026-10-28
 
 ### Fixed

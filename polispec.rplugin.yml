@@ -1,7 +1,7 @@
 schema: rplugin/v1
 id: polispec
 name: Polispec
-version: 0.52.2
+version: 0.52.3
 rplugin: ">= 1.17.0"
 native: true
 description: "Spec-based policy guardrails for agentic development and operations: committed environment policies and deterministic harness controls, with explicit backend capabilities and enforcement limits."
