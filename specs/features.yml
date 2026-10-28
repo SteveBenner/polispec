@@ -494,6 +494,7 @@ features:
         - "--live"
         - claude-code
         - "--no-record"
+        - "--strict"
         rung: 3
       codex:
         run:
@@ -505,6 +506,7 @@ features:
         - "--live"
         - codex
         - "--no-record"
+        - "--strict"
         rung: 3
 - id: commands.resolve
   summary: Smoke proof for the commands/resolve coverage unit of specs/app.yml.
@@ -1174,6 +1176,7 @@ features:
         - "--live"
         - claude-code
         - "--no-record"
+        - "--strict"
         rung: 3
       codex:
         run:
@@ -1185,6 +1188,7 @@ features:
         - "--live"
         - codex
         - "--no-record"
+        - "--strict"
         rung: 3
 - id: code-specs
   summary: Smoke proof for the code_specs coverage unit of specs/app.yml.
@@ -1345,6 +1349,7 @@ features:
         - "--live"
         - claude-code
         - "--no-record"
+        - "--strict"
         rung: 3
       codex:
         run:
@@ -1356,6 +1361,7 @@ features:
         - "--live"
         - codex
         - "--no-record"
+        - "--strict"
         rung: 3
 - id: protected-authorizations
   summary: Smoke proof for the protected_authorizations coverage unit of specs/app.yml.

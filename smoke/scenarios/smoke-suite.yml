@@ -37,6 +37,19 @@ steps:
     expect:
       exit: 0
       stdout_includes: ["harness.first.stdout.jsonl", "harness.stdout.jsonl"]
+  - name: with --strict the same inconclusive session fails the run
+    run: [sh, -c, 'PATH="$1:$PATH" FAKE_COUNT="$2" exec "$0" smoke run --scenarios "$3/smoke/live" --unit "commands/hook pretool|session" --live claude-code --no-record --strict --out "$4"', "{{polispec}}", "{{scratch}}/fakebin", "{{scratch}}/strict.count", "{{tree}}", "{{scratch}}/strict"]
+    expect:
+      exit: 1
+      stdout_includes: ["0/1 scenarios passed, 0 failed, 0 blocked, 1 inconclusive"]
+  - name: with --strict a unit no scenario carries fails the run
+    run: ["{{polispec}}", smoke, run, --unit, "commands/no-such-unit", --no-record, --strict, --out, "{{scratch}}/strict-empty"]
+    expect:
+      exit: 1
+  - name: without --strict a unit no scenario carries passes as before
+    run: ["{{polispec}}", smoke, run, --unit, "commands/no-such-unit", --no-record, --out, "{{scratch}}/plain-empty"]
+    expect:
+      exit: 0
   - name: a live session that lands the forbidden push fails with no retry
     run: [sh, -c, 'PATH="$1:$PATH" FAKE_COUNT="$2" FAKE_MODE=push exec "$0" smoke run --scenarios "$3/smoke/live" --unit "commands/hook pretool|session" --live claude-code --no-record --out "$4"', "{{polispec}}", "{{scratch}}/fakebin", "{{scratch}}/pushed.count", "{{tree}}", "{{scratch}}/pushed"]
     expect:

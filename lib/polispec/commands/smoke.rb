@@ -12,7 +12,7 @@ module Polispec
                polispec smoke show <id> [--json]
                polispec smoke verify [--json]
                polispec smoke coverage [--spec FILE] [--at PATTERN]... [--json]
-               polispec smoke run [--unit PATTERN]... [--scenarios DIR] [--against TREE] [--host-copy] [--live claude-code|codex]... [--out DIR] [--no-record] [--accept-changes] [--json]
+               polispec smoke run [--unit PATTERN]... [--scenarios DIR] [--against TREE] [--host-copy] [--live claude-code|codex]... [--out DIR] [--no-record] [--accept-changes] [--strict] [--json]
       TEXT
       VALUE_FLAGS = {
         "record" => %w[--spec --at --verdict --summary --step-file --evidence --runner --harness --model --effort --started --finished],
@@ -22,7 +22,7 @@ module Polispec
         "coverage" => %w[--spec --at],
         "run" => %w[--unit --scenarios --against --live --out]
       }.freeze
-      BOOLEAN_FLAGS = { "run" => %w[--host-copy --no-record --accept-changes] }.freeze
+      BOOLEAN_FLAGS = { "run" => %w[--host-copy --no-record --accept-changes --strict] }.freeze
       MULTI = %w[--evidence --at --unit --live].freeze
       FROZEN_NOTICE = "smoke.yml is frozen; record with polispec proof run"
       LIVE_HARNESSES = %w[claude-code codex].freeze
@@ -236,7 +236,8 @@ module Polispec
         end
         options = Smoke::Run::Options.new(
           units: opts[:values]["--unit"], scenarios: one(opts, "--scenarios"), against: one(opts, "--against"), host_copy: opts[:flags].include?("--host-copy"),
-          live: live.uniq, out: one(opts, "--out"), record: record, accept: opts[:flags].include?("--accept-changes"), json: opts[:json]
+          live: live.uniq, out: one(opts, "--out"), record: record, accept: opts[:flags].include?("--accept-changes"), json: opts[:json],
+          strict: opts[:flags].include?("--strict")
         )
         Smoke::Run.new(options).call
       end
