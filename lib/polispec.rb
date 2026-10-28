@@ -18,7 +18,7 @@ module Polispec
   ACTION_CLASSES = %w[
     git.commit git.push git.tag git.merge git.rewrite git.branch release.publish
     service.control service.config fs.write fs.delete data.write data.copy secrets.read
-    policy.edit promote deploy control.edit mcp.call web.fetch agent.spawn shell.exec fs.walk
+    policy.edit promote deploy control.edit mcp.call web.fetch agent.spawn shell.exec fs.walk proof.write
   ].freeze
   ENVIRONMENTS = %w[dev test prod].freeze
   LEVELS = %w[allow warn deny].freeze
@@ -59,6 +59,7 @@ module Polispec
   autoload :Notice, File.join(LIB, "notice")
   autoload :Chain, File.join(LIB, "chain")
   autoload :Trace, File.join(LIB, "trace")
+  autoload :Proof, File.join(LIB, "proof")
 
   module HarnessControls
     autoload :Contracts, File.join(LIB, "harness_controls", "contracts")

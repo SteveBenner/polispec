@@ -2,6 +2,8 @@ schema: polispec.policy/v1
 project: "{{project}}"
 recorded: "{{date}}"
 summary: "{{project}} serves real users. main is dev, test is the persistent instance, stable is production and moves only by the operator."
+includes:
+  - { module: proof, with: { mode: "{{proof}}" } }
 rules:
   - { id: R-PROD-GIT, match: { env: prod, class: [git.commit, git.push, git.tag, git.merge, git.rewrite, git.branch, release.publish] }, verdict: deny, reason: "the production branch moves only through `polispec promote --to stable`, run by the operator" }
   - { id: R-PROD-SVC, match: { env: prod, class: [service.control, service.config, deploy, promote] }, verdict: deny, reason: "live services change only through the operator" }

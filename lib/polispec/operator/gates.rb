@@ -12,7 +12,7 @@ module Polispec
   module Operator
     module Gates
       DEFAULT_TIMEOUT = 900
-      BUILTINS = %w[clean_tree version_homes_agree sha_ran_on_test sha_ran_on not_frozen soaked health_required logs_quiet requires_live].freeze
+      BUILTINS = %w[clean_tree version_homes_agree sha_ran_on_test sha_ran_on not_frozen soaked health_required logs_quiet requires_live features_proven].freeze
       TIERS = { "test" => "test", "stable" => "prod", "prod" => "prod" }.freeze
       LOGS_COUNT_KEY = "polispec.logs.count_command"
       LOGS_WINDOW_MINUTES = 120
@@ -459,13 +459,31 @@ module Polispec
 
           Polispec::Trace.step("gate #{gate['id']}", builtin: gate["builtin"]) do
             started = now_ms
-            gate["builtin"] ? builtin(gate, context) : command(gate, context)
+            outcome = gate["builtin"] ? builtin(gate, context) : command(gate, context)
             result = { "id" => gate["id"], "result" => "pass", "duration_ms" => now_ms - started }
+            result.merge!(proof_fields(outcome)) if gate["builtin"] == "features_proven"
             result["hermetic"] = false if gate["hermetic"] == false && !gate["builtin"]
             Polispec::Trace.info("gate result", id: gate["id"], result: "pass")
             result
           end
         end
+      end
+
+      def proof_fields(outcome)
+        return {} unless outcome.is_a?(Hash) && outcome["mode"] && outcome["mode"] != "off"
+
+        fields = { "proof" => outcome.slice("mode", "cells", "proven", "excepted") }
+        fields["findings"] = outcome["findings"] unless outcome["findings"].empty?
+        fields
+      end
+
+      def gate_features_proven(gate, context)
+        base = stable_tag(context.project, context.git)
+        outcome = Polispec::Proof::Gate.check(repo: context.project.repo, sha: context.sha, base: base, mode: gate["mode"], edition: Polispec::Editions.current)
+        return outcome unless outcome["mode"] == "enforce" && !outcome["findings"].empty?
+
+        summary = Polispec::Proof::Gate.summary(outcome["findings"])
+        raise Failure.new("gate_failed", "gate #{gate['id']}: #{summary}", "gate_id" => gate["id"], "findings" => outcome["findings"])
       end
 
       def command(gate, context)

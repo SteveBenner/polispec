@@ -106,3 +106,9 @@ features:
     since: 0.23.0
     code: lib/polispec/harness_controls/backends/claude.rb
     note: "Standard reports sandbox_unavailable when bwrap or its helpers are missing from PATH. Lock generates a managed sandbox with an empty network allowlist and does not report that finding."
+  - id: proof.report_mode
+    standard: included
+    lock: excluded
+    since: 0.49.0
+    code: lib/polispec/proof/gate.rb
+    note: "The features_proven gate honours mode report under standard. Under lock report is enforced, so a missing proof record denies the promotion."

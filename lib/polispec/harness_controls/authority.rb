@@ -669,7 +669,7 @@ module Polispec
       private_class_method :bundle_path?
 
       def runtime_path?(path)
-        !path.match?(ASSET_IMAGE) && path != SMOKE_LEDGER
+        !path.match?(ASSET_IMAGE) && path != SMOKE_LEDGER && !path.start_with?("proofs/")
       end
       private_class_method :runtime_path?
 

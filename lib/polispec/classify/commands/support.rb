@@ -12,6 +12,7 @@ module Polispec
       DISCARD = %r{\A(?:/dev/(?:null|zero|stdout|stderr|stdin|tty|full|random|urandom)\z|/dev/fd/|/proc/self/)}.freeze
       POLICY_PATH = %r{(?:\A|/)specs/polispec(?:/|\z)}.freeze
       ENVS_BODY = %r{/\.agents/directives/envs\.md\z}.freeze
+      PROOF_RECORD = %r{/proofs/[^/]+\.jsonl\z}.freeze
       ENVS_ROW = "[ENVS]"
       EDIT_KEYS = %w[old_string new_string old_str new_str old_text new_text oldText newText].freeze
       CONTENT_KEYS = %w[content file_text text contents].freeze
@@ -99,7 +100,12 @@ module Polispec
         false
       end
 
+      def proof_record?(path)
+        PROOF_RECORD.match?(path) && File.file?(File.join(File.dirname(File.dirname(path)), "specs", "features.yml"))
+      end
+
       def write_class(path, input = nil)
+        return "proof.write" if proof_record?(path)
         return "policy.edit" if delegate_grants_file?(path)
         return "policy.edit" if web_secret_file?(path)
         return "policy.edit" if exceptions_file?(path)

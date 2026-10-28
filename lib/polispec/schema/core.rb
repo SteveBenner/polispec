@@ -6,7 +6,7 @@ require_relative "validator"
 
 module Polispec
   module Schema
-    KINDS = %w[policy environments roster ledger behavior spec waivers global module profiles control smoke smoke-scenario package judgment exceptions delegate_grants editions session change manifest app index contract contract-vocabulary catalog catalog-state deployments].freeze
+    KINDS = %w[policy environments roster ledger behavior spec waivers global module profiles control smoke smoke-scenario package judgment exceptions delegate_grants editions session change manifest app index contract contract-vocabulary catalog catalog-state deployments features proof].freeze
     CONTROL_EFFECT_KEYS = {
       "deny" => [],
       "ask" => [],
@@ -65,6 +65,8 @@ module Polispec
       elsif kind == "smoke-scenario" && errors.empty?
         require_relative "../smoke/scenario"
         errors.concat(Smoke::Scenario.semantic_errors(data))
+      elsif kind == "features" && errors.empty?
+        errors.concat(Proof::Manifest.semantic_problems(data).map { |problem| Error.new("", problem) })
       end
       errors
     end

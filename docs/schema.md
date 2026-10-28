@@ -13,7 +13,7 @@ Every object rejects unknown keys, except the free text under `agents.instructio
 ## Vocabulary
 
 - Environments: `dev`, `test`, `prod`. `dev` is the `main` branch, `test` the `test` branch, `prod` the `stable` branch.
-- Action classes (a closed set): `git.commit`, `git.push`, `git.tag`, `git.merge`, `git.rewrite`, `git.branch`, `release.publish`, `service.control`, `service.config`, `fs.write`, `fs.delete`, `data.write`, `data.copy`, `secrets.read`, `policy.edit`, `promote`, `deploy`, `control.edit`, `mcp.call`, `web.fetch`, `agent.spawn`, `shell.exec`, `fs.walk` (since 0.46.0, a recursive read-only walk that starts at the filesystem root or on a slow mount; see `root_walk` and `slow_mount_walk` under `match.shape`).
+- Action classes (a closed set): `git.commit`, `git.push`, `git.tag`, `git.merge`, `git.rewrite`, `git.branch`, `release.publish`, `service.control`, `service.config`, `fs.write`, `fs.delete`, `data.write`, `data.copy`, `secrets.read`, `policy.edit`, `promote`, `deploy`, `control.edit`, `mcp.call`, `web.fetch`, `agent.spawn`, `shell.exec`, `fs.walk` (since 0.46.0, a recursive read-only walk that starts at the filesystem root or on a slow mount; see `root_walk` and `slow_mount_walk` under `match.shape`), `proof.write` (since 0.49.0, a write into `proofs/*.jsonl` of a repository that holds `specs/features.yml`; the `environment-control` package's `proof` module denies it with `R-PROOF-WRITE`, and `polispec proof run` and `import` are the only writers).
 - Verdicts: `allow`, `warn` (a stern warning plus explicit user confirmation), `deny`.
 - Actors: `agent` (any tool call through a harness hook) and `operator` (an interactive terminal with a typed phrase).
 
@@ -120,7 +120,7 @@ The `text` hint feeds `text_matches`. Since 0.40.0 an `fs.write` action from a w
 
 `promotion` also accepts `to_<env>` for any other declared environment (for example `to_canary`), each with `from`, `actor`, `gates[]` and optionally `phrase`, `preflight[]`, `fast_forward_only`, `release.flip_latest` and `after[]`. `to_test` and `to_stable` stay required. See `docs/operator.md`.
 
-A gate is `{ id: G-…, run: <command>, pass: exit_zero }` or `{ id: G-…, builtin: clean_tree | version_homes_agree | sha_ran_on_test | sha_ran_on | not_frozen | soaked | health_required | logs_quiet | requires_live }`. `soaked` takes `hours` (integer, at least 1) and `env` (default `test`); `sha_ran_on` takes `env` (default `test`; `sha_ran_on_test` is its alias). `logs_quiet` takes `services[]`, `window_minutes` (default 120) and `max_over_baseline` (default 0). `requires_live` takes `project` and `min_version`, or `min_version_from` with `min_version_key`. A command gate also takes `run_in` (`repo` default, or `active`) and `env_from` (an environment name whose `env_files` are loaded); a gate that touches a live database must use `run_in: active`. Any gate may set `dir`, a subdirectory of the run location (no `..`, no leading `/`) in which its command runs; a missing directory fails the gate. polispec sets `dir` on gates a nested child project contributes. A command gate may set `hermetic: false` to run outside `hermetic.<env>` (see `docs/operator.md`). Commands and phrases may use `{project}`, `{sha}`, `{VERSION}`, `{tag}` and `{stable_tag}` (the highest `v*` tag on the stable branch tip, empty when none). Commands run without a shell; `$HOME`, `${HOME}` and a leading `~` are the only expansions.
+A gate is `{ id: G-…, run: <command>, pass: exit_zero }` or `{ id: G-…, builtin: clean_tree | version_homes_agree | sha_ran_on_test | sha_ran_on | not_frozen | soaked | health_required | logs_quiet | requires_live | features_proven }`. `soaked` takes `hours` (integer, at least 1) and `env` (default `test`); `sha_ran_on` takes `env` (default `test`; `sha_ran_on_test` is its alias). `logs_quiet` takes `services[]`, `window_minutes` (default 120) and `max_over_baseline` (default 0). `requires_live` takes `project` and `min_version`, or `min_version_from` with `min_version_key`. `features_proven` (since 0.49.0) takes `mode`: `report` (default; passes and carries its findings in the gate result), `enforce` (fails with `gate_failed`) or `off` (passes without running); the lock edition treats `report` as `enforce` ([proof](#feature-manifest-specsfeaturesyml-polispecfeaturesv1)). A command gate also takes `run_in` (`repo` default, or `active`) and `env_from` (an environment name whose `env_files` are loaded); a gate that touches a live database must use `run_in: active`. Any gate may set `dir`, a subdirectory of the run location (no `..`, no leading `/`) in which its command runs; a missing directory fails the gate. polispec sets `dir` on gates a nested child project contributes. A command gate may set `hermetic: false` to run outside `hermetic.<env>` (see `docs/operator.md`). Commands and phrases may use `{project}`, `{sha}`, `{VERSION}`, `{tag}` and `{stable_tag}` (the highest `v*` tag on the stable branch tip, empty when none). Commands run without a shell; `$HOME`, `${HOME}` and a leading `~` are the only expansions.
 
 ```yaml
 promotion:
@@ -296,6 +296,53 @@ schema: polispec.smoke/v1
 entries:
   - { id: smk_4980154c744d, proves: { spec: specs/app.yml, at: "commands/promote, deploy", spec_digest: "…", at_digest: "…" }, verdict: pass, summary: "promote --to test moved test and deploy recorded a verified receipt", steps: [], evidence: [], runner: { kind: agent, harness: claude-code, harness_version: 2.1.296, model: claude-haiku-5-5, effort: null }, runtime: {}, target: {}, recorded_at: "2026-10-13T23:59:00Z", prev: null, digest: "…" }
 ```
+
+## Feature manifest: `specs/features.yml`, `polispec.features/v1`
+
+Since 0.49.0. Says what a product is made of and where it runs, so that `polispec proof` and the `features_proven` gate can ask for evidence per feature and per target (`docs/operator.md`, proving features). Schema `schemas/features.v1.yml`; `polispec validate features FILE` checks one file. The manifest is read from the committed tree, never the working tree. Every object rejects unknown keys.
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `schema` | `polispec.features/v1` | Document type. |
+| `targets[]` | list, at least one | `id` (matches `^[a-z0-9][a-z0-9.-]*$`) and `facts`, a map of string facts such as `os`, `arch`, `ruby`, `runtime` and `harness`, or any other. `proof run` picks the target whose facts match the host. |
+| `features[]` | list | One per feature. |
+| `features[].id`, `summary` | | `id` has the target id pattern; `summary` is one line of text. |
+| `features[].paths[]` | globs | The repository paths the feature is made of. |
+| `features[].shared[]` | globs | Optional. Paths this feature also depends on. |
+| `features[].spec` | `{file, at}` | Optional. The same spec reference smoke records use; its `at_digest` joins the feature's digest. |
+| `features[].targets[]` | target ids | Optional. A subset of the manifest's targets; default every target. |
+| `features[].min_rung` | 1 to 4 | Optional, default 2. The lowest rung of a record that proves the feature. |
+| `features[].smoke` | object | `run` (an argv, no shell), `rung` (1 to 4), optional `timeout_s` (default 900), and optional `per_target`, a map from target id to `{run, rung, timeout_s}` that overrides the feature's values on that target. |
+| `shared[]` | globs | Paths every feature's digest covers: lockfiles, core libraries. |
+| `ignore[]` | globs | Paths no feature owns: docs, changelogs. A changed file that matches no feature, `shared`, `ignore`, `proofs/` or the manifest itself is reported as `unmapped_files`. |
+| `trusted_producers[]` | list | `id`, `key` (one OpenSSH public key line), `kind` (`host`, `peer` or `ci`) and optional `note`. A record counts only when its signature verifies under one of these. |
+| `exceptions[]` | list | `feature`, optional `targets` (default every target of the feature), `reason`, `owner`, `added` and `expires` (dates, `YYYY-MM-DD`). `expires` is at most 90 days after `added`; `proof except` refuses a longer one. An unexpired exception lifts one `features_proven` cell; it is not an entry of the exceptions delegate. |
+
+Globs use `File.fnmatch` with `FNM_PATHNAME` and `FNM_DOTMATCH`: `*` stays inside one directory, `**/` crosses directories, and a trailing `/**` (or a bare `**`) also crosses directories, so `lib/**` matches `lib/a/b/c.rb`.
+
+The digest of a feature on a target is the sha256 of the canonical JSON of the feature entry, the target entry, the sorted `[path, git blob id]` pairs of every file at the commit that matches the feature's `paths` or `shared` or the manifest's `shared`, and the spec anchor's `at_digest` or null. It is computed from the commit's tree. A record proves a cell while its digest equals the current one.
+
+## Proof record: `proofs/<feature>.jsonl`, `polispec.proof/v1`
+
+Since 0.49.0. One signed, chained record per line, one file per feature, in the repository that holds the manifest. Schema `schemas/proof.v1.yml`; `polispec validate proof FILE` checks one record. Written only by `polispec proof run` and `import`, under a lock in the state home keyed by the file's real path. The output of a run stays outside the repository.
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `schema` | `polispec.proof/v1` | Document type. |
+| `id` | `prf_` + 12 hex | sha256 prefix of the canonical record without `id`, `signature`, `prev` and `hash`. |
+| `feature`, `target` | ids | The cell the record proves. |
+| `digest` | sha256 | The cell's digest when the command ran. |
+| `commit` | 40 hex | The commit the command ran at. |
+| `rung` | 1 to 4 | The rung the manifest declared for the command. It is declared, not measured. |
+| `verdict` | `pass`, `fail`, `blocked` | Only `pass` proves a cell. |
+| `started_at`, `finished_at`, `duration_ms`, `exit` | | Timing and the command's exit status (an integer or null). |
+| `evidence[]` | list | `name`, `sha256` and `bytes` of each output file the run kept. |
+| `runtime` | object | The smoke runtime capture: os, kernel, arch, ruby, polispec version, edition. |
+| `producer` | string | The `trusted_producers` id that signed. |
+| `signature` | string | An SSH signature (`ssh-keygen -Y sign`, namespace `polispec-proof`) over the canonical JSON of the record without `signature`, `prev` and `hash`. |
+| `prev`, `hash` | sha256 or null | The chain link: `prev` is the previous record's `hash` in the same file (null first), and `hash` covers the record with `prev`. |
+
+A broken chain is a finding, and records after the break prove nothing. `proof run` and `import` refuse with `chain_broken` and append nothing to a file whose chain is broken until it is repaired from git.
 
 ## Judgment record: `polispec.judgment/v1`
 

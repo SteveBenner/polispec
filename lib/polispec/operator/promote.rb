@@ -10,7 +10,7 @@ module Polispec
     module Promote
       TARGET = /\A[a-z0-9][a-z0-9-]{0,40}\z/
       BOOTSTRAP_FROM = { "test" => "main", "stable" => "test" }.freeze
-      Plan = Struct.new(:project, :git, :to, :source_ref, :target, :from_sha, :to_sha, :version, :tag, :gates, :preflight, :actor, :started, :waived, keyword_init: true)
+      Plan = Struct.new(:project, :git, :to, :source_ref, :target, :from_sha, :to_sha, :version, :tag, :gates, :preflight, :actor, :started, :waived, :proof_weakening, keyword_init: true)
 
       module_function
 
@@ -125,7 +125,7 @@ module Polispec
         {
           "ok" => true, "dry_run" => true, "project" => plan.project.id, "to" => plan.to, "from_sha" => plan.from_sha,
           "to_sha" => plan.to_sha, "tag" => plan.tag, "version" => plan.version, "actor" => plan.actor, "preflight" => plan.preflight, "gates" => plan.gates,
-          "policy_source" => plan.project.source, "waived" => plan.waived
+          "policy_source" => plan.project.source, "waived" => plan.waived, "proof_weakening" => (plan.proof_weakening unless Array(plan.proof_weakening).empty?)
         }.compact
       end
 
@@ -154,16 +154,22 @@ module Polispec
         {
           "id" => Gates.new_id("prm"), "project" => plan.project.id, "to" => plan.to, "from_sha" => plan.from_sha,
           "to_sha" => plan.to_sha, "tag" => plan.tag, "actor" => plan.actor, "preflight" => plan.preflight, "gates" => plan.gates, "waived" => plan.waived, "at" => Time.now.utc.iso8601,
+          "proof_weakening" => proof_weakening_summary(plan),
           "via" => Polispec::Delegate.via,
           "latest" => (plan.project.promotion["to_#{plan.to}"]["release"] || {})["flip_latest"] == "deferred" && plan.to == "stable" ? "deferred" : nil
         }.compact
+      end
+
+      def proof_weakening_summary(plan)
+        Array(plan.proof_weakening).empty? ? nil : Polispec::Proof::Weakening.summary(plan.proof_weakening)
       end
 
       def base_result(plan, record, local)
         {
           "ok" => true, "project" => plan.project.id, "to" => plan.to, "from_sha" => plan.from_sha, "to_sha" => plan.to_sha,
           "tag" => plan.tag, "version" => plan.version, "actor" => plan.actor, "gates" => plan.gates, "record_id" => record["id"],
-          "local_branch" => local.to_s, "policy_source" => plan.project.source, "release" => { "status" => "none" }, "deploys" => [], "waived" => plan.waived
+          "local_branch" => local.to_s, "policy_source" => plan.project.source, "release" => { "status" => "none" }, "deploys" => [], "waived" => plan.waived,
+          "proof_weakening" => proof_weakening_summary(plan)
         }.compact
       end
 
@@ -248,6 +254,7 @@ module Polispec
         plan.waived = waived
         plan.preflight = Polispec::Trace.step("preflight") { Gates.run_all(Array(config["preflight"]), context(plan)) }
         plan.gates = Polispec::Trace.step("gates") { Gates.run_all(gates, context(plan), waive: waived ? %w[soaked] : []) }
+        plan.proof_weakening = Polispec::Trace.step("proof weakening") { proof_weakening(plan, gates) } if stable
         return preview(plan) if dry_run
 
         if phrased
@@ -255,7 +262,26 @@ module Polispec
           warn "promoting #{project.id} #{plan.version} (#{plan.to_sha[0, 12]}) from #{plan.source_ref} to #{plan.target}"
           Gates.confirm!(phrase)
         end
+        confirm_proof_weakening(plan)
         publish(plan)
+      end
+
+      def proof_weakening(plan, gates)
+        return [] unless gates.any? { |gate| gate["builtin"] == "features_proven" && gate["mode"].to_s != "off" }
+
+        previous = Gates.stable_tag(plan.project, plan.git)
+        current = Polispec::Proof::Manifest.at(plan.project.repo, plan.to_sha)
+        Polispec::Proof::Weakening.diff(previous && Polispec::Proof::Manifest.at(plan.project.repo, previous), current)
+      rescue Polispec::Error => e
+        raise Failure.new("manifest_invalid", e.message.sub(/\Amanifest_invalid: /, ""))
+      end
+
+      def confirm_proof_weakening(plan)
+        return if Array(plan.proof_weakening).empty?
+
+        warn "proof changes that weaken the gate:"
+        plan.proof_weakening.each { |item| warn "  #{Polispec::Proof::Weakening.describe(item)}" }
+        Gates.confirm!("accept proof changes for #{plan.project.id}")
       end
 
       def waive_soak!(project, to, gates, dry_run)
@@ -289,7 +315,7 @@ module Polispec
       def emit(plan, result)
         Events.emit(
           "polispec.promote", project: plan.project.id, to: plan.to, from_sha: plan.from_sha, to_sha: plan.to_sha, tag: plan.tag,
-                              actor: plan.actor, gates: plan.gates, waived: plan.waived, result: result, duration_ms: Gates.now_ms - plan.started,
+                              actor: plan.actor, gates: plan.gates, waived: plan.waived, proof_weakening: proof_weakening_summary(plan), result: result, duration_ms: Gates.now_ms - plan.started,
                               **Polispec::Delegate.via_fields
         )
       end

@@ -69,7 +69,14 @@ module Polispec
       def print_text(result)
         head = result["dry_run"] ? "dry run" : "promoted"
         puts "#{head}: #{result['project']} to #{result['to']} at #{result['to_sha'][0, 12]} (#{result['tag']}, actor #{result['actor']})"
-        result["gates"].each { |gate| puts "  gate #{gate['id']}: #{gate['result']} (#{gate['duration_ms']} ms)" }
+        result["gates"].each do |gate|
+          puts "  gate #{gate['id']}: #{gate['result']} (#{gate['duration_ms']} ms)"
+          Array(gate["findings"]).each { |finding| puts "    proof: #{Polispec::Proof::Gate.describe(finding)}" }
+        end
+        if result["dry_run"] && result["proof_weakening"]
+          puts "  proof changes that weaken the gate:"
+          result["proof_weakening"].each { |item| puts "    #{Polispec::Proof::Weakening.describe(item)}" }
+        end
         return if result["dry_run"]
 
         puts "  record #{result['record_id']}; release #{result.dig('release', 'status')}"

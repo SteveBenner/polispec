@@ -151,7 +151,14 @@ module Polispec
         out.puts "  before: #{@data['ledger']['before'] ? JSON.generate(@data['ledger']['before']) : 'none'}"
         out.puts "  after: #{@data['ledger']['after'] ? JSON.generate(@data['ledger']['after']) : 'none'}"
       end
-      @data["policy_diff"].each { |entry| out.puts "policy #{entry['project']}: #{summary(entry)} (#{entry['digest']['before'] || '-'} -> #{entry['digest']['after'] || '-'})" }
+      @data["policy_diff"].each do |entry|
+        out.puts "policy #{entry['project']}: #{summary(entry)} (#{entry['digest']['before'] || '-'} -> #{entry['digest']['after'] || '-'})"
+        next unless entry["proof"]
+
+        out.puts "proof:"
+        entry["proof"]["weakened"].each { |line| out.puts "  weakens #{line}" }
+        entry["proof"]["strengthened"].each { |line| out.puts "  strengthens #{line}" }
+      end
       changed = @data["probes"].reject { |probe| probe["change"] == "same" }
       out.puts "probes: #{@data['probes'].length} judged, #{changed.length} changed"
       changed.each { |probe| out.puts "  #{probe['change']} #{probe['project']} #{probe['probe']}: #{probe['before']} -> #{probe['after']}" }
@@ -174,6 +181,9 @@ module Polispec
       if entry["contracts"]
         counts = entry["contracts"].map { |kind, items| "#{kind == 'added' ? '+' : (kind == 'removed' ? '-' : '~')}#{items.length}" if items.any? }.compact
         parts << "contracts #{counts.join(' ')}" unless counts.empty?
+      end
+      if entry["proof"]
+        parts << "proof weakens #{entry['proof']['weakened'].length}, strengthens #{entry['proof']['strengthened'].length}"
       end
       parts.empty? ? "no structural change" : parts.join(", ")
     end
@@ -620,6 +630,24 @@ module Polispec
       @changes << Change.new("loosen", "#{project.id} rewrites contract approvals") unless new_log.start_with?(old_log)
     end
 
+    def proof_plan(project, repo, from)
+      old = Proof::Manifest.at(repo, project.trust_ref)
+      new = from == "worktree" ? Proof::Manifest.load(root: repo) : Proof::Manifest.at(repo, from)
+      return if old.nil? && new.nil?
+
+      weaker = Proof::Weakening.diff(old, new)
+      stronger = Proof::Weakening.diff(new, old)
+      return if weaker.empty? && stronger.empty?
+
+      entry = @diffs.find { |item| item["project"] == project.id }
+      entry ||= { "project" => project.id, "digest" => { "before" => nil, "after" => nil } }.tap { |item| @diffs << item }
+      entry["proof"] = { "weakened" => weaker.map { |item| Proof::Weakening.describe(item) }, "strengthened" => stronger.map { |item| Proof::Weakening.describe(item) } }
+      weaker.each { |item| @changes << Change.new("loosen", "#{project.id} proof: #{Proof::Weakening.describe(item)}") }
+      stronger.each { |item| @changes << Change.new("tighten", "#{project.id} proof: #{Proof::Weakening.describe(item)}") }
+    rescue Polispec::Error => e
+      @changes << Change.new("loosen", "#{project.id} proof manifest cannot be read: #{e.message}")
+    end
+
     def build_project
       ledger = Ledger.load
       project = ledger.project(@spec.id)
@@ -642,6 +670,7 @@ module Polispec
       after = Probes.compose(project, ledger, proposed_files[policy_name], proposed_files[env_name], source: from == "worktree" ? "file:#{File.join(repo, project.policy)}" : "bootstrap:#{from}:plan", local: local)
       compare(project.id, before, after, journal_rows_for(project.id))
       contract_plan(project, repo, from, current_files, proposed_files)
+      proof_plan(project, repo, from)
       @notes.concat(Operator::Gates.unreachable_errors(after.policy).map { |message| "#{project.id}: #{message}" })
       files = file_rows(current_files, proposed_files, dir.empty? ? "" : "#{dir}/")
       @artifacts.merge!(project: project, repo: repo, dir: dir, from: from, proposed_files: proposed_files, files: files)

@@ -1,0 +1,40 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: polispec.proof/v1
+title: Polispec proof record
+description: "One line of proofs/<feature>.jsonl: a signed smoke result for one feature on one target at one digest."
+type: object
+additionalProperties: false
+required: [schema, id, feature, target, digest, commit, rung, verdict, started_at, finished_at, duration_ms, exit, evidence, runtime, producer, signature, prev, hash]
+properties:
+  schema: { const: polispec.proof/v1 }
+  id: { type: string, pattern: "^prf_[0-9a-f]{12}$" }
+  feature: { type: string, pattern: "^[a-z0-9][a-z0-9.-]*$" }
+  target: { type: string, pattern: "^[a-z0-9][a-z0-9.-]*$" }
+  digest: { $ref: "#/$defs/sha256" }
+  commit: { type: string, pattern: "^[0-9a-f]{40}$" }
+  rung: { type: integer, minimum: 1, maximum: 4 }
+  verdict: { enum: [pass, fail, blocked] }
+  started_at: { type: string, minLength: 1 }
+  finished_at: { type: string, minLength: 1 }
+  duration_ms: { type: integer, minimum: 0 }
+  exit: { type: [integer, "null"] }
+  evidence:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [name, sha256, bytes]
+      properties:
+        name: { type: string, minLength: 1 }
+        sha256: { $ref: "#/$defs/sha256" }
+        bytes: { type: integer, minimum: 0 }
+  runtime: { type: object, additionalProperties: true }
+  producer: { type: string, minLength: 1 }
+  signature: { type: string, minLength: 1 }
+  prev:
+    anyOf:
+      - { type: "null" }
+      - { $ref: "#/$defs/sha256" }
+  hash: { $ref: "#/$defs/sha256" }
+$defs:
+  sha256: { type: string, pattern: "^[0-9a-f]{64}$" }

@@ -388,7 +388,15 @@ module Polispec
       { "path" => scrub(display_path(full, top), top), "sha256" => sha256(bytes), "bytes" => bytes.bytesize, "kind" => kind }
     end
 
+    def ledger_frozen?(top = toplevel)
+      return false unless ENV["POLISPEC_SMOKE"].to_s.strip.empty?
+
+      !top.nil? && File.file?(File.join(top, "specs", "features.yml"))
+    end
+
     def record(top:, path:, spec:, at:, verdict:, summary:, steps:, evidence:, runner:, started: nil, finished: nil)
+      raise Polispec::Error, "ledger_frozen: smoke.yml is frozen; record with polispec proof run" if ledger_frozen?(top)
+
       clean, full = relative_spec(spec, top)
       bytes, data = load_spec(clean, full)
       node = resolve_node(data, clean, at.to_s)

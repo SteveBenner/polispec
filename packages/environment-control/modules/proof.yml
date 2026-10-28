@@ -1,0 +1,11 @@
+schema: polispec.module/v1
+name: proof
+summary: "Records of proven features are written only by polispec proof, and a release reaches stable only with every feature proven on every target."
+description: "This module protects the signed proof records under proofs/ in a repository that holds specs/features.yml. Rule R-PROOF-WRITE denies any write classified proof.write, so records are appended only by polispec proof run and import. Gate G-PROVEN runs the features_proven builtin on promotion to stable in the mode given by the mode param. Mode off passes without running anything, report passes and carries the findings, enforce fails the promotion on any unproven cell or unmapped file."
+params:
+  mode: { type: string, default: "off", summary: "off, report or enforce" }
+rules:
+  - { id: R-PROOF-WRITE, match: { class: [proof.write] }, verdict: deny, reason: "proof records are written only by polispec proof run and import" }
+gates:
+  to_stable:
+    - { id: G-PROVEN, builtin: features_proven, mode: "{{mode}}" }

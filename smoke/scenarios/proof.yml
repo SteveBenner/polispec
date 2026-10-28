@@ -1,0 +1,220 @@
+schema: polispec.smoke-scenario/v1
+unit: proof
+spec: specs/app.yml
+summary: proof status shows unproven cells, proof run signs and chains a record and status shows the cell proven until a commit changes the feature, a Write into proofs is denied by R-PROOF-WRITE, promote --to stable --dry-run lists G-PROVEN findings and passes in report mode, fails gate_failed in enforce mode and lists a manifest exception under proof changes that weaken the gate, and verify and run refuse a forged appended line
+fixture:
+  global: example
+  enforce: enforce
+  projects:
+    - id: rep
+      variant: service
+      status: live
+      checkouts: true
+      files:
+        "lib/a.rb": "puts :a\n"
+        "lib/b.rb": "puts :b\n"
+        "lib/app.rb": "puts 1\n"
+        "VERSION": "0.1.0\n"
+    - id: enf
+      variant: service
+      status: live
+      checkouts: true
+      files:
+        "lib/a.rb": "puts :a\n"
+        "lib/b.rb": "puts :b\n"
+        "lib/app.rb": "puts 1\n"
+        "VERSION": "0.1.0\n"
+steps:
+  - name: a scratch producer key is generated outside the repositories
+    run: [ssh-keygen, -q, -t, ed25519, -N, "", -C, "polispec-proof@scenario", -f, "{{scratch}}/proofkey"]
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/proofkey", "{{scratch}}/proofkey.pub"]
+  - name: the report project gets a two-feature manifest that trusts the key, the module in report mode and a published stable at v0.1.0
+    run:
+      - sh
+      - -c
+      - |
+        set -e
+        key=$(cut -d' ' -f1,2 "$0.pub")
+        cat > specs/features.yml <<EOF
+        schema: polispec.features/v1
+        targets:
+          - id: scratch
+            facts: {}
+        features:
+          - id: a
+            summary: feature a
+            paths: [lib/a.rb]
+            smoke: { run: ["true"], rung: 2 }
+          - id: b
+            summary: feature b
+            paths: [lib/b.rb]
+            smoke: { run: ["true"], rung: 2 }
+        ignore: ["specs/polispec/**/*", ".agents/**/*", AGENTS.md, VERSION, lib/app.rb]
+        trusted_producers:
+          - { id: host-scenario, key: "$key", kind: host }
+        EOF
+        sed -i 's/mode: "off"/mode: "report"/' specs/polispec/policy.yml
+        sed -i 's/run: polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml/run: "true"/' specs/polispec/environments.yml
+        git add specs lib
+        git commit -q -m manifest
+        git push -q origin main main:stable
+        git fetch -q origin
+        git branch -f stable origin/stable
+        git tag v0.1.0 origin/stable
+        echo 0.2.0 > VERSION
+        git add VERSION
+        git commit -q -m bump
+        git push -q origin main
+        git rev-parse main stable
+      - "{{scratch}}/proofkey"
+    cwd: "{{project.rep}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+  - name: the enforce project gets the same manifest with the module in enforce mode
+    run:
+      - sh
+      - -c
+      - |
+        set -e
+        key=$(cut -d' ' -f1,2 "$0.pub")
+        cat > specs/features.yml <<EOF
+        schema: polispec.features/v1
+        targets:
+          - id: scratch
+            facts: {}
+        features:
+          - id: a
+            summary: feature a
+            paths: [lib/a.rb]
+            smoke: { run: ["true"], rung: 2 }
+          - id: b
+            summary: feature b
+            paths: [lib/b.rb]
+            smoke: { run: ["true"], rung: 2 }
+        ignore: ["specs/polispec/**/*", ".agents/**/*", AGENTS.md, VERSION, lib/app.rb]
+        trusted_producers:
+          - { id: host-scenario, key: "$key", kind: host }
+        EOF
+        sed -i 's/mode: "off"/mode: "enforce"/' specs/polispec/policy.yml
+        sed -i 's/run: polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml/run: "true"/' specs/polispec/environments.yml
+        git add specs lib
+        git commit -q -m manifest
+        git push -q origin main main:stable
+        git fetch -q origin
+        git branch -f stable origin/stable
+        git tag v0.1.0 origin/stable
+        echo 0.2.0 > VERSION
+        git add VERSION
+        git commit -q -m bump
+        git push -q origin main
+        git rev-parse main stable
+      - "{{scratch}}/proofkey"
+    cwd: "{{project.enf}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+  - name: the manifest validates
+    run: ["{{polispec}}", validate, features, specs/features.yml]
+    cwd: "{{project.rep}}"
+    expect:
+      exit: 0
+  - name: status shows both features missing and nothing unmapped
+    run: ["{{polispec}}", proof, status, --json]
+    cwd: "{{project.rep}}"
+    env: { POLISPEC_PROOF_KEY: "{{scratch}}/proofkey" }
+    expect:
+      exit: 0
+      stdout_includes: ['"feature":"a","target":"scratch","status":"missing"', '"feature":"b","target":"scratch","status":"missing"', '"unmapped":[]']
+  - name: run proves feature a and appends a signed chained record
+    run: ["{{polispec}}", proof, run, a]
+    cwd: "{{project.rep}}"
+    env: { POLISPEC_PROOF_KEY: "{{scratch}}/proofkey", TMPDIR: "{{scratch}}" }
+    expect:
+      exit: 0
+      stdout_includes: ["a scratch pass rung 2"]
+      files_exist: ["{{project.rep}}/proofs/a.jsonl"]
+  - name: status shows a proven and b still missing
+    run: ["{{polispec}}", proof, status, --json]
+    cwd: "{{project.rep}}"
+    expect:
+      exit: 0
+      stdout_includes: ['"feature":"a","target":"scratch","status":"proven"', '"feature":"b","target":"scratch","status":"missing"']
+  - name: verify passes on the untouched record
+    run: ["{{polispec}}", proof, verify]
+    cwd: "{{project.rep}}"
+    expect:
+      exit: 0
+      stdout_includes: [ok]
+  - name: a commit touching lib/a.rb makes the proof of a stale
+    run: [sh, -c, 'echo "puts :changed" >> lib/a.rb && git commit -q -am "touch a" && "$0" proof status --json', "{{polispec}}"]
+    cwd: "{{project.rep}}"
+    expect:
+      exit: 0
+      stdout_includes: ['"feature":"a","target":"scratch","status":"stale"', '"feature":"b","target":"scratch","status":"missing"']
+  - name: a Write into proofs is denied by R-PROOF-WRITE
+    hook:
+      harness: claude
+      event: pretool
+      tool: Write
+      input: { file_path: "{{project.rep}}/proofs/x.jsonl", content: "{}\n" }
+      cwd: "{{project.rep}}"
+    expect:
+      decision: deny
+      rule: R-PROOF-WRITE
+  - name: a Write into a lib file of the same repository is not denied by it
+    hook:
+      harness: claude
+      event: pretool
+      tool: Write
+      input: { file_path: "{{project.rep}}/lib/c.rb", content: "puts 3\n" }
+      cwd: "{{project.rep}}"
+    expect:
+      decision: allow
+  - name: an exception for b is added on main and the records are committed
+    run: [sh, -c, '"$0" proof except b --reason "scenario exception" --owner smoke --expires "$(ruby -rdate -e "puts Date.today + 30")" && git add specs/features.yml proofs && git commit -q -m "exception and records" && git push -q origin main && git log -1 --format=%s', "{{polispec}}"]
+    cwd: "{{project.rep}}"
+    expect:
+      exit: 0
+      stdout_includes: ["added exception for b", "exception and records"]
+  - name: the report project is promoted to test
+    run: ["{{polispec}}", promote, rep, --to, test]
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+      stdout_includes: ["promoted: rep to test at "]
+  - name: the stable dry-run in report mode lists the stale cell and the added exception and still passes
+    run: ["{{polispec}}", promote, rep, --to, stable, --dry-run]
+    expect:
+      exit: 0
+      stdout_includes: ["gate G-PROVEN: pass", "proof: unproven_cell a scratch", "proof changes that weaken the gate:", "exception_added b"]
+  - name: the dry-run json carries proof_weakening
+    run: ["{{polispec}}", promote, rep, --to, stable, --dry-run, --json]
+    expect:
+      exit: 0
+      stdout_includes: ['"proof_weakening":[', '"kind":"exception_added"']
+  - name: the enforce project is promoted to test
+    run: ["{{polispec}}", promote, enf, --to, test]
+    env: { POLISPEC_OPERATOR: "1" }
+    expect:
+      exit: 0
+      stdout_includes: ["promoted: enf to test at "]
+  - name: the stable dry-run in enforce mode fails gate_failed on the unproven cells
+    run: ["{{polispec}}", promote, enf, --to, stable, --dry-run]
+    expect:
+      exit: 1
+      stderr_includes: ["gate_failed", "G-PROVEN", "2 unproven cells"]
+  - name: a forged line appended with a shell redirect breaks verification
+    run: [sh, -c, 'echo "{\"forged\":true}" >> proofs/a.jsonl && "$0" proof verify', "{{polispec}}"]
+    cwd: "{{project.rep}}"
+    expect:
+      exit: 1
+  - name: run refuses a file whose chain is broken
+    run: ["{{polispec}}", proof, run, a]
+    cwd: "{{project.rep}}"
+    env: { POLISPEC_PROOF_KEY: "{{scratch}}/proofkey" }
+    expect:
+      exit: 1
+      stderr_includes: [chain_broken]

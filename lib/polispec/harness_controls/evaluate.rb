@@ -74,6 +74,7 @@ module Polispec
         paths << ledger.path if ledger && ledger.respond_to?(:path)
         paths << exceptions_path
         paths << Catalog.state_dir
+        paths << File.join(State.home, "proof")
         program = File.expand_path($PROGRAM_NAME.to_s)
         paths << program if File.file?(program)
         paths.concat($LOADED_FEATURES.select { |path| path.include?("/rplugin/") && path.start_with?("/") })
@@ -157,6 +158,7 @@ module Polispec
       private_class_method :restriction_violated?
 
       def protected_action?(action, paths)
+        return proof_key_read?(action) if action.action_class == "secrets.read"
         return false unless %w[fs.write fs.delete control.edit policy.edit].include?(action.action_class)
         target = action.env_hint["path"].to_s
         return false if target.empty?
@@ -170,6 +172,16 @@ module Polispec
         end
       end
       private_class_method :protected_action?
+
+      def proof_key_read?(action)
+        target = action.env_hint["path"].to_s
+        return false if target.empty?
+
+        absolute = canonical_path(target)
+        protected = canonical_path(File.join(State.home, "proof"))
+        absolute == protected || absolute.start_with?("#{protected}/")
+      end
+      private_class_method :proof_key_read?
 
       def runtime_paths(value)
         case value

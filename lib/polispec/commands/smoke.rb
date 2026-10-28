@@ -24,6 +24,7 @@ module Polispec
       }.freeze
       BOOLEAN_FLAGS = { "run" => %w[--host-copy --no-record --accept-changes] }.freeze
       MULTI = %w[--evidence --at --unit --live].freeze
+      FROZEN_NOTICE = "smoke.yml is frozen; record with polispec proof run"
       LIVE_HARNESSES = %w[claude-code codex].freeze
 
       class Usage < StandardError; end
@@ -196,6 +197,8 @@ module Polispec
       def run_coverage(opts)
         raise Usage unless opts[:rest].empty?
 
+        return run_proof_cells(opts) if Smoke.ledger_frozen?
+
         top, path, = ledger_context
         clean, full = Smoke.relative_spec(one(opts, "--spec") || Smoke::DEFAULT_SPEC, top)
         _, data = Smoke.load_spec(clean, full)
@@ -214,6 +217,11 @@ module Polispec
         0
       end
 
+      def run_proof_cells(opts)
+        require_relative "proof"
+        ProofCommand.run(opts[:json] ? ["status", "--json"] : ["status"])
+      end
+
       def run_run(opts)
         raise Usage unless opts[:rest].empty?
 
@@ -221,9 +229,14 @@ module Polispec
         raise Usage unless live.all? { |name| LIVE_HARNESSES.include?(name) }
 
         require_relative "../smoke/run"
+        record = !opts[:flags].include?("--no-record")
+        if record && Smoke.ledger_frozen?
+          record = false
+          opts[:json] ? warn(FROZEN_NOTICE) : puts(FROZEN_NOTICE)
+        end
         options = Smoke::Run::Options.new(
           units: opts[:values]["--unit"], scenarios: one(opts, "--scenarios"), against: one(opts, "--against"), host_copy: opts[:flags].include?("--host-copy"),
-          live: live.uniq, out: one(opts, "--out"), record: !opts[:flags].include?("--no-record"), accept: opts[:flags].include?("--accept-changes"), json: opts[:json]
+          live: live.uniq, out: one(opts, "--out"), record: record, accept: opts[:flags].include?("--accept-changes"), json: opts[:json]
         )
         Smoke::Run.new(options).call
       end
