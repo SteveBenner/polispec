@@ -1,0 +1,164 @@
+schema: is.v1
+metadata:
+  name: polispec smoke proofs per feature and target
+  slug: proof
+  version: 0.1.0
+  created: '2026-10-27'
+  status: accepted
+  base_commit: 435849c
+  base_version: 0.48.1
+  intended_release: 0.49.0
+  contract: specs/app.yml#proof
+  worker: {harness: claude-code, agent: coding-worker, note: "AGENTS.md Part T: the primary wrote this blueprint and verifies; workers implement the slices"}
+  decisions_by_sven:
+    - "polispec core holds the manifest, records, verbs and gate; the rStack runner (rproof daemon plus an rplugin extension adapter) is a later release."
+    - "A record proves a cell while the feature digest is unchanged; a missing cell denies under enforce; records come from local runs, peer runners and CI imports, each signed by its producer."
+    - "Exceptions are per feature and target, expire within 90 days, and are confirmed by the operator at promote --to stable together with every other weakening manifest change; plan project:<id> classifies them loosening."
+    - "Records are committed hash-chained JSONL under proofs/ and emitted as polispec.proof events; a guard rule denies direct writes; records are SSH-signed."
+    - "Opt-in through the environment-control package (param proof off|report|enforce, default off); polispec dogfoods it in report mode; smoke.yml freezes for a repository with a manifest."
+    - "Per-feature min_rung, default 2. doctor and status report proof_gap for live projects. The proof_runner port is declared now with a local standalone adapter."
+vision:
+  problem: >-
+    Nothing stops a release from reaching stable when a feature it changed was never smoke-tested, or was tested only on one of the
+    platforms the product claims to support. polispec's smoke ledger proves spec nodes of polispec itself, records no target, and
+    no gate reads it.
+  outcome: >-
+    A project declares its targets and features in specs/features.yml. polispec proof run executes each feature's smoke command,
+    signs the record and appends it to proofs/<feature>.jsonl. The features_proven gate on to_stable requires a current, signed,
+    passing record at or above min_rung for every feature and target, or an unexpired exception, and denies files no feature owns.
+    promote --to stable makes the operator confirm every manifest change that weakens proof.
+  non_goals:
+    - The rproof daemon, peer dispatch and any network call (later release).
+    - Signing judgments, contracts or anything but proof records.
+    - Measuring a smoke command's rung or quality.
+    - Any change to the existing exceptions (exceptions.yml) feature.
+constraints:
+  - Ruby standard library only (ruby 3.3 on PATH, 4.0 under ~/.rubies); signing shells out to ssh-keygen -Y, argv without a shell, through Polispec::Trace.capture3. Keep the two-line header (shebang, SPDX) every lib file carries.
+  - No comments or docstrings in code (AGENTS.md Part Q). The only new test material is smoke/scenarios/proof.yml, which polispec's own proof rule requires; smoke is the product's test machinery.
+  - Work only in /home/sven/github/foss/.polispec-wt/proofs (branch proofs). Never touch the pinned runtime, ~/.ai, the live clone /home/sven/github/foss/polispec, the real ledger, shelf, settings or state home.
+  - Every manual run sets POLISPEC_STATE_HOME, POLISPEC_LEDGER, POLISPEC_HOME, POLISPEC_GLOBAL and POLISPEC_SETTINGS to scratch paths under the session scratchpad; never redirect XDG_STATE_HOME. Scratchpad writes need a leading `ulimit -f 131072;`.
+  - Commands are files (lib/polispec/commands/*.rb registers itself with CLI.register); no registry edits elsewhere.
+  - Existing verdicts of every other class and every other smoke scenario stay unchanged.
+  - No new setting other than polispec.proof.runner; no change to the judgment record shape.
+surfaces:
+  code:
+    - lib/polispec/proof.rb (new; requires the proof/ files)
+    - lib/polispec/proof/manifest.rb (new)
+    - lib/polispec/proof/digest.rb (new)
+    - lib/polispec/proof/records.rb (new)
+    - lib/polispec/proof/signer.rb (new)
+    - lib/polispec/proof/runner.rb (new)
+    - lib/polispec/proof/adapters/local.rb (new)
+    - lib/polispec/proof/gate.rb (new)
+    - lib/polispec/proof/weakening.rb (new)
+    - lib/polispec/commands/proof.rb (new)
+    - lib/polispec.rb (ACTION_CLASSES gains proof.write)
+    - lib/polispec/schema/core.rb (KINDS gains features and proof)
+    - lib/polispec/events.rb (shaped polispec.proof)
+    - lib/polispec/operator/gates.rb (BUILTINS gains features_proven)
+    - lib/polispec/operator/promote.rb (weakening list and second phrase on to_stable)
+    - lib/polispec/plan.rb (project plan classifies specs/features.yml changes)
+    - lib/polispec/classify/commands/support.rb (write_class proof.write; secrets.read for the producer key)
+    - lib/polispec/harness_controls/evaluate.rb (protected path <state home>/proof)
+    - lib/polispec/harness_controls/authority.rb (runtime manifest leaves proofs/ out)
+    - lib/polispec/smoke.rb and lib/polispec/commands/smoke.rb (ledger_frozen, coverage from proofs)
+    - lib/polispec/commands/doctor.rb and lib/polispec/commands/status.rb (proof_gap)
+  contract:
+    - schemas/features.v1.yml, schemas/proof.v1.yml (new)
+    - "schemas/policy.v1.yml, control.v1.yml, module.v1.yml, global.v1.yml, ledger.v1.yml: proof.write wherever fs.walk is an action_class enum value; the gate object accepts builtin features_proven and key mode (report|enforce)"
+    - specs/editions.yml (row proof.report_mode)
+    - polispec.rplugin.yml (optional port proof_runner, declared with its standalone adapter; setting polispec.proof.runner)
+    - packages/environment-control (1.2.0, param proof, modules/proof.yml, variant policies include it)
+    - specs/features.yml, proofs/ (polispec's own manifest)
+  doc:
+    - docs/schema.md, docs/cli.md, docs/operator.md, README.md (primary reviews)
+  test_machinery:
+    - smoke/scenarios/proof.yml (new)
+design:
+  manifest:
+    load: "Proof::Manifest.load(root:) reads root/specs/features.yml; Proof::Manifest.at(git_dir, rev) reads it with git show rev:specs/features.yml; both validate against schemas/features.v1.yml through Schema.validate and return a frozen object or raise Polispec::Error manifest_invalid with the schema errors; absent returns nil."
+    checks_beyond_schema: "feature and target ids unique; feature targets subset of target ids; exceptions name an existing feature and existing targets of it; expires >= added and expires - added <= 90 days; trusted_producers ids unique and each key line parses (ssh-keygen -l -f on a temp file)."
+    target_match: "Proof::Manifest#host_target(facts, explicit) where facts = {os: Smoke.runtime os id, arch: uname -m, ruby: RUBY_VERSION major.minor, runtime and harness only when POLISPEC_PROOF_RUNTIME / POLISPEC_PROOF_HARNESS are set}. A target matches when every fact it names that the host reports is equal; a fact the host does not report counts as not matching unless --target names the target, in which case it is recorded as declared. Errors target_unmatched, target_ambiguous, target_mismatch."
+    globs: "Proof::Manifest.match?(glob, path) = File.fnmatch(glob, path, File::FNM_PATHNAME | File::FNM_DOTMATCH | File::FNM_EXTGLOB), with ** matching across directories (FNM_PATHNAME already lets **/ do so in Ruby)."
+  digest:
+    rule: "Proof::Digest.cell(git_dir, rev, manifest, feature, target) = Canonical.sha256(Canonical.json({feature: entry, target: entry, files: [[path, blob]...] sorted by path for git ls-tree -r --full-tree rev entries matching feature paths, feature shared or manifest shared, spec: Smoke at_digest of the anchored node read from rev, or nil})). Cache ls-tree per rev inside one process."
+  records:
+    file: "proofs/<feature>.jsonl under the repository root."
+    append: "Proof::Records.append(root, record) takes an exclusive flock on <state home>/proof/locks/<sha256 of realpath of the file>.lock, reads the last line's hash (or nil), sets prev and hash with Chain.link, writes one line with syswrite, fsync. Never rewrites earlier lines."
+    read: "Proof::Records.read(root) and .at(git_dir, rev, feature) parse lines; a line that fails JSON or schema or chain (Chain.broken_at) stops the file there and yields a chain_broken finding."
+    signed_body: "Canonical.json of the record without signature, prev and hash."
+  signer:
+    sign: "ssh-keygen -Y sign -f <key> -n polispec-proof <tmpfile>; the .sig file's text is the signature."
+    verify: "ssh-keygen -Y verify -f <allowed_signers tmp> -I <producer id> -n polispec-proof -s <sig tmp> < body; allowed_signers lines '<id> namespaces=\"polispec-proof\" <key>' from trusted_producers. Temp files under Dir.mktmpdir, removed after."
+    keygen: "polispec proof keygen: Gates.require_terminal! and Gates.confirm!('create proof key'); ssh-keygen -t ed25519 -N '' -C polispec-proof@<short hostname> -f <state home>/proof/producer_ed25519; refuse key_exists when present; print the trusted_producers entry {id: host-<short hostname>, key: <pub line>, kind: host}. --json prints it as JSON. Producer id of a local run is read back from the .pub comment."
+  runner:
+    port: "Proof::Runner.adapter picks by setting polispec.proof.runner (default local); POLISPEC_PROOF_RUNNER=off raises Polispec::Error runner_unavailable. Any other value resolves through Rplugin::Ports.for('polispec').adapter(:proof_runner, id) the way Author resolves its adapter (lib/polispec/author.rb), raising runner_unavailable when the SDK or adapter is missing."
+    local: "Adapters::Local#submit(request) runs synchronously and returns an id; #status returns done or failed; #fetch returns the signed records. request = {root, features, target, out_dir}. For each feature: Trace.capture3 of the argv with chdir root, timeout timeout_s (kill the process group, verdict blocked, exit nil), stdout and stderr into <out_dir>/<feature>.<target>.log; evidence = [{name, sha256, bytes}]; verdict pass on exit 0 else fail; record built with digest at HEAD, commit HEAD, rung from the smoke entry (per_target override), runtime Smoke.runtime, producer id, signature."
+  commands:
+    file: lib/polispec/commands/proof.rb
+    run: "Refuse not_a_repository outside a git work tree, manifest_missing, dirty_tree (git status --porcelain limited to paths matching the selected features' globs, the manifest, or manifest shared). Selection: named features, else every feature applicable to the target without a passing record at the current digest. Append each record (or --out FILE writes them as JSONL and appends nothing), emit polispec.proof per record, print one line per run (feature target verdict rung duration, log path). Exit 0 all pass, 1 otherwise, 2 usage."
+    import: "As specs/app.yml proof import; all records of one file or none."
+    status: "As specs/app.yml proof status; --ref reads manifest and proofs at REF; text table and --json {cells: [{feature, target, status, record, expires}], unmapped: [...]}."
+    verify: "As specs/app.yml proof verify; exit 1 on any finding."
+    except: "As specs/app.yml proof except; rewrites specs/features.yml through YAML dump of the parsed document only when the file has no comments and no anchors, else refuses manual_edit_required with the entry to paste; lints the result (Lint.guard_write! style) before writing."
+  gate:
+    builtin: "Gates BUILTINS gains features_proven; gate_features_proven(gate, context) calls Proof::Gate.check(repo: context.project.repo, sha: context.sha, base: Gates.stable_tag(context.project, context.git), mode: gate['mode'] || 'report', edition: Editions current). Under lock (Editions.allowed?('proof.report_mode', edition) false) report is enforce."
+    result: "Returns {findings: [...], cells: n, proven: n, excepted: n}; enforce with any finding raises Failure.new('gate_failed', '<count> unproven cells, <count> unmapped files', 'gate_id' => id, 'findings' => findings). report records the findings in the gate row (run_all keeps what the builtin returns; extend the gate row with a findings key and print them in Commands::Promote#print_text as '    proof: <finding>')."
+    unmapped: "git diff --name-only base..sha (base nil: git ls-tree -r --name-only sha); drop paths matching any feature paths or shared, manifest shared, ignore, proofs/**, specs/features.yml."
+  weakening:
+    rule: "Proof::Weakening.diff(old_manifest, new_manifest) returns a list of {kind, feature, target, detail} for every change specs/app.yml proof weakening names; old nil (no manifest at the stable tag, or no stable tag) compares with an empty manifest, so every exception, producer and ignore glob of the first manifest is listed; new nil returns []."
+    promote: "In Operator::Promote#to_hop for stable, after gates and the stable phrase, when the policy's to_stable gates include features_proven: compute the list from the manifest at the stable tag and at plan.to_sha; when non-empty print each line under 'proof changes that weaken the gate:' and Gates.confirm!('accept proof changes for <project>'); dry run includes them in the preview as proof_weakening. The promotion record and polispec.promote event carry proof_weakening (kinds and count)."
+    plan: "Plan project:<id> adds the manifest diff (trust ref versus proposed) to the classification: weakening entries loosen, the reverse tighten, listed under a proof heading; no change to probes."
+  write_guard:
+    classify: "Support.write_class returns proof.write when the expanded path matches %r{/proofs/[^/]+\\.jsonl\\z} and the directory above proofs/ holds specs/features.yml; returns secrets.read for a read of <state home>/proof/producer_ed25519 (read classification where file tools classify reads; follow how secrets.read candidates are built for env files)."
+    controls: "HarnessControls::Evaluate#protected_paths adds File.join(State.home, 'proof') so a governed write there is denied POLISPEC-CONTROL-PROTECTION."
+  package:
+    files: "packages/environment-control/package.yml version 1.2.0, param proof {type string, default off, allowed [off, report, enforce]}; modules: specs/polispec/modules/proof.yml from packages/environment-control/modules/proof.yml (follow how package.yml copies modules; add the key if packages.rb supports it, else add it as a shared file)."
+    module: "polispec.module/v1 named proof, params {mode: {type: string, default: 'off'}}, rules [{id: R-PROOF-WRITE, match: {class: [proof.write]}, verdict: deny, reason: 'proof records are written only by polispec proof run and import'}], gates to_stable [{id: G-PROVEN, builtin: features_proven, mode: '{{mode}}'}]. features_proven with mode off passes with no findings and runs nothing. Check that package interpolation leaves {{mode}} for module params."
+    policies: "Both variant policy.yml files gain includes: [{module: proof, with: {mode: '{{proof}}'}}]."
+  smoke_freeze: "Smoke.record refuses ledger_frozen when the toplevel holds specs/features.yml and POLISPEC_SMOKE is unset; smoke run passes record: false in that case and prints 'smoke.yml is frozen; record with polispec proof run'; smoke coverage, in that case, prints proof status cells instead."
+  upkeep: "Proof::Gate.check at the stable tag, mode report, from doctor (one proof_gap warn per live project whose composed stable policy has a features_proven gate and any finding) and status (the same finding in the project block)."
+  seal: "HarnessControls::Authority runtime_path? also rejects paths beginning proofs/."
+  events: "Events shaped 'polispec.proof' => %w[project feature target verdict id]."
+  editions: "specs/editions.yml row proof.report_mode: standard included, lock excluded, added 0.49.0, code lib/polispec/proof/gate.rb."
+  dogfood:
+    manifest: "polispec's specs/features.yml: one target {id: linux-x86_64-ruby3.3, facts: {os: <Smoke os id on this host>, arch: x86_64, ruby: '3.3'}}; one feature per smoke coverage unit expansion (smoke coverage lists them), id = unit with / replaced by . and * dropped, spec anchor {file: specs/app.yml, at: <unit>}, smoke run [bin/polispec, smoke, run, --unit, <unit>, --no-record], rung 2; paths: the lib, schemas, modules, catalog and smoke/scenarios files each unit exercises (read the scenarios' unit names and the commands they run); shared: [lib/polispec.rb, lib/polispec/cli.rb, lib/polispec/canonical.rb, lib/polispec/state.rb, lib/polispec/schema/**, VERSION, polispec.gemspec, bin/polispec, bin/polispec-guard]; ignore: [CHANGELOG.md, FEATURES.md, TODO.md, NEXT.md, ROADMAP.md, DECISIONS.md, TOKENS.jsonl, docs/**, README.md, assets/**, examples/**, smoke.yml, .rproject/**, web/**/*.md]; trusted_producers and exceptions empty (the primary adds the host key). Every tracked file must end up owned or ignored: proof status shows unmapped: [] at HEAD with base nil."
+    scenario: "smoke/scenarios/proof.yml, unit proof: a fixture repo with a two-feature manifest and a scratch producer key generated in the step (ssh-keygen in the scenario's scratch home, the key path given by POLISPEC_PROOF_KEY, which Signer honours only while unsealed); steps: proof status shows both missing; proof run passes one feature; status shows proven and missing; a commit touching the proven feature's path makes it stale; an edit to proofs/x.jsonl through a hook payload denies R-PROOF-WRITE once the policy includes the module; promote --to stable --dry-run on a live fixture shows G-PROVEN findings in report mode and fails in enforce; a manifest change adding an exception appears under proof_weakening in the dry run; proof verify fails after a forged line is appended with a shell redirect inside the scenario's scratch copy."
+slices:
+  - id: foundation
+    owns_paths: [schemas/features.v1.yml, schemas/proof.v1.yml, schemas/policy.v1.yml, schemas/control.v1.yml, schemas/module.v1.yml, schemas/global.v1.yml, schemas/ledger.v1.yml, lib/polispec.rb, lib/polispec/schema/core.rb, lib/polispec/proof.rb, lib/polispec/proof/manifest.rb, lib/polispec/proof/digest.rb, lib/polispec/proof/records.rb, lib/polispec/proof/signer.rb, lib/polispec/events.rb, specs/editions.yml]
+    deliverable: schemas, kinds, ACTION_CLASSES, manifest, digest, records, signer, event shape, editions row
+    acceptance: "bin/polispec validate features <scratch manifest> ok and rejects an exception over 90 days; validate policy on every shipped policy and smoke fixture still ok; a ruby -Ilib one-liner signs and verifies a record with a scratch key and fails after a byte changes; Digest.cell changes when a covered file changes in a commit and not when an ignored one does; bin/polispec editions --check exits 0"
+  - id: commands
+    owns_paths: [lib/polispec/commands/proof.rb, lib/polispec/proof/runner.rb, lib/polispec/proof/adapters/local.rb, polispec.rplugin.yml]
+    depends_on: [foundation]
+    deliverable: proof run, import, status, verify, except, keygen; the port, its local adapter and the setting
+    acceptance: "In a scratch git repo with a manifest and a scratch key: run passes and appends a signed chained record; status shows proven; run --out writes a file and import appends it; import refuses a record signed by an untrusted key; except refuses 91 days; verify exits 1 after a forged appended line; POLISPEC_PROOF_RUNNER=off refuses runner_unavailable; keygen without a TTY refuses not_tty"
+  - id: gate-and-promote
+    owns_paths: [lib/polispec/proof/gate.rb, lib/polispec/proof/weakening.rb, lib/polispec/operator/gates.rb, lib/polispec/operator/promote.rb, lib/polispec/commands/promote.rb, lib/polispec/plan.rb, lib/polispec/commands/doctor.rb, lib/polispec/commands/status.rb, lib/polispec/harness_controls/authority.rb]
+    depends_on: [foundation]
+    deliverable: features_proven, weakening list and phrase, plan classification, proof_gap, seal exclusion
+    acceptance: "a scratch live fixture (apply environment-control as the smoke fixtures do): promote --to stable --dry-run lists unproven cells and unmapped files and passes in report, fails gate_failed in enforce; after proof run for every cell it passes; adding an exception on main shows under proof_weakening; plan project:<id> with that change classifies loosening; seal --dry-run on the tree does not list proofs/"
+  - id: guard-and-package
+    owns_paths: [lib/polispec/classify/commands/support.rb, lib/polispec/harness_controls/evaluate.rb, packages/environment-control/package.yml, packages/environment-control/modules/proof.yml, packages/environment-control/variants/service/policy.yml, packages/environment-control/variants/distributed/policy.yml, lib/polispec/packages.rb]
+    depends_on: [foundation]
+    deliverable: proof.write classification, key protection, package 1.2.0 with the proof module
+    acceptance: "bin/polispec classify on a Write to <fixture>/proofs/a.jsonl prints proof.write and on a Write elsewhere fs.write; explain of that Write in a fixture whose policy includes proof denies R-PROOF-WRITE; plan environment-control on a scratch repo with --param proof=report shows modules/proof.yml and the include; with proof off the composed to_stable gates are unchanged in effect (G-PROVEN passes with no findings)"
+  - id: smoke-and-dogfood
+    owns_paths: [lib/polispec/smoke.rb, lib/polispec/commands/smoke.rb, smoke/scenarios/proof.yml, specs/features.yml]
+    depends_on: [commands, gate-and-promote, guard-and-package]
+    deliverable: smoke freeze, coverage from proofs, polispec's manifest, the proof scenario
+    acceptance: "bin/polispec proof status in the worktree prints every feature and unmapped: []; bin/polispec smoke run --unit proof passes; smoke record in the worktree refuses ledger_frozen; smoke coverage prints proof cells"
+  - id: docs
+    owns_paths: [docs/schema.md, docs/cli.md, docs/operator.md, README.md]
+    depends_on: [smoke-and-dogfood]
+    deliverable: "docs/schema.md: features and proof schemas, proof.write, features_proven gate; docs/cli.md: the proof verbs with who may run them (keygen operator); docs/operator.md: enabling the gate through the package, keygen, confirming weakening changes, proof_gap; README.md: one paragraph where it lists gates"
+    acceptance: "every verb and key named in specs/app.yml proof appears; no host path, project id other than polispec, or name"
+verification:
+  checks: "ruby -wc on every changed .rb; YAML load on every changed .yml; bin/polispec lint --shipped (only the known findings); bin/polispec editions --check; ~/.rplugin/bin/rplugin check on the worktree (directory-name and .rproject findings are known)"
+  smoke: "bin/polispec smoke run --no-record, then --against /home/sven/bitbucket/paterasai/rstack-uber/plugins/.pinned/polispec/a446db397d86b6226313f94f040274ea8924ee3e --no-record with --out under the scratchpad; every scenario passes; every diff is runtime kind, ids, paths, the version line or the new proof scenario"
+  replay: "bin/polispec replay --runtime <export of the candidate> reports no unexplained verdict change (proof.write is new; only writes into proofs/ of a repo with a manifest may change, and no live project has one yet)"
+out_of_scope:
+  - Version bump, CHANGELOG, FEATURES, TODO, specs/app.yml, commits and tags; the primary does those
+  - The rproof daemon, its extension adapter, peer and CI producers' keys
+  - Changing polispec's own specs/polispec/policy.yml (applied through plan project:polispec after the release is pinned)

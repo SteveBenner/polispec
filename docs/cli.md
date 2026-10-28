@@ -80,12 +80,25 @@ Plan targets: a package (`environment-control` and others), `project:ID`, `globa
 | Verb | Use | Authority | Reads or writes |
 | --- | --- | --- | --- |
 | `promote PROJECT --to test` | Fast-forward `test`, tag, run the gate | agent | writes branches and tags |
-| `promote PROJECT --to stable` | Flip prod | operator | |
+| `promote PROJECT --to stable` | Flip prod. When the candidate's proof manifest weakens proof against the stable tag, a second phrase `accept proof changes for <project>` follows the stable phrase | operator | |
 | `deploy PROJECT test` | Deploy the test checkout | agent | |
 | `deploy PROJECT stable` | Deploy or roll back prod | operator | |
 | `pause PROJECT`, `allow-once ID` | Suspend the guard briefly, redeem one grant | operator | |
 
 An agent never pushes `test` or `stable` and never runs git against `stable`.
+
+## Prove features
+
+Since 0.49.0. A repository that holds `specs/features.yml` proves each feature on each target with signed records in `proofs/` (`docs/schema.md`, `docs/operator.md`). `--json` is accepted by every verb.
+
+| Verb | Use | Authority | Reads or writes |
+| --- | --- | --- | --- |
+| `proof run [FEATURE...] [--target T] [--out FILE]` | Run each feature's smoke command on the matching target, sign the result and append it; `--out` writes the records to FILE instead | agent | appends to `proofs/`, or writes FILE; exit 1 when any run failed or was blocked |
+| `proof import FILE...` | Verify records from a peer or CI job against `trusted_producers` and the current digests, then append them | agent | appends to `proofs/` |
+| `proof status [--ref REF]` | Every feature and target cell as proven, stale, failing, missing, excepted or not_applicable, then the unmapped changed files | agent | reads |
+| `proof verify [--ref REF]` | Manifest schema, every proofs file's schema, chain and signatures, expired or over-long exceptions and unparsable producer keys; exit 1 on any finding | agent | reads |
+| `proof except FEATURE [--target T]... --reason TEXT --owner NAME --expires DATE` | Add an exception to `specs/features.yml`, at most 90 days out | agent | writes the manifest; the operator confirms it at `promote --to stable` as a weakening change |
+| `proof keygen` | Create the host producer key and print the `trusted_producers` entry to add | operator, on a terminal, after the typed phrase `create proof key` | writes the key under the state home |
 
 ## Authority and exceptions
 
@@ -116,6 +129,7 @@ An agent never pushes `test` or `stable` and never runs git against `stable`.
 | behavior, contract, code | `docs/behavior.md`, `docs/contract.md`, `docs/code-specs.md` |
 | roster | `docs/roster.md` |
 | smoke | `docs/smoke.md` |
+| proof | `docs/operator.md`, `docs/schema.md` |
 | web, author, register, manifest | `docs/web.md` |
 | changes, sessions, editions | `docs/effect.md` |
 | every key of every file | `docs/schema.md` |

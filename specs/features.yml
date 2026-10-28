@@ -1,0 +1,1399 @@
+---
+schema: polispec.features/v1
+targets:
+- id: linux-x86-64-ruby3.3
+  facts:
+    os: ubuntu
+    arch: x86_64
+    ruby: '3.3'
+features:
+- id: commands.behavior
+  summary: Smoke proof for the commands/behavior coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/behavior.rb
+  - lib/polispec/behavior.rb
+  - schemas/behavior.v1.yml
+  - schemas/behavior.v2.yml
+  - packages/guided-learner/**/*
+  - smoke/scenarios/behavior.yml
+  spec:
+    file: specs/app.yml
+    at: commands/behavior
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/behavior
+    - "--no-record"
+    rung: 2
+- id: commands.validate
+  summary: Smoke proof for the commands/validate coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/validate_profiles.rb
+  - schemas/**/*
+  - examples/**/*
+  - smoke/scenarios/validate.yml
+  spec:
+    file: specs/app.yml
+    at: commands/validate
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/validate
+    - "--no-record"
+    rung: 2
+- id: commands.contract
+  summary: Smoke proof for the commands/contract coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/contract.rb
+  - lib/polispec/contract.rb
+  - schemas/contract.v1.yml
+  - schemas/contract-vocabulary.v1.yml
+  - smoke/scenarios/contract.yml
+  spec:
+    file: specs/app.yml
+    at: commands/contract
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - contract
+    - "--no-record"
+    rung: 2
+- id: commands.lint
+  summary: Smoke proof for the commands/lint coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/lint.rb
+  - lib/polispec/lint.rb
+  - lib/polispec/lint/**/*
+  - smoke/scenarios/lint.yml
+  spec:
+    file: specs/app.yml
+    at: commands/lint
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/lint
+    - "--no-record"
+    rung: 2
+- id: commands.replay
+  summary: Smoke proof for the commands/replay coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/replay.rb
+  - lib/polispec/replay.rb
+  - lib/polispec/replay_child.rb
+  - smoke/scenarios/stewardship.yml
+  spec:
+    file: specs/app.yml
+    at: commands/replay
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - stewardship
+    - "--no-record"
+    rung: 2
+- id: commands.shadow
+  summary: Smoke proof for the commands/shadow coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/shadow.rb
+  - lib/polispec/shadow.rb
+  - smoke/scenarios/hook-pretool-session.yml
+  spec:
+    file: specs/app.yml
+    at: commands/shadow
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/hook pretool|session
+    - "--no-record"
+    rung: 2
+- id: commands.plan-apply
+  summary: Smoke proof for the commands/plan, apply coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/plan.rb
+  - lib/polispec/commands/apply.rb
+  - lib/polispec/plan.rb
+  - lib/polispec/packages.rb
+  - lib/polispec/probes.rb
+  - lib/polispec/personal_defaults.rb
+  - packages/environment-control/**/*
+  - config/ledger.starter.yml
+  - schemas/package.v1.yml
+  - schemas/app.v1.yml
+  - smoke/scenarios/plan-apply.yml
+  spec:
+    file: specs/app.yml
+    at: commands/plan, apply
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/plan, apply
+    - "--no-record"
+    rung: 2
+- id: commands.steward
+  summary: Smoke proof for the commands/steward coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/steward.rb
+  - lib/polispec/stewardship.rb
+  - rules/**/*
+  - smoke/scenarios/steward.yml
+  spec:
+    file: specs/app.yml
+    at: commands/steward
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/steward
+    - "--no-record"
+    rung: 2
+- id: commands.pin
+  summary: Smoke proof for the commands/pin coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/pin.rb
+  - lib/polispec/native_pin.rb
+  - smoke/scenarios/steward.yml
+  spec:
+    file: specs/app.yml
+    at: commands/pin
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/steward
+    - "--no-record"
+    rung: 2
+- id: commands.install-uninstall
+  summary: Smoke proof for the commands/install, uninstall coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/install.rb
+  - lib/polispec/commands/uninstall.rb
+  - lib/polispec/native_install.rb
+  - lib/polispec/native_settings.rb
+  - install.sh
+  - uninstall.sh
+  - polispec.rplugin.yml
+  - smoke/scenarios/harness.yml
+  spec:
+    file: specs/app.yml
+    at: commands/install, uninstall
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/harness
+    - "--no-record"
+    rung: 2
+- id: commands.uninstall-all-restore
+  summary: Smoke proof for the commands/uninstall --all, restore coverage unit of
+    specs/app.yml.
+  paths:
+  - lib/polispec/commands/restore.rb
+  - lib/polispec/uninstall_all.rb
+  - uninstall.sh
+  - skills/polispec-uninstall/**/*
+  - smoke/scenarios/harness-uninstall.yml
+  spec:
+    file: specs/app.yml
+    at: commands/uninstall --all, restore
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - harness_controls
+    - "--no-record"
+    rung: 2
+- id: commands.deployments
+  summary: Smoke proof for the commands/deployments coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/deployments.rb
+  - lib/polispec/deployments.rb
+  - schemas/deployments.v1.yml
+  - smoke/scenarios/deployment-receipts.yml
+  spec:
+    file: specs/app.yml
+    at: commands/deployments
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - deployment_receipts
+    - "--no-record"
+    rung: 2
+- id: commands.ledger-init
+  summary: Smoke proof for the commands/ledger init coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/ledger.rb
+  - config/ledger.starter.yml
+  - schemas/ledger.v1.yml
+  - examples/ledger.example.yml
+  - smoke/scenarios/registration.yml
+  spec:
+    file: specs/app.yml
+    at: commands/ledger init
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/register
+    - "--no-record"
+    rung: 2
+- id: commands.settings
+  summary: Smoke proof for the commands/settings coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/settings.rb
+  - smoke/scenarios/harness-controls.yml
+  spec:
+    file: specs/app.yml
+    at: commands/settings
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - harness_controls
+    - "--no-record"
+    rung: 2
+- id: commands.agents-render
+  summary: Smoke proof for the commands/agents render coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/agents.rb
+  - lib/polispec/agents_render.rb
+  - ".agents/**/*"
+  - smoke/scenarios/agents-render.yml
+  spec:
+    file: specs/app.yml
+    at: commands/agents render
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/agents render
+    - "--no-record"
+    rung: 2
+- id: commands.hook-git
+  summary: Smoke proof for the commands/hook git coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/git_hook.rb
+  - hooks/**/*
+  - smoke/scenarios/hook-git.yml
+  spec:
+    file: specs/app.yml
+    at: commands/hook git
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/hook git
+    - "--no-record"
+    rung: 2
+- id: commands.code-code-hook-specs
+  summary: Smoke proof for the commands/code, code-hook, specs coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/code.rb
+  - lib/polispec/commands/code_hook.rb
+  - lib/polispec/commands/specs.rb
+  - lib/polispec/code/**/*
+  - smoke/scenarios/code-specs.yml
+  spec:
+    file: specs/app.yml
+    at: commands/code, code-hook, specs
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - code_specs
+    - "--no-record"
+    rung: 2
+- id: commands.version
+  summary: Smoke proof for the commands/version coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/surfaces.rb
+  - EDITION
+  - plugin.json
+  - ".claude-plugin/**/*"
+  - ".codex-plugin/**/*"
+  - smoke/scenarios/version.yml
+  spec:
+    file: specs/app.yml
+    at: commands/version
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/version
+    - "--no-record"
+    rung: 2
+- id: commands.hook-pretool-session
+  summary: Smoke proof for the commands/hook pretool|session coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/hook.rb
+  - lib/polispec/hook_memo.rb
+  - lib/polispec/fastpath.rb
+  - lib/polispec/guard_health.rb
+  - lib/polispec/sessions.rb
+  - lib/polispec/journal.rb
+  - lib/polispec/notice.rb
+  - lib/polispec/freeze.rb
+  - lib/polispec/text_match.rb
+  - lib/polispec/scratch_cap.rb
+  - smoke/live/**/*
+  - smoke/scenarios/hook-pretool-session.yml
+  - smoke/scenarios/guard-failclosed.yml
+  - smoke/scenarios/guard-shim.yml
+  - smoke/scenarios/policy-memo.yml
+  spec:
+    file: specs/app.yml
+    at: commands/hook pretool|session
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/hook pretool|session
+    - "--no-record"
+    rung: 2
+- id: commands.resolve
+  summary: Smoke proof for the commands/resolve coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/resolve.rb
+  - lib/polispec/resolve.rb
+  - lib/polispec/layers.rb
+  - lib/polispec/policy_source.rb
+  - lib/polispec/predicates.rb
+  - specs/polispec/**/*
+  - smoke/scenarios/resolve.yml
+  spec:
+    file: specs/app.yml
+    at: commands/resolve
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/resolve
+    - "--no-record"
+    rung: 2
+- id: commands.classify
+  summary: Smoke proof for the commands/classify coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/classify.rb
+  - lib/polispec/classify/**/*
+  - smoke/scenarios/classify.yml
+  spec:
+    file: specs/app.yml
+    at: commands/classify
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/classify
+    - "--no-record"
+    rung: 2
+- id: commands.explain
+  summary: Smoke proof for the commands/explain coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/explain.rb
+  - lib/polispec/explain/**/*
+  - smoke/scenarios/resolve.yml
+  spec:
+    file: specs/app.yml
+    at: commands/explain
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/resolve
+    - "--no-record"
+    rung: 2
+- id: commands.promote-deploy
+  summary: Smoke proof for the commands/promote, deploy coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/promote.rb
+  - lib/polispec/commands/deploy.rb
+  - lib/polispec/operator/**/*
+  - scripts/release-lock
+  - smoke/scenarios/promote-deploy.yml
+  spec:
+    file: specs/app.yml
+    at: commands/promote, deploy
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/promote, deploy
+    - "--no-record"
+    rung: 2
+- id: commands.pause-allow-once
+  summary: Smoke proof for the commands/pause, allow-once coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/pause.rb
+  - lib/polispec/commands/allow_once.rb
+  - smoke/scenarios/pause-allow-once.yml
+  spec:
+    file: specs/app.yml
+    at: commands/pause, allow-once
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/pause, allow-once
+    - "--no-record"
+    rung: 2
+- id: commands.catalog
+  summary: Smoke proof for the commands/catalog coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/catalog.rb
+  - lib/polispec/catalog.rb
+  - catalog/**/*
+  - schemas/catalog.v1.yml
+  - schemas/catalog-state.v1.yml
+  - smoke/scenarios/catalog.yml
+  - smoke/scenarios/catalog-fixture.yml
+  spec:
+    file: specs/app.yml
+    at: commands/catalog
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - catalog
+    - "--no-record"
+    rung: 2
+- id: commands.roster-resolve-check
+  summary: Smoke proof for the commands/roster resolve|check coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/roster.rb
+  - lib/polispec/roster.rb
+  - schemas/roster.v1.yml
+  - smoke/scenarios/roster.yml
+  spec:
+    file: specs/app.yml
+    at: commands/roster resolve|check
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/roster resolve|check
+    - "--no-record"
+    rung: 2
+- id: commands.status-digest-doctor
+  summary: Smoke proof for the commands/status, digest, doctor coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/status.rb
+  - lib/polispec/commands/digest.rb
+  - lib/polispec/commands/doctor.rb
+  - lib/polispec/guard_health.rb
+  - smoke/scenarios/gate-unreachable.yml
+  - smoke/scenarios/status-digest-doctor.yml
+  spec:
+    file: specs/app.yml
+    at: commands/status, digest, doctor
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/status, digest, doctor
+    - "--no-record"
+    rung: 2
+- id: commands.judgments
+  summary: Smoke proof for the commands/judgments coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/judgments.rb
+  - lib/polispec/judgments.rb
+  - schemas/judgment.v1.yml
+  - smoke/scenarios/judgments.yml
+  spec:
+    file: specs/app.yml
+    at: commands/judgments
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - judgments
+    - "--no-record"
+    rung: 2
+- id: commands.exceptions
+  summary: Smoke proof for the commands/exceptions coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/exceptions.rb
+  - lib/polispec/exceptions.rb
+  - schemas/exceptions.v1.yml
+  - schemas/waivers.v1.yml
+  - smoke/scenarios/editions.yml
+  spec:
+    file: specs/app.yml
+    at: commands/exceptions
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/editions
+    - "--no-record"
+    rung: 2
+- id: commands.harness
+  summary: Smoke proof for the commands/harness coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/harness.rb
+  - lib/polispec/harness/**/*
+  - data/**/*
+  - config/harness-features.yml
+  - hooks/**/*
+  - ".agents/**/*"
+  - smoke/scenarios/harness.yml
+  spec:
+    file: specs/app.yml
+    at: commands/harness
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/harness
+    - "--no-record"
+    rung: 2
+- id: commands.seal
+  summary: Smoke proof for the commands/seal coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/seal.rb
+  - examples/controls.minimal.yml
+  - examples/controls.scheduled.yml
+  - smoke/scenarios/seal.yml
+  spec:
+    file: specs/app.yml
+    at: commands/seal
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/seal
+    - "--no-record"
+    rung: 2
+- id: commands.plane
+  summary: Smoke proof for the commands/plane coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/plane.rb
+  - smoke/scenarios/seal.yml
+  spec:
+    file: specs/app.yml
+    at: commands/plane
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - harness_controls
+    - "--no-record"
+    rung: 2
+- id: commands.authorizations
+  summary: Smoke proof for the commands/authorizations coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/authorizations.rb
+  - smoke/scenarios/harness-controls.yml
+  spec:
+    file: specs/app.yml
+    at: commands/authorizations
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - harness_controls
+    - "--no-record"
+    rung: 2
+- id: commands.judge
+  summary: Smoke proof for the commands/judge coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/judge.rb
+  - lib/polispec/judge.rb
+  - smoke/scenarios/hook-git.yml
+  spec:
+    file: specs/app.yml
+    at: commands/judge
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/hook pretool|session
+    - "--no-record"
+    rung: 2
+- id: commands.delegate
+  summary: Smoke proof for the commands/delegate coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/delegate.rb
+  - lib/polispec/delegate.rb
+  - lib/polispec/delegate/**/*
+  - schemas/delegate_grants.v1.yml
+  - smoke/scenarios/editions.yml
+  spec:
+    file: specs/app.yml
+    at: commands/delegate
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/editions
+    - "--no-record"
+    rung: 2
+- id: commands.smoke
+  summary: Smoke proof for the commands/smoke coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/smoke.rb
+  - lib/polispec/smoke.rb
+  - lib/polispec/smoke/**/*
+  - smoke/host-probes.yml
+  - smoke/live/**/*
+  - schemas/smoke.v1.yml
+  - schemas/smoke-scenario.v1.yml
+  - smoke/scenarios/smoke.yml
+  spec:
+    file: specs/app.yml
+    at: commands/smoke
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/smoke
+    - "--no-record"
+    rung: 2
+- id: commands.proof
+  summary: Smoke proof for the commands/proof coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/proof.rb
+  - lib/polispec/proof.rb
+  - lib/polispec/proof/**/*
+  - schemas/features.v1.yml
+  - schemas/proof.v1.yml
+  - smoke/scenarios/proof.yml
+  spec:
+    file: specs/app.yml
+    at: commands/proof
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - proof
+    - "--no-record"
+    rung: 2
+- id: commands.web
+  summary: Smoke proof for the commands/web coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/web.rb
+  - lib/polispec/web.rb
+  - lib/polispec/web/**/*
+  - web/public/**/*
+  - vendor/**/*
+  - smoke/scenarios/web.yml
+  spec:
+    file: specs/app.yml
+    at: commands/web
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/web
+    - "--no-record"
+    rung: 2
+- id: commands.manifest
+  summary: Smoke proof for the commands/manifest coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/manifest.rb
+  - lib/polispec/manifest.rb
+  - schemas/manifest.v1.yml
+  - smoke/scenarios/manifest.yml
+  spec:
+    file: specs/app.yml
+    at: commands/manifest
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/manifest
+    - "--no-record"
+    rung: 2
+- id: commands.register
+  summary: Smoke proof for the commands/register coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/register.rb
+  - lib/polispec/registration.rb
+  - skills/polispec-register/**/*
+  - smoke/scenarios/registration.yml
+  spec:
+    file: specs/app.yml
+    at: commands/register
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/register
+    - "--no-record"
+    rung: 2
+- id: commands.changes
+  summary: Smoke proof for the commands/changes coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/changes.rb
+  - lib/polispec/changes.rb
+  - schemas/change.v1.yml
+  - smoke/scenarios/effect.yml
+  spec:
+    file: specs/app.yml
+    at: commands/changes
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - effect
+    - "--no-record"
+    rung: 2
+- id: commands.sessions
+  summary: Smoke proof for the commands/sessions coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/sessions.rb
+  - lib/polispec/sessions.rb
+  - schemas/session.v1.yml
+  - smoke/scenarios/smoke-suite.yml
+  spec:
+    file: specs/app.yml
+    at: commands/sessions
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - smoke
+    - "--no-record"
+    rung: 2
+- id: commands.editions
+  summary: Smoke proof for the commands/editions coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/editions.rb
+  - lib/polispec/editions.rb
+  - specs/editions.yml
+  - schemas/editions.v1.yml
+  - smoke/scenarios/editions.yml
+  spec:
+    file: specs/app.yml
+    at: commands/editions
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/editions
+    - "--no-record"
+    rung: 2
+- id: commands.author
+  summary: Smoke proof for the commands/author coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/author.rb
+  - lib/polispec/author.rb
+  - lib/polispec/author/**/*
+  - smoke/scenarios/author.yml
+  spec:
+    file: specs/app.yml
+    at: commands/author
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/author
+    - "--no-record"
+    rung: 2
+- id: code-specs.commands.code-detect-chain-show-check-validate-baseline-controls-generate-classify
+  summary: Smoke proof for the code_specs/commands/code detect|chain|show|check|validate|baseline|controls|generate|classify
+    coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/code.rb
+  - lib/polispec/code/**/*
+  - smoke/scenarios/code-commands.yml
+  spec:
+    file: specs/app.yml
+    at: code_specs/commands/code detect|chain|show|check|validate|baseline|controls|generate|classify
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - code_specs/commands/code detect|chain|show|check|validate|baseline|controls|generate|classify
+    - "--no-record"
+    rung: 2
+- id: code-specs.commands.specs-link-status-promote
+  summary: Smoke proof for the code_specs/commands/specs link|status|promote coverage
+    unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/specs.rb
+  - lib/polispec/code/**/*
+  - smoke/scenarios/specs-commands.yml
+  spec:
+    file: specs/app.yml
+    at: code_specs/commands/specs link|status|promote
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - code_specs/commands/specs link|status|promote
+    - "--no-record"
+    rung: 2
+- id: code-specs.commands.code-hook-pre-post-stop-session
+  summary: Smoke proof for the code_specs/commands/code-hook pre|post|stop|session
+    coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/code_hook.rb
+  - lib/polispec/code/**/*
+  - smoke/scenarios/code-hook.yml
+  spec:
+    file: specs/app.yml
+    at: code_specs/commands/code-hook pre|post|stop|session
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - code_specs/commands/code-hook pre|post|stop|session
+    - "--no-record"
+    rung: 2
+- id: code-specs
+  summary: Smoke proof for the code_specs coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/code.rb
+  - lib/polispec/commands/code_hook.rb
+  - lib/polispec/commands/specs.rb
+  - lib/polispec/code/**/*
+  - skills/polispec-specs/**/*
+  - smoke/scenarios/code-specs.yml
+  spec:
+    file: specs/app.yml
+    at: code_specs
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - code_specs
+    - "--no-record"
+    rung: 2
+- id: composition
+  summary: Smoke proof for the composition coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/layers.rb
+  - lib/polispec/environments.rb
+  - lib/polispec/packages.rb
+  - examples/clinic/**/*
+  - smoke/scenarios/composition.yml
+  spec:
+    file: specs/app.yml
+    at: composition
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - composition
+    - "--no-record"
+    rung: 2
+- id: catalog
+  summary: Smoke proof for the catalog coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/catalog.rb
+  - catalog/**/*
+  - smoke/scenarios/catalog.yml
+  - smoke/scenarios/catalog-fixture.yml
+  spec:
+    file: specs/app.yml
+    at: catalog
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - catalog
+    - "--no-record"
+    rung: 2
+- id: stewardship
+  summary: Smoke proof for the stewardship coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/stewardship.rb
+  - lib/polispec/runtime.rb
+  - rules/**/*
+  - smoke/scenarios/stewardship.yml
+  spec:
+    file: specs/app.yml
+    at: stewardship
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - stewardship
+    - "--no-record"
+    rung: 2
+- id: deployment-receipts
+  summary: Smoke proof for the deployment_receipts coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/deployments.rb
+  - schemas/deployments.v1.yml
+  - smoke/scenarios/deployment-receipts.yml
+  spec:
+    file: specs/app.yml
+    at: deployment_receipts
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - deployment_receipts
+    - "--no-record"
+    rung: 2
+- id: harness-controls
+  summary: Smoke proof for the harness_controls coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/controls.rb
+  - lib/polispec/control_registry.rb
+  - lib/polispec/fastpath.rb
+  - lib/polispec/harness_controls/**/*
+  - schemas/control.v1.yml
+  - examples/controls.minimal.yml
+  - examples/controls.scheduled.yml
+  - smoke/scenarios/harness-controls.yml
+  - smoke/scenarios/harness-uninstall.yml
+  - smoke/scenarios/fastpath.yml
+  - smoke/scenarios/fastpath-reads.yml
+  - smoke/scenarios/noise.yml
+  - smoke/scenarios/source-follow.yml
+  spec:
+    file: specs/app.yml
+    at: harness_controls
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - harness_controls
+    - "--no-record"
+    rung: 2
+- id: protected-authorizations
+  summary: Smoke proof for the protected_authorizations coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/commands/authorizations.rb
+  - lib/polispec/commands/plane.rb
+  - lib/polispec/harness_controls/**/*
+  - smoke/scenarios/harness-controls.yml
+  - smoke/scenarios/seal.yml
+  spec:
+    file: specs/app.yml
+    at: protected_authorizations
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - harness_controls
+    - "--no-record"
+    rung: 2
+- id: smoke
+  summary: Smoke proof for the smoke coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/smoke.rb
+  - lib/polispec/smoke/**/*
+  - smoke/host-probes.yml
+  - smoke/live/**/*
+  - smoke/scenarios/smoke-suite.yml
+  spec:
+    file: specs/app.yml
+    at: smoke
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - smoke
+    - "--no-record"
+    rung: 2
+- id: judgments
+  summary: Smoke proof for the judgments coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/judgments.rb
+  - schemas/judgment.v1.yml
+  - smoke/scenarios/judgments.yml
+  spec:
+    file: specs/app.yml
+    at: judgments
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - judgments
+    - "--no-record"
+    rung: 2
+- id: delete-guard
+  summary: Smoke proof for the delete_guard coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/text_match.rb
+  - catalog/delete-guard/**/*
+  - lib/polispec/classify/**/*
+  - smoke/scenarios/delete-guard.yml
+  spec:
+    file: specs/app.yml
+    at: delete_guard
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - delete_guard
+    - "--no-record"
+    rung: 2
+- id: fs-walk
+  summary: Smoke proof for the fs_walk coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/classify/commands/fs_walk.rb
+  - lib/polispec/classify/commands/fs.rb
+  - smoke/scenarios/fs-walk.yml
+  spec:
+    file: specs/app.yml
+    at: fs_walk
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - fs_walk
+    - "--no-record"
+    rung: 2
+- id: description
+  summary: Smoke proof for the description coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/description.rb
+  - smoke/scenarios/description.yml
+  spec:
+    file: specs/app.yml
+    at: description
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - description
+    - "--no-record"
+    rung: 2
+- id: web
+  summary: Smoke proof for the web coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/web.rb
+  - lib/polispec/web/**/*
+  - web/public/**/*
+  - vendor/**/*
+  - lib/polispec/commands/web.rb
+  - smoke/scenarios/web.yml
+  spec:
+    file: specs/app.yml
+    at: web
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/web
+    - "--no-record"
+    rung: 2
+- id: author
+  summary: Smoke proof for the author coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/author.rb
+  - lib/polispec/author/**/*
+  - smoke/scenarios/author.yml
+  spec:
+    file: specs/app.yml
+    at: author
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/author
+    - "--no-record"
+    rung: 2
+- id: manifest
+  summary: Smoke proof for the manifest coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/manifest.rb
+  - schemas/manifest.v1.yml
+  - smoke/scenarios/manifest.yml
+  spec:
+    file: specs/app.yml
+    at: manifest
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/manifest
+    - "--no-record"
+    rung: 2
+- id: registration
+  summary: Smoke proof for the registration coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/registration.rb
+  - lib/polispec/commands/register.rb
+  - smoke/scenarios/registration.yml
+  spec:
+    file: specs/app.yml
+    at: registration
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/register
+    - "--no-record"
+    rung: 2
+- id: effect
+  summary: Smoke proof for the effect coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/effect.rb
+  - smoke/scenarios/effect.yml
+  spec:
+    file: specs/app.yml
+    at: effect
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - effect
+    - "--no-record"
+    rung: 2
+- id: editions
+  summary: Smoke proof for the editions coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/editions.rb
+  - specs/editions.yml
+  - smoke/scenarios/editions.yml
+  spec:
+    file: specs/app.yml
+    at: editions
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - commands/editions
+    - "--no-record"
+    rung: 2
+- id: contract
+  summary: Smoke proof for the contract coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/contract.rb
+  - schemas/contract.v1.yml
+  - schemas/contract-vocabulary.v1.yml
+  - smoke/scenarios/contract.yml
+  spec:
+    file: specs/app.yml
+    at: contract
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - contract
+    - "--no-record"
+    rung: 2
+- id: verbose
+  summary: Smoke proof for the verbose coverage unit of specs/app.yml.
+  paths:
+  - lib/polispec/trace.rb
+  - lib/polispec/trace/**/*
+  - smoke/scenarios/verbose.yml
+  spec:
+    file: specs/app.yml
+    at: verbose
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - verbose
+    - "--no-record"
+    rung: 2
+- id: proof
+  summary: Smoke proof for signed per-feature proofs, the features_proven gate, proof
+    weakening and the proof.write guard rule.
+  paths:
+  - lib/polispec/commands/proof.rb
+  - lib/polispec/proof.rb
+  - lib/polispec/proof/**/*
+  - packages/environment-control/**/*
+  - schemas/features.v1.yml
+  - schemas/proof.v1.yml
+  - lib/polispec/operator/gates.rb
+  - lib/polispec/operator/promote.rb
+  - lib/polispec/classify/commands/support.rb
+  - lib/polispec/harness_controls/evaluate.rb
+  - lib/polispec/harness_controls/authority.rb
+  - lib/polispec/plan.rb
+  - specs/editions.yml
+  - smoke/scenarios/proof.yml
+  spec:
+    file: specs/app.yml
+    at: proof
+  smoke:
+    run:
+    - bin/polispec
+    - smoke
+    - run
+    - "--unit"
+    - proof
+    - "--no-record"
+    rung: 2
+shared:
+- lib/polispec.rb
+- lib/polispec/cli.rb
+- lib/polispec/canonical.rb
+- lib/polispec/state.rb
+- lib/polispec/schema/**/*
+- lib/polispec/trace.rb
+- lib/polispec/types.rb
+- lib/polispec/events.rb
+- lib/polispec/engine.rb
+- lib/polispec/ledger.rb
+- lib/polispec/chain.rb
+- VERSION
+- polispec.gemspec
+- bin/polispec
+- bin/polispec-guard
+ignore:
+- CHANGELOG.md
+- FEATURES.md
+- TODO.md
+- NEXT.md
+- ROADMAP.md
+- DECISIONS.md
+- TOKENS.jsonl
+- README.md
+- LICENSE
+- ".gitignore"
+- AGENTS.md
+- CLAUDE.md
+- docs/**/*
+- assets/**/*
+- independent/**/*
+- smoke.yml
+- ".rproject/**/*"
+- web/**/*.md
+- specs/app.yml
+- specs/*.impl.yml
+- specs/*.verification.yml
+- skills/**/*.md
+- config.yml
+trusted_producers: []
+exceptions: []

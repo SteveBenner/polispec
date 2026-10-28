@@ -64,7 +64,7 @@ $defs:
   id: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }
   env_name: { enum: [dev, test, prod] }
   action_class:
-    enum: [git.commit, git.push, git.tag, git.merge, git.rewrite, git.branch, release.publish, service.control, service.config, fs.write, fs.delete, data.write, data.copy, secrets.read, policy.edit, promote, deploy, control.edit, mcp.call, web.fetch, agent.spawn, shell.exec, fs.walk, tool.internal, tool.read]
+    enum: [git.commit, git.push, git.tag, git.merge, git.rewrite, git.branch, release.publish, service.control, service.config, fs.write, fs.delete, data.write, data.copy, secrets.read, policy.edit, promote, deploy, control.edit, mcp.call, web.fetch, agent.spawn, shell.exec, fs.walk, proof.write, tool.internal, tool.read]
   string_list:
     type: array
     items: { type: string, minLength: 1 }
@@ -197,7 +197,8 @@ $defs:
       id: { type: string, pattern: "^G-[A-Z0-9-]+$" }
       run: { type: string, minLength: 1 }
       pass: { enum: [exit_zero] }
-      builtin: { enum: [clean_tree, version_homes_agree, sha_ran_on_test, sha_ran_on, not_frozen, soaked, health_required, logs_quiet, requires_live] }
+      builtin: { enum: [clean_tree, version_homes_agree, sha_ran_on_test, sha_ran_on, not_frozen, soaked, health_required, logs_quiet, requires_live, features_proven] }
+      mode: { enum: [report, enforce, "off"] }
       hours: { type: integer, minimum: 1 }
       env: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }
       services: { $ref: "#/$defs/string_list" }

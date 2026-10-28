@@ -41,6 +41,8 @@ module Polispec
       loaded = PolicySource.resolve(project, ledger: ledger)
       pause = Engine::Pauses.active(ledger, project.id)
       windows = %w[promote.to_stable desk.dispatch].flat_map { |scope| Freeze.active(loaded.policy, scope, project: project) }
+      gap = project.status == "live" && loaded.source != "defaults" ? Proof::Gate.upkeep(policy: loaded.policy, repo: project.repo) : nil
+      entry["proof_gap"] = gap if gap
       entry.merge(
         "policy_source" => loaded.source, "policy_digest" => loaded.digest, "finding" => loaded.finding || semantic_finding(loaded, project, ledger) || unreachable_finding(loaded),
         "pause" => pause, "freezes" => windows.map(&:to_h), "pending_allow_once" => pending(ledger, project.id),
@@ -95,6 +97,7 @@ module Polispec
 
         puts "  policy #{entry['policy_source']} #{entry['policy_digest']}"
         puts "  finding #{entry['finding']['kind']}: #{entry['finding']['detail']}" if entry["finding"]
+        puts "  finding #{entry['proof_gap']['kind']}: #{entry['proof_gap']['detail']}" if entry["proof_gap"]
         puts "  paused until #{entry['pause']['expires_at']} (#{entry['pause']['reason']})" if entry["pause"]
         entry["freezes"].each { |window| puts "  frozen #{window['id']} until #{window['until']}" }
         puts "  allow-once ids outstanding or unconsumed: #{entry['pending_allow_once']}"

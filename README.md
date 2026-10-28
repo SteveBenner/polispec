@@ -355,6 +355,8 @@ The same idea runs through [code specs](docs/code-specs.md). A spec is a tree of
 
 **Promotion and deploy.** `polispec promote <project> --to <env>` fast-forwards one hop (main → test → stable, or any named hops such as a canary ring). It runs that hop's gates and preflight, checks freezes and the soak, tags the release, and runs the deploy. `polispec deploy` runs the environment's steps, a health check, and an automatic rollback for `release_dirs` deploys. A policy that deploys without a health check is refused. The operator may waive a soak (`--waive-soak`) with a typed phrase, and the waiver is recorded.
 
+**Proof before stable.** Since 0.49.0 a project can declare its features and targets in `specs/features.yml` and require, through the `features_proven` gate, a passing signed smoke record for every feature on every target before `promote --to stable`. `polispec proof run` writes the records into `proofs/`, which travel with every tag; an unexpired, operator-confirmed exception can lift one cell. The gate starts in `report` mode, which lists the gaps without blocking, and the operator types a second phrase for any manifest change that weakens proof. A signature shows which producer ran the command, not that the command tests anything ([operator guide](docs/operator.md#proving-features), [schema](docs/schema.md#feature-manifest-specsfeaturesyml-polispecfeaturesv1)).
+
 **Freezes.** Manual windows, recurring rules, or a command that prints JSON windows. The command can be another project's calendar, as in the classroom pattern where releases stop before class and before deadlines.
 
 **Hermetic runs.** `hermetic.<env>` isolates environment variables into scratch space and fails a gate or step that writes under a protected root.

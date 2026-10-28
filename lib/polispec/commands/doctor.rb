@@ -107,12 +107,18 @@ module Polispec
       Operator::Gates.health_required_errors(loaded.policy).each { |message| findings << finding(project.id, "health_required", message) } unless defaults
       Operator::Gates.unreachable_errors(loaded.policy).each { |message| findings << finding(project.id, "gate_unreachable", message) } unless defaults
       Layers.policy_errors(loaded.policy, project: project, ledger: ledger).each { |message| findings << finding(project.id, "layers_invalid", message) }
+      check_proof(project, loaded, findings) if project.status == "live" && !defaults
       roster = PolicySource.roster_digest(project)
       Polispec::ValidateProfiles.errors(loaded.policy, project, ledger: ledger).each { |detail| findings << finding(project.id, "profile_check", detail) } unless defaults
       findings << finding(project.id, "roster_missing", "#{project.trust_ref}:#{project.roster} not found") if roster.nil? && !defaults
       AgentsRender.drift(project.repo, project.trust_ref, project).each { |detail| findings << finding(project.id, "agents_drift", detail) } unless defaults
       findings << finding(project.id, "not_live", "status #{project.status}: the guard does not enforce this project") unless project.status == "live"
       check_packages(project, findings)
+    end
+
+    def check_proof(project, loaded, findings)
+      gap = Proof::Gate.upkeep(policy: loaded.policy, repo: project.repo)
+      findings << finding(project.id, gap["kind"], gap["detail"]).merge("severity" => "warn") if gap
     end
 
     def check_packages(project, findings)

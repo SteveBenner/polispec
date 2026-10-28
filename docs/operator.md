@@ -51,6 +51,7 @@ Each gate is `{id, run}` or `{id, builtin}`. A `run` command is split with Shell
 | `version_homes_agree` | `VERSION`, every top-level `*.rplugin.yml`, `.codex-plugin/plugin.json` and `.claude-plugin/plugin.json` at the promoted sha carry the same version |
 | `sha_ran_on_test` | `deploys.jsonl` holds a `test` deploy of that project and sha with `health: ok` (a `url` or `run` health check passed) |
 | `not_frozen` | `Polispec::Freeze.active(policy, "promote.to_<target>")` is empty |
+| `features_proven` | every feature in `specs/features.yml` is proven on every target it runs on, or excepted, at the promoted sha, and no changed file is unmapped; `mode` `report` (default) passes and lists the findings, `enforce` fails, `off` skips ([proving features](#proving-features)) |
 
 Errors from gates:
 
@@ -256,6 +257,58 @@ Delegation. `--verbose` is a grantable flag: `polispec delegate grant ... --flag
 The guard. `polispec doctor --verbose` and `polispec --verbose status` stay benign reads, and `polispec --verbose promote shop --to stable` or `polispec promote shop --to stable -v` is still the promotion to prod it was: the flag changes neither what is classified nor what is asked.
 
 Limits. A trace is a record for the person at the terminal, not an audit log: it is not chained, not sent to the events port and not read by the guard, `doctor` or any consumer. A bare `-v` that is the value of another flag is read as the flag; write `--note=-v` to pass such a value, and name `--verbose` in a grant as part of a comma list (`--flags --dry-run,--verbose`). A runtime older than 0.44.0 rejects `--verbose` as an unknown flag (exit 2), so an application must not pass it to a delegate runner on an older host. A run that is killed leaves a trace file without its end line.
+
+## Proving features
+
+Since 0.49.0 a project that serves real users can require, before `promote --to stable`, a passing signed smoke record for every feature on every target it declares. The manifest `specs/features.yml` says what the product is made of and where it runs; `proofs/<feature>.jsonl` holds the evidence and travels with every tag; the builtin `features_proven` checks the candidate. Keys and record fields are in `docs/schema.md`; the verbs are in `docs/cli.md`.
+
+### Enabling the gate
+
+Upgrade the project to `environment-control` 1.2.0 with the `proof` param set to `report` or `enforce` (default `off`):
+
+```
+polispec plan environment-control --repo <repo> --variant service --param proof=report
+polispec apply environment-control --repo <repo> --variant service --param proof=report
+```
+
+The package adds the project module `specs/polispec/modules/proof.yml`, which every variant policy includes. It carries gate `G-PROVEN` (`features_proven`, in the chosen mode) on `to_stable` and rule `R-PROOF-WRITE`, which denies any write classified `proof.write` into `proofs/*.jsonl` in every environment. With `proof=off` the gate is not added and the rule still applies. `report` passes the promotion and prints the findings; `enforce` fails it with `gate_failed`; the lock edition treats `report` as `enforce`. Going from `report` to `enforce` is an enforce-mode change, so it needs the user's yes before `apply --confirm`.
+
+### The host key
+
+`polispec proof keygen` creates `<state home>/proof/producer_ed25519` (mode 0600, in a 0700 directory). It needs a terminal and the typed phrase `create proof key`, and prints the `trusted_producers` entry to add to `specs/features.yml`:
+
+```yaml
+trusted_producers:
+  - { id: <printed id>, key: "ssh-ed25519 AAAA…", kind: host, note: "release host" }
+```
+
+A record counts only when its signature verifies under a producer listed there. The key directory is a protected path of the harness-control ceiling: a governed write into it and a classified read of anything under it are denied (`POLISPEC-CONTROL-PROTECTION`).
+
+### Running and reading proofs
+
+`polispec proof run` runs the smoke command of each feature that has no passing record at the current digest, on the target whose facts match the host, and appends signed records to `proofs/`. It refuses `dirty_tree` when the working tree differs from HEAD in a path a selected feature covers, `target_unmatched` or `target_ambiguous` when zero or several targets match the host (name one with `--target`), and `chain_broken` for a file whose chain is broken. Commit the records; a feature the delta did not touch keeps its proof. `polispec proof status` shows each cell as proven, stale, failing, missing, excepted or not_applicable. `polispec proof verify` checks the manifest, chains, signatures and exceptions.
+
+In report mode the findings are in the `promote --to stable` output, in the gate result and in the `polispec.promote` event: `unproven_cells` names each feature and target, and `unmapped_files` names each changed file that no feature, `shared`, `ignore`, `proofs/` or the manifest covers. Fix an unmapped file by adding it to a feature's `paths` or to `ignore`.
+
+`doctor` and `status` report `proof_gap` (warn) for a live project whose stable policy carries `features_proven` when, read at the stable tag, a cell has no valid record, an exception has expired, or a trusted producer key no longer parses. Nothing is blocked until the next promotion.
+
+### Weakening changes and the second phrase
+
+When the `to_stable` gates hold `features_proven` in a mode other than `off`, `promote --to stable` compares the candidate manifest with the stable tag's and lists every change that can weaken proof: an added or longer exception, an added or changed trusted producer, an added `ignore` or manifest `shared` glob, a removed target or feature, a narrowed feature `targets`, a removed or changed `paths` or `shared` glob, a changed `smoke` run, rung or `per_target` entry, and a lowered `min_rung`. When the list is not empty, after the stable phrase the operator types `accept proof changes for <project>`. `--dry-run` prints the list and asks nothing. A first manifest, or a project with no stable tag, is compared with an empty manifest, so its exceptions, producers and `ignore` globs are all listed. `polispec plan project:<id>` classifies the same changes as loosening, so they need the user's yes there too; the reverse is tightening.
+
+`polispec proof except` adds an exception: `--reason`, `--owner` and `--expires` are required, and `--expires` is at most 90 days after today. An exception lifts one `features_proven` cell and nothing else; it is not an entry of the exceptions delegate.
+
+### Peers and CI
+
+A peer machine or a CI job holds its own key, listed in `trusted_producers` with `kind: peer` or `ci`. It runs `polispec proof run --out FILE` to write signed records to FILE without touching `proofs/`, and the records are carried to the repository and added with `polispec proof import FILE...`. Import checks each record's schema, its signature against `trusted_producers` at HEAD and its digest against the current one, and appends it with a fresh `prev` and `hash`. A record that fails is refused (`signature_invalid`, `producer_unknown`, `digest_stale`) and nothing from that file is appended.
+
+### The runner
+
+`proof run` runs through the `proof_runner` port, selected by `polispec.proof.runner`: `local` (built in, default, synchronous on this host) or the id of an adapter an rplugin extension declares. `POLISPEC_PROOF_RUNNER=off` makes every adapter raise `unavailable`, and `proof run` refuses with `runner_unavailable`.
+
+### Limits
+
+A signature proves which producer ran the manifest's smoke command at that digest, not that the command tests anything; that is why every weakening change needs the operator. The rung is declared by the manifest, not measured. The host key is readable by every process of the user: the classifier stops file tools and shell readers of the key, not a program it cannot read, so a host signature proves a process on that host under that user, not `polispec proof run`. Peer and CI producers hold their keys elsewhere. A write into `proofs/` the classifier cannot read is an unknown write, which is why records are signed. A repository with `specs/features.yml` stops writing `smoke.yml`: `smoke record` refuses `ledger_frozen`, and `smoke coverage` reports the proof cells.
 
 ## Judgment records
 

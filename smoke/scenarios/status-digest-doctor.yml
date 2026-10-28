@@ -15,7 +15,7 @@ steps:
     run: ["{{polispec}}", status]
     expect:
       exit: 0
-      stdout_includes: ["guard mode enforce", "shop: live trust_ref=stable", "package environment-control 1.1.0 (service) applied ", "policy stable:", "allow-once ids outstanding or unconsumed: 0"]
+      stdout_includes: ["guard mode enforce", "shop: live trust_ref=stable", "package environment-control 1.2.0 (service) applied ", "policy stable:", "allow-once ids outstanding or unconsumed: 0"]
   - name: status as json for the project
     run: ["{{polispec}}", status, shop, --json]
     expect:
@@ -132,12 +132,12 @@ steps:
     run: ["{{polispec}}", doctor]
     expect:
       exit: 1
-      stdout_includes: ["shop  package_file_drift (info)  specs/polispec/roster.yml differs from the environment-control 1.1.0 record", "fresh  not_live  status onboarding: the guard does not enforce this project", "7 info)"]
+      stdout_includes: ["shop  package_file_drift (info)  specs/polispec/roster.yml differs from the environment-control 1.2.0 record", "fresh  not_live  status onboarding: the guard does not enforce this project", "7 info)"]
   - name: status lists both projects
     run: ["{{polispec}}", status]
     expect:
       exit: 0
-      stdout_includes: ["shop: live trust_ref=stable", "fresh: onboarding trust_ref=stable", "package environment-control 1.1.0 (distributed)"]
+      stdout_includes: ["shop: live trust_ref=stable", "fresh: onboarding trust_ref=stable", "package environment-control 1.2.0 (distributed)"]
   - name: doctor with an argument is a usage error
     run: ["{{polispec}}", doctor, extra]
     expect:
