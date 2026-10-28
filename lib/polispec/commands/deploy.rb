@@ -52,10 +52,12 @@ module Polispec
         if result["dry_run"]
           puts "dry run: deploy #{result['project']} #{result['env']} into #{result['dir']} from #{result['source']}"
           Array(result["steps"]).each { |step| puts "  step: #{step}" }
+          puts "  deploy block: #{result['deploy_source']}" if result["deploy_source"]
           return
         end
 
         puts "deployed #{result['project']} #{result['env']} #{result['tag'] || result['sha'][0, 12]} (version #{result['version']}) in #{result['dir']}"
+        puts "  deploy block: #{result['deploy_source']}" if result["deploy_source"]
         result["steps"].each { |step| puts "  step #{step['command']}: exit #{step['exit']}" }
         puts "  health: #{result.dig('health', 'status')} (#{result.dig('health', 'detail')})"
         puts "  pinned_behind: #{result['pinned_behind']}"

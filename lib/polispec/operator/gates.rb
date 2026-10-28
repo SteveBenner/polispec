@@ -18,6 +18,7 @@ module Polispec
       LOGS_WINDOW_MINUTES = 120
       LOGS_COUNT_TIMEOUT = 60
       ENV_NAME = /\A[a-z0-9][a-z0-9-]{0,40}\z/
+      TEST_DEPLOY_BOOTSTRAP = ", unless origin/test declares one, which a test deploy then uses".freeze
       JSON_HOMES = %w[.codex-plugin/plugin.json .claude-plugin/plugin.json].freeze
 
       Project = Struct.new(:ledger, :entry, :policy, :source, :digest, :repo, keyword_init: true) do
@@ -435,7 +436,7 @@ module Polispec
             next unless name == "prod" || ENV_NAME.match?(name)
             next if deployable.call(name)
 
-            errors << "promotion #{key}: gate #{gate['id']} needs a passing #{name} deploy, but environment #{name} declares no deploy; the gate can never pass"
+            errors << "promotion #{key}: gate #{gate['id']} needs a passing #{name} deploy, but environment #{name} declares no deploy; the gate can never pass#{TEST_DEPLOY_BOOTSTRAP if name == 'test'}"
           end
           Array(config["after"]).each do |entry|
             words = Shellwords.split(entry.to_s) rescue next
@@ -444,7 +445,7 @@ module Polispec
             name = words[3]
             next if deployable.call(name)
 
-            errors << "promotion #{key}: after step '#{entry}' deploys #{name}, which declares no deploy; the step fails no_deploy"
+            errors << "promotion #{key}: after step '#{entry}' deploys #{name}, which declares no deploy; the step fails no_deploy#{TEST_DEPLOY_BOOTSTRAP if name == 'test'}"
           end
         end
         errors

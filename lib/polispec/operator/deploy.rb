@@ -43,6 +43,11 @@ module Polispec
         started = Gates.now_ms
         config = project.environment(Gates.env_key(name))
         settings = config["deploy"]
+        deploy_source = nil
+        if !settings.is_a?(Hash) && name == "test"
+          settings, deploy_source = bootstrap_deploy(project, name)
+          config = config.merge("deploy" => settings) if settings
+        end
         raise Failure.new("no_deploy", "policy declares no deploy steps for #{name}") unless settings.is_a?(Hash)
 
         actor = Gates.actor
@@ -53,7 +58,7 @@ module Polispec
         dir = File.join(Gates.envs_root(project.ledger), project.id, name)
         source = source_url(project)
         Polispec::Trace.info("deploy target", dir: Polispec::Trace.path(dir), source: source, strategy: settings["strategy"] || "in_place", steps: Array(settings["steps"]).length) if Polispec::Trace.on?
-        return preview(project, name, dir, source, tag, settings, actor) if dry_run
+        return preview(project, name, dir, source, tag, settings, actor).merge({ "deploy_source" => deploy_source }.compact) if dry_run
 
         record_id = Gates.new_id("dpl")
         State.append_jsonl("deploys", { "id" => record_id, "project" => project.id, "env" => name, "health" => "running", "at" => Time.now.utc.iso8601 })
@@ -69,11 +74,12 @@ module Polispec
         paused = paused_note(resume_failure(run[:drain]))
         detail = [run[:detail], paused].compact.join("; ")
         record = Polispec::Trace.step("record", id: record_id) do
-          State.append_jsonl("deploys", record_for(project, name, run[:sha], run[:tag], health, pinned, record_id, detail.empty? ? nil : detail, skipped, run[:drain]))
+          State.append_jsonl("deploys", record_for(project, name, run[:sha], run[:tag], health, pinned, record_id, detail.empty? ? nil : detail, skipped, run[:drain], deploy_source))
         end
         Polispec::Trace.info("deploy health", status: health["status"], detail: health["detail"]) if Polispec::Trace.on?
         result = result_for(project, name, run[:dir], run[:sha], run[:tag], run[:version], run[:outcome][:steps], health, pinned, actor, record, started)
         result["strategy"] = settings["strategy"] || "in_place"
+        result["deploy_source"] = deploy_source if deploy_source
         result["drain"] = skipped ? "skipped" : run[:drain] if skipped || run[:drain]
         result["queues_paused"] = paused if paused
         result["activate"] = run[:activate] if run[:activate]
@@ -576,12 +582,24 @@ module Polispec
         git.tag_version(tag) < git.tag_version(latest)
       end
 
-      def record_for(project, name, sha, tag, health, pinned, id = Gates.new_id("dpl"), detail = nil, skipped = false, drain = nil)
+      def record_for(project, name, sha, tag, health, pinned, id = Gates.new_id("dpl"), detail = nil, skipped = false, drain = nil, deploy_source = nil)
         {
           "id" => id, "project" => project.id, "env" => name, "sha" => sha, "tag" => tag, "health" => health["status"],
           "pinned_behind" => pinned, "at" => Time.now.utc.iso8601, "detail" => detail, "drain" => (skipped ? "skipped" : drain),
-          "via" => Polispec::Delegate.via
+          "via" => Polispec::Delegate.via, "deploy_source" => deploy_source
         }.compact
+      end
+
+      def bootstrap_deploy(project, name)
+        ref = "origin/#{project.environment(Gates.env_key(name))['branch'] || name}"
+        Git.new(project.repo).fetch
+        found = Polispec::PolicySource.at_ref(project.entry, ref)
+        settings = found&.policy&.dig("environments", Gates.env_key(name), "deploy")
+        return [nil, nil] unless settings.is_a?(Hash)
+
+        Polispec::Trace.info("deploy block bootstrapped", from: found.source) if Polispec::Trace.on?
+        Events.emit("polispec.finding", project: project.id, kind: "deploy_bootstrap", detail: "#{project.source} declares no deploy for #{name}; using the deploy block at #{ref}", policy_source: found.source)
+        [settings, found.source]
       end
 
       def record_state(project, name, tag, sha, pinned, record)
