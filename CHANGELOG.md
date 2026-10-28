@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **`polispec proof run --target T` works.** Since 0.49.0, `--target` was parsed as repeatable for `proof except`, so `run` passed a list where it expected one id and every `--target` refused `target_unmatched`, which made the harness-only targets unreachable. `run` now takes one `--target` and answers a second with its usage, exit 2 (`lib/polispec/commands/proof.rb`). The `proof` scenario now runs `--target`, an unknown target and a repeated one.
+- **A slow host probe no longer prints a thread error.** When a command in `Smoke.command` (the runtime capture behind smoke and proof records, such as a harness `--version`) passed its 2 second timeout, the child was killed and the pipe closed under the reader thread, which died printing `IOError: stream closed in another thread`. The reader is now stopped and joined before the call returns `nil` (`lib/polispec/smoke.rb`); the result was already `nil` and is unchanged.
 
 ### Changed
 - **A release no longer stales every polispec proof.** polispec's `specs/features.yml` listed `VERSION` in `shared`, so each version bump changed every feature's digest; it now sits in `ignore`, and a release re-proves only the features whose files changed (`commands.version` and the owner of `polispec.rplugin.yml` still change with each bump). The operator confirms this weakening change at `promote --to stable`.
