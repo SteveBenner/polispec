@@ -1,0 +1,122 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/changes
+summary: changes list on a fresh state home is empty, a registered path writes a chained change record that list shows in text and json and show prints, show and await of an unknown id are refused with their own exit codes, verify passes on the chain and fails once a record is tampered, await returns 1 naming a session that has made no call since, and a bad flag or window prints usage with exit 2
+requires: [harness_controls]
+fixture:
+  enforce: enforce
+  global: files
+  global_files:
+    "global.yml": "schema: polispec.global/v1\nsummary: Smoke baseline with one rule so every path is governed.\nrules:\n  - { id: SMOKE-NOSECRETS, match: { class: [secrets.read], env: prod }, verdict: deny, reason: \"smoke baseline: no production secrets\" }\n"
+  projects:
+    - id: shop
+      variant: service
+      status: live
+steps:
+  - name: list in a short window prints the header and the fixture setup records
+    run: ["{{polispec}}", changes, list, --since, 1h]
+    expect:
+      exit: 0
+      stdout_includes: ["polispec changes, last 1h:", " apply target=ledger "]
+  - name: list in json is an array of change records
+    run: ["{{polispec}}", changes, list, --json]
+    expect:
+      exit: 0
+      stdout_includes: ["[{\"schema\":\"polispec.change/v1\"", "\"kind\":\"apply\""]
+  - name: verify passes on the setup chain
+    run: ["{{polispec}}", changes, verify]
+    expect:
+      exit: 0
+      stdout_includes: ["chain ok"]
+  - name: show of an unknown id is refused
+    run: ["{{polispec}}", changes, show, chg_unknown]
+    expect:
+      exit: 1
+      stderr_includes: ["polispec changes: unknown change chg_unknown"]
+  - name: await of an unknown id exits 2
+    run: ["{{polispec}}", changes, await, chg_unknown, --timeout, "1"]
+    expect:
+      exit: 2
+      stderr_includes: ["polispec changes: unknown change chg_unknown"]
+  - name: a session start leaves a session to wait for
+    hook:
+      harness: claude
+      event: session
+      cwd: "{{project.shop}}"
+    expect:
+      decision: context
+  - name: the first pretool call only records the epoch seen
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "ls" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: create a directory to register
+    run: [mkdir, -p, "{{files}}/tools"]
+    expect: { exit: 0 }
+  - name: register the directory
+    run: ["{{polispec}}", register, "{{files}}/tools", --id, tools]
+    expect: { exit: 0 }
+  - name: list shows the register change
+    run: ["{{polispec}}", changes, list]
+    expect:
+      exit: 0
+      stdout_includes: ["register id=tools", "by "]
+  - name: list in json carries the record fields
+    run: ["{{polispec}}", changes, list, --json]
+    expect:
+      exit: 0
+      stdout_includes: ["\"kind\":\"register\"", "\"id\":\"", "\"epoch_after\":\"ep_", "\"subject\":{\"id\":\"tools\""]
+  - name: show prints the record by id
+    run: [sh, -c, 'id=$("$1" changes list | awk "/ register /{print \$2}" | tail -n 1); test -n "$id" && "$1" changes show "$id" | grep -q "\"kind\": \"register\"" && "$1" changes show "$id" --json | grep -q "\"id\":\"$id\""', sh, "{{polispec}}"]
+    expect: { exit: 0 }
+  - name: verify passes on the chained record
+    run: ["{{polispec}}", changes, verify]
+    expect:
+      exit: 0
+      stdout_includes: ["chain ok"]
+  - name: verify in json reports ok
+    run: ["{{polispec}}", changes, verify, --json]
+    expect:
+      exit: 0
+      stdout_includes: ["\"ok\":true"]
+  - name: await returns 1 and names the pending session
+    run: [sh, -c, 'id=$("$1" changes list | awk "/ register /{print \$2}" | tail -n 1); out=$("$1" changes await "$id" --timeout 1); code=$?; printf "%s\n" "$out"; test "$code" -eq 1 && printf "%s" "$out" | grep -q "0 of 1 active session" && printf "%s" "$out" | grep -q "pending "', sh, "{{polispec}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["0 of 1 active session"]
+  - name: a pretool call after the change crosses it
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "ls" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: context
+  - name: await now returns 0 with every session crossed
+    run: [sh, -c, 'id=$("$1" changes list | awk "/ register /{print \$2}" | tail -n 1); "$1" changes await "$id" --timeout 5 | grep -q "1 of 1 active session crossed"', sh, "{{polispec}}"]
+    expect: { exit: 0 }
+  - name: await in json reports crossed
+    run: [sh, -c, 'id=$("$1" changes list | awk "/ register /{print \$2}" | tail -n 1); "$1" changes await "$id" --timeout 5 --json | grep -q "\"crossed\":true"', sh, "{{polispec}}"]
+    expect: { exit: 0 }
+  - name: tampering with a record breaks the chain
+    run: [sh, -c, 'f=$(ls "$1"/changes*.jsonl 2>/dev/null | head -n 1); test -n "$f" && sed -i "s/\"kind\":\"register\"/\"kind\":\"regist3r\"/" "$f" && ! "$2" changes verify', sh, "{{scratch}}/state", "{{polispec}}"]
+    expect: { exit: 0 }
+  - name: an unknown flag prints usage
+    run: ["{{polispec}}", changes, list, --bogus]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec changes"]
+  - name: a bad window prints usage
+    run: ["{{polispec}}", changes, list, --since, soon]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec changes"]
+  - name: an unknown verb prints usage
+    run: ["{{polispec}}", changes, bogus]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec changes"]

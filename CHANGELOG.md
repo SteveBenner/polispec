@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.1] - 2026-10-27
+
+### Added
+- **Every polispec feature proves itself with its own scenario.** Seventeen features ran another feature's scenario as their smoke command; each now has one whose unit is its own `specs/app.yml` node: `smoke/scenarios/replay.yml`, `shadow.yml`, `pin.yml`, `install-uninstall.yml`, `uninstall-all-restore.yml`, `deployments.yml`, `ledger-init.yml`, `settings.yml`, `code-code-hook-specs.yml`, `explain.yml`, `exceptions.yml`, `plane.yml`, `authorizations.yml`, `judge.yml`, `delegate.yml`, `changes.yml` and `sessions.yml`. They run the commands against scratch fixtures: read verbs and `--json`, dry runs, writes that stay in the fixture, and the refusals (`not_tty`, `phrase_mismatch`, `plane_unavailable`, `operator_required`, `unknown_exception`, `unknown_proposal`, usage exits). The suite has 68 scenarios.
+- **polispec's manifest names five targets.** `specs/features.yml` adds `linux-x86-64-ruby4.0` (ruby 4.0), `macos-arm64`, `claude-code` and `codex` beside `linux-x86-64-ruby3.3`. Every feature runs on the three platform targets; `commands.hook-pretool-session`, `code-specs.commands.code-hook-pre-post-stop-session` and `harness-controls`, the features with live scenarios, also run on the two harness targets, where `smoke.per_target` runs `smoke run --live <harness>` at rung 3. The harness targets carry only the `harness` fact and are chosen with `proof run --target`.
+
+### Changed
+- **The seventeen features' manifest entries point at their own scenario and unit.** Their old borrowed scenario path left their `paths`, which `promote --to stable` lists as a weakening change for the operator to accept.
+
 ## [0.50.0] - 2026-10-27
 
 ### Added

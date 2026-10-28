@@ -1,0 +1,80 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/judge
+summary: judge status with no judge exits 1 naming the missing state file, stop with none is a no-op, a launcher call through bin/polispec-guard starts the resident judge in the scratch state home, status then shows its port, token, pid, runtime, version and that it is listening, a later launcher call is answered by it and logged, stop sends TERM and status then shows none, and an unknown verb or extra argument prints usage with exit 2
+requires: [harness_controls]
+fixture:
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+steps:
+  - name: link the candidate binary outside the shim directory
+    run: [sh, -c, 'mkdir -p "$1" && ln -sfn "$2" "$1/polispec"', sh, "{{files}}", "{{polispec}}"]
+    expect: { exit: 0 }
+  - name: status with no judge exits 1 and names the state file
+    run: ["{{polispec}}", judge, status]
+    expect:
+      exit: 1
+      stdout_includes: ["polispec judge: not running (no ", "judge.json)"]
+  - name: stop with no judge is a no-op
+    run: ["{{polispec}}", judge, stop]
+    expect:
+      exit: 0
+      stdout_includes: ["polispec judge: not running"]
+  - name: a launcher call starts the resident judge
+    run: ["{{tree}}/bin/polispec-guard", pretool, --harness, claude]
+    env: { POLISPEC_BIN: "{{files}}/polispec", POLISPEC_JUDGE_IDLE: "120" }
+    stdin: "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"judge-start\"}"
+    expect:
+      exit: 0
+  - name: the judge comes up and status shows it listening
+    run: [sh, -c, 'i=0; while [ "$i" -lt 100 ]; do if "$1" judge status >/dev/null 2>&1; then exit 0; fi; i=$((i+1)); sleep 0.2; done; exit 1', sh, "{{polispec}}"]
+    timeout: 40
+    expect: { exit: 0 }
+  - name: status prints the port, token, pid, runtime, version and listening
+    run: ["{{polispec}}", judge, status]
+    expect:
+      exit: 0
+      stdout_includes: ["port: ", "token: ", "pid: ", "runtime: ", "version: ", "started: ", "listening: yes"]
+  - name: the state file lives in the scratch state home
+    run: [test, -f, "{{scratch}}/state/judge.json"]
+    expect: { exit: 0 }
+  - name: a second launcher call is answered and the judge logs it
+    run: [sh, -c, 'printf "%s" "$2" | "$0" pretool --harness claude >/dev/null; test -s "$1/judge.log"', "{{tree}}/bin/polispec-guard", "{{scratch}}/state", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"judge-second\"}"]
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    expect: { exit: 0 }
+  - name: stop sends TERM to the judge pid
+    run: ["{{polispec}}", judge, stop]
+    expect:
+      exit: 0
+      stdout_includes: ["polispec judge: stopped "]
+  - name: status shows none after the judge exits
+    run: [sh, -c, 'i=0; while [ "$i" -lt 100 ]; do if ! "$1" judge status >/dev/null 2>&1; then exit 0; fi; i=$((i+1)); sleep 0.2; done; exit 1', sh, "{{polispec}}"]
+    timeout: 40
+    expect: { exit: 0 }
+  - name: status after stop exits 1 with the not running line
+    run: ["{{polispec}}", judge, status]
+    expect:
+      exit: 1
+      stdout_includes: ["polispec judge: not running"]
+  - name: stop again is a no-op
+    run: ["{{polispec}}", judge, stop]
+    expect:
+      exit: 0
+      stdout_includes: ["polispec judge: not running"]
+  - name: an unknown verb prints usage
+    run: ["{{polispec}}", judge, bogus]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec judge serve | status | stop"]
+  - name: an extra argument prints usage
+    run: ["{{polispec}}", judge, status, extra]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec judge serve | status | stop"]
+  - name: no verb prints usage
+    run: ["{{polispec}}", judge]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec judge serve | status | stop"]

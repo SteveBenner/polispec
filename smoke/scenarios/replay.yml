@@ -1,0 +1,90 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/replay
+summary: replay judges the recorded judgment rows through a candidate tree and a baseline and reports no change when both are the same tree, --days narrows the window, --json carries the counts and the changes list, a missing runtime or baseline, a missing flag and a bad --days exit 2 with the usage line, and the read-only command leaves the judgment stream as it was
+fixture:
+  global: example
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+steps:
+  - name: a benign read in the live project is judged and recorded
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git status" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: a push to stable is judged and denied
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+  - name: the judgment stream holds the recorded rows
+    run: [sh, -c, 'wc -l < "$1/judgments.jsonl"', sh, "{{scratch}}/state"]
+    expect:
+      exit: 0
+      stdout_includes: ["2"]
+      files_exist: ["{{scratch}}/state/judgments.jsonl"]
+  - name: replaying the tree against itself compares the rows and reports nothing changed
+    run: ["{{polispec}}", replay, --runtime, "{{tree}}", --baseline, "{{tree}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["replay of {{tree}}", "over the last 14 days", "rows: ", "changed: 0, unexplained: 0"]
+  - name: --days narrows the window and is echoed
+    run: ["{{polispec}}", replay, --runtime, "{{tree}}", --baseline, "{{tree}}", --days, "3"]
+    expect:
+      exit: 0
+      stdout_includes: ["over the last 3 days", "changed: 0, unexplained: 0"]
+  - name: --json carries the counts and an empty changes list
+    run: ["{{polispec}}", replay, --runtime, "{{tree}}", --baseline, "{{tree}}", --days, "7", --json]
+    expect:
+      exit: 0
+      json:
+        days: 7
+        changed: 0
+        unexplained: 0
+        changes: []
+  - name: the inline --runtime= form is accepted
+    run: ["{{polispec}}", replay, "--runtime={{tree}}", "--baseline={{tree}}", --json]
+    expect:
+      exit: 0
+      json: { changed: 0, unexplained: 0 }
+  - name: no --runtime is a usage error
+    run: ["{{polispec}}", replay]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec replay --runtime <tree>"]
+  - name: a zero --days is a usage error
+    run: ["{{polispec}}", replay, --runtime, "{{tree}}", --days, "0"]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec replay --runtime <tree>"]
+  - name: an unknown flag is a usage error
+    run: ["{{polispec}}", replay, --runtime, "{{tree}}", --nope]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec replay --runtime <tree>"]
+  - name: a runtime directory that is not a polispec tree is refused
+    run: ["{{polispec}}", replay, --runtime, "{{files}}"]
+    expect:
+      exit: 2
+      stderr_includes: ["polispec replay:", "is not a polispec tree (no bin/polispec)"]
+  - name: a baseline that is not a polispec tree is refused
+    run: ["{{polispec}}", replay, --runtime, "{{tree}}", --baseline, "{{files}}"]
+    expect:
+      exit: 2
+      stderr_includes: ["polispec replay:", "is not a polispec tree (no bin/polispec)"]
+  - name: the replay left the judgment stream at two rows
+    run: [sh, -c, 'wc -l < "$1/judgments.jsonl"', sh, "{{scratch}}/state"]
+    expect:
+      exit: 0
+      stdout_includes: ["2"]

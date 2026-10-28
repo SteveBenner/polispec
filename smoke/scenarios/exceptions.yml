@@ -1,0 +1,106 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/exceptions
+summary: exceptions list prints the empty state as text and json, add and remove without a terminal are refused with not_tty naming the typed phrase, promote of an unknown proposal is refused, and malformed arguments print the usage
+fixture:
+  global: example
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+steps:
+  - name: list with no exceptions prints the empty state
+    run: ["{{polispec}}", exceptions, list]
+    expect:
+      exit: 0
+      stdout_includes: ["enabled: yes", "file: "]
+      stdout_excludes: ["aex_", "apr_", "problem:"]
+  - name: list as json carries empty entries and proposals
+    run: ["{{polispec}}", exceptions, list, --json]
+    expect:
+      exit: 0
+      json: { enabled: true, problems: [], entries: [], proposals: [] }
+  - name: a git shelf is prepared as the global layer
+    run: [sh, -c, 'mkdir -p "$1/polispec" && cp "$2/global.yml" "$1/polispec/global.yml" && git -C "$1" init -q && git -C "$1" add -A && git -C "$1" commit -q -m init && git -C "$1" log --oneline', sh, "{{scratch}}/shelf", "{{global}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["init"]
+  - name: add against a plain directory global layer is refused
+    run: ["{{polispec}}", exceptions, add, --command, "make deploy*", --global]
+    expect:
+      exit: 1
+      stderr_includes: ["global_not_repo"]
+  - name: add without a terminal is refused with not_tty naming the phrase
+    run: [env, -u, POLISPEC_GLOBAL, "{{polispec}}", exceptions, add, --command, "make deploy*", --global, --note, verbose]
+    env: { RPLUGIN_POLISPEC_POLISPEC_GLOBAL_REPO: "{{scratch}}/shelf" }
+    expect:
+      exit: 1
+      stderr_includes: ["polispec: not_tty: this action needs an interactive terminal"]
+  - name: the refused add recorded no exception
+    run: [env, -u, POLISPEC_GLOBAL, "{{polispec}}", exceptions, list, --json]
+    env: { RPLUGIN_POLISPEC_POLISPEC_GLOBAL_REPO: "{{scratch}}/shelf" }
+    expect:
+      exit: 0
+      json: { entries: [] }
+  - name: add with the typed phrase on a terminal records the exception
+    run: [env, -u, POLISPEC_GLOBAL, "{{polispec}}", exceptions, add, --command, "make deploy*", --global, --note, verbose]
+    env: { RPLUGIN_POLISPEC_POLISPEC_GLOBAL_REPO: "{{scratch}}/shelf" }
+    tty: ["exceptions add aex_3ab7336be53e"]
+    expect:
+      exit: 0
+      stdout_includes: ["aex_3ab7336be53e"]
+  - name: list shows the recorded exception
+    run: [env, -u, POLISPEC_GLOBAL, "{{polispec}}", exceptions, list]
+    env: { RPLUGIN_POLISPEC_POLISPEC_GLOBAL_REPO: "{{scratch}}/shelf" }
+    expect:
+      exit: 0
+      stdout_includes: ["aex_3ab7336be53e control Bash make deploy* - global verbose"]
+  - name: remove of the recorded exception without a terminal is refused with not_tty
+    run: [env, -u, POLISPEC_GLOBAL, "{{polispec}}", exceptions, remove, aex_3ab7336be53e]
+    env: { RPLUGIN_POLISPEC_POLISPEC_GLOBAL_REPO: "{{scratch}}/shelf" }
+    expect:
+      exit: 1
+      stderr_includes: ["polispec: not_tty: this action needs an interactive terminal"]
+  - name: remove with the typed phrase on a terminal deletes it
+    run: [env, -u, POLISPEC_GLOBAL, "{{polispec}}", exceptions, remove, aex_3ab7336be53e]
+    env: { RPLUGIN_POLISPEC_POLISPEC_GLOBAL_REPO: "{{scratch}}/shelf" }
+    tty: ["exceptions remove aex_3ab7336be53e"]
+    expect:
+      exit: 0
+  - name: list is empty again
+    run: [env, -u, POLISPEC_GLOBAL, "{{polispec}}", exceptions, list, --json]
+    env: { RPLUGIN_POLISPEC_POLISPEC_GLOBAL_REPO: "{{scratch}}/shelf" }
+    expect:
+      exit: 0
+      json: { entries: [] }
+  - name: remove of an unrecorded exception is refused
+    run: [env, -u, POLISPEC_GLOBAL, "{{polispec}}", exceptions, remove, aex_000000000000]
+    env: { RPLUGIN_POLISPEC_POLISPEC_GLOBAL_REPO: "{{scratch}}/shelf" }
+    expect:
+      exit: 1
+      stderr_includes: ["unknown_exception", "aex_000000000000 is not a recorded exception"]
+  - name: promote of an unknown proposal is refused
+    run: ["{{polispec}}", exceptions, promote, apr_000000000000]
+    expect:
+      exit: 1
+      stderr_includes: ["unknown_proposal", "apr_000000000000 is not a pending proposal"]
+  - name: promote with a malformed proposal id prints the usage
+    run: ["{{polispec}}", exceptions, promote, nonsense]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec exceptions list [--json]"]
+  - name: add without a command for tool Bash prints the usage
+    run: ["{{polispec}}", exceptions, add]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec exceptions list [--json]"]
+  - name: remove with a malformed entry id prints the usage
+    run: ["{{polispec}}", exceptions, remove, nonsense]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec exceptions list [--json]"]
+  - name: an unknown verb prints the usage
+    run: ["{{polispec}}", exceptions, frobnicate]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec exceptions list [--json]"]

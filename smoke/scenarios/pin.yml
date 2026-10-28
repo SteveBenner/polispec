@@ -1,0 +1,118 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/pin
+summary: pin --dry-run against a source tree with a release tag reports what it would extract, point and link and replays the judgment corpus without writing the data home, --json carries the plan and the replay, a real pin of a scratch repository archives the tag read-only and swaps current, a tag whose VERSION disagrees with its name, an unknown ref, a bad ref, a missing source and an unknown argument are refused, and a pin is idempotent
+fixture:
+  global: example
+  enforce: enforce
+steps:
+  - name: a scratch source repository is built with a matching tag and a mismatched tag
+    run:
+      - sh
+      - -c
+      - |
+        set -e
+        src="$1/src"
+        mkdir -p "$src/bin"
+        cd "$src"
+        git init -q .
+        printf '#!/bin/sh\nexit 0\n' > bin/polispec
+        chmod +x bin/polispec
+        printf '1.0.0\n' > VERSION
+        git add VERSION bin/polispec
+        git -c user.name=smoke -c user.email=smoke@example.invalid -c commit.gpgsign=false commit -q -m one
+        git -c user.name=smoke -c user.email=smoke@example.invalid tag -m v1 v1.0.0
+        git -c user.name=smoke -c user.email=smoke@example.invalid tag -m v2 v2.0.0
+        git branch feature
+        echo built
+      - sh
+      - "{{files}}"
+    expect:
+      exit: 0
+      stdout_includes: [built]
+  - name: a dry run against the tree resolves its release tag and writes nothing
+    run: ["{{polispec}}", pin, --dry-run, --source, "{{tree}}", --ref, v0.50.0]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["dry run: nothing was changed", "would extract v0.50.0 (", "into {{scratch}}/polispec-data/releases/", "would point {{scratch}}/polispec-data/current at releases/", "replay"]
+      files_absent: ["{{scratch}}/polispec-data/releases", "{{scratch}}/polispec-data/current", "{{home}}/.local/bin/polispec"]
+  - name: the dry run --json carries the ref, the release path and the replay and no steps
+    run: ["{{polispec}}", pin, --dry-run, --source, "{{tree}}", --ref, v0.50.0, --json]
+    home: true
+    expect:
+      exit: 0
+      json: { ref: v0.50.0 }
+      stdout_includes: ['"commit":"', '"release":"{{scratch}}/polispec-data/releases/', '"replay":{', '"unexplained":0']
+      stdout_excludes: ['"steps"', '"notes"']
+      files_absent: ["{{scratch}}/polispec-data/releases"]
+  - name: a dry run for a source that does not exist still describes the steps
+    run: ["{{polispec}}", pin, --dry-run, --source, "{{files}}/nowhere", --ref, v1.0.0]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["dry run: nothing was changed", "would resolve v1.0.0 to a commit after the fetch", "would extract the tagged tree into ", "would point "]
+  - name: a dry run of a tag whose VERSION disagrees is refused before anything is written
+    run: ["{{polispec}}", pin, --dry-run, --source, "{{files}}/src", --ref, v2.0.0]
+    home: true
+    expect:
+      exit: 1
+      stderr_includes: ["tag v2.0.0 carries VERSION 1.0.0, not 2.0.0"]
+      files_absent: ["{{scratch}}/polispec-data/releases"]
+  - name: a real pin of the mismatched tag is refused and leaves no release
+    run: ["{{polispec}}", pin, --source, "{{files}}/src", --ref, v2.0.0]
+    home: true
+    expect:
+      exit: 1
+      stderr_includes: ["tag v2.0.0 carries VERSION 1.0.0, not 2.0.0"]
+      files_absent: ["{{scratch}}/polispec-data/releases", "{{scratch}}/polispec-data/current"]
+  - name: a ref that is not a tag is refused
+    run: ["{{polispec}}", pin, --source, "{{files}}/src", --ref, feature]
+    home: true
+    expect:
+      exit: 1
+      stderr_includes: ["feature is not a tag", "pin only a release tag"]
+  - name: an unknown ref is refused
+    run: ["{{polispec}}", pin, --source, "{{files}}/src", --ref, v9.9.9]
+    home: true
+    expect:
+      exit: 1
+      stderr_includes: ["polispec:"]
+      files_absent: ["{{scratch}}/polispec-data/releases"]
+  - name: a ref with a shell metacharacter is refused as invalid
+    run: ["{{polispec}}", pin, --source, "{{files}}/src", --ref, "v1;rm"]
+    home: true
+    expect:
+      exit: 1
+      stderr_includes: ["invalid ref"]
+  - name: a flag that needs a value without one is a usage error
+    run: ["{{polispec}}", pin, --ref]
+    expect:
+      exit: 2
+      stderr_includes: ["--ref needs a value", "usage: polispec pin [--ref <tag>]"]
+  - name: an unknown argument is a usage error
+    run: ["{{polispec}}", pin, --nope]
+    expect:
+      exit: 2
+      stderr_includes: ["unknown argument --nope", "usage: polispec pin [--ref <tag>]"]
+  - name: a real pin of the matching tag archives it read-only and swaps current
+    run: ["{{polispec}}", pin, --source, "{{files}}/src", --ref, v1.0.0]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["pinned v1.0.0 -> "]
+      files_exist: ["{{scratch}}/polispec-data/current/VERSION", "{{scratch}}/polispec-data/current/.polispec-release.json", "{{home}}/.local/bin/polispec"]
+  - name: the archived release files are read-only
+    run: [sh, -c, 'if [ -w "$1/polispec-data/current/VERSION" ]; then echo writable; exit 1; fi; echo readonly', sh, "{{scratch}}"]
+    expect:
+      exit: 0
+      stdout_includes: [readonly]
+  - name: pinning the same tag again keeps the existing release
+    run: ["{{polispec}}", pin, --source, "{{files}}/src", --ref, v1.0.0]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["keep existing release ", "pinned v1.0.0 -> "]
+  - name: the read-only release is made writable again so the scratch directory can be pruned
+    run: [chmod, -R, "u+w", "{{scratch}}/polispec-data"]
+    expect:
+      exit: 0

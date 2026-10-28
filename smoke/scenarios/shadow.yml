@@ -1,0 +1,120 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/shadow
+summary: shadow reports none running on a fresh state home, start records a candidate tree and status names it, a candidate that disagrees with the live guard is recorded when a hook call is judged and report lists the changed verdict and rule, a candidate that is not a tree or an unknown verb or bad arguments are refused, stop clears the record and keeps the log, and status after stop reports none
+fixture:
+  global: example
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+  files:
+    "candidate/VERSION": "9.9.9\n"
+    "candidate/bin/polispec": |
+      require "json"
+      $stdin.read
+      puts JSON.generate({ "verdict" => "deny", "rule_id" => "R-SHADOW-CANDIDATE" })
+steps:
+  - name: status on a fresh state home reports none running
+    run: ["{{polispec}}", shadow, status]
+    expect:
+      exit: 0
+      stdout_includes: ["shadow: none running", "disagreements: 0, errors: 0"]
+  - name: status --json carries a null shadow and zero counts
+    run: ["{{polispec}}", shadow, status, --json]
+    expect:
+      exit: 0
+      json: { shadow: null, disagreements: 0, errors: 0, changes: [] }
+  - name: report with none running is a diagnostic read as well
+    run: ["{{polispec}}", shadow, report]
+    expect:
+      exit: 0
+      stdout_includes: ["shadow: none running"]
+  - name: stop with nothing running says so
+    run: ["{{polispec}}", shadow, stop]
+    expect:
+      exit: 0
+      stdout_includes: ["no shadow was running"]
+  - name: a directory that is not a polispec tree is refused
+    run: ["{{polispec}}", shadow, start, --runtime, "{{files}}/nothing"]
+    expect:
+      exit: 1
+      stderr_includes: ["polispec shadow:"]
+  - name: start without --runtime is a usage error
+    run: ["{{polispec}}", shadow, start]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec shadow start --runtime <tree>"]
+  - name: an unknown verb is a usage error
+    run: ["{{polispec}}", shadow, nonsense]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec shadow start --runtime <tree>", "polispec shadow stop"]
+  - name: start records the candidate tree beside the live guard
+    run: ["{{polispec}}", shadow, start, --runtime, "{{files}}/candidate"]
+    expect:
+      exit: 0
+      stdout_includes: ["shadowing ", "candidate (9.9.9) beside the live guard", "disagreements go to "]
+      files_exist: ["{{scratch}}/state/shadow.json"]
+  - name: status names the running candidate
+    run: ["{{polispec}}", shadow, status]
+    expect:
+      exit: 0
+      stdout_includes: ["shadow: ", "candidate (9.9.9) since ", "disagreements: 0, errors: 0"]
+  - name: status --json carries the candidate runtime and version
+    run: ["{{polispec}}", shadow, status, --json]
+    expect:
+      exit: 0
+      json: { shadow: { schema: polispec.shadow/v1, version: 9.9.9 }, disagreements: 0 }
+  - name: a hook call is judged live and handed to the candidate
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git status" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: the background comparison appends a disagreement row
+    run: [sh, -c, 'i=0; while [ "$i" -lt 150 ]; do if [ -s "$1/shadow.jsonl" ]; then echo logged; exit 0; fi; sleep 0.2; i=$((i+1)); done; echo missing; exit 1', sh, "{{scratch}}/state"]
+    timeout: 60
+    expect:
+      exit: 0
+      stdout_includes: [logged]
+  - name: report lists the changed verdict and rule with its count and tool
+    run: ["{{polispec}}", shadow, report]
+    expect:
+      exit: 0
+      stdout_includes: ["disagreements: 1, errors: 0", "-> R-SHADOW-CANDIDATE", "verdict allow -> deny", "x1", "tools Bash"]
+  - name: report --json groups the disagreement
+    run: ["{{polispec}}", shadow, report, --json]
+    expect:
+      exit: 0
+      json:
+        disagreements: 1
+        errors: 0
+        changes:
+          - { rule_after: R-SHADOW-CANDIDATE, verdict_before: allow, verdict_after: deny, count: 1, tools: [Bash] }
+  - name: the shadow never changed the live verdict, the call was allowed above
+    run: ["{{polispec}}", shadow, status, --json]
+    expect:
+      exit: 0
+      json: { disagreements: 1 }
+  - name: report rejects a stray argument
+    run: ["{{polispec}}", shadow, report, extra]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec shadow start --runtime <tree>"]
+  - name: stop clears the record and keeps the log
+    run: ["{{polispec}}", shadow, stop]
+    expect:
+      exit: 0
+      stdout_includes: ["stopped shadowing ", "candidate; the log stays at "]
+      files_absent: ["{{scratch}}/state/shadow.json"]
+      files_exist: ["{{scratch}}/state/shadow.jsonl"]
+  - name: status after stop reports none running while the log still counts the disagreement
+    run: ["{{polispec}}", shadow, status]
+    expect:
+      exit: 0
+      stdout_includes: ["shadow: none running", "disagreements: 1, errors: 0"]

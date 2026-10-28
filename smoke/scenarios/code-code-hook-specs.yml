@@ -1,0 +1,163 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/code, code-hook, specs
+summary: the code, code-hook and specs verb families dispatch, code and specs print usage without a valid verb, a benign read of each works against a pack in the scratch specs repository, and code-hook refuses a mismatched event or a bad payload with a diagnostic and exit 0
+fixture:
+  enforce: enforce
+  files:
+    "pack/specs/code/spec.yml": |
+      schema: polispec.spec/v1
+      spec: code
+      version: 1.0.0
+      summary: Smoke pack root.
+      activation:
+        languages: ["*"]
+      policy:
+        id: code.root
+        title: Smoke root
+        subpolicies:
+          - id: code.no-aws-key
+            title: No AWS access key literals
+            statement: Never commit an AWS access key id.
+            level: MUST_NOT
+            severity: critical
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [pre_write]
+              enforcer: { kind: grep, pattern: "AKIA[0-9A-Z]{16}", decides: all }
+            control:
+              fixture: no-aws-key.bad.txt
+              compliant: no-aws-key.good.txt
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+    "pack/specs/code/ruby/spec.yml": |
+      schema: polispec.spec/v1
+      spec: code/ruby
+      parent: code
+      version: 1.0.0
+      summary: Smoke ruby pack.
+      activation:
+        languages: [ruby]
+      detection:
+        extensions: [".rb"]
+      policy:
+        id: code.ruby.smoke
+        title: Smoke ruby
+        subpolicies:
+          - id: code.ruby.no-binding-pry
+            title: No debugger calls
+            statement: Do not leave binding.pry in committed code.
+            level: MUST_NOT
+            severity: high
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [pre_write]
+              enforcer: { kind: grep, pattern: "binding\\.pry", decides: all }
+            control:
+              fixture: no-binding-pry.bad.rb
+              compliant: no-binding-pry.good.rb
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+    "pack/controls/code/no-aws-key.bad.txt": |
+      key = AKIAABCDEFGHIJKLMNOP
+    "pack/controls/code/no-aws-key.good.txt": |
+      key = ENV["KEY"]
+    "pack/controls/code/ruby/no-binding-pry.bad.rb": |
+      binding.pry
+    "pack/controls/code/ruby/no-binding-pry.good.rb": |
+      puts 1
+    "samples/hello.rb": |
+      puts 1
+    "samples/bad.rb": |
+      binding.pry
+    "work/lib/good.rb": |
+      puts 1
+steps:
+  - name: build the code specs repository from the fixture pack
+    run: [sh, -c, 'mkdir -p "$2" && cp -R "$1/." "$2/" && cd "$2" && git init -q -b main . && git add specs controls && git commit -q -m pack && git branch stable && git rev-parse --short stable', sh, "{{files}}/pack", "{{scratch}}/specs-repo"]
+    stop: true
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/specs-repo/specs/code/spec.yml", "{{scratch}}/specs-repo/.git"]
+  - name: build the work repository
+    run: [sh, -c, 'cd "$1" && git init -q -b main . && git add lib && git commit -q -m work', sh, "{{files}}/work"]
+    stop: true
+    expect:
+      exit: 0
+  - name: code with no verb prints its usage
+    run: ["{{polispec}}", code]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec code <verb> [options]", "detect <file>", "generate rubocop|directives|skill"]
+  - name: code with an unknown verb prints its usage
+    run: ["{{polispec}}", code, frobnicate]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec code <verb> [options]"]
+  - name: code detect names the language of a file
+    run: ["{{polispec}}", code, detect, "{{files}}/samples/hello.rb"]
+    expect:
+      exit: 0
+      stdout_includes: [ruby]
+  - name: code check blocks a MUST_NOT file with exit 1
+    run: ["{{polispec}}", code, check, "{{files}}/samples/bad.rb"]
+    cwd: "{{files}}/work"
+    expect:
+      exit: 1
+      stdout_includes: ["code.ruby.no-binding-pry"]
+  - name: specs with no verb prints its usage
+    run: ["{{polispec}}", specs]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec specs link|status|promote [--repo DIR] [--dry-run] [--json]"]
+  - name: specs with an unknown verb prints its usage
+    run: ["{{polispec}}", specs, frobnicate]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec specs link|status|promote"]
+  - name: specs --dry-run is only valid for link
+    run: ["{{polispec}}", specs, status, --dry-run]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec specs link|status|promote"]
+  - name: specs status reports the repo and its stable ref
+    run: ["{{polispec}}", specs, status, --repo, "{{scratch}}/specs-repo"]
+    expect:
+      exit: 0
+      stdout_includes: ["repo ", "specs-repo", "stable ", "controls main "]
+  - name: specs status as json carries the repo
+    run: ["{{polispec}}", specs, status, --repo, "{{scratch}}/specs-repo", --json]
+    expect:
+      exit: 0
+      stdout_includes: ["\"repo\":", "specs-repo"]
+  - name: code-hook pre with a session event is diagnosed and exits 0
+    run: ["{{polispec}}", code-hook, pre, --harness, claude]
+    cwd: "{{files}}/work"
+    stdin: '{"hook_event_name":"SessionStart","session_id":"h1","cwd":"{{files}}/work"}'
+    expect:
+      exit: 0
+      stderr_includes: ["[POLISPEC code] code-hook pre failed and did not run", "Claude hook event must be PreToolUse"]
+      stdout_excludes: ["permissionDecision"]
+  - name: code-hook pre with an unparseable payload is diagnosed and exits 0
+    run: ["{{polispec}}", code-hook, pre, --harness, claude]
+    cwd: "{{files}}/work"
+    stdin: 'not json'
+    expect:
+      exit: 0
+      stderr_includes: ["[POLISPEC code] code-hook pre failed and did not run"]
+      stdout_excludes: ["permissionDecision"]
+  - name: code-hook with an unknown mode prints its usage
+    run: ["{{polispec}}", code-hook, bogus, --harness, claude]
+    cwd: "{{files}}/work"
+    stdin: '{}'
+    expect:
+      exit: 1
+      stderr_includes: ["usage: polispec code-hook pre|post|stop|session --harness"]
+  - name: code-hook pre denies a MUST_NOT write for claude
+    run: ["{{polispec}}", code-hook, pre, --harness, claude]
+    cwd: "{{files}}/work"
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"h2","cwd":"{{files}}/work","tool_name":"Write","tool_input":{"file_path":"{{files}}/work/lib/a.rb","content":"binding.pry\n"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["\"permissionDecision\":\"deny\"", "code.ruby.no-binding-pry"]

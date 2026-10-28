@@ -1,0 +1,78 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/plane
+summary: plane status and verify on an unsealed host report no plane, activate and rollback --dry-run of an unknown project or operation describe or refuse without acting, bad arguments print the usage with exit 2 and a structured invalid_arguments result under --json, and no plane state is written
+fixture:
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+steps:
+  - name: status reports the unsealed host
+    run: ["{{polispec}}", plane, status]
+    expect:
+      exit: 0
+      stdout_includes: ["polispec plane.status: ok", "status: unsealed"]
+  - name: status as json carries the result schema
+    run: ["{{polispec}}", plane, status, --json]
+    expect:
+      exit: 0
+      json: { schema: polispec.harness.result/v1, ok: true, operation: plane.status }
+      stdout_includes: ["\"status\":\"unsealed\""]
+  - name: verify as json is blocked on the missing active sealed generation
+    run: ["{{polispec}}", plane, verify, --json]
+    expect:
+      exit: 3
+      json: { schema: polispec.harness.result/v1, ok: false, operation: plane.verify }
+      stdout_includes: ["plane_prerequisite", "active sealed generation"]
+  - name: activate --dry-run on an unsealed host is refused as a missing prerequisite
+    run: ["{{polispec}}", plane, activate, shop, --dry-run, --json]
+    expect:
+      exit: 3
+      json: { schema: polispec.harness.result/v1, ok: false, operation: plane.activate }
+      stdout_includes: ["prerequisite_missing", "project activation requires an active plane"]
+  - name: rollback --dry-run of an unknown operation is refused as a missing prerequisite
+    run: ["{{polispec}}", plane, rollback, op_unknown, --dry-run, --json]
+    expect:
+      exit: 3
+      json: { schema: polispec.harness.result/v1, ok: false, operation: plane.rollback }
+      stdout_includes: ["prerequisite_missing", "rollback requires an active plane"]
+  - name: no action prints the usage
+    run: ["{{polispec}}", plane]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec plane (status|verify"]
+  - name: an unknown action prints the usage
+    run: ["{{polispec}}", plane, frobnicate]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec plane (status|verify"]
+  - name: --dry-run on status is a usage error
+    run: ["{{polispec}}", plane, status, --dry-run]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec plane"]
+  - name: activate without a project is a usage error
+    run: ["{{polispec}}", plane, activate]
+    expect:
+      exit: 2
+  - name: rollback with two operation ids is a usage error
+    run: ["{{polispec}}", plane, rollback, a, b]
+    expect:
+      exit: 2
+  - name: a repeated option is a structured invalid_arguments result under json
+    run: ["{{polispec}}", plane, status, --json, --json]
+    expect:
+      exit: 2
+      json: { ok: false, operation: plane.status }
+      stdout_includes: ["invalid_arguments"]
+  - name: an unknown option is a usage error
+    run: ["{{polispec}}", plane, status, --bogus]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec plane"]
+  - name: the plane is still unsealed and nothing was written
+    run: ["{{polispec}}", plane, status, --json]
+    expect:
+      exit: 0
+      json: { ok: true }

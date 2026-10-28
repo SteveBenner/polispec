@@ -1,0 +1,152 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/install, uninstall
+summary: install --dry-run for claude and codex at project scope previews the hooks and skill links and writes nothing, the real run adds the marked hooks, the skill links and the marked codex block beside a foreign hook that stays, a second install changes nothing, --json carries the plans, uninstall --dry-run writes nothing and the real uninstall removes only polispec's hooks, links and block leaving the foreign entries and a backup, and a missing or unknown --harness, a bad --scope and an unknown argument are refused
+fixture:
+  enforce: enforce
+  projects:
+    - id: wired
+      variant: service
+      status: live
+      files:
+        ".claude/settings.json": "{\"permissions\":{\"allow\":[\"Read\"]},\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"echo foreign-hook\"}]}]}}\n"
+        ".codex/config.toml": "model = \"foreign-model\"\n\n[hooks.foreign]\nx = 1\n"
+steps:
+  - name: the claude dry run previews the hooks and the skill links
+    run: ["{{polispec}}", install, --harness, claude, --scope, project, --project, "{{project.wired}}", --dry-run]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["dry run: install claude (project) -> {{project.wired}}/.claude/settings.json", "rewrite (backup first)", "link -> ", ".claude/skills/polispec", "+++ after", "polispec-guard", "echo foreign-hook"]
+  - name: the claude dry run wrote nothing
+    run: [sh, -c, 'grep -c polispec-guard "$1/.claude/settings.json" || true; ls "$1/.claude"', sh, "{{project.wired}}"]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["0", "settings.json"]
+      stdout_excludes: ["skills", "polispec-backup"]
+  - name: the codex dry run previews the marked block and writes nothing
+    run: ["{{polispec}}", install, --harness, codex, --scope, project, --project, "{{project.wired}}", --dry-run]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["dry run: install codex (project) -> {{project.wired}}/.codex/config.toml", "# >>> polispec hooks >>>", "# <<< polispec hooks <<<", "hooks.PreToolUse", "--harness codex"]
+  - name: the codex dry run left the config as seeded
+    run: [grep, -c, "polispec", "{{project.wired}}/.codex/config.toml"]
+    home: true
+    expect:
+      exit: 1
+      stdout_includes: ["0"]
+  - name: the real claude install adds the hooks and the skill links and keeps the foreign hook
+    run: ["{{polispec}}", install, --harness, claude, --scope, project, --project, "{{project.wired}}"]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["install claude (project) -> {{project.wired}}/.claude/settings.json", "link -> ", "rules are user scope"]
+      files_exist: ["{{project.wired}}/.claude/skills/polispec/SKILL.md", "{{project.wired}}/.claude/skills/polispec-specs/SKILL.md", "{{project.wired}}/.claude/settings.json"]
+  - name: the claude settings carry the marked PreToolUse, SessionStart and SubagentStart hooks and the foreign hook
+    run: [cat, "{{project.wired}}/.claude/settings.json"]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["echo foreign-hook", '"Read"', "polispec-guard' pretool --harness claude-code", "polispec-guard' session --harness claude-code", '"SessionStart"', '"SubagentStart"']
+  - name: the claude install made an in-place backup of the settings
+    run: [sh, -c, 'ls "$1/.claude"', sh, "{{project.wired}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["settings.json.polispec-backup-"]
+  - name: the real codex install adds one marked block and keeps the foreign table
+    run: ["{{polispec}}", install, --harness, codex, --scope, project, --project, "{{project.wired}}"]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["install codex (project) -> {{project.wired}}/.codex/config.toml", "review and trust new hooks"]
+  - name: the codex config has the block, the foreign table and the foreign model
+    run: [cat, "{{project.wired}}/.codex/config.toml"]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["model = \"foreign-model\"", "[hooks.foreign]", "# >>> polispec hooks >>>", "[[hooks.SubagentStart]]", "# <<< polispec hooks <<<"]
+  - name: installing claude again changes nothing
+    run: ["{{polispec}}", install, --harness, claude, --scope, project, --project, "{{project.wired}}", --json]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ['"harness":"claude"', '"scope":"project"', '"changes":[]', '"ok":true']
+  - name: the claude settings still hold one polispec PreToolUse hook after the second install
+    run: [sh, -c, 'grep -c "polispec-guard. pretool" "$1/.claude/settings.json"', sh, "{{project.wired}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["1"]
+  - name: the uninstall dry run lists the removals and writes nothing
+    run: ["{{polispec}}", uninstall, --harness, claude, --scope, project, --project, "{{project.wired}}", --dry-run]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["dry run: uninstall claude (project)", "unlink ", ".claude/skills/polispec"]
+      files_exist: ["{{project.wired}}/.claude/skills/polispec/SKILL.md"]
+  - name: the dry run left the hooks in place
+    run: [grep, -c, "polispec-guard", "{{project.wired}}/.claude/settings.json"]
+    expect:
+      exit: 0
+      stdout_includes: ["3"]
+  - name: the real claude uninstall removes the marked hooks and the links and keeps the foreign hook
+    run: ["{{polispec}}", uninstall, --harness, claude, --scope, project, --project, "{{project.wired}}"]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["uninstall claude (project)", "rewrite (backup first)", "unlink "]
+      files_absent: ["{{project.wired}}/.claude/skills/polispec", "{{project.wired}}/.claude/skills/polispec-specs"]
+  - name: the claude settings keep the foreign hook and permission and lose the polispec hooks
+    run: [cat, "{{project.wired}}/.claude/settings.json"]
+    expect:
+      exit: 0
+      stdout_includes: ["echo foreign-hook", '"Read"']
+      stdout_excludes: ["polispec-guard", "SessionStart", "SubagentStart"]
+  - name: the real codex uninstall removes the marked block and keeps the foreign entries
+    run: ["{{polispec}}", uninstall, --harness, codex, --scope, project, --project, "{{project.wired}}"]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["uninstall codex (project)", "rewrite (backup first)"]
+  - name: the codex config is back to the foreign content
+    run: [cat, "{{project.wired}}/.codex/config.toml"]
+    expect:
+      exit: 0
+      stdout_includes: ["model = \"foreign-model\"", "[hooks.foreign]"]
+      stdout_excludes: ["polispec hooks", "polispec-guard"]
+  - name: uninstalling again finds nothing to do
+    run: ["{{polispec}}", uninstall, --harness, claude, --scope, project, --project, "{{project.wired}}"]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["no changes"]
+  - name: install without --harness is a usage error
+    run: ["{{polispec}}", install, --scope, project, --project, "{{project.wired}}"]
+    home: true
+    expect:
+      exit: 2
+      stderr_includes: ["--harness claude|codex|all is required", "usage: polispec install --harness"]
+  - name: an unknown harness is a usage error
+    run: ["{{polispec}}", install, --harness, vim, --project, "{{project.wired}}"]
+    home: true
+    expect:
+      exit: 2
+      stderr_includes: ["--harness claude|codex|all is required"]
+  - name: a scope other than user or project is a usage error
+    run: ["{{polispec}}", install, --harness, claude, --scope, galaxy, --project, "{{project.wired}}"]
+    home: true
+    expect:
+      exit: 2
+      stderr_includes: ["--scope must be user or project"]
+  - name: an unknown argument is a usage error for install
+    run: ["{{polispec}}", install, --harness, claude, --nope]
+    home: true
+    expect:
+      exit: 2
+      stderr_includes: ["unknown argument --nope", "usage: polispec install --harness"]
+  - name: uninstall without --harness is a usage error naming the uninstall usage
+    run: ["{{polispec}}", uninstall]
+    home: true
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec uninstall --harness claude|codex|all"]

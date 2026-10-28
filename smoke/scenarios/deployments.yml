@@ -1,0 +1,106 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/deployments
+summary: deployments on an empty manifest says nothing is recorded and writes no manifest, --json is an empty entries list under the polispec.deployments/v1 schema, an install records a hooks entry that deployments lists with its live status, a deleted manifest stays empty on a plain read, --scan backfills the hooks entry from the install receipt with the ledger and state data entries and writes the manifest, a second read lists it with --json carrying class, kind, target and live_status, an uninstall retires the hooks entry as removed, and an unknown argument is a usage error
+fixture:
+  enforce: enforce
+  projects:
+    - id: wired
+      variant: service
+      status: live
+steps:
+  - name: an empty manifest lists nothing and writes nothing
+    run: ["{{polispec}}", deployments]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["no deployments recorded"]
+      stdout_excludes: ["scan added"]
+      files_absent: ["{{scratch}}/state/deployments.json"]
+  - name: --json carries the schema and an empty entries list
+    run: ["{{polispec}}", deployments, --json]
+    home: true
+    expect:
+      exit: 0
+      json: { schema: polispec.deployments/v1, added: [], entries: [] }
+  - name: a codex install in the fixture project records a hooks deployment
+    run: ["{{polispec}}", install, --harness, codex, --scope, project, --project, "{{project.wired}}"]
+    home: true
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/state/deployments.json"]
+  - name: the recorded deployment is listed present with its kind and target
+    run: ["{{polispec}}", deployments]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["present  wiring   hooks      {{project.wired}}/.codex/config.toml"]
+      stdout_excludes: ["no deployments recorded"]
+  - name: --json lists the entry with its class, kind, target, status and live status
+    run: ["{{polispec}}", deployments, --json]
+    home: true
+    expect:
+      exit: 0
+      json:
+        schema: polispec.deployments/v1
+        entries:
+          - { kind: hooks, class: wiring, status: active, live_status: present, source: install }
+      stdout_includes: ['"id":"dep_', '"target":"{{project.wired}}/.codex/config.toml"', '"harness":"codex"', '"scope":"project"']
+  - name: the manifest is deleted as a fresh state home would have it
+    run: [rm, "{{scratch}}/state/deployments.json"]
+    expect:
+      exit: 0
+      files_absent: ["{{scratch}}/state/deployments.json"]
+  - name: a plain read of the missing manifest lists nothing and writes nothing
+    run: ["{{polispec}}", deployments]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["no deployments recorded"]
+      files_absent: ["{{scratch}}/state/deployments.json"]
+  - name: --scan backfills the hooks entry from the install receipt with the ledger and state entries and writes the manifest
+    run: ["{{polispec}}", deployments, --scan]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["scan added 3:", "hooks  {{project.wired}}/.codex/config.toml", "ledger  {{scratch}}/ledger.yml", "state  {{scratch}}/state", "present  wiring   hooks      {{project.wired}}/.codex/config.toml", "present  data     ledger     {{scratch}}/ledger.yml", "present  data     state      {{scratch}}/state"]
+      files_exist: ["{{scratch}}/state/deployments.json"]
+  - name: a second plain read shows the backfilled entry without scanning
+    run: ["{{polispec}}", deployments, --json]
+    home: true
+    expect:
+      exit: 0
+      json:
+        added: []
+        entries:
+          - { kind: hooks, class: wiring, live_status: present, source: scan }
+          - { kind: ledger, class: data, live_status: present, source: scan }
+          - { kind: state, class: data, live_status: present, source: scan }
+  - name: scanning again adds nothing
+    run: ["{{polispec}}", deployments, --scan, --json]
+    home: true
+    expect:
+      exit: 0
+      json:
+        added: []
+        entries:
+          - { kind: hooks }
+          - { kind: ledger }
+          - { kind: state }
+  - name: uninstalling the hooks retires the entry
+    run: ["{{polispec}}", uninstall, --harness, codex, --scope, project, --project, "{{project.wired}}"]
+    home: true
+    expect:
+      exit: 0
+  - name: the listing reports the hooks entry as removed while the data entries stay present
+    run: ["{{polispec}}", deployments]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["removed  wiring   hooks      {{project.wired}}/.codex/config.toml", "present  data     ledger"]
+      stdout_excludes: ["present  wiring"]
+  - name: an unknown argument is a usage error
+    run: ["{{polispec}}", deployments, --nope]
+    home: true
+    expect:
+      exit: 2
+      stderr_includes: ["polispec: unknown argument --nope", "usage: polispec deployments [--scan] [--json]"]

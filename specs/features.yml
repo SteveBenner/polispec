@@ -6,6 +6,21 @@ targets:
     os: ubuntu
     arch: x86_64
     ruby: '3.3'
+- id: linux-x86-64-ruby4.0
+  facts:
+    os: ubuntu
+    arch: x86_64
+    ruby: '4.0'
+- id: macos-arm64
+  facts:
+    os: macos
+    arch: arm64
+- id: claude-code
+  facts:
+    harness: claude-code
+- id: codex
+  facts:
+    harness: codex
 features:
 - id: commands.behavior
   summary: Smoke proof for the commands/behavior coverage unit of specs/app.yml.
@@ -19,6 +34,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/behavior
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -38,6 +57,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/validate
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -58,6 +81,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/contract
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -77,6 +104,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/lint
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -92,17 +123,21 @@ features:
   - lib/polispec/commands/replay.rb
   - lib/polispec/replay.rb
   - lib/polispec/replay_child.rb
-  - smoke/scenarios/stewardship.yml
+  - smoke/scenarios/replay.yml
   spec:
     file: specs/app.yml
     at: commands/replay
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
     - smoke
     - run
     - "--unit"
-    - stewardship
+    - commands/replay
     - "--no-record"
     rung: 2
 - id: commands.shadow
@@ -110,17 +145,21 @@ features:
   paths:
   - lib/polispec/commands/shadow.rb
   - lib/polispec/shadow.rb
-  - smoke/scenarios/hook-pretool-session.yml
+  - smoke/scenarios/shadow.yml
   spec:
     file: specs/app.yml
     at: commands/shadow
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
     - smoke
     - run
     - "--unit"
-    - commands/hook pretool|session
+    - commands/shadow
     - "--no-record"
     rung: 2
 - id: commands.plan-apply
@@ -140,6 +179,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/plan, apply
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -160,6 +203,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/steward
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -174,17 +221,21 @@ features:
   paths:
   - lib/polispec/commands/pin.rb
   - lib/polispec/native_pin.rb
-  - smoke/scenarios/steward.yml
+  - smoke/scenarios/pin.yml
   spec:
     file: specs/app.yml
     at: commands/pin
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
     - smoke
     - run
     - "--unit"
-    - commands/steward
+    - commands/pin
     - "--no-record"
     rung: 2
 - id: commands.install-uninstall
@@ -197,38 +248,45 @@ features:
   - install.sh
   - uninstall.sh
   - polispec.rplugin.yml
-  - smoke/scenarios/harness.yml
+  - smoke/scenarios/install-uninstall.yml
   spec:
     file: specs/app.yml
     at: commands/install, uninstall
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
     - smoke
     - run
     - "--unit"
-    - commands/harness
+    - commands/install, uninstall
     - "--no-record"
     rung: 2
 - id: commands.uninstall-all-restore
-  summary: Smoke proof for the commands/uninstall --all, restore coverage unit of
-    specs/app.yml.
+  summary: Smoke proof for the commands/uninstall --all, restore coverage unit of specs/app.yml.
   paths:
   - lib/polispec/commands/restore.rb
   - lib/polispec/uninstall_all.rb
   - uninstall.sh
   - skills/polispec-uninstall/**/*
-  - smoke/scenarios/harness-uninstall.yml
+  - smoke/scenarios/uninstall-all-restore.yml
   spec:
     file: specs/app.yml
     at: commands/uninstall --all, restore
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
     - smoke
     - run
     - "--unit"
-    - harness_controls
+    - commands/uninstall --all, restore
     - "--no-record"
     rung: 2
 - id: commands.deployments
@@ -237,17 +295,21 @@ features:
   - lib/polispec/commands/deployments.rb
   - lib/polispec/deployments.rb
   - schemas/deployments.v1.yml
-  - smoke/scenarios/deployment-receipts.yml
+  - smoke/scenarios/deployments.yml
   spec:
     file: specs/app.yml
     at: commands/deployments
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
     - smoke
     - run
     - "--unit"
-    - deployment_receipts
+    - commands/deployments
     - "--no-record"
     rung: 2
 - id: commands.ledger-init
@@ -257,34 +319,42 @@ features:
   - config/ledger.starter.yml
   - schemas/ledger.v1.yml
   - examples/ledger.example.yml
-  - smoke/scenarios/registration.yml
+  - smoke/scenarios/ledger-init.yml
   spec:
     file: specs/app.yml
     at: commands/ledger init
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
     - smoke
     - run
     - "--unit"
-    - commands/register
+    - commands/ledger init
     - "--no-record"
     rung: 2
 - id: commands.settings
   summary: Smoke proof for the commands/settings coverage unit of specs/app.yml.
   paths:
   - lib/polispec/commands/settings.rb
-  - smoke/scenarios/harness-controls.yml
+  - smoke/scenarios/settings.yml
   spec:
     file: specs/app.yml
     at: commands/settings
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
     - smoke
     - run
     - "--unit"
-    - harness_controls
+    - commands/settings
     - "--no-record"
     rung: 2
 - id: commands.agents-render
@@ -297,6 +367,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/agents render
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -315,6 +389,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/hook git
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -332,17 +410,21 @@ features:
   - lib/polispec/commands/specs.rb
   - lib/polispec/code/**/*
   - lib/polispec/plugin_store.rb
-  - smoke/scenarios/code-specs.yml
+  - smoke/scenarios/code-code-hook-specs.yml
   spec:
     file: specs/app.yml
     at: commands/code, code-hook, specs
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
     - smoke
     - run
     - "--unit"
-    - code_specs
+    - commands/code, code-hook, specs
     - "--no-record"
     rung: 2
 - id: commands.version
@@ -357,6 +439,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/version
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -384,6 +470,7 @@ features:
   - smoke/scenarios/guard-failclosed.yml
   - smoke/scenarios/guard-shim.yml
   - smoke/scenarios/policy-memo.yml
+  - smoke/live/live-hook-pretool-session.yml
   spec:
     file: specs/app.yml
     at: commands/hook pretool|session
@@ -396,6 +483,29 @@ features:
     - commands/hook pretool|session
     - "--no-record"
     rung: 2
+    per_target:
+      claude-code:
+        run:
+        - bin/polispec
+        - smoke
+        - run
+        - "--unit"
+        - commands/hook pretool|session
+        - "--live"
+        - claude-code
+        - "--no-record"
+        rung: 3
+      codex:
+        run:
+        - bin/polispec
+        - smoke
+        - run
+        - "--unit"
+        - commands/hook pretool|session
+        - "--live"
+        - codex
+        - "--no-record"
+        rung: 3
 - id: commands.resolve
   summary: Smoke proof for the commands/resolve coverage unit of specs/app.yml.
   paths:
@@ -409,6 +519,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/resolve
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -427,6 +541,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/classify
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -441,17 +559,21 @@ features:
   paths:
   - lib/polispec/commands/explain.rb
   - lib/polispec/explain/**/*
-  - smoke/scenarios/resolve.yml
+  - smoke/scenarios/explain.yml
   spec:
     file: specs/app.yml
     at: commands/explain
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
     - smoke
     - run
     - "--unit"
-    - commands/resolve
+    - commands/explain
     - "--no-record"
     rung: 2
 - id: commands.promote-deploy
@@ -465,6 +587,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/promote, deploy
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -483,6 +609,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/pause, allow-once
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -505,6 +635,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/catalog
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -524,6 +658,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/roster resolve|check
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -546,6 +684,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/status, digest, doctor
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -565,6 +707,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/judgments
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -581,17 +727,21 @@ features:
   - lib/polispec/exceptions.rb
   - schemas/exceptions.v1.yml
   - schemas/waivers.v1.yml
-  - smoke/scenarios/editions.yml
+  - smoke/scenarios/exceptions.yml
   spec:
     file: specs/app.yml
     at: commands/exceptions
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
     - smoke
     - run
     - "--unit"
-    - commands/editions
+    - commands/exceptions
     - "--no-record"
     rung: 2
 - id: commands.harness
@@ -607,6 +757,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/harness
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -626,6 +780,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/seal
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -639,34 +797,42 @@ features:
   summary: Smoke proof for the commands/plane coverage unit of specs/app.yml.
   paths:
   - lib/polispec/commands/plane.rb
-  - smoke/scenarios/seal.yml
+  - smoke/scenarios/plane.yml
   spec:
     file: specs/app.yml
     at: commands/plane
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
     - smoke
     - run
     - "--unit"
-    - harness_controls
+    - commands/plane
     - "--no-record"
     rung: 2
 - id: commands.authorizations
   summary: Smoke proof for the commands/authorizations coverage unit of specs/app.yml.
   paths:
   - lib/polispec/commands/authorizations.rb
-  - smoke/scenarios/harness-controls.yml
+  - smoke/scenarios/authorizations.yml
   spec:
     file: specs/app.yml
     at: commands/authorizations
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
     - smoke
     - run
     - "--unit"
-    - harness_controls
+    - commands/authorizations
     - "--no-record"
     rung: 2
 - id: commands.judge
@@ -674,17 +840,21 @@ features:
   paths:
   - lib/polispec/commands/judge.rb
   - lib/polispec/judge.rb
-  - smoke/scenarios/hook-git.yml
+  - smoke/scenarios/judge.yml
   spec:
     file: specs/app.yml
     at: commands/judge
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
     - smoke
     - run
     - "--unit"
-    - commands/hook pretool|session
+    - commands/judge
     - "--no-record"
     rung: 2
 - id: commands.delegate
@@ -694,17 +864,21 @@ features:
   - lib/polispec/delegate.rb
   - lib/polispec/delegate/**/*
   - schemas/delegate_grants.v1.yml
-  - smoke/scenarios/editions.yml
+  - smoke/scenarios/delegate.yml
   spec:
     file: specs/app.yml
     at: commands/delegate
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
     - smoke
     - run
     - "--unit"
-    - commands/editions
+    - commands/delegate
     - "--no-record"
     rung: 2
 - id: commands.smoke
@@ -721,6 +895,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/smoke
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -742,6 +920,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/proof
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -763,6 +945,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/web
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -782,6 +968,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/manifest
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -801,6 +991,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/register
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -816,17 +1010,21 @@ features:
   - lib/polispec/commands/changes.rb
   - lib/polispec/changes.rb
   - schemas/change.v1.yml
-  - smoke/scenarios/effect.yml
+  - smoke/scenarios/changes.yml
   spec:
     file: specs/app.yml
     at: commands/changes
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
     - smoke
     - run
     - "--unit"
-    - effect
+    - commands/changes
     - "--no-record"
     rung: 2
 - id: commands.sessions
@@ -835,17 +1033,21 @@ features:
   - lib/polispec/commands/sessions.rb
   - lib/polispec/sessions.rb
   - schemas/session.v1.yml
-  - smoke/scenarios/smoke-suite.yml
+  - smoke/scenarios/sessions.yml
   spec:
     file: specs/app.yml
     at: commands/sessions
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
     - smoke
     - run
     - "--unit"
-    - smoke
+    - commands/sessions
     - "--no-record"
     rung: 2
 - id: commands.editions
@@ -859,6 +1061,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/editions
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -878,6 +1084,10 @@ features:
   spec:
     file: specs/app.yml
     at: commands/author
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -888,8 +1098,7 @@ features:
     - "--no-record"
     rung: 2
 - id: code-specs.commands.code-detect-chain-show-check-validate-baseline-controls-generate-classify
-  summary: Smoke proof for the code_specs/commands/code detect|chain|show|check|validate|baseline|controls|generate|classify
-    coverage unit of specs/app.yml.
+  summary: Smoke proof for the code_specs/commands/code detect|chain|show|check|validate|baseline|controls|generate|classify coverage unit of specs/app.yml.
   paths:
   - lib/polispec/commands/code.rb
   - lib/polispec/code/**/*
@@ -898,6 +1107,10 @@ features:
   spec:
     file: specs/app.yml
     at: code_specs/commands/code detect|chain|show|check|validate|baseline|controls|generate|classify
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -908,8 +1121,7 @@ features:
     - "--no-record"
     rung: 2
 - id: code-specs.commands.specs-link-status-promote
-  summary: Smoke proof for the code_specs/commands/specs link|status|promote coverage
-    unit of specs/app.yml.
+  summary: Smoke proof for the code_specs/commands/specs link|status|promote coverage unit of specs/app.yml.
   paths:
   - lib/polispec/commands/specs.rb
   - lib/polispec/code/**/*
@@ -918,6 +1130,10 @@ features:
   spec:
     file: specs/app.yml
     at: code_specs/commands/specs link|status|promote
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -928,13 +1144,13 @@ features:
     - "--no-record"
     rung: 2
 - id: code-specs.commands.code-hook-pre-post-stop-session
-  summary: Smoke proof for the code_specs/commands/code-hook pre|post|stop|session
-    coverage unit of specs/app.yml.
+  summary: Smoke proof for the code_specs/commands/code-hook pre|post|stop|session coverage unit of specs/app.yml.
   paths:
   - lib/polispec/commands/code_hook.rb
   - lib/polispec/code/**/*
   - lib/polispec/plugin_store.rb
   - smoke/scenarios/code-hook.yml
+  - smoke/live/live-code-hook.yml
   spec:
     file: specs/app.yml
     at: code_specs/commands/code-hook pre|post|stop|session
@@ -947,6 +1163,29 @@ features:
     - code_specs/commands/code-hook pre|post|stop|session
     - "--no-record"
     rung: 2
+    per_target:
+      claude-code:
+        run:
+        - bin/polispec
+        - smoke
+        - run
+        - "--unit"
+        - code_specs/commands/code-hook pre|post|stop|session
+        - "--live"
+        - claude-code
+        - "--no-record"
+        rung: 3
+      codex:
+        run:
+        - bin/polispec
+        - smoke
+        - run
+        - "--unit"
+        - code_specs/commands/code-hook pre|post|stop|session
+        - "--live"
+        - codex
+        - "--no-record"
+        rung: 3
 - id: code-specs
   summary: Smoke proof for the code_specs coverage unit of specs/app.yml.
   paths:
@@ -960,6 +1199,10 @@ features:
   spec:
     file: specs/app.yml
     at: code_specs
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -980,6 +1223,10 @@ features:
   spec:
     file: specs/app.yml
     at: composition
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -999,6 +1246,10 @@ features:
   spec:
     file: specs/app.yml
     at: catalog
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -1019,6 +1270,10 @@ features:
   spec:
     file: specs/app.yml
     at: stewardship
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -1037,6 +1292,10 @@ features:
   spec:
     file: specs/app.yml
     at: deployment_receipts
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -1062,6 +1321,7 @@ features:
   - smoke/scenarios/fastpath-reads.yml
   - smoke/scenarios/noise.yml
   - smoke/scenarios/source-follow.yml
+  - smoke/live/live-harness.yml
   spec:
     file: specs/app.yml
     at: harness_controls
@@ -1074,6 +1334,29 @@ features:
     - harness_controls
     - "--no-record"
     rung: 2
+    per_target:
+      claude-code:
+        run:
+        - bin/polispec
+        - smoke
+        - run
+        - "--unit"
+        - harness_controls
+        - "--live"
+        - claude-code
+        - "--no-record"
+        rung: 3
+      codex:
+        run:
+        - bin/polispec
+        - smoke
+        - run
+        - "--unit"
+        - harness_controls
+        - "--live"
+        - codex
+        - "--no-record"
+        rung: 3
 - id: protected-authorizations
   summary: Smoke proof for the protected_authorizations coverage unit of specs/app.yml.
   paths:
@@ -1085,6 +1368,10 @@ features:
   spec:
     file: specs/app.yml
     at: protected_authorizations
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -1105,6 +1392,10 @@ features:
   spec:
     file: specs/app.yml
     at: smoke
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -1123,6 +1414,10 @@ features:
   spec:
     file: specs/app.yml
     at: judgments
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -1142,6 +1437,10 @@ features:
   spec:
     file: specs/app.yml
     at: delete_guard
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -1160,6 +1459,10 @@ features:
   spec:
     file: specs/app.yml
     at: fs_walk
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -1177,6 +1480,10 @@ features:
   spec:
     file: specs/app.yml
     at: description
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -1198,6 +1505,10 @@ features:
   spec:
     file: specs/app.yml
     at: web
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -1216,6 +1527,10 @@ features:
   spec:
     file: specs/app.yml
     at: author
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -1234,6 +1549,10 @@ features:
   spec:
     file: specs/app.yml
     at: manifest
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -1252,6 +1571,10 @@ features:
   spec:
     file: specs/app.yml
     at: registration
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -1269,6 +1592,10 @@ features:
   spec:
     file: specs/app.yml
     at: effect
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -1287,6 +1614,10 @@ features:
   spec:
     file: specs/app.yml
     at: editions
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -1306,6 +1637,10 @@ features:
   spec:
     file: specs/app.yml
     at: contract
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -1324,6 +1659,10 @@ features:
   spec:
     file: specs/app.yml
     at: verbose
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec
@@ -1334,8 +1673,7 @@ features:
     - "--no-record"
     rung: 2
 - id: proof
-  summary: Smoke proof for signed per-feature proofs, the features_proven gate, proof
-    weakening and the proof.write guard rule.
+  summary: Smoke proof for signed per-feature proofs, the features_proven gate, proof weakening and the proof.write guard rule.
   paths:
   - lib/polispec/commands/proof.rb
   - lib/polispec/proof.rb
@@ -1354,6 +1692,10 @@ features:
   spec:
     file: specs/app.yml
     at: proof
+  targets:
+  - linux-x86-64-ruby3.3
+  - linux-x86-64-ruby4.0
+  - macos-arm64
   smoke:
     run:
     - bin/polispec

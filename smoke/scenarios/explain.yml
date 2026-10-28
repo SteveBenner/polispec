@@ -1,0 +1,83 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/explain
+summary: explain judges a hook payload or a TOOL INPUT call read-only, denies a push to stable with R-PROD-GIT, allows a dev read, warns on a policy edit with R-POLICY, carries the matched rules per layer in --json, refuses invalid input with exit 2 and writes no judgment row
+fixture:
+  global: example
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+      files:
+        "lib/app.rb": "puts 1\n"
+steps:
+  - name: a hook payload pushing to stable is denied with its rule
+    run: ["{{polispec}}", explain, --harness, claude]
+    cwd: "{{project.shop}}"
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"x1","cwd":"{{project.shop}}","tool_name":"Bash","tool_input":{"command":"git push origin main:stable"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["deny R-PROD-GIT "]
+  - name: the hook form as json carries verdict and rule_id
+    run: ["{{polispec}}", explain, --harness, claude, --json]
+    cwd: "{{project.shop}}"
+    stdin: '{"hook_event_name":"PreToolUse","session_id":"x1","cwd":"{{project.shop}}","tool_name":"Bash","tool_input":{"command":"git push origin main:stable"}}'
+    expect:
+      exit: 0
+      json: { verdict: deny, rule_id: R-PROD-GIT }
+  - name: a benign Bash call in dev is allowed
+    run: ["{{polispec}}", explain, Bash, "git status", --cwd, "{{project.shop}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["final verdict allow"]
+  - name: a policy file write warns with R-POLICY
+    run: ["{{polispec}}", explain, Write, "{{project.shop}}/specs/polispec/policy.yml", --cwd, "{{project.shop}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["final verdict warn R-POLICY"]
+  - name: the push to stable through the call form is denied
+    run: ["{{polispec}}", explain, Bash, "git push origin main:stable", --cwd, "{{project.shop}}", --json]
+    expect:
+      exit: 0
+      json: { tool: Bash, verdict: deny, rule_id: R-PROD-GIT }
+  - name: the json carries the matched rule per layer with its file, line and package
+    run: ["{{polispec}}", explain, Bash, "git push origin main:stable", --cwd, "{{project.shop}}", --json]
+    expect:
+      exit: 0
+      stdout_includes: ["\"targets\":[{\"project\":\"shop\",\"env\":\"prod\"", "\"matched\":[{\"rule_id\":\"R-PROD-GIT\",\"verdict\":\"deny\",\"layer\":\"repo\"", "specs/polispec/policy.yml", "\"package\":[{\"name\":\"environment-control\"", "\"in_effect\":true,\"winner\":true", "\"classified\":[{\"class\":\"git.push\""]
+  - name: explain wrote no judgment row
+    run: ["{{polispec}}", judgments, list]
+    expect:
+      exit: 0
+      files_absent: ["{{scratch}}/state/judgments.jsonl"]
+  - name: an invalid hook payload is refused with exit 2
+    run: ["{{polispec}}", explain, --harness, claude]
+    stdin: 'not json'
+    expect:
+      exit: 2
+  - name: an empty hook payload is refused
+    run: ["{{polispec}}", explain, --harness, claude]
+    stdin: ''
+    expect:
+      exit: 2
+  - name: an unknown harness prints the usage
+    run: ["{{polispec}}", explain, --harness, nope]
+    stdin: '{}'
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec explain --harness"]
+  - name: a non-directory cwd is refused
+    run: ["{{polispec}}", explain, Bash, "git status", --cwd, "{{scratch}}/nowhere"]
+    expect:
+      exit: 2
+  - name: a tool other than a path tool needs a json object
+    run: ["{{polispec}}", explain, Grep, "pattern"]
+    expect:
+      exit: 2
+      stderr_includes: ["takes its input as a JSON object"]
+  - name: a single argument prints the call usage
+    run: ["{{polispec}}", explain, Bash]
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec explain <tool> <input>"]
