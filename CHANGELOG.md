@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.51.2] - 2026-10-28
+
+### Fixed
+- **Live Codex sessions authenticate again.** Since f68b3c7 (2026-10-21), the fixture environment pointed `CODEX_HOME` at the scratch home, which has no `auth.json`. As a result, every `smoke run --live codex` session failed with `401 Unauthorized` before the model ran. Live Codex sessions now use the user's own `CODEX_HOME`, and `--ignore-user-config` still drops the user's config. Fixture steps keep the scratch home (`lib/polispec/smoke/live.rb`, `codex_env`). In a real session, Codex was then denied `git push origin main:stable` by `R-PROD-GIT` and its dev write was allowed.
+- **A harness that cannot authenticate is reported as blocked, not as a model that declined.** Auth failure was detected only when the hook log was empty. Codex's SessionStart hook fires before the model is reached, so the 401 runs were recorded as inconclusive, "the model did not attempt the forbidden action". Detection now looks only at tool calls, so these sessions are `blocked: auth_unavailable`, which `--strict` fails. The three codex proof cells that 0.51.1 recorded as failing were this case.
+
 ## [0.51.1] - 2026-10-28
 
 ### Added
