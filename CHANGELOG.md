@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.2] - 2026-10-28
+
+### Fixed
+- **`doctor`'s `harness_coverage` tells the user how Hermes actually grants hook consent.** It said to approve the hook with `hermes hooks`, which has only `list`, `test`, `revoke` and `doctor`; Hermes records consent at the first-use prompt of an interactive session (or with `--accept-hooks`, which approves every configured hook). The reason now says to start `hermes` at a terminal, approve the polispec-guard hooks at that prompt, and check with `hermes hooks list` (`lib/polispec/effect.rb`).
+
 ## [0.52.1] - 2026-10-28
 
 ### Fixed
