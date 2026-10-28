@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.2] - 2026-10-27
+
+### Fixed
+- **`polispec proof run --target T` works.** Since 0.49.0, `--target` was parsed as repeatable for `proof except`, so `run` passed a list where it expected one id and every `--target` refused `target_unmatched`, which made the harness-only targets unreachable. `run` now takes one `--target` and answers a second with its usage, exit 2 (`lib/polispec/commands/proof.rb`). The `proof` scenario now runs `--target`, an unknown target and a repeated one.
+
+### Changed
+- **A release no longer stales every polispec proof.** polispec's `specs/features.yml` listed `VERSION` in `shared`, so each version bump changed every feature's digest; it now sits in `ignore`, and a release re-proves only the features whose files changed (`commands.version` and the owner of `polispec.rplugin.yml` still change with each bump). The operator confirms this weakening change at `promote --to stable`.
+
 ## [0.50.1] - 2026-10-27
 
 ### Added

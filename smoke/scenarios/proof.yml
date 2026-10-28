@@ -148,6 +148,33 @@ steps:
     expect:
       exit: 0
       stdout_includes: [ok]
+  - name: run --target names the target and proves a again
+    run: ["{{polispec}}", proof, run, a, --target, scratch]
+    cwd: "{{project.rep}}"
+    env: { POLISPEC_PROOF_KEY: "{{scratch}}/proofkey", TMPDIR: "{{scratch}}" }
+    expect:
+      exit: 0
+      stdout_includes: ["a scratch pass rung 2"]
+  - name: run --target of an unknown target is refused by its name
+    run: ["{{polispec}}", proof, run, a, --target, nosuch]
+    cwd: "{{project.rep}}"
+    env: { POLISPEC_PROOF_KEY: "{{scratch}}/proofkey", TMPDIR: "{{scratch}}" }
+    expect:
+      exit: 1
+      stderr_includes: ["target_unmatched: no target nosuch in specs/features.yml"]
+  - name: run takes one --target only
+    run: ["{{polispec}}", proof, run, a, --target, scratch, --target, scratch]
+    cwd: "{{project.rep}}"
+    env: { POLISPEC_PROOF_KEY: "{{scratch}}/proofkey", TMPDIR: "{{scratch}}" }
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec proof run"]
+  - name: verify passes with both records of a
+    run: ["{{polispec}}", proof, verify]
+    cwd: "{{project.rep}}"
+    expect:
+      exit: 0
+      stdout_includes: [ok]
   - name: a commit touching lib/a.rb makes the proof of a stale
     run: [sh, -c, 'echo "puts :changed" >> lib/a.rb && git commit -q -am "touch a" && "$0" proof status --json', "{{polispec}}"]
     cwd: "{{project.rep}}"
