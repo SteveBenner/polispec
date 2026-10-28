@@ -1717,12 +1717,12 @@ shared:
 - lib/polispec/engine.rb
 - lib/polispec/ledger.rb
 - lib/polispec/chain.rb
-- VERSION
 - polispec.gemspec
 - bin/polispec
 - bin/polispec-guard
 ignore:
 - CHANGELOG.md
+- VERSION
 - FEATURES.md
 - TODO.md
 - NEXT.md

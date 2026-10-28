@@ -156,8 +156,10 @@ module Polispec
       root = toplevel
       adapter = Proof::Runner.adapter
       manifest = manifest_at(root, nil)
-      explicit = opts[:values]["--target"]
-      target = host_target(manifest, explicit)
+      targets = Array(opts[:values]["--target"])
+      return usage if targets.length > 1
+
+      target = host_target(manifest, targets.first)
       head_commit(root)
       selected = select_features(root, manifest, target, opts[:rest])
       ensure_clean(root, manifest, selected)
