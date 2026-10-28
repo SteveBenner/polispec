@@ -36,7 +36,7 @@ polispec is a versioned rulebook plus a guard that gives every agent tool call i
 | Recommend specs for a project or from history | `polispec-advise` |
 | Create, modify, delete, move a rule, module, roster, behavior or code spec | `polispec-specs` |
 | Put software or a directory outside a repository under polispec | `polispec-register` |
-| New project serving users | `polispec plan environment-control --repo R --variant service\|distributed`, then `apply` with the same arguments |
+| New project serving users | `polispec plan environment-control --repo R --variant service\|distributed\|library`, then `apply` with the same arguments |
 | Check a file | `polispec validate auto FILE`, then `polispec lint` and read its findings |
 | Watch an operation | add `--verbose` to promote, deploy, apply, pin, install, doctor or smoke |
 | Promote to test | `polispec promote PROJECT --to test` (tags; never push `test`) |
@@ -62,7 +62,7 @@ Authority per verb; subcommand detail in `docs/cli.md`.
 | --- | --- |
 | agent | `resolve` `status` `doctor` `explain` `classify` `digest` `judgments` `changes` `sessions` `editions` `deployments` `version` `validate` `lint` `plan` `behavior` `contract` (not `approve`) `code` `roster` `agents render` `smoke` `author` `ledger init` `manifest` `specs` `judge status\|stop` `promote --to test` `deploy test` `register` `unregister` (plan) `apply` (tightening, non-global) `settings list\|get` `catalog list\|show` `exceptions list` `harness grammar\|parse\|plan\|verify\|scan` and tightening `install` `plane status\|verify` `authorizations status` `delegate list\|status\|unit` |
 | agent + yes | `apply --confirm PLAN_ID` (loosening, mixed, global, status flip) `pin` `install` `uninstall --harness` `steward` `settings set\|unset` `contract approve` `register --confirm` |
-| operator | `promote --to stable` `deploy stable` `pause` `allow-once` `exceptions add\|promote\|remove` `catalog activate\|deactivate\|provision` `delegate grant\|revoke\|serve` `authorizations serve\|unit\|recover` `uninstall --all` `restore` `manifest index --publish` `harness uninstall` and loosening `web` `specs link` (repoint) |
+| operator | `promote --to stable` `deploy stable` `pause` `allow-once` `exceptions add\|promote\|remove` `judgments acknowledge` `catalog activate\|deactivate\|provision` `delegate grant\|revoke\|serve` `authorizations serve\|unit\|recover` `uninstall --all` `restore` `manifest index --publish` `harness uninstall` and loosening `web` `specs link` (repoint) |
 | sealed operator | `seal` `plane activate\|rollback` |
 | internal | `hook` `code-hook` `judge serve` |
 

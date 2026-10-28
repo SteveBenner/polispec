@@ -18,6 +18,9 @@ module Polispec
     HEADER_DEADLINE = 1.0
     PAYLOAD_DEADLINE = 3.0
     DEFAULT_IDLE = 1800
+    DEFAULT_POOL = 8
+    POOL_LIMIT = 32
+    CONNECTION_LIMIT = 64
     LOG_LIMIT = 1_048_576
     SHELF_FILE_CAP = 2000
     KEEP_MEMO = %i[ledger_load spec_policy prefetch_policies shipped_layer layers_fingerprint catalog_state catalog_modules catalog_delete_protected].freeze
@@ -59,6 +62,11 @@ module Polispec
     def idle_seconds
       value = ENV["POLISPEC_JUDGE_IDLE"].to_s.strip
       value.match?(/\A\d+\z/) && value.to_i.positive? ? value.to_i : DEFAULT_IDLE
+    end
+
+    def pool_size
+      value = ENV["POLISPEC_JUDGE_THREADS"].to_s.strip
+      value.match?(/\A\d+\z/) && value.to_i.between?(1, POOL_LIMIT) ? value.to_i : DEFAULT_POOL
     end
 
     class Freshness
@@ -239,6 +247,12 @@ module Polispec
         @token = SecureRandom.hex(16)
         @stopping = false
         @idle = Judge.idle_seconds
+        @gate = Mutex.new
+        @drained = ConditionVariable.new
+        @active = 0
+        @workers = []
+        @log_lock = Mutex.new
+        @pool = Judge.pool_size
       end
 
       def run
@@ -273,6 +287,7 @@ module Polispec
 
       def retire
         @listener.close if @listener && !@listener.closed?
+        Array(@workers).each { |worker| worker.join(HookCommand::HOOK_BUDGET + 1) }
         return unless @published
 
         state = Judge.read_state
@@ -284,11 +299,11 @@ module Polispec
       def serve
         deadline = clock + @idle
         until @stopping
-          reap
+          @workers.delete_if { |worker| !worker.alive? }
           remaining = deadline - clock
-          break if remaining <= 0
+          break if remaining <= 0 && @workers.empty?
 
-          ready = IO.select([@listener, @wake_r], nil, nil, [remaining, 5].min)
+          ready = IO.select([@listener, @wake_r], nil, nil, remaining <= 0 ? 0.2 : [remaining, 5].min)
           next unless ready
           break if ready[0].include?(@wake_r)
 
@@ -297,15 +312,28 @@ module Polispec
           rescue IO::WaitReadable, SystemCallError
             next
           end
-          handle(conn)
           deadline = clock + @idle
+          if @workers.length >= CONNECTION_LIMIT
+            decline(conn)
+          else
+            @workers << Thread.new(conn) { |socket| handle(socket) }
+          end
         end
       end
 
-      def reap
-        loop { break unless Process.wait(-1, Process::WNOHANG) }
-      rescue SystemCallError
-        nil
+      def decline(conn)
+        started = clock
+        reply(conn, "busy", "")
+        log("-", "-", nil, "busy", started, false, "judge")
+      ensure
+        conn.close unless conn.closed?
+      end
+
+      def stop!
+        @stopping = true
+        @wake_w.write_nonblock("x")
+      rescue IO::WaitWritable, SystemCallError, IOError => error
+        Trace.info("judge wake failed", error: error.class.name) if Trace.on?
       end
 
       def clock
@@ -316,7 +344,7 @@ module Polispec
         started = clock
         return unless loopback?(conn)
 
-        line = read_header(conn)
+        line, carry = read_header(conn)
         return reply(conn, "error", "") unless line
 
         match = HEADER.match(line)
@@ -331,10 +359,10 @@ module Polispec
 
         if File.expand_path(runtime) != recorded_runtime
           reply(conn, "stale", "")
-          @stopping = true
+          stop!
           return
         end
-        payload = read_payload(conn, bytes)
+        payload = read_payload(conn, bytes, carry)
         return reply(conn, "error", "") unless payload
 
         status, body, changed = judge(mode, harness, payload, caller_pid(caller_text))
@@ -375,8 +403,8 @@ module Polispec
             return nil if index > HEADER_LIMIT
 
             line = buffer[0...index].dup.force_encoding(Encoding::UTF_8)
-            @carry = buffer[(index + 1)..] || "".b
-            return line.valid_encoding? ? line : nil
+            carry = buffer[(index + 1)..] || "".b
+            return line.valid_encoding? ? [line, carry] : nil
           end
 
           wait = stop - clock
@@ -392,9 +420,8 @@ module Polispec
         nil
       end
 
-      def read_payload(conn, bytes)
-        buffer = (@carry || "".b).dup
-        @carry = nil
+      def read_payload(conn, bytes, carry)
+        buffer = (carry || "".b).dup
         stop = clock + PAYLOAD_DEADLINE
         return nil if buffer.bytesize > bytes
         while buffer.bytesize < bytes
@@ -412,15 +439,44 @@ module Polispec
       end
 
       def judge(mode, harness, payload, caller_pid)
-        changed = refresh
-        Thread.current[HookMemo::SLOT] = @memo
-        Thread.current[Predicates::CALLER] = caller_pid
-        status, body = HookCommand.new.judge_request(mode, harness, payload)
-        [status, body, changed]
-      ensure
-        prune
-        Thread.current[HookMemo::SLOT] = nil
-        Thread.current[Predicates::CALLER] = nil
+        changed = enter
+        begin
+          Thread.current[HookMemo::SLOT] = @memo
+          Thread.current[Predicates::CALLER] = caller_pid
+          status, body = HookCommand.new.judge_request(mode, harness, payload)
+          [status, body, changed]
+        ensure
+          leave
+          Thread.current[HookMemo::SLOT] = nil
+          Thread.current[Predicates::CALLER] = nil
+        end
+      end
+
+      def enter
+        changed = false
+        @gate.synchronize do
+          @drained.wait(@gate) while @active >= @pool
+          Thread.current[HookMemo::SLOT] = nil
+          key = @freshness.key
+          @drained.wait(@gate) while key != @key && @active.positive?
+          if key != @key
+            changed = !@key.nil?
+            @key = key
+            @memo = {}
+            Layers.reset!
+            Exceptions.reset!
+          end
+          @active += 1
+        end
+        changed
+      end
+
+      def leave
+        @gate.synchronize do
+          @active -= 1
+          prune if @active.zero?
+          @drained.broadcast
+        end
       end
 
       def caller_pid(text)
@@ -430,19 +486,6 @@ module Polispec
         pid
       rescue SystemCallError
         nil
-      end
-
-      def refresh
-        Thread.current[HookMemo::SLOT] = nil
-        key = @freshness.key
-        return false if key == @key
-
-        first = @key.nil?
-        @key = key
-        @memo = {}
-        Layers.reset!
-        Exceptions.reset!
-        !first
       end
 
       def prune
@@ -459,8 +502,10 @@ module Polispec
         tool = payload && payload[/"tool_name"\s*:\s*"([^"]*)"/, 1]
         record = { "ts" => Time.now.utc.iso8601, "mode" => mode, "harness" => harness, "tool" => tool, "status" => status, "duration_ms" => ((clock - started) * 1000).round(2), "key_changed" => changed, "via" => via }
         path = Judge.log_path
-        File.rename(path, "#{path}.1") if File.file?(path) && File.size(path) > LOG_LIMIT
-        File.open(path, File::WRONLY | File::APPEND | File::CREAT, 0o600) { |file| file.write("#{JSON.generate(record)}\n") }
+        @log_lock.synchronize do
+          File.rename(path, "#{path}.1") if File.file?(path) && File.size(path) > LOG_LIMIT
+          File.open(path, File::WRONLY | File::APPEND | File::CREAT, 0o600) { |file| file.write("#{JSON.generate(record)}\n") }
+        end
       rescue StandardError
         nil
       end

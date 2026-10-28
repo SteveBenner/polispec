@@ -1,0 +1,5 @@
+schema: polispec.catalog/v1
+name: harness
+summary: Warns on agent writes and deletes of the files a harness loads its hooks, skills and agents from, because such a write changes what runs around the guard.
+subspecs:
+  - { id: hook-files, summary: "Warns on an agent write or delete of a Claude Code, Codex, Hermes or Antigravity hook, skill or agent definition file.", module: hook-files.yml }

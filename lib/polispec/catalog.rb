@@ -9,7 +9,7 @@ require_relative "hook_memo"
 
 module Polispec
   module Catalog
-    ORDER = %w[tools delete-guard mcp].freeze
+    ORDER = %w[tools delete-guard mcp harness].freeze
     DIR = File.join(Polispec::ROOT, "catalog").freeze
     STATE_SCHEMA = "polispec.catalog-state/v1".freeze
     STATE_FILE = "active.yml".freeze

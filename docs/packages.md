@@ -92,7 +92,7 @@ The step vocabulary is fixed: `files`, `manifest`, `ledger`, `render`, `commit`,
 
 ## The environment-control package
 
-`environment-control` is the former `onboard`, step for step, with variants `service` and `distributed` and parameters `serves`, `id`, `trust_ref` and `envs_root`:
+`environment-control` is the former `onboard`, step for step, with variants `service`, `distributed` and, since 1.3.0, `library` (no running instance; a no-op deploy moves the checkouts to the tag) and parameters `serves`, `id`, `trust_ref` and `envs_root`:
 
 ```sh
 polispec plan  environment-control --repo ~/src/shop --variant service

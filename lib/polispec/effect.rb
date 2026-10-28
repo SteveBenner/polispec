@@ -236,6 +236,73 @@ module Polispec
       []
     end
 
+    def coverage_findings(existing)
+      HarnessCoverage.findings(existing)
+    rescue StandardError => error
+      [{ "project" => nil, "kind" => "harness_coverage", "severity" => "info", "detail" => "coverage check failed: #{error.class}: #{error.message}" }]
+    end
+
+    module HarnessCoverage
+      HOMES = { "claude" => ".claude", "codex" => ".codex", "hermes" => ".hermes", "antigravity" => File.join(".gemini", "config") }.freeze
+      GUARD = "polispec-guard".freeze
+      FILE_LIMIT = 1_048_576
+
+      module_function
+
+      def findings(existing)
+        return [] if State.redirected
+
+        home = Dir.home
+        installed = HOMES.select { |_, dir| File.directory?(File.join(home, dir)) }.keys
+        return [] if installed.empty?
+
+        judged = judged_harnesses
+        covered = installed & judged
+        uncovered = installed - judged
+        days = Judgments::WINDOW_SECONDS / 86_400
+        return [] if uncovered.empty?
+
+        reasons = uncovered.map { |name| "#{name}: #{reason_for(name, existing, home)}" }
+        [{ "project" => nil, "kind" => "harness_coverage", "severity" => "warn",
+           "detail" => "the guard judged calls from #{covered.empty? ? 'no harness' : covered.join(', ')} in the last #{days} days; installed for this user but unguarded: #{reasons.join('; ')}" }]
+      end
+
+      def judged_harnesses
+        found = {}
+        Judgments.each_recent do |entry|
+          name = entry.is_a?(Hash) && entry["action"].is_a?(Hash) ? entry["action"]["harness"] : nil
+          found[name] = true if name.is_a?(String) && !name.empty?
+        end
+        found.keys
+      end
+
+      def reason_for(name, existing, home)
+        case name
+        when "codex"
+          kinds = existing.select { |item| item["kind"].to_s.start_with?("codex_") }.map { |item| item["kind"] }.tally
+          kinds.empty? ? "its hooks reach polispec and are trusted, but no call was judged" : kinds.map { |kind, count| "#{kind} x#{count}" }.join(", ")
+        when "hermes"
+          config = File.join(home, ".hermes", "config.yaml")
+          allowlist = File.join(home, ".hermes", "shell-hooks-allowlist.json")
+          return "no hook in #{config} reaches polispec" unless mentions?(config)
+
+          mentions?(allowlist) ? "wired and allowlisted, but no call was judged" : "wired in #{config} but absent from #{allowlist}; approve it with `hermes hooks` and start a new Hermes session"
+        when "antigravity"
+          hooks = File.join(home, ".gemini", "config", "hooks.json")
+          mentions?(hooks) ? "wired in #{hooks}, but no call was judged" : "no hook in #{hooks} reaches polispec; Antigravity loads no plugin hooks.json, so the guard must be wired there or in a workspace .agents/hooks.json"
+        else
+          "no call was judged"
+        end
+      end
+
+      def mentions?(path)
+        File.file?(path) && File.size(path) <= FILE_LIMIT && File.binread(path).include?(GUARD)
+      rescue SystemCallError => error
+        Trace.info("coverage file unreadable", path: path, error: error.class.name) if Trace.on?
+        false
+      end
+    end
+
     module CodexWiring
       EVENTS = %w[PreToolUse SessionStart].freeze
       READ_LIMIT = 1_048_576

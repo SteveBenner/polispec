@@ -707,7 +707,7 @@ polispec resolve .                                                     # which p
 
 Applying the `environment-control` package does the setup in one pass:
 
-- It scaffolds `specs/polispec/environments.yml`, `policy.yml`, and `roster.yml` from a template (`--variant service` for a hosted service, `distributed` for software users install).
+- It scaffolds `specs/polispec/environments.yml`, `policy.yml`, and `roster.yml` from a template (`--variant service` for a hosted service, `distributed` for software users install, `library` for a library or tool with no running instance).
 - It points the component manifest at them.
 - It adds a ledger entry with status `onboarding`, records the package and the files it wrote, and renders the `[ENVS]` row. On a host with no ledger yet, it first creates a starter ledger at `~/.config/polispec/ledger.yml` (no projects, default rules only), and the plan shows that as a tightening change.
 
@@ -747,8 +747,8 @@ The ledger is the list of projects polispec governs on this host. `polispec inst
 | `polispec code …` / `polispec specs …` | Code specs: detect, chain, check, baseline, controls; link and promote the specs repository |
 | `polispec harness …` / `seal` / `plane` / `authorizations` | Harness controls and the sealed authority plane |
 | `polispec smoke record\|list\|show\|verify\|coverage\|run` | The smoke ledger and the bundled suite |
-| `polispec judge serve\|status\|stop` | The resident judge that answers the guard hook from memory over 127.0.0.1 with a cold fallback; `POLISPEC_JUDGE=off` skips it, `POLISPEC_JUDGE_BUDGET` (seconds, default 0.5) bounds the launcher's first wait, `POLISPEC_JUDGE_WAIT` (whole seconds, 0 to 8, default 6) how long it keeps waiting for a judge that accepted the request, `POLISPEC_JUDGE_IDLE` (seconds, default 1800) ends an idle judge ([operator guide](docs/operator.md#the-resident-judge)) |
-| `polispec judgments list\|show\|verify` | The chained record of every judged call, and a count of the calls the fast path skipped |
+| `polispec judge serve\|status\|stop` | The resident judge that answers the guard hook from memory over 127.0.0.1 with a cold fallback; `POLISPEC_JUDGE=off` skips it, `POLISPEC_JUDGE_BUDGET` (seconds, default 0.5) bounds the launcher's first wait, `POLISPEC_JUDGE_WAIT` (whole seconds, 0 to 8, default one below the deadline, 7) how long it keeps waiting for a judge that accepted the request, `POLISPEC_JUDGE_THREADS` (1 to 32, default 8) how many requests the judge serves at once, `POLISPEC_JUDGE_IDLE` (seconds, default 1800) ends an idle judge ([operator guide](docs/operator.md#the-resident-judge)) |
+| `polispec judgments list\|show\|verify\|acknowledge` | The chained record of every judged call, and a count of the calls the fast path skipped; `acknowledge <id>` (operator, typed phrase) records an examined chain break so `doctor` lists it as info |
 | `polispec web [--bind ADDR] [--port N] [--read-only] [--open]` / `web url` / `web token set` / `web unit` | Serve the local web app, print a fresh one-time link, store the delegate token, or print a systemd user unit ([web app](docs/web.md)) |
 | `polispec author draft <kind> --intent TEXT` / `author adapters` | Draft a rulebook with an AI session that can only read; it writes nothing |
 | `polispec register <path>` / `unregister <id>` | Govern software, a directory, or the system scope that is not a git repository, through a ledger plan |
