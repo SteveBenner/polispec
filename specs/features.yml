@@ -154,6 +154,7 @@ features:
   paths:
   - lib/polispec/commands/steward.rb
   - lib/polispec/stewardship.rb
+  - lib/polispec/plugin_store.rb
   - rules/**/*
   - smoke/scenarios/steward.yml
   spec:
@@ -330,6 +331,7 @@ features:
   - lib/polispec/commands/code_hook.rb
   - lib/polispec/commands/specs.rb
   - lib/polispec/code/**/*
+  - lib/polispec/plugin_store.rb
   - smoke/scenarios/code-specs.yml
   spec:
     file: specs/app.yml
@@ -537,6 +539,7 @@ features:
   - lib/polispec/commands/status.rb
   - lib/polispec/commands/digest.rb
   - lib/polispec/commands/doctor.rb
+  - lib/polispec/plugin_store.rb
   - lib/polispec/guard_health.rb
   - smoke/scenarios/gate-unreachable.yml
   - smoke/scenarios/status-digest-doctor.yml
@@ -890,6 +893,7 @@ features:
   paths:
   - lib/polispec/commands/code.rb
   - lib/polispec/code/**/*
+  - lib/polispec/plugin_store.rb
   - smoke/scenarios/code-commands.yml
   spec:
     file: specs/app.yml
@@ -909,6 +913,7 @@ features:
   paths:
   - lib/polispec/commands/specs.rb
   - lib/polispec/code/**/*
+  - lib/polispec/plugin_store.rb
   - smoke/scenarios/specs-commands.yml
   spec:
     file: specs/app.yml
@@ -928,6 +933,7 @@ features:
   paths:
   - lib/polispec/commands/code_hook.rb
   - lib/polispec/code/**/*
+  - lib/polispec/plugin_store.rb
   - smoke/scenarios/code-hook.yml
   spec:
     file: specs/app.yml
@@ -948,6 +954,7 @@ features:
   - lib/polispec/commands/code_hook.rb
   - lib/polispec/commands/specs.rb
   - lib/polispec/code/**/*
+  - lib/polispec/plugin_store.rb
   - skills/polispec-specs/**/*
   - smoke/scenarios/code-specs.yml
   spec:
@@ -1005,6 +1012,7 @@ features:
   summary: Smoke proof for the stewardship coverage unit of specs/app.yml.
   paths:
   - lib/polispec/stewardship.rb
+  - lib/polispec/plugin_store.rb
   - lib/polispec/runtime.rb
   - rules/**/*
   - smoke/scenarios/stewardship.yml
