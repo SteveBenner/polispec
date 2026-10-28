@@ -172,6 +172,9 @@ $defs:
       pin_regress: { type: boolean }
       tag_claimed: { type: boolean }
       base_unpushed: { type: boolean }
+      public_remote: { type: boolean }
+      public_path: { type: boolean }
+      push_unscanned: { type: boolean }
       in_development: { type: boolean }
       ref: { type: string, minLength: 1 }
   rule:

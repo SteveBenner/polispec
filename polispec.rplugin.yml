@@ -1,7 +1,7 @@
 schema: rplugin/v1
 id: polispec
 name: Polispec
-version: 0.52.3
+version: 0.53.0
 rplugin: ">= 1.17.0"
 native: true
 description: "Spec-based policy guardrails for agentic development and operations: committed environment policies and deterministic harness controls, with explicit backend capabilities and enforcement limits."
@@ -34,6 +34,8 @@ settings:
   - { key: polispec.global.path, type: string, default: polispec, scopes: [machine], description: "Directory inside polispec.global.repo that holds global.yml, profiles.yml and modules/." }
   - { key: polispec.operator, type: string, default: "the operator", scopes: [machine], description: "How deny and next-step messages name the person who promotes to stable and redeems allow-once." }
   - { key: polispec.supervisor.status_command, type: string, default: "", scopes: [machine], description: "Command (argv, no shell) that prints JSON {\"units\": [...], \"pids\": [...]} for the components a supervisor runs. Rules with match.supervised read it; unset means the predicate is unavailable. RPLUGIN_POLISPEC_POLISPEC_SUPERVISOR_STATUS_COMMAND overrides it." }
+  - { key: polispec.exposure.audit_command, type: string, default: "", scopes: [machine], description: "Command (argv, no shell) that polispec exposure scan runs in the repository to audit the commits a push would publish to a public remote. It receives POLISPEC_EXPOSURE_REPO, POLISPEC_EXPOSURE_FROM, POLISPEC_EXPOSURE_TO and POLISPEC_EXPOSURE_REMOTE; exit 0 is clean and records an attestation. Unset means the verb refuses. RPLUGIN_POLISPEC_POLISPEC_EXPOSURE_AUDIT_COMMAND overrides it." }
+  - { key: polispec.exposure.visibility_file, type: path, default: "~/.config/release-gate/visibility.yml", scopes: [machine], description: "YAML file whose public_remotes and private_remotes lists hold case-insensitive globs over a normalized remote (host/owner/repo). A public match wins, then a private one; a github.com remote in neither list is asked of gh. RPLUGIN_POLISPEC_POLISPEC_EXPOSURE_VISIBILITY_FILE overrides it." }
   - { key: polispec.code.specs_repo, type: path, default: "~/polispec-specs", scopes: [machine], description: "Path of the repository that holds the code specs. POLISPEC_SPECS_REPO overrides it only while unsealed." }
   - { key: polispec.logs.count_command, type: string, default: "", scopes: [machine], description: "Argv template (no shell) the logs_quiet gate runs to count log lines. It takes {service}, {since} and {until} (UTC ISO 8601) and prints one integer. RPLUGIN_POLISPEC_POLISPEC_LOGS_COUNT_COMMAND overrides it. Unset fails the gate closed." }
   - { key: polispec.records.raw, type: enum, options: ["off", "on"], default: "off", scopes: [machine], description: "on adds the classifier's raw view of the judged command or target (at most 2048 bytes) to each judgment record in local state; off keeps only the call digest. Raw text never goes through the events port." }

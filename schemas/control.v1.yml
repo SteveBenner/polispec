@@ -43,6 +43,9 @@ $defs:
       pin_regress: { type: boolean }
       tag_claimed: { type: boolean }
       base_unpushed: { type: boolean }
+      public_remote: { type: boolean }
+      public_path: { type: boolean }
+      push_unscanned: { type: boolean }
       ref: { type: string, minLength: 1 }
       path: { type: string, minLength: 1 }
       tool: { type: string, minLength: 1 }

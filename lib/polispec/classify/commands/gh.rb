@@ -107,7 +107,7 @@ module Polispec
           when %r{/pulls/\d+/merge}, %r{/merges\z}
             [Support.act("git.merge", cmd.text, base)]
           when %r{/contents/}
-            [Support.act("git.commit", cmd.text, base.merge(Support.hint("ref" => Support.option_value(cmd.args, "-f", "-F", "--field", "--raw-field").to_s[/\Abranch=(.+)/, 1])))]
+            [Support.act("git.commit", cmd.text, base.merge(Support.hint("contents" => true, "ref" => Support.option_value(cmd.args, "-f", "-F", "--field", "--raw-field").to_s[/\Abranch=(.+)/, 1])))]
           else
             []
           end

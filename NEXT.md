@@ -2,7 +2,7 @@
 
 Recovered on 2026-10-13 from `.specstory/history/2026-10-13_06-21-20-0700-audit-polispec-see-if.md` and the four answered interview exchanges in `DECISIONS.md`. The latest session stopped during design. Its subsequent request to save this handoff did not run. No harness-control implementation, implementation blueprint, or release change from that session was present when continuation began. The starting tree was clean at `5b2b6af`, version `0.17.1`.
 
-The implementation contract is [specs/harness-controls.impl.yml](specs/harness-controls.impl.yml). This file preserves the recovered design record; current work is tracked in `.rproject/WIP.md`. The implementation and review repairs are complete. The operator directed publication with both feature flags disabled and required independent standard and lock operation. No host seal, protected service, controls, or live project is activated by publication.
+The implementation contract is kept outside this repository. This file preserves the recovered design record; current work is tracked in `.rproject/WIP.md`. The implementation and review repairs are complete. The operator directed publication with both feature flags disabled and required independent standard and lock operation. No host seal, protected service, controls, or live project is activated by publication.
 
 ## Recovered questions and decisions
 

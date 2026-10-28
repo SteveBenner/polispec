@@ -33,6 +33,7 @@ Read-only means no file, ledger, shelf or state write. `--json` is accepted wher
 | `sessions list` | Recent sessions and the policy each started under | agent | reads |
 | `editions [--check]` | What the standard and lock editions allow | agent | reads |
 | `deployments [--scan]` | Where polispec is installed | agent | reads; `--scan` backfills the manifest |
+| `exposure scan [REPO] [--remote R] [--ref REF]` | Audit a branch before a push to a public remote and record an attestation | agent | runs `polispec.exposure.audit_command`; writes an attestation under the state home |
 | `settings list\|get` | Effective settings and their source | agent | reads |
 | `version` | Installed version | agent | reads |
 

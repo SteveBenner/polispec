@@ -217,6 +217,7 @@ module Polispec
           classes << "git.rewrite" if (force || spec.force) && !spec.tag
           classes << "git.branch" if (delete || spec.delete) && !spec.tag
           extra[:delete] = true if (delete || spec.delete) && spec.tag
+          extra[:deleting] = true if (delete || spec.delete) && !spec.tag
           classes.map { |klass| Support.act(klass, inv.cmd.text, base(inv).merge(Support.hint(extra))) }
         end
 

@@ -117,6 +117,9 @@ $defs:
       pin_regress: { const: true }
       tag_claimed: { const: true }
       base_unpushed: { const: true }
+      public_remote: { const: true }
+      public_path: { const: true }
+      push_unscanned: { const: true }
       in_development: { const: true }
   rule:
     type: object
