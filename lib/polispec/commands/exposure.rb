@@ -7,10 +7,10 @@ require_relative "../predicates"
 
 module Polispec
   class ExposureCommand
-    USAGE = "usage: polispec exposure scan [<repo-dir>] [--remote R] [--ref REF] [--json]"
+    USAGE = "usage: polispec exposure scan [<repo-dir>] [--remote R] [--ref REF] [--source SRC] [--json]"
     AUDIT_TIMEOUT = 600
     KILL_GRACE = 5
-    VALUE_FLAGS = %w[--remote --ref].freeze
+    VALUE_FLAGS = %w[--remote --ref --source].freeze
 
     def self.run(args)
       new.run(args)
@@ -39,7 +39,7 @@ module Polispec
     end
 
     def parse(args)
-      options = { repo: nil, remote: nil, ref: nil }
+      options = { repo: nil, remote: nil, ref: nil, source: nil }
       until args.empty?
         arg = args.shift
         flag, inline = arg.split("=", 2)
@@ -73,8 +73,9 @@ module Polispec
       ref = options[:ref] || Visibility.branch_of(repo)
       return fail_with("no branch is checked out; pass --ref", "error") if ref.to_s.empty?
 
-      to = Predicates.git_ok(repo, "rev-parse", "-q", "--verify", "refs/heads/#{ref}^{commit}") || Predicates.git_ok(repo, "rev-parse", "-q", "--verify", "#{ref}^{commit}")
-      return fail_with("#{ref} does not name a commit in #{repo}", "error") unless to
+      local = options[:source] || ref
+      to = Predicates.git_ok(repo, "rev-parse", "-q", "--verify", "refs/heads/#{local}^{commit}") || Predicates.git_ok(repo, "rev-parse", "-q", "--verify", "#{local}^{commit}")
+      return fail_with("#{local} does not name a commit in #{repo}", "error") unless to
 
       from = tracking_tip(repo, options[:remote], ref) || Exposure.empty_tree(repo)
       run_audit(repo, url, remote_key, ref, from, to, argv)
@@ -159,4 +160,4 @@ module Polispec
   end
 end
 
-Polispec::CLI.register("exposure", Polispec::ExposureCommand, summary: "scan a branch before it is pushed to a public remote; exposure scan [<repo-dir>] [--remote R] [--ref REF] [--json]")
+Polispec::CLI.register("exposure", Polispec::ExposureCommand, summary: "scan a branch before it is pushed to a public remote; exposure scan [<repo-dir>] [--remote R] [--ref REF] [--source SRC] [--json]")

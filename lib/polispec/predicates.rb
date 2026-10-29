@@ -610,10 +610,11 @@ module Polispec
       yes("a contents API write to a public repository bypasses the exposure scan; commit locally and push after #{scan_hint(data['path'], nil, data['ref'])}")
     end
 
-    def scan_hint(repo, remote, ref)
+    def scan_hint(repo, remote, ref, source = nil)
       parts = ["polispec exposure scan #{repo}"]
       parts << "--remote #{remote}" unless remote.to_s.empty?
       parts << "--ref #{ref}" unless ref.to_s.empty?
+      parts << "--source #{source}" unless source.to_s.empty?
       parts.join(" ")
     end
 
@@ -636,7 +637,7 @@ module Polispec
       if data["tag"] || tag_only?(dir, ref)
         unscanned_tag(dir, repo_key, ref, name)
       else
-        unscanned_branch(dir, repo_key, Visibility.normalize(url), name, ref)
+        unscanned_branch(dir, repo_key, Visibility.normalize(url), name, ref, data["source"])
       end
     end
 
@@ -656,8 +657,8 @@ module Polispec
       yes("tag #{tag} (#{commit[0, 9]}) has no exposure scan for this repository; run #{scan_hint(dir, name, tag)}")
     end
 
-    def unscanned_branch(dir, repo_key, remote_key, name, ref)
-      local = git_ok(dir, "rev-parse", "-q", "--verify", "refs/heads/#{ref}^{commit}") || git_ok(dir, "rev-parse", "-q", "--verify", "HEAD^{commit}")
+    def unscanned_branch(dir, repo_key, remote_key, name, ref, source = nil)
+      local = source ? push_source_commit(dir, source) : git_ok(dir, "rev-parse", "-q", "--verify", "refs/heads/#{ref}^{commit}") || git_ok(dir, "rev-parse", "-q", "--verify", "HEAD^{commit}")
       return no unless local
 
       tip = Visibility.url_like?(name) ? nil : git_ok(dir, "rev-parse", "-q", "--verify", "refs/remotes/#{name}/#{ref}^{commit}")
@@ -666,7 +667,12 @@ module Polispec
       from = tip || Exposure.empty_tree(dir)
       return no if Exposure.covers_branch?(repo_key, remote_key, ref, from, local)
 
-      yes("#{ref} at #{local[0, 9]} has no exposure scan against #{tip ? tip[0, 9] : 'an empty remote'}; run #{scan_hint(dir, name, ref)}")
+      pushed = source ? "#{source} pushed to #{ref}" : ref
+      yes("#{pushed} at #{local[0, 9]} has no exposure scan against #{tip ? tip[0, 9] : 'an empty remote'}; run #{scan_hint(dir, name, ref, source)}")
+    end
+
+    def push_source_commit(dir, source)
+      git_ok(dir, "rev-parse", "-q", "--verify", "refs/heads/#{source}^{commit}") || git_ok(dir, "rev-parse", "-q", "--verify", "#{source}^{commit}")
     end
   end
 end
