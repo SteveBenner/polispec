@@ -90,6 +90,20 @@ steps:
       exit: 0
       stdout_includes: ["3 records in 1 file; chain ok", "skips: 1 across 1 fast-path key"]
     parity: ignore
+  - name: doctor checkpoints the verified chain
+    run: [sh, -c, '"$0" doctor > /dev/null; grep -q "\"count\":3," "$1/judgments.verified.json"', "{{polispec}}", "{{scratch}}/state"]
+    expect:
+      exit: 0
+  - name: an in-place edit inside the checkpointed records is still found by doctor
+    run: [sh, -c, 'ruby -e "f = File.open(ARGV[0], %q(r+b)); i = f.read.index(%q(\"rendered\":\"deny\")); f.seek(i); f.write(%q(\"rendered\":\"none\")); f.close" "$1" && "$0" doctor', "{{polispec}}", "{{scratch}}/state/judgments.jsonl"]
+    expect:
+      exit: 1
+      stdout_includes: ["judgments_chain_broken", "digest_mismatch"]
+  - name: restoring the bytes clears the finding
+    run: [sh, -c, 'ruby -e "f = File.open(ARGV[0], %q(r+b)); i = f.read.index(%q(\"rendered\":\"none\")); f.seek(i); f.write(%q(\"rendered\":\"deny\")); f.close" "$1" && "$0" doctor', "{{polispec}}", "{{scratch}}/state/judgments.jsonl"]
+    expect:
+      exit: [0, 1]
+      stdout_excludes: ["judgments_chain_broken"]
   - name: a tampered record fails verify and doctor reports the chain
     run: [sh, -c, 'sed -i "1s/\"rendered\":\"deny\"/\"rendered\":\"none\"/" "$1" && "$2" judgments verify; code=$?; "$2" doctor | grep -q judgments_chain_broken && test "$code" -eq 1', sh, "{{scratch}}/state/judgments.jsonl", "{{polispec}}"]
     expect:

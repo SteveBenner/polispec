@@ -108,7 +108,7 @@ module Polispec
     def run_verify(opts)
       return usage unless opts[:rest].empty?
 
-      result = Judgments.verify
+      result = Judgments.verify(full: true)
       if opts[:json]
         puts JSON.generate(result)
       else
