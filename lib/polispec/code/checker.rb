@@ -15,9 +15,9 @@ module Polispec
       end
     end
 
-    Verdict = Struct.new(:file, :language, :chain_digest, :findings, :blocked, :errors, :deferred, :notes, :duration_ms, keyword_init: true) do
+    Verdict = Struct.new(:file, :language, :chain_digest, :findings, :blocked, :errors, :indeterminate, :deferred, :notes, :duration_ms, keyword_init: true) do
       def to_h
-        { "file" => file, "language" => language, "chain_digest" => chain_digest, "findings" => findings.map(&:to_h), "blocked" => blocked }
+        { "file" => file, "language" => language, "chain_digest" => chain_digest, "findings" => findings.map(&:to_h), "blocked" => blocked, "indeterminate" => indeterminate }
       end
     end
 
@@ -60,7 +60,7 @@ module Polispec
         blocked = Settings.tiered? && findings.any?(&:blocking?)
         verdict = Verdict.new(
           file: path, language: language, chain_digest: chain.digest, findings: findings, blocked: blocked,
-          errors: result.errors, deferred: deferred, notes: notes, duration_ms: Code.elapsed_ms(started)
+          errors: result.errors, indeterminate: result.indeterminate, deferred: deferred, notes: notes, duration_ms: Code.elapsed_ms(started)
         )
         report(verdict) if emit
         verdict
@@ -149,6 +149,9 @@ module Polispec
         )
         verdict.errors.each do |error|
           Telemetry.emit("polispec.code.finding", kind: "enforcer_error", policy: error["policy"], enforcer: error["enforcer"], detail: error["message"], file: verdict.file)
+        end
+        verdict.indeterminate.each do |entry|
+          Telemetry.emit("polispec.code.finding", kind: "enforcer_indeterminate", policy: entry["policy"], enforcer: entry["enforcer"], detail: entry["message"], file: verdict.file)
         end
       end
     end

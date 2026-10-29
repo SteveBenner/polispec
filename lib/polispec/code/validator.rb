@@ -77,6 +77,7 @@ module Polispec
           next unless rule.lifecycle == "active"
 
           klass = rule.klass
+          add("2", rule.spec, rule.id, "on_indeterminate applies only to script enforcers") if rule.enforcer && rule.enforcer.key?("on_indeterminate") && rule.enforcer["kind"] != "script"
           if %w[harness hybrid].include?(klass)
             add("2", rule.spec, rule.id, "active #{klass} rule requires execution.enforcer") unless rule.enforcer
             add("2", rule.spec, rule.id, "active #{klass} rule requires control") unless rule.control

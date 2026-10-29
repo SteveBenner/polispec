@@ -61,6 +61,10 @@ Waivers are read from `specs/polispec/code-waivers.yml` at the repository's HEAD
 
 An enforcer that crashes, times out (`budget_ms`) or is missing never blocks: the check reports it and emits `polispec.code.finding`.
 
+### Indeterminate verdicts
+
+A `script` enforcer may declare `on_indeterminate: warn` (the other value is `error`, the default). When it exits 3 with empty stdout on a MUST or MUST_NOT policy, the runner records an indeterminate outcome instead of an enforcer error: tiered pre-write answers warn (Claude renders it as an ask), advise lists it as advisory context, post-write adds an advisory line, `code check` exits 3 when nothing blocks, `code controls` fails, and telemetry records `enforcer_indeterminate`. `validate` rejects the key on any other enforcer kind. Without the key, exit 3 stays an enforcer error that never blocks or warns.
+
 ### Required plugins
 
 Any enforcer may declare `requires`, a list of `{plugin, version}` entries (`plugin` an rplugin id matching `^[a-z][a-z0-9-]*$`, `version` an optional RubyGems requirement string such as `"= 0.15.0"`). Only `script` and `ripper` enforcers consume it at run time.

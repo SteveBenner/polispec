@@ -61,6 +61,7 @@ module Polispec
 
         flagged = @runner.run([rule], @pack.read(bad).to_s, virtual(bad))
         return Outcome.new(rule: rule, status: :fail, message: "enforcer error: #{flagged.errors.first['message']}") unless flagged.errors.empty?
+        return Outcome.new(rule: rule, status: :fail, message: "enforcer indeterminate: #{flagged.indeterminate.first['message']}") unless flagged.indeterminate.empty?
 
         expected = control.dig("expect", "line")
         if flagged.hits.empty?
@@ -71,6 +72,7 @@ module Polispec
 
         clean = @runner.run([rule], @pack.read(good).to_s, virtual(good))
         return Outcome.new(rule: rule, status: :fail, message: "enforcer error on good fixture: #{clean.errors.first['message']}") unless clean.errors.empty?
+        return Outcome.new(rule: rule, status: :fail, message: "enforcer indeterminate on good fixture: #{clean.indeterminate.first['message']}") unless clean.indeterminate.empty?
         return Outcome.new(rule: rule, status: :fail, message: "#{good} was flagged at lines #{clean.hits.map(&:line).inspect}") unless clean.hits.empty?
 
         Outcome.new(rule: rule, status: :ok, message: "#{bad} flagged, #{good} clean")

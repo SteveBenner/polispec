@@ -188,13 +188,15 @@ module Polispec
         after = File.read(file).force_encoding(Encoding::UTF_8)
         before = opts.before ? File.read(File.expand_path(opts.before)).force_encoding(Encoding::UTF_8) : nil
         verdict = Trace.step("check file", file: (Trace.path(file) if Trace.on?), compared: !before.nil?) { Code::Checker.new(loaded).check(file, after, before: before) }
-        Trace.info("check result", language: verdict.language, chain: verdict.chain_digest[7, 12], findings: verdict.findings.length, blocked: verdict.blocked, deferred: verdict.deferred.length, errors: verdict.errors.length) if Trace.on?
+        Trace.info("check result", language: verdict.language, chain: verdict.chain_digest[7, 12], findings: verdict.findings.length, blocked: verdict.blocked, deferred: verdict.deferred.length, errors: verdict.errors.length, indeterminate: verdict.indeterminate.length) if Trace.on?
         if opts.json
           puts JSON.generate(verdict.to_h)
         else
           print_verdict(verdict)
         end
-        verdict.blocked ? 1 : 0
+        return 1 if verdict.blocked
+
+        verdict.indeterminate.empty? || !Code::Settings.tiered? ? 0 : 3
       end
 
       def print_verdict(verdict)
@@ -204,6 +206,7 @@ module Polispec
           puts "  #{finding.line || '-'}  [#{finding.policy}] #{finding.level} #{finding.severity}#{tag}  #{finding.message}"
         end
         verdict.errors.each { |error| warn "  enforcer error [#{error['policy']}] #{error['message']}" }
+        verdict.indeterminate.each { |entry| warn "  indeterminate [#{entry['policy']}] #{entry['message']}" }
         verdict.notes.each { |note| warn "  note: #{note}" }
         puts "  deferred to review: #{verdict.deferred.map(&:id).join(', ')}" unless verdict.deferred.empty?
       end

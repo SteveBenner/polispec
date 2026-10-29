@@ -88,6 +88,7 @@ module Polispec
         injections = []
         blockers = []
         warnings = []
+        indeterminates = []
         changes.each do |change|
           language = change.language_hint || checker.detector.detect(change.path, head: change.after)
           chain = Chain.for(pack, language)
@@ -106,6 +107,7 @@ module Polispec
           next unless Settings.check_at == "pre_write"
 
           verdict = checker.check(change.path, change.after, before: change.before, changed: change.lines, language: language)
+          verdict.indeterminate.each { |entry| indeterminates << [change, entry] }
           verdict.findings.each do |finding|
             if finding.blocking? && Settings.tiered?
               blockers << [change, finding]
@@ -115,20 +117,27 @@ module Polispec
           end
         end
         session.save
-        render_pre(session, injections, blockers, warnings)
+        render_pre(session, injections, blockers, warnings, indeterminates)
       end
 
-      def render_pre(session, injections, blockers, warnings)
+      def render_pre(session, injections, blockers, warnings, indeterminates)
         advise = warnings.map { |change, finding| finding_line(change.path, finding) }
+        undecided = indeterminates.map { |change, entry| indeterminate_line(change.path, entry) }
         unless blockers.empty?
           reason = ["[POLISPEC code] blocked: the edit adds MUST violations on changed lines. Fix them and retry."]
           reason += blockers.first(MAX_FINDINGS).map { |change, finding| finding_line(change.path, finding) }
           reason += injections
           return @adapter.render_deny(cap(reason.join("\n")), blockers.first.last.policy)
         end
-        return nil if injections.empty? && advise.empty?
+        if !undecided.empty? && Settings.tiered?
+          reason = ["[POLISPEC code] no verdict: a MUST policy's enforcer could not decide this write. Ask the user whether to write it anyway."]
+          reason += undecided.first(MAX_FINDINGS)
+          reason += injections
+          return @adapter.render(Polispec::Verdict.new(level: "warn", rule_id: indeterminates.first.last["policy"], reason: cap(reason.join("\n"))))
+        end
+        return nil if injections.empty? && advise.empty? && undecided.empty?
 
-        text = (injections + (advise.empty? ? [] : ["Findings on this edit (SHOULD, post-write review):"] + advise.first(MAX_FINDINGS))).join("\n")
+        text = (injections + (advise.empty? ? [] : ["Findings on this edit (SHOULD, post-write review):"] + advise.first(MAX_FINDINGS)) + (undecided.empty? ? [] : ["No verdict (MUST, enforcer indeterminate):"] + undecided.first(MAX_FINDINGS))).join("\n")
         return context_json("PreToolUse", cap(text)) if context?
         return nil if injections.empty?
 
@@ -157,6 +166,7 @@ module Polispec
         checker = Checker.new(pack)
         blockers = []
         warnings = []
+        undecided = []
         paths.each do |path|
           session.add_file(path)
           snapshot = session.take_snapshot(path)
@@ -168,6 +178,7 @@ module Polispec
           before = snapshot || head_text(path)
           verdict = checker.check(path, after, before: before, phases: %w[pre_write post_write])
           lower_baseline(path, verdict)
+          verdict.indeterminate.each { |entry| undecided << [path, entry] }
           verdict.findings.each do |finding|
             next if finding.baseline || finding.candidate || finding.level == "MAY"
 
@@ -179,19 +190,23 @@ module Polispec
           end
         end
         session.save
-        render_post(blockers, warnings)
+        render_post(blockers, warnings, undecided)
       end
 
-      def render_post(blockers, warnings)
+      def render_post(blockers, warnings, undecided)
         unless blockers.empty?
           lines = ["[POLISPEC code] the write landed with MUST violations on changed lines. Fix them now."]
           lines += blockers.first(MAX_FINDINGS).map { |path, finding| finding_line(path, finding) }
           return JSON.generate("decision" => "block", "reason" => cap(lines.join("\n")))
         end
-        return nil if warnings.empty?
+        return nil if warnings.empty? && undecided.empty?
 
-        lines = ["[POLISPEC code] findings on the lines you changed:"]
-        lines += warnings.first(MAX_FINDINGS).map { |path, finding| finding_line(path, finding) }
+        lines = []
+        unless warnings.empty?
+          lines << "[POLISPEC code] findings on the lines you changed:"
+          lines += warnings.first(MAX_FINDINGS).map { |path, finding| finding_line(path, finding) }
+        end
+        lines += undecided.first(MAX_FINDINGS).map { |path, entry| "[POLISPEC code] no verdict for #{path} [#{entry['policy']}] #{Code.squash(entry['message'])}" }
         context_json("PostToolUse", cap(lines.join("\n")))
       end
 
@@ -308,6 +323,10 @@ module Polispec
       def finding_line(path, finding)
         place = finding.line ? "#{path}:#{finding.line}" : path
         "- #{place} [#{finding.policy}] #{finding.level} #{Code.squash(finding.message)}"
+      end
+
+      def indeterminate_line(path, entry)
+        "- #{path} [#{entry['policy']}] #{Code.squash(entry['message'])}"
       end
 
       def context_json(event, text)
