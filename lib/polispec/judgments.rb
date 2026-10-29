@@ -1,8 +1,10 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require "digest"
 require_relative "canonical"
 require_relative "runtime"
+require_relative "judgments/verification"
 
 module Polispec
   module Judgments
@@ -432,19 +434,23 @@ module Polispec
     def each_record(include_malformed: false)
       files.each do |file|
         File.foreach(file).with_index(1) do |line, number|
-          parsed = State.parse_line(line)
-          note = nil
-          unless parsed
-            parsed = recovered_record(line)
-            note = if parsed then "joined"
-                   elsif !record_like?(line) then "malformed"
-                   elsif line.end_with?("\n") then "torn"
-                   else "torn_tail"
-                   end
-          end
+          parsed, note = classify(line)
           yield parsed, file, number, note if parsed || include_malformed
         end
       end
+    end
+
+    def classify(line)
+      parsed = State.parse_line(line)
+      return [parsed, nil] if parsed
+
+      parsed = recovered_record(line)
+      note = if parsed then "joined"
+             elsif !record_like?(line) then "malformed"
+             elsif line.end_with?("\n") then "torn"
+             else "torn_tail"
+             end
+      [parsed, note]
     end
 
     def records
@@ -487,59 +493,42 @@ module Polispec
       end
     end
 
-    def verify(schema: true)
-      return verify_snapshot(schema: schema) unless File.file?(lock_path)
-
-      File.open(lock_path, File::RDONLY) do |lock|
-        lock.flock(File::LOCK_SH)
-        verify_snapshot(schema: schema)
+    def verify(schema: true, full: false)
+      snapshot = capture
+      begin
+        verify_snapshot(schema: schema, full: full, snapshot: snapshot)
+      ensure
+        snapshot["handles"].each(&:close)
       end
     end
 
-    def verify_snapshot(schema: true)
-      findings = []
-      interrupted = []
-      previous = nil
-      parent = nil
-      seen = {}
-      count = 0
-      joined = 0
-      last = nil
-      each_record(include_malformed: true) do |entry, file, number, note|
-        where = "#{File.basename(file)}:#{number}"
-        case note
-        when "malformed"
-          findings << finding("malformed_record", nil, "#{where} is not a JSON object; historical bytes were preserved")
-          next
-        when "torn"
-          interrupted << finding("torn_record", nil, "#{where} is a record cut off mid-write; it never advanced the head anchor and the chain continues past it")
-          next
-        when "torn_tail"
-          interrupted << finding("torn_tail", nil, "#{where} is a record cut off mid-write at the end of the stream; it never advanced the head anchor and the next append starts on a new line")
-          next
-        when "joined"
-          joined += 1
-          interrupted << finding("torn_record", entry["id"], "#{where} starts with a record cut off mid-write; the record appended after it on the same line is read from its own start and counted as unanchored")
+    def verify_snapshot(schema: true, full: true, snapshot: nil)
+      owned = snapshot.nil?
+      snapshot ||= capture_files
+      entries = snapshot["files"]
+      walk = (full ? nil : resume(entries, schema)) || { "previous" => nil, "parent" => nil, "count" => 0, "joined" => 0, "last" => nil, "findings" => [], "interrupted" => [], "ids" => {}, "index" => 0, "offset" => 0, "lines" => 0 }
+      kept = nil
+      entries.each_with_index do |entry, index|
+        next if index < walk["index"]
+
+        walk["index"], walk["offset"], walk["lines"] = index, 0, 0 if index > walk["index"]
+        final = index == entries.length - 1
+        each_line_in(entry["handle"], walk["offset"], entry["size"]) do |line|
+          kept = settled(walk) if final && !line.end_with?("\n")
+          take(walk, line, "#{entry['name']}:#{walk['lines'] + 1}", schema)
+          next if kept
+
+          walk["offset"] += line.bytesize
+          walk["lines"] += 1
         end
-        count += 1
-        id = entry["id"]
-        Schema.validate("judgment", entry).each { |error| findings << finding("schema", id, "#{error.pointer.empty? ? '/' : error.pointer} #{error.message}") } if schema
-        findings << finding("digest_mismatch", id, "stored digest does not match the record") if entry["digest"] != Canonical.sha256(Canonical.json(entry.reject { |key, _| key == "digest" }))
-        if entry["prev"] != previous
-          if entry["prev"] && entry["prev"] == parent
-            interrupted << finding("interrupted_append", id, "chains from #{entry['prev'].to_s[0, 12]} like the record before it: an append was cut off before the head anchor moved")
-          else
-            findings << finding("chain_broken", id, "prev #{entry['prev'].to_json} does not match #{previous.to_json}")
-          end
-        end
-        findings << finding("duplicate_id", id, "id appears more than once") if seen[id]
-        seen[id] = true
-        previous = entry["digest"]
-        parent = entry["prev"]
-        last = entry
       end
-      head = head_file
-      anchored = count - interrupted.count { |item| item["kind"] == "interrupted_append" } - joined
+      save_checkpoint(kept || settled(walk), entries, schema)
+      findings = walk["findings"]
+      interrupted = walk["interrupted"]
+      count = walk["count"]
+      last = walk["last"]
+      head = snapshot["head"]
+      anchored = count - interrupted.count { |item| item["kind"] == "interrupted_append" } - walk["joined"]
       if last && head.nil?
         findings << finding("truncated", last["id"], "the head anchor #{HEAD} is missing")
       elsif last && (head["digest"] != last["digest"] || head["count"].to_i != anchored)
@@ -553,7 +542,9 @@ module Polispec
         item["acknowledged"] = entry if entry && entry["kind"] == item["kind"]
       end
       open = findings.reject { |item| item["acknowledged"] }
-      { "ok" => open.empty?, "records" => count, "files" => files.map { |file| File.basename(file) }, "findings" => findings, "interrupted" => interrupted, "stalled" => stalled, "skips" => skip_counts }
+      { "ok" => open.empty?, "records" => count, "files" => entries.map { |entry| entry["name"] }, "findings" => findings, "interrupted" => interrupted, "stalled" => stalled, "skips" => skip_counts }
+    ensure
+      snapshot["handles"].each(&:close) if owned && snapshot
     end
 
     def finding(kind, id, detail)

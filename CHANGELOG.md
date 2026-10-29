@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.2] - 2026-10-28
+
+### Fixed
+- **A doctor or verify run no longer makes the guard deny every call.** `Judgments.verify` held the shared lock on `judgments.lock` for its whole walk of every rotated journal (21 files of 16 MiB and the live one, 171,585 records on this host). Every judgment append needs the exclusive lock, so while `polispec doctor` (about 30 s) or `polispec judgments verify` (about 172 s) ran, each judged call waited past the judge's 7 s budget and the launcher denied it with `judge_timeout` ("guard unavailable; Run polispec doctor", which started the next doctor run). One 172 s verify on the host denied 23 calls across five sessions. A verify now holds the lock only to open every stream file and read the head anchor (0.6 ms measured), then walks the open handles up to the sizes it saw; a rotation renames a file under an open handle without changing its bytes (`lib/polispec/judgments/verification.rb`).
+- **doctor checks only new records.** `doctor` and `judgments acknowledge` resume from `<state home>/judgments.verified.json`: the walk state, findings, interrupted entries and ids seen up to the last complete line. It is reused only while every fully verified file keeps its inode, size and ctime and the partly verified file keeps its inode and the sha256 of its verified prefix; an edit, truncation or replacement walks everything again, and a torn tail is never checkpointed. On the host's 310 MB copy the result is byte-identical to 0.53.1, and doctor's walk drops from 41 s to 0.34 s. `judgments verify` always walks everything (19 s instead of 41 s) and refreshes the checkpoint.
+
 ## [0.53.1] - 2026-10-28
 
 ### Fixed

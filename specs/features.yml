@@ -704,6 +704,7 @@ features:
   paths:
   - lib/polispec/commands/judgments.rb
   - lib/polispec/judgments.rb
+  - lib/polispec/judgments/verification.rb
   - schemas/judgment.v1.yml
   - smoke/scenarios/judgments.yml
   spec:
@@ -1415,6 +1416,7 @@ features:
   summary: Smoke proof for the judgments coverage unit of specs/app.yml.
   paths:
   - lib/polispec/judgments.rb
+  - lib/polispec/judgments/verification.rb
   - schemas/judgment.v1.yml
   - smoke/scenarios/judgments.yml
   spec:
