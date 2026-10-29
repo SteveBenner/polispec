@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-10-28
+
+### Added
+- **A script enforcer can say it has no verdict, and a MUST policy no longer passes silently on it.** An enforcer declares `on_indeterminate: warn` (the other value is `error`, the default). When such a script exits 3 with empty stdout on a MUST or MUST_NOT policy, the runner records an indeterminate outcome instead of an enforcer error. It exists for policies whose enforcer asks another service for a verdict (for example rverify) and can have none. Under `polispec.code.enforce` tiered, the pre-write hook answers warn, which Claude renders as a native ask so the user confirms the write; in advise mode the entries are listed as advisory context under "No verdict (MUST, enforcer indeterminate):". The post-write hook adds an advisory line and never blocks, and the stop hook is unchanged. `polispec code check` prints each entry on stderr and exits 3 when nothing blocks and enforcement is tiered, `code check --json` carries a new `indeterminate` list (empty for every enforcer without the key), `polispec code controls` fails the policy, and telemetry records `enforcer_indeterminate`. The validator rejects the key on a non-script enforcer. Every enforcer without the key, and every non-MUST policy, keeps exit 3 as an enforcer error that never blocks or warns. A spec that uses the key fails validation on polispec before 0.54.0, because the enforcer schema has `additionalProperties: false`.
+- Verified against rverify 0.5.1 with a scratch copy of polispec-specs that sets the key on `content.assessment.glossary_coverage`. A quiz in a directory with no rverify collection makes `code check` exit 3 with the entry, and makes the Claude pre-write hook answer `permissionDecision: ask`. The pack's bad control still blocks on line 3, its good control is clean, and its controls pass. With the unchanged pack, the same quiz is still an enforcer error with exit 0. `smoke run --against` 0.53.2 passed 68 of 68 scenarios. Its only verdict change from this release is the `indeterminate` key in `code check --json`; the other differences come from comparing a clone runtime with a pinned one, plus ids, ports and timestamps.
+
 ## [0.53.2] - 2026-10-28
 
 ### Fixed

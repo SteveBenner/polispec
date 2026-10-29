@@ -8,7 +8,11 @@ module Polispec
     Hit = Struct.new(:rule, :line, :message, keyword_init: true)
 
     class Runner
-      Result = Struct.new(:hits, :errors, :recorded, keyword_init: true)
+      Result = Struct.new(:hits, :errors, :recorded, :indeterminate, keyword_init: true)
+      INDETERMINATE_EXIT = 3
+
+      class Indeterminate < StandardError; end
+
       DEFAULT_BUDGET_MS = 3000
       RUBOCOP_BUDGET_MS = 8000
       DEPARTMENT_PLUGINS = { "Performance" => "rubocop-performance", "Rails" => "rubocop-rails", "RSpec" => "rubocop-rspec", "Minitest" => "rubocop-minitest" }.freeze
@@ -19,7 +23,7 @@ module Polispec
       end
 
       def run(rules, text, path)
-        result = Result.new(hits: [], errors: [], recorded: [])
+        result = Result.new(hits: [], errors: [], recorded: [], indeterminate: [])
         rubocop = []
         rules.each do |rule|
           enforcer = rule.enforcer
@@ -65,6 +69,8 @@ module Polispec
         end
       rescue Timeout::Error
         result.errors << error(rule, "enforcer exceeded its budget")
+      rescue Indeterminate => e
+        result.indeterminate << error(rule, e.message)
       rescue StandardError, ScriptError => e
         result.errors << error(rule, "#{e.class}: #{e.message.to_s[0, 200]}")
       end
@@ -131,6 +137,10 @@ module Polispec
 
         File.chmod(0o700, real) if @pack.source.kind == :dir && !File.executable?(real)
         out, err, status = Open3.capture3(plugin_roots(rule), *[real, path, *Array(rule.enforcer["args"])], stdin_data: text)
+        if status.exitstatus == INDETERMINATE_EXIT && out.strip.empty? && rule.enforcer["on_indeterminate"] == "warn" && rule.blocking_level?
+          detail = Code.squash(err.to_s)[0, 200]
+          raise Indeterminate, detail.empty? ? "enforcer exited 3 with no verdict" : detail
+        end
         raise Error, "script exited #{status.exitstatus}: #{err.to_s[0, 160]}" unless status.success? || !out.strip.empty?
 
         out.each_line.map do |line|

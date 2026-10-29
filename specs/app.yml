@@ -1,6 +1,6 @@
 schema_version: 1
 name: polispec
-version: 0.53.2
+version: 0.54.0
 capture_repair:
   syntax_only_shell: "Recognized static noninteractive bash, sh, and dash noexec invocations classify script operands as reads. The parser does not follow their file, inline, or stdin bodies. Caller-side substitutions, redirects, privilege, and surrounding commands remain visible. Unknown options, startup-environment overrides, interactive mode, and disabled noexec retain conservative classification. Stdin bodies with possible caller substitutions remain conservatively inspected."
   interpreter_stdin: "A literal existing script operand passed directly to an interpreter makes its stdin data, not code. Without that positive evidence, embedded-code inspection remains conservative."
@@ -324,6 +324,7 @@ code_specs:
   legacy: "Ratchet: only violations on changed lines block; pre-existing violations are recorded in a per-repo baseline that may only shrink."
   controls: "Every harness and hybrid policy ships a negative-control fixture that must trip its enforcer (polispec code controls). Controls are checker machinery under NOTEST and live only in the code specs repository."
   enforcer_requires: "Since 0.47.6 an enforcer may declare requires, a list of { plugin, version } entries naming the rplugin plugins it runs against (plugin an rplugin id, version an optional RubyGems requirement). Polispec::PluginStore resolves each plugin to the real path of ${RPLUGINS_HOME:-~/.rplugins}/<id>; the runner passes it to a script enforcer as POLISPEC_PLUGIN_<ID>_ROOT (id upcased, - as _) and raises an enforcer error, which never blocks, when the plugin is not installed. polispec doctor checks the code pack the hooks load (POLISPEC_CODE_REF, default stable) and reports code_enforcer_unresolved for an uninstalled plugin and code_enforcer_version_skew for a VERSION the requirement does not admit, both blocking, one per active policy and plugin."
+  enforcer_on_indeterminate: "Since 0.54.0 a script enforcer may declare on_indeterminate (error, the default, or warn); exit 3 with empty stdout from such an enforcer on a MUST or MUST_NOT policy is an indeterminate outcome, not an enforcer error; tiered pre-write answers warn (Claude renders it as ask; a harness without native ask renders the warn the way it renders any guard warn); advise lists it as advisory context; post-write adds an advisory line; stop is unchanged; code check prints it and exits 3 when nothing blocks; controls fail on it; telemetry kind enforcer_indeterminate; the validator rejects the key on non-script kinds; every other enforcer keeps exit 3 as an enforcer error that never blocks or warns."
   source_of_truth: "The code specs repository is the single source for code directives; a host generates directive rows and guards for code rules from, or calls into, their policies."
   specs_home: "~/.polispec/specs, a symlink to the specs/ directory of the code specs repository named by the polispec.code.specs_repo setting"
   schema: { id: polispec.spec/v1, file: schemas/spec.v1.yml }
