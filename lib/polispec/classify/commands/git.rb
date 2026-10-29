@@ -35,7 +35,7 @@ module Polispec
       ROOT_PATHSPECS = [".", ":/", ":/*", ":(top)", ":(top)*"].freeze
 
       Invocation = Struct.new(:cmd, :path, :sub, :args)
-      Spec = Struct.new(:name, :tag, :force, :delete)
+      Spec = Struct.new(:name, :tag, :force, :delete, :source)
 
       class << self
         def classify(cmd)
@@ -207,12 +207,13 @@ module Polispec
           body = text.sub(/\A\+/, "")
           src, dst = body.include?(":") ? body.split(":", 2) : [body, body]
           target = dst == "HEAD" ? current(inv) : dst
-          Spec.new(ref_name(target), target.to_s.start_with?("refs/tags/"), force, src.empty?)
+          Spec.new(ref_name(target), target.to_s.start_with?("refs/tags/"), force, src.empty?, src.empty? ? nil : src)
         end
 
         def push_actions(inv, remote, spec, force, delete)
           extra = { remote: remote }
           extra[spec.tag ? :tag : :ref] = spec.name
+          extra[:source] = spec.source if spec.source && !spec.tag && spec.source != spec.name
           classes = ["git.push"]
           classes << "git.rewrite" if (force || spec.force) && !spec.tag
           classes << "git.branch" if (delete || spec.delete) && !spec.tag

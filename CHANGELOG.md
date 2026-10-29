@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.2] - 2026-10-29
+
+### Fixed
+- **`match.push_unscanned` now matches an unscanned `git push <remote> <src>:<branch>`.** The git classifier kept only the refspec's destination, so the predicate compared the local `<branch>` with its remote-tracking tip. A worktree push such as `git push origin feature:main`, made from a checkout whose own `main` was up to date, was judged up to date and allowed with no exposure scan; only a push of the checked-out branch, `--all`, `--mirror`, `--tags` and contents writes were caught. The push action now carries a `source` hint when the source differs from the destination (`lib/polispec/classify/commands/git.rb`). The predicate resolves the pushed commit from it (`refs/heads/<src>`, else `<src>` as git reads it) and names it in the reason (`lib/polispec/predicates.rb`).
+- **`polispec exposure scan --source SRC` attests a source-to-destination push.** With `--ref main --source feature` the scan audits `origin/main..feature` and records ref `main` and `to` the commit `feature` names, which is the attestation that push needs (`lib/polispec/commands/exposure.rb`). The deny reason now spells the command with `--source`.
+
+### Verdict changes
+- `git push <remote> <src>:<branch>` to a public remote, where `<src>` is ahead of the remote tip and has no attestation, changes from allow to deny under a rule on `push_unscanned` (the global `public-push` module's G-PUBLIC-PUSH). It is allowed again after `polispec exposure scan <repo> --ref <branch> --source <src>`, and denied again after a new commit on `<src>`. A push of the checked-out branch, an up-to-date `HEAD:<branch>`, a deletion (`:<branch>`) and a push of a new branch keep their verdicts. Without a rule naming the predicate, nothing changes.
+- Verified in a scratch public repository against the 0.53.0 predicate: `side:main` and `refs/heads/side:refs/heads/main` allow → deny; `main`, `HEAD:main`, `:main` and `side` unchanged; scan with `--source side` → allow; a new commit on side → deny; a plain `--ref main` scan does not cover `side:main`; an unknown `--source` is refused. `smoke run --against` the installed 0.54.0: 68 of 68 scenarios pass; its 23 differences are the clone against pinned runtime (doctor `edition_provenance_invalid` on an uncommitted tree, R-POLISPEC-RUNTIME ask against deny, the pin steps).
+
 ## [0.54.1] - 2026-10-28
 
 ### Fixed
