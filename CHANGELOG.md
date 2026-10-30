@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.55.2] - 2026-10-30
+
+### Fixed
+- **`polispec replay` and the pin gate now judge calls made against the global baseline and the ledger's path entries.** They were all skipped as `not judged`: on 2026-10-26, 227,447 of a host's 349,619 rows over 14 days (65%), so a candidate that changed a shelf-module or catalog verdict for calls outside a live project passed the gate unseen. `lib/polispec/replay_child.rb` builds the target the way the hook's baseline evaluation does (`Target` with `policy_source` `global` or `path`, digest `Layers.fingerprint`) and has `Engine.explain` judge each row with the recorded call's `cwd` and tool, which `Replay.collect` now keeps in the row key for those targets only.
+- The totals line states each count with its share of the window (`compared`, `skipped because the rulebook moved`, `skipped because the target is not in the ledger`), and `--json` carries `compared_percent`. Rows recorded under an earlier rulebook digest are still skipped, so a shelf or catalog change leaves little of the window compared until new calls are recorded; the percentage now says so.
+- The candidate and the baseline are replayed in parallel, and a child's time limit is 180 s plus 5 ms per distinct row, so a 14-day window of a busy host (about 130,000 distinct rows) finishes instead of timing out.
+
+### Verdict changes
+- None. Only what replay reports changes: a candidate that moves a verdict for a global or path target now shows it as a change, explained or not by its CHANGELOG section.
+
 ## [0.55.1] - 2026-10-30
 
 ### Fixed

@@ -15,6 +15,8 @@ module Polispec
     DEFAULT_DAYS = 14
     CHILD = File.join(LIB, "replay_child.rb")
     CHILD_TIMEOUT = 180
+    ITEM_BUDGET = 0.005
+    UNOWNED_ID = "global"
     OVERRIDE_PHRASE = "pin with unexplained verdicts"
     ChangeKey = Struct.new(:rule_before, :rule_after, :verdict_before, :verdict_after, keyword_init: true)
 
@@ -29,9 +31,14 @@ module Polispec
         changes.select { |change| change["explained"] }
       end
 
+      def percent(count)
+        rows.to_i.zero? ? 0.0 : (count * 100.0 / rows).round(1)
+      end
+
       def to_h
         {
           "runtime" => runtime, "baseline" => baseline, "version" => version, "days" => days, "rows" => rows, "compared" => compared,
+          "compared_percent" => percent(compared),
           "skipped_policy_moved" => skipped_policy, "skipped_unjudged" => skipped_unjudged,
           "changed" => changes.sum { |change| change["count"] }, "unexplained" => unexplained.sum { |change| change["count"] },
           "changelog_section" => explained_by, "changes" => changes
@@ -49,9 +56,17 @@ module Polispec
       raise Unavailable, "#{baseline} is not a polispec tree (no bin/polispec)" unless tree?(base)
 
       items, rows = collect(days, now)
-      verdicts = items.empty? ? { "version" => version_of(tree), "projects" => {} } : evaluate(tree, items)
-      before = items.empty? || same_tree?(base, tree) ? verdicts : evaluate(base, items)
+      verdicts, before = judge_both(tree, base, items)
       compare(tree, base, days, rows, items, verdicts, before)
+    end
+
+    def judge_both(tree, base, items)
+      return [{ "version" => version_of(tree), "projects" => {} }] * 2 if items.empty?
+      return [evaluate(tree, items)] * 2 if same_tree?(base, tree)
+
+      baseline = Thread.new { evaluate(base, items) }
+      candidate = evaluate(tree, items)
+      [candidate, baseline.value]
     end
 
     def tree?(tree)
@@ -81,8 +96,12 @@ module Polispec
       File.read(File.join(tree, "VERSION")).strip
     end
 
-    def spec_key(project, row)
-      [project, row["action_class"], row["env"], row["ref"], row["path"], row["destructive"] ? true : false, Array(row["shape"])]
+    def spec_key(project, row, scope = {})
+      [project, row["action_class"], row["env"], row["ref"], row["path"], row["destructive"] ? true : false, Array(row["shape"]), scope["cwd"], scope["tool"]]
+    end
+
+    def unowned?(target)
+      target["project"].to_s == UNOWNED_ID || target["policy_source"].to_s == "path"
     end
 
     def collect(days, now)
@@ -93,14 +112,16 @@ module Polispec
         stamp = Judgments.stamp_of(entry)
         next unless stamp && stamp >= cutoff
 
-        digest = entry["action"].is_a?(Hash) ? entry["action"]["call_digest"] : nil
+        action = entry["action"].is_a?(Hash) ? entry["action"] : {}
+        digest = action["call_digest"]
         Array(entry["targets"]).each do |target|
           project = target["project"].to_s
+          scope = unowned?(target) ? { "cwd" => action["cwd"], "tool" => action["tool"] }.compact : {}
           Array(target["rows"]).each do |row|
             next unless row.is_a?(Hash) && row["action_class"]
 
             total += 1
-            item = (items[spec_key(project, row)] ||= { "project" => project, "spec" => row.slice("action_class", "env", "ref", "path", "destructive", "shape"), "groups" => {} })
+            item = (items[spec_key(project, row, scope)] ||= { "project" => project, "spec" => row.slice("action_class", "env", "ref", "path", "destructive", "shape").merge(scope), "groups" => {} })
             group = (item["groups"][[target["policy_digest"], row["verdict"].to_s, row["rule_id"]]] ||= { "count" => 0, "example" => digest })
             group["count"] += 1
           end
@@ -115,7 +136,7 @@ module Polispec
         projects = items.values.each_with_index.group_by { |item, _| item["project"] }
         payload = { "projects" => projects.transform_values { |list| list.map { |item, index| item["spec"].merge("key" => index) } } }
         File.write(input, JSON.generate(payload))
-        out, err, status = capture([RbConfig.ruby, CHILD, tree, input])
+        out, err, status = capture([RbConfig.ruby, CHILD, tree, input], CHILD_TIMEOUT + (items.size * ITEM_BUDGET).ceil)
         raise Unavailable, "the engine of #{tree} could not replay the corpus (exit #{status&.exitstatus.inspect}): #{err.to_s.strip.lines.last.to_s.strip[0, 200]}" unless status&.success?
 
         JSON.parse(out)
@@ -124,12 +145,12 @@ module Polispec
       raise Unavailable, "the engine of #{tree} returned output that is not JSON"
     end
 
-    def capture(argv)
-      Timeout.timeout(CHILD_TIMEOUT) do
+    def capture(argv, limit = CHILD_TIMEOUT)
+      Timeout.timeout(limit) do
         Open3.capture3({ "POLISPEC_SHADOW" => "off" }, *argv)
       end
     rescue Timeout::Error
-      raise Unavailable, "the candidate engine did not finish replaying within #{CHILD_TIMEOUT}s"
+      raise Unavailable, "the candidate engine did not finish replaying within #{limit}s"
     rescue SystemCallError => e
       raise Unavailable, "cannot run the candidate engine: #{e.message}"
     end
@@ -187,7 +208,7 @@ module Polispec
     def render(result, out: $stdout)
       out.puts "replay of #{result.runtime} (#{result.version}) over the last #{result.days} days"
       out.puts "rulebook digests from #{result.baseline} (#{version_of(result.baseline)})"
-      out.puts "rows: #{result.rows}, compared: #{result.compared}, skipped because the rulebook moved: #{result.skipped_policy}, skipped because the project is not judged: #{result.skipped_unjudged}"
+      out.puts "rows: #{result.rows}, compared: #{result.compared} (#{result.percent(result.compared)}%), skipped because the rulebook moved: #{result.skipped_policy} (#{result.percent(result.skipped_policy)}%), skipped because the target is not in the ledger: #{result.skipped_unjudged} (#{result.percent(result.skipped_unjudged)}%)"
       out.puts "changelog section for #{result.version}: #{result.explained_by || 'none'}"
       out.puts "changed: #{result.changes.sum { |change| change['count'] }}, unexplained: #{result.unexplained.sum { |change| change['count'] }}"
       result.changes.each do |change|
