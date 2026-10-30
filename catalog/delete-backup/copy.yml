@@ -1,0 +1,11 @@
+schema: polispec.module/v1
+name: delete-backup-copy
+summary: Warns on a recursive delete of an existing directory that has no .backup copy beside it and on any delete of a backup directory; every rule is overridable.
+description: "This module is the backup-before-delete half of the delete-backup spec. G-DELETE-UNBACKED warns when a recursive rm targets an existing real directory and no non-empty <parent>/.backup/<name>-* copy exists, unless the directory is a git-ignored build folder named in delete_backup.ignored_names. The other three rules warn on deleting a .backup directory, its contents, or a directory named backups, because a backup is deleted only on explicit confirmation."
+delete_backup:
+  ignored_names: [target, node_modules, dist, .next, __pycache__, .cache, build]
+rules:
+  - { id: G-DELETE-UNBACKED, match: { class: [fs.delete], delete_unbacked: true }, verdict: warn, overridable: true, reason: "no .backup copy exists beside this directory; make one first or confirm the delete" }
+  - { id: G-DELETE-BACKUP-DIR, match: { class: [fs.delete], path: "/**/.backup" }, verdict: warn, overridable: true, reason: "a .backup directory is deleted only on explicit confirmation; confirm this exact path first" }
+  - { id: G-DELETE-BACKUP-CONTENTS, match: { class: [fs.delete], path: "/**/.backup/**/*" }, verdict: warn, overridable: true, reason: "the contents of a .backup directory are deleted only on explicit confirmation; confirm this exact path first" }
+  - { id: G-DELETE-BACKUPS-NAMED, match: { class: [fs.delete], path: "/**/backups" }, verdict: warn, overridable: true, reason: "a backups directory is deleted only on explicit confirmation; confirm this exact path first" }

@@ -18,6 +18,7 @@ module Polispec
       PERL_VALUE = %w[-e -E -I -M -m -0 -x].freeze
       IN_PLACE = /\A--in-place|\A-[a-zA-Z]*i/.freeze
       DELETERS = %w[rm rmdir unlink shred].freeze
+      FIND_FILTER = /\A-(?:i?name|i?path|i?wholename|i?regex|type|[acm]time|[acm]min|newer\w*|size|user|group|perm|empty|inum|links|i?lname|samefile|uid|gid|nouser|nogroup|executable|readable|writable)\z/.freeze
       LOCKFILES = %w[Cargo.lock Gemfile.lock package-lock.json pnpm-lock.yaml yarn.lock uv.lock poetry.lock].freeze
       COMPRESSORS = %w[gzip gunzip bzip2 xz].freeze
       COMPRESSOR_VALUE = %w[-S --suffix -T --threads -M --memlimit --format -F].freeze
@@ -50,6 +51,8 @@ module Polispec
           found << "cargo_clean" if cargo_clean?(cmd)
           found << "lockfile_edit" if lockfile_writer?(cmd)
           found << "xargs_delete" if cmd.xargs && DELETERS.include?(cmd.name)
+          found << "unresolved_delete" if unresolved_delete?(cmd)
+          found << "find_unfiltered" if find_unfiltered?(cmd)
           found.concat(FsWalk.shapes(cmd))
           found
         end
@@ -62,11 +65,22 @@ module Polispec
 
         def deletes(cmd)
           recursive = recursive_delete?(cmd)
-          delete_paths(cmd).reject { |path| Support.discard?(path) }.map do |path|
-            hints = { "path" => path }
+          delete_paths(cmd).reject { |_word, path| Support.discard?(path) }.map do |word, path|
+            hints = { "path" => path, "command" => cmd.name }
             hints["recursive"] = true if recursive
+            hints["unresolved"] = true if Support.dynamic?(word)
             Support.act("fs.delete", cmd.text, hints)
           end
+        end
+
+        def unresolved_delete?(cmd)
+          return false unless cmd.name == "rm" && recursive_delete?(cmd)
+
+          Support.split_args(cmd.args).first.any? { |word| Support.dynamic?(word) }
+        end
+
+        def find_unfiltered?(cmd)
+          cmd.name == "find" && !find_deletes(cmd).empty? && cmd.args.none? { |arg| FIND_FILTER.match?(arg.to_s) }
         end
 
         def recursive_delete?(cmd)
@@ -82,13 +96,13 @@ module Polispec
         end
 
         def delete_paths(cmd)
-          return cargo_deletes(cmd) if cargo_clean?(cmd)
+          return cargo_deletes(cmd).map { |path| [nil, path] } if cargo_clean?(cmd)
 
           paths = case cmd.name
                   when *DELETERS then Support.split_args(cmd.args).first
                   when "find" then find_deletes(cmd)
                   end
-          Array(paths).map { |path| Support.abs(path, cmd.cwd) }
+          Array(paths).map { |path| [path, Support.abs(path, cmd.cwd)] }
         end
 
         def find_deletes(cmd)
