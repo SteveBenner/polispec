@@ -301,6 +301,16 @@ module Polispec
         end
       end
 
+      def shipped_delete_backup
+        HookMemo.fetch(:catalog_delete_backup) do
+          Catalog.active_modules.flat_map do |entry|
+            doc = entry["doc"]
+            listed = doc.is_a?(Hash) ? doc["delete_backup"] : nil
+            listed.is_a?(Hash) ? Array(listed["ignored_names"]).select { |name| name.is_a?(String) && !name.strip.empty? } : []
+          end.uniq
+        end
+      end
+
       def delete_protected_union(docs)
         union = { "exact" => [], "tree" => [] }
         docs.each do |doc|

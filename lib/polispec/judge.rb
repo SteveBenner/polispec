@@ -23,7 +23,7 @@ module Polispec
     CONNECTION_LIMIT = 64
     LOG_LIMIT = 1_048_576
     SHELF_FILE_CAP = 2000
-    KEEP_MEMO = %i[ledger_load spec_policy prefetch_policies shipped_layer layers_fingerprint catalog_state catalog_modules catalog_delete_protected].freeze
+    KEEP_MEMO = %i[ledger_load spec_policy prefetch_policies shipped_layer layers_fingerprint catalog_state catalog_modules catalog_delete_protected catalog_delete_backup].freeze
     HEADER = /\A#{Regexp.escape(PROTOCOL)} (\h{32}) (pretool|session) ([a-z]+) (\S.*?)(?: caller=(\d+))? (\d+)\z/.freeze
     REF_SAFE = %r{\A[A-Za-z0-9][A-Za-z0-9._/@+-]*\z}.freeze
 

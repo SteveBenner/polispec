@@ -5,7 +5,7 @@ require_relative "editions"
 
 module Polispec
   module Predicates
-    NAMES = %w[lock_held live_binary delete_protected delete_protected_file supervised pin_regress tag_claimed base_unpushed public_remote public_path push_unscanned in_development].freeze
+    NAMES = %w[lock_held live_binary delete_protected delete_protected_file delete_unbacked supervised pin_regress tag_claimed base_unpushed public_remote public_path push_unscanned in_development].freeze
     BUDGET = 2.0
     CONTENTS_LEAVES = %w[* .* .[!.]* ..?* .??*].freeze
     LOCK_MANIFEST = "TMP_AGENT_FILE_LOCKS.yml".freeze
@@ -268,6 +268,46 @@ module Polispec
     def check_delete_protected_file(action, ctx)
       kind, note = delete_verdict(action, ctx)
       kind == :file ? yes(note) : no
+    end
+
+    def check_delete_unbacked(action, _ctx)
+      return no unless action.action_class == "fs.delete"
+
+      data = hint(action)
+      target = data["path"]
+      return no unless data["command"] == "rm" && data["recursive"] == true && data["unresolved"] != true
+      return no unless target.is_a?(String) && !target.empty?
+
+      lexical = File.expand_path(target)
+      name = File.basename(lexical)
+      return no if CONTENTS_LEAVES.include?(File.basename(target))
+      return no unless File.directory?(lexical) && !File.symlink?(lexical)
+      return no if backup_path?(lexical)
+
+      parent = File.dirname(lexical)
+      return no if backup_copy?(parent, name)
+      return no if Layers.shipped_delete_backup.include?(name) && git_ignored?(parent, lexical)
+
+      yes("no .backup copy of #{lexical}; pass with: mkdir -p '#{parent}/.backup' && cp -a '#{lexical}' '#{parent}/.backup/#{name}-$(date -u +%Y%m%d-%H%M%S)'")
+    end
+
+    def backup_path?(lexical)
+      File.basename(lexical) == "backups" || lexical.split("/").include?(".backup")
+    end
+
+    def backup_copy?(parent, name)
+      store = File.join(parent, ".backup")
+      Dir.children(store).any? do |entry|
+        copy = File.join(store, entry)
+        entry.start_with?("#{name}-") && File.directory?(copy) && !Dir.children(copy).empty?
+      end
+    rescue SystemCallError
+      false
+    end
+
+    def git_ignored?(parent, lexical)
+      _out, status = git(parent, "check-ignore", "-q", "--", lexical)
+      status.success?
     end
 
     def delete_verdict(action, ctx)

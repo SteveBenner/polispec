@@ -1,0 +1,8 @@
+schema: polispec.module/v1
+name: delete-backup-opaque
+summary: "Warns on deletes whose targets polispec cannot read, which are an unresolved recursive operand, a find delete with no filter, and git clean with -d; every rule is overridable."
+description: "This module is the opaque half of the delete-backup spec: it warns on deletes whose targets no backup check can see. G-DELETE-UNRESOLVED warns on a recursive rm whose operand comes from a variable polispec cannot resolve. G-DELETE-FIND-UNFILTERED warns on a find that deletes with no filter. G-DELETE-GIT-CLEAN-DIRS warns on git clean with -d. A dry run of git clean is not judged by this module."
+rules:
+  - { id: G-DELETE-UNRESOLVED, match: { shape: [unresolved_delete] }, verdict: warn, overridable: true, reason: "this recursive delete takes an operand polispec cannot resolve; write the absolute path or confirm" }
+  - { id: G-DELETE-FIND-UNFILTERED, match: { shape: [find_unfiltered] }, verdict: warn, overridable: true, reason: "this find deletes with no filter; delete each named path directly or confirm" }
+  - { id: G-DELETE-GIT-CLEAN-DIRS, match: { shape: [git_clean_dirs] }, verdict: warn, overridable: true, reason: "git clean -d may delete directories no backup holds; run git clean -n first or confirm" }

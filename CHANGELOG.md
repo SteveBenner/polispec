@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-10-29
+
+### Added
+- **The catalog spec `delete-backup`, off until the operator runs `polispec catalog activate delete-backup`.** The rule that a directory is not deleted without a copy beside it lived only in a Claude Code hook outside polispec, so it covered one harness and kept its own decision log. Subspec `copy` warns with `G-DELETE-UNBACKED` on a recursive `rm` of an existing real directory that has no non-empty `<parent>/.backup/<name>-*` copy (git-ignored `target`, `node_modules`, `dist`, `.next`, `__pycache__`, `.cache` and `build` need none, listed in the module key `delete_backup.ignored_names`), and with `G-DELETE-BACKUP-DIR`, `G-DELETE-BACKUP-CONTENTS` and `G-DELETE-BACKUPS-NAMED` on any delete of a `.backup` directory, its contents or a directory named `backups`. Subspec `opaque` warns with `G-DELETE-UNRESOLVED`, `G-DELETE-FIND-UNFILTERED` and `G-DELETE-GIT-CLEAN-DIRS`. Every rule is overridable. It is its own spec, not a subspec of `delete-guard`, because activating a spec activates every subspec and a corrupt state file fails closed to all active, which would turn backup-before-delete on by default.
+- **`match.delete_unbacked`** (`Predicates#check_delete_unbacked`, `Layers.shipped_delete_backup`), and the shapes **`unresolved_delete`**, **`find_unfiltered`** and **`git_clean_dirs`** in `Classify::Shapes::NAMES` and every `match.shape` enum.
+- **`smoke/scenarios/delete-backup.yml`**, unit `delete_backup`.
+
+### Changed
+- Every `fs.delete` action carries the hint `command` (the program name) and, for an operand the parser could not resolve, `unresolved: true`. The path still falls back to the working directory as before.
+
+### Verdict changes
+- None while `delete-backup` is inactive, which is every host until the operator activates it. Active, the warns above are new. `git clean` with a dry run is not judged, where the hook asked even on `-nd`.
+- Verified: `smoke run` 69 of 69 on the tree; `smoke run --against` the pinned 0.54.2 69 of 69 with 55 differences, none in a delete scenario; `explain` probes with the spec activated in scratch state only.
+
 ## [0.54.2] - 2026-10-29
 
 ### Fixed

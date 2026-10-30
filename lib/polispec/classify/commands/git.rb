@@ -60,6 +60,7 @@ module Polispec
           found = []
           found << "bulk_stage" if bulk_stage?(inv)
           found << "worktree_force" if worktree_force?(inv)
+          found << "git_clean_dirs" if git_clean_dirs?(inv)
           found
         end
 
@@ -92,6 +93,15 @@ module Polispec
             return false if COMMIT_VALUE_LETTERS.include?(char)
           end
           false
+        end
+
+        def git_clean_dirs?(inv)
+          return false unless inv.sub == "clean"
+
+          args = inv.args.map(&:to_s)
+          return false if args.any? { |arg| arg == "--dry-run" || arg.match?(/\A-[a-zA-Z]*n[a-zA-Z]*\z/) }
+
+          args.any? { |arg| arg.match?(/\A-[a-zA-Z]*d[a-zA-Z]*\z/) }
         end
 
         def worktree_force?(inv)

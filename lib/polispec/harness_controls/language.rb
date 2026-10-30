@@ -6,7 +6,7 @@ module Polispec
       VERBS = %w[read write delete run call fetch spawn commit push tag merge rewrite].freeze
       OBJECTS = %w[file command mcp url agent repository control].freeze
       EFFECTS = %w[deny ask restrict inject observe].freeze
-      MATCH_KEYS = %w[env class crosses destructive shape lock_held live_binary delete_protected delete_protected_file supervised pin_regress tag_claimed base_unpushed public_remote public_path push_unscanned ref path tool server operation domain role].freeze
+      MATCH_KEYS = %w[env class crosses destructive shape lock_held live_binary delete_protected delete_protected_file delete_unbacked supervised pin_regress tag_claimed base_unpushed public_remote public_path push_unscanned ref path tool server operation domain role].freeze
       PAIRS = {
         ["write", "file"] => "fs.write",
         ["delete", "file"] => "fs.delete",
@@ -24,7 +24,7 @@ module Polispec
       }.freeze
       VERB_ALIASES = { "edit" => "write", "remove" => "delete", "execute" => "run", "invoke" => "call", "request" => "fetch", "delegate" => "spawn" }.freeze
       OBJECT_ALIASES = { "path" => "file", "cmd" => "command", "web" => "url", "subagent" => "agent", "repo" => "repository", "git" => "repository", "policy" => "control", "controls" => "control" }.freeze
-      DYNAMIC_MATCH_KEYS = %w[crosses destructive shape lock_held live_binary delete_protected delete_protected_file supervised pin_regress tag_claimed base_unpushed public_remote public_path push_unscanned].freeze
+      DYNAMIC_MATCH_KEYS = %w[crosses destructive shape lock_held live_binary delete_protected delete_protected_file delete_unbacked supervised pin_regress tag_claimed base_unpushed public_remote public_path push_unscanned].freeze
 
       class ParseError < Polispec::Error
         attr_reader :offset, :suggestions, :code

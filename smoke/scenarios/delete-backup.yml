@@ -1,0 +1,98 @@
+schema: polispec.smoke-scenario/v1
+unit: delete_backup
+summary: the opt-in delete-backup spec gives no verdict while inactive, then warns on a recursive delete of an existing directory with no .backup copy, on deletes of backup directories, on a recursive delete with an unresolved operand, on a find delete with no filter and on git clean with -d, and leaves a backed-up directory, a git-ignored build folder, a filtered find and a plain file delete alone
+fixture:
+  enforce: enforce
+  global: files
+  global_files:
+    "global.yml": "schema: polispec.global/v1\nsummary: Smoke baseline with one rule so every path is governed.\nrules:\n  - { id: SMOKE-NOSECRETS, match: { class: [secrets.read], env: prod }, verdict: deny, reason: \"smoke baseline: no production secrets\" }\n"
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      files:
+        "README.md": "shop\n"
+        ".gitignore": "node_modules\n"
+        "work/a.txt": "x\n"
+        "node_modules/m/index.js": "x\n"
+        "backups/old.txt": "x\n"
+steps:
+  - name: a recursive delete of an unbacked directory is allowed while the spec is inactive
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{project.shop}}/work" }, cwd: "{{project.shop}}" }
+    home: true
+    parity: ignore
+    expect: { decision: allow }
+  - name: activate the delete-backup spec on a terminal
+    run: ["{{polispec}}", catalog, activate, delete-backup]
+    tty: ["activate catalog delete-backup"]
+    parity: ignore
+    expect: { exit: 0, stdout_includes: ["delete-backup/copy", "delete-backup/opaque"] }
+  - name: a recursive delete of an existing unbacked directory warns
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{project.shop}}/work" }, cwd: "{{project.shop}}" }
+    home: true
+    parity: ignore
+    expect: { decision: ask, rule: G-DELETE-UNBACKED }
+  - name: a recursive delete of a git-ignored build folder is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{project.shop}}/node_modules" }, cwd: "{{project.shop}}" }
+    home: true
+    parity: ignore
+    expect: { decision: allow }
+  - name: a plain file delete is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm {{project.shop}}/README.md" }, cwd: "{{project.shop}}" }
+    home: true
+    parity: ignore
+    expect: { decision: allow }
+  - name: make a backup copy beside the directory
+    run: [sh, -c, 'mkdir -p "$0/.backup/work-20260101-000000" && cp -a "$0/work/." "$0/.backup/work-20260101-000000/"', "{{project.shop}}"]
+    parity: ignore
+    expect: { exit: 0 }
+  - name: a recursive delete of a backed-up directory is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{project.shop}}/work" }, cwd: "{{project.shop}}" }
+    home: true
+    parity: ignore
+    expect: { decision: allow }
+  - name: deleting a .backup directory warns
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{project.shop}}/.backup" }, cwd: "{{project.shop}}" }
+    home: true
+    parity: ignore
+    expect: { decision: ask, rule: G-DELETE-BACKUP-DIR }
+  - name: deleting inside a .backup directory warns
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{project.shop}}/.backup/x" }, cwd: "{{project.shop}}" }
+    home: true
+    parity: ignore
+    expect: { decision: ask, rule: G-DELETE-BACKUP-CONTENTS }
+  - name: deleting a directory named backups warns
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{project.shop}}/backups" }, cwd: "{{project.shop}}" }
+    home: true
+    parity: ignore
+    expect: { decision: ask, rule: G-DELETE-BACKUPS-NAMED }
+  - name: a recursive delete with an unresolved operand warns
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf \"$UNSET\"" }, cwd: "{{project.shop}}" }
+    home: true
+    parity: ignore
+    expect: { decision: ask, rule: G-DELETE-UNRESOLVED }
+  - name: a find delete with no filter warns
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "find {{project.shop}}/work -delete" }, cwd: "{{project.shop}}" }
+    home: true
+    parity: ignore
+    expect: { decision: ask, rule: G-DELETE-FIND-UNFILTERED }
+  - name: a find delete with a name filter is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "find {{project.shop}}/work -name '*.o' -delete" }, cwd: "{{project.shop}}" }
+    home: true
+    parity: ignore
+    expect: { decision: allow }
+  - name: git clean with -d warns
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "git clean -fd" }, cwd: "{{project.shop}}" }
+    home: true
+    parity: ignore
+    expect: { decision: ask, rule: G-DELETE-GIT-CLEAN-DIRS }
+  - name: git clean with a dry run is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "git clean -nd" }, cwd: "{{project.shop}}" }
+    home: true
+    parity: ignore
+    expect: { decision: allow }
+  - name: git clean without -d is allowed
+    hook: { harness: claude, event: pretool, tool: Bash, input: { command: "git clean -f" }, cwd: "{{project.shop}}" }
+    home: true
+    parity: ignore
+    expect: { decision: allow }

@@ -442,6 +442,8 @@ Since 0.45.0 polispec ships a catalog of optional specs under `catalog/`, and no
 | `tools` | `web-agent` | Warns on an agent call to the local web app (`G-WEB-AGENT`). |
 | `delete-guard` | `protected` | Denies deletes that reach the protected system and configuration folders, and warns on single-file deletes beneath them. |
 | `delete-guard` | `xargs` | Warns on an xargs-fed delete. |
+| `delete-backup` | `copy` | Warns on a recursive `rm` of an existing directory that has no `.backup/<name>-*` copy beside it, and on any delete of a `.backup` directory, its contents or a directory named `backups`. Git-ignored build folders (`target`, `node_modules`, `dist`, `.next`, `__pycache__`, `.cache`, `build`) need no copy. |
+| `delete-backup` | `opaque` | Warns on a recursive `rm` whose operand polispec cannot resolve, a `find` delete with no filter, and `git clean` with `-d` (a dry run is not judged). |
 | `mcp` | `undeclared` | Gates MCP operations that no protected control or committed policy declares (`POLISPEC-MCP-UNDECLARED`: ask under standard, deny under lock). |
 | `mcp` | `declared` | Declares the operations of the MCP servers the host configures; needs a provisioned file. |
 | `harness` | `hook-files` | Since 0.52.0. Warns on an agent write or delete of a Claude Code, Codex, Hermes or Antigravity hook, skill or agent definition file (settings, skills, agents and hooks under `.claude/`, `.codex/config.toml` and `hooks.json`, `.hermes/config.yaml`, `.gemini/config/hooks.json`, `.agents/hooks.json`), in any environment. Without it those writes are allowed in a project's development environment and ungoverned in the home directory, and Claude Code applies them to the running session. |
