@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.55.1] - 2026-10-30
+
+### Fixed
+- **`delete-backup` follows the host rule as it now stands: confirm every recursive directory delete, copy nothing beside the original.** 0.55.0 ported the Claude Code BKUP hook as it read before the host changed it from backup-before-delete to confirm-before-delete. `G-DELETE-UNBACKED` (predicate `delete_unbacked`) no longer lets a non-empty `<parent>/.backup/<name>-*` copy lift the warn, and its reason and note no longer suggest `mkdir -p … && cp -a …`; they ask for the user's confirmation of the exact path. Found by reading the host's changed `directives/bkup.md` before unwiring the hook, not by a check. The rule and predicate names are kept so a shelf rule that overrides `G-DELETE-UNBACKED` keeps working.
+- `smoke/scenarios/delete-backup.yml`: the step that made a backed-up directory pass now expects the warn.
+
+### Verdict changes
+- With `delete-backup` active, `rm -rf <dir>` of a directory that has a `.backup/<name>-*` copy beside it changes from allow to warn `G-DELETE-UNBACKED`. Nothing changes while the spec is inactive.
+
 ## [0.55.0] - 2026-10-29
 
 ### Added

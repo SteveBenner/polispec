@@ -442,7 +442,7 @@ Since 0.45.0 polispec ships a catalog of optional specs under `catalog/`, and no
 | `tools` | `web-agent` | Warns on an agent call to the local web app (`G-WEB-AGENT`). |
 | `delete-guard` | `protected` | Denies deletes that reach the protected system and configuration folders, and warns on single-file deletes beneath them. |
 | `delete-guard` | `xargs` | Warns on an xargs-fed delete. |
-| `delete-backup` | `copy` | Warns on a recursive `rm` of an existing directory that has no `.backup/<name>-*` copy beside it, and on any delete of a `.backup` directory, its contents or a directory named `backups`. Git-ignored build folders (`target`, `node_modules`, `dist`, `.next`, `__pycache__`, `.cache`, `build`) need no copy. |
+| `delete-backup` | `copy` | Warns on a recursive `rm` of an existing directory, so the user confirms the exact path (a `.backup` copy beside it does not lift the warn, and none is suggested), and on any delete of a `.backup` directory, its contents or a directory named `backups`. Git-ignored build folders (`target`, `node_modules`, `dist`, `.next`, `__pycache__`, `.cache`, `build`) need no copy. |
 | `delete-backup` | `opaque` | Warns on a recursive `rm` whose operand polispec cannot resolve, a `find` delete with no filter, and `git clean` with `-d` (a dry run is not judged). |
 | `mcp` | `undeclared` | Gates MCP operations that no protected control or committed policy declares (`POLISPEC-MCP-UNDECLARED`: ask under standard, deny under lock). |
 | `mcp` | `declared` | Declares the operations of the MCP servers the host configures; needs a provisioned file. |

@@ -1,6 +1,6 @@
 schema: polispec.smoke-scenario/v1
 unit: delete_backup
-summary: the opt-in delete-backup spec gives no verdict while inactive, then warns on a recursive delete of an existing directory with no .backup copy, on deletes of backup directories, on a recursive delete with an unresolved operand, on a find delete with no filter and on git clean with -d, and leaves a backed-up directory, a git-ignored build folder, a filtered find and a plain file delete alone
+summary: the opt-in delete-backup spec gives no verdict while inactive, then warns on a recursive delete of an existing directory, with or without a .backup copy beside it, on deletes of backup directories, on a recursive delete with an unresolved operand, on a find delete with no filter and on git clean with -d, and leaves a git-ignored build folder, a filtered find and a plain file delete alone
 fixture:
   enforce: enforce
   global: files
@@ -17,7 +17,7 @@ fixture:
         "node_modules/m/index.js": "x\n"
         "backups/old.txt": "x\n"
 steps:
-  - name: a recursive delete of an unbacked directory is allowed while the spec is inactive
+  - name: a recursive delete of a directory is allowed while the spec is inactive
     hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{project.shop}}/work" }, cwd: "{{project.shop}}" }
     home: true
     parity: ignore
@@ -27,7 +27,7 @@ steps:
     tty: ["activate catalog delete-backup"]
     parity: ignore
     expect: { exit: 0, stdout_includes: ["delete-backup/copy", "delete-backup/opaque"] }
-  - name: a recursive delete of an existing unbacked directory warns
+  - name: a recursive delete of an existing directory warns
     hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{project.shop}}/work" }, cwd: "{{project.shop}}" }
     home: true
     parity: ignore
@@ -46,11 +46,11 @@ steps:
     run: [sh, -c, 'mkdir -p "$0/.backup/work-20260101-000000" && cp -a "$0/work/." "$0/.backup/work-20260101-000000/"', "{{project.shop}}"]
     parity: ignore
     expect: { exit: 0 }
-  - name: a recursive delete of a backed-up directory is allowed
+  - name: an existing .backup copy does not lift the warn on a recursive delete
     hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{project.shop}}/work" }, cwd: "{{project.shop}}" }
     home: true
     parity: ignore
-    expect: { decision: allow }
+    expect: { decision: ask, rule: G-DELETE-UNBACKED }
   - name: deleting a .backup directory warns
     hook: { harness: claude, event: pretool, tool: Bash, input: { command: "rm -rf {{project.shop}}/.backup" }, cwd: "{{project.shop}}" }
     home: true
