@@ -284,25 +284,13 @@ module Polispec
       return no unless File.directory?(lexical) && !File.symlink?(lexical)
       return no if backup_path?(lexical)
 
-      parent = File.dirname(lexical)
-      return no if backup_copy?(parent, name)
-      return no if Layers.shipped_delete_backup.include?(name) && git_ignored?(parent, lexical)
+      return no if Layers.shipped_delete_backup.include?(name) && git_ignored?(File.dirname(lexical), lexical)
 
-      yes("no .backup copy of #{lexical}; pass with: mkdir -p '#{parent}/.backup' && cp -a '#{lexical}' '#{parent}/.backup/#{name}-$(date -u +%Y%m%d-%H%M%S)'")
+      yes("recursive delete of the directory #{lexical}; confirm this exact path with the user, and make no copy of it beside the original")
     end
 
     def backup_path?(lexical)
       File.basename(lexical) == "backups" || lexical.split("/").include?(".backup")
-    end
-
-    def backup_copy?(parent, name)
-      store = File.join(parent, ".backup")
-      Dir.children(store).any? do |entry|
-        copy = File.join(store, entry)
-        entry.start_with?("#{name}-") && File.directory?(copy) && !Dir.children(copy).empty?
-      end
-    rescue SystemCallError
-      false
     end
 
     def git_ignored?(parent, lexical)

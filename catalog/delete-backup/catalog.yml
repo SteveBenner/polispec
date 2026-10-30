@@ -1,6 +1,6 @@
 schema: polispec.catalog/v1
 name: delete-backup
-summary: Warns on recursive deletes of directories with no .backup copy, on deletes of backup directories, and on deletes the guard cannot read.
+summary: Warns on recursive deletes of directories so each is confirmed, on deletes of backup directories, and on deletes the guard cannot read.
 subspecs:
-  - { id: copy, summary: "Warns on a recursive delete of a directory with no .backup copy beside it and on any delete of a backup directory.", module: copy.yml }
+  - { id: copy, summary: "Warns on a recursive delete of a directory so the user confirms it, and on any delete of a backup directory.", module: copy.yml }
   - { id: opaque, summary: "Warns on recursive deletes with an unresolved operand, on find deletes with no filter, and on git clean with -d.", module: opaque.yml }
