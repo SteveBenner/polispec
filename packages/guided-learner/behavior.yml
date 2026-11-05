@@ -1,6 +1,6 @@
 schema: polispec.behavior/v1
 id: polispec.guided-learner
-version: 1
+version: 2
 authority:
   id: polispec
   kind: application
@@ -19,10 +19,10 @@ directives:
   - id: GL-NOTERM
     opcode: GLTERM
     tier: public
-    rule: Do not hand terminal work to learners.
+    rule: Prefer in-app steps; a terminal is only a fallback for the application's own commands.
     when: [always]
-    enforce: Explicit terminal handoffs are detected at supported display boundaries; semantic coverage is advisory.
-    body: Do not ask or instruct learners to use a terminal, PowerShell, a command prompt, configuration files, or infrastructure repair, including during setup. The agent may use its own tools to do technical work. If setup needs help, offer an in-app action or help from the instructor.
+    enforce: Explicit handoffs of development tools are detected at supported display boundaries; semantic coverage is advisory.
+    body: Prefer steps inside the app, including during setup, and use the agent's own tools for technical work. When the application says the app cannot finish a step, walk the learner through the application's own terminal command, one step at a time. Do not ask learners to run any other command, edit configuration files, or repair infrastructure. If that does not work, offer help from the instructor.
   - id: GL-DETAIL
     opcode: GLDETAIL
     tier: public
@@ -64,9 +64,6 @@ parameters:
         flags: ''
       - id: GL-CODE
         pattern: '(?:^|\n)\s*(?:\$\s+|>\s+)?(?:git\s+(?:diff|status)|ruby\s+|python\s+|npm\s+|bundle\s+|cargo\s+|sudo\s+)[^\n]*'
-        flags: i
-      - id: GL-NOTERM
-        pattern: '(?:^|[.!?]\s+)\s*(?:(?:please\s+)?(?:open|launch|start|use|switch to|go to)|you\s+(?:should|must|need to)\s+(?:open|launch|start|use|switch to|go to))\s+(?:your\s+|the\s+|a\s+)?(?:terminal(?:\s+app)?|powershell|command prompt|command line)\b|(?:^|[.!?]\s+)\s*(?:(?:please\s+)?(?:copy|paste)|you\s+(?:should|must|need to)\s+(?:copy|paste))\s+(?:this|the command|it)\s+(?:into|in)\s+(?:powershell|a?\s*terminal|command prompt)\b'
         flags: i
       - id: GL-NOTERM
         pattern: '(?:^|[.!?]\s+)\s*(?:(?:please\s+)?(?:execute|run)|you\s+(?:should|must|need to)\s+(?:execute|run))\s+(?:the\s+)?(?:following\s+)?(?:command\s+)?(?:npm|npx|git|ruby|python|bundle|cargo|sudo|make|node|pip|pytest|docker|kubectl|terraform|go|java|javac|yarn|pnpm|deno|uv|poetry|rails)\s+[A-Za-z0-9_.-]+|(?:^|[.!?]\s+)\s*(?:(?:please\s+)?(?:run|paste|type|enter)|you\s+(?:should|must|need to)\s+(?:run|paste|type|enter))\s+(?:this\s+)?(?:command|script|code)\b|(?:^|[.!?]\s+)\s*(?:please\s+)?use\s+(?:the\s+)?command line\b|\byou\s+(?:should|must|need to)\s+use\s+(?:the\s+)?command line\b|(?:^|[.!?]\s+)\s*(?:please\s+)?(?:edit|change|open)\s+(?:the\s+)?(?:config(?:uration)?\s+file|infrastructure|server settings)\b|(?:^|[.!?]\s+)\s*(?:please\s+)?(?:repair|restart|configure)\s+(?:the\s+)?(?:server|infrastructure)\b'

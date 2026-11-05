@@ -870,7 +870,7 @@ Today polispec governs where an agent may act and how code travels to users. Wit
 
 ## Guided learner policies
 
-The optional `guided-learner` catalog package defines six policies for nontechnical learning workflows: no code in replies, no terminal handoffs, no implementation disclosures, released-assignment scope, plain-language coaching, and truthful essential disclosures. `polispec plan guided-learner --repo PATH` previews a files-only installation. It changes no development environment policy, ledger entry, or host enforcement setting.
+The optional `guided-learner` catalog package defines six policies for nontechnical learning workflows: no code in replies, the app first with the application's own commands as the only terminal fallback, no implementation disclosures, released-assignment scope, plain-language coaching, and truthful essential disclosures. `polispec plan guided-learner --repo PATH` previews a files-only installation. It changes no development environment policy, ledger entry, or host enforcement setting.
 
 `polispec behavior export-package guided-learner` exports the compiled policy for a consuming application's own adapter. That adapter owns native hook integration and reports display replacement, after-display correction, and advisory coverage honestly. The package itself does not intercept replies or establish semantic compliance. See [behavior policy](docs/behavior.md) for the contract and limitations.
 
