@@ -310,4 +310,4 @@ steps:
     home: true
     expect:
       exit: 0
-      stdout_includes: ["link: recreate {{scratch}}/polispec-data/current -> {{scratch}}/polispec-data/releases/0123456789abcdef0123456789abcdef01234567"]
+      stdout_includes: ["link: recreate {{scratch}}/polispec-data/current -> {{scratch}}/polispec-data/releases/00000000"]
