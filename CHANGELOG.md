@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.56.1] - 2026-11-05
+
+### Fixed
+
+- The pin steps of the `sweep-inputs` smoke scenario clone without hardlinks. `git clone --local` stops with an error when its source and target are on different filesystems, so the scenario failed wherever the checkout and the temporary directory are on separate filesystems. That failed the test health check of 0.56.0. No verdict or product behavior changes.
+
 ## [0.56.0] - 2026-11-05
 
 Closes the remaining findings of the 2026-11-04 security sweep. The classifier reads more of what a line does, and polispec stops trusting several inputs it used to take at face value. Same limit as 0.55.3: this raises the cost for an agent sharing the user's account and is not authentication.

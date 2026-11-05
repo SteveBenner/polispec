@@ -91,7 +91,7 @@ steps:
       exit: 1
       stderr_includes: ["could not be read"]
   - name: a tag in a source clone is pinned
-    run: [sh, -c, 'git clone -q --local "$1" "$2" && cd "$2" && echo 9.9.9 > VERSION && git add VERSION && git -c user.email=a@b -c user.name=n commit -q -m v && git tag v9.9.9 && "$3" pin --source "$2" --ref v9.9.9', sh, "{{tree}}", "{{scratch}}/pin-src", "{{polispec}}"]
+    run: [sh, -c, 'git clone -q --no-hardlinks "$1" "$2" && cd "$2" && echo 9.9.9 > VERSION && git add VERSION && git -c user.email=a@b -c user.name=n commit -q -m v && git tag v9.9.9 && "$3" pin --source "$2" --ref v9.9.9', sh, "{{tree}}", "{{scratch}}/pin-src", "{{polispec}}"]
     expect:
       exit: 0
       stdout_includes: ["pinned v9.9.9"]
@@ -141,7 +141,7 @@ steps:
       exit: 1
       stderr_includes: ["is not readable"]
   - name: a source clone carries a tag with a PGP signature block
-    run: [sh, -c, 'git clone -q --local "$1" "$2" && cd "$2" && echo 9.9.7 > VERSION && git add VERSION && git -c user.email=a@b -c user.name=n commit -q -m v && commit=$(git rev-parse HEAD) && obj=$(printf "object %s\ntype commit\ntag v9.9.7\ntagger r <r@example.invalid> 1700000000 +0000\n\nv\n-----BEGIN PGP SIGNATURE-----\nZmFrZQ==\n-----END PGP SIGNATURE-----\n" "$commit" | git hash-object -t tag -w --stdin) && git update-ref refs/tags/v9.9.7 "$obj" && echo s > "$3"', sh, "{{tree}}", "{{scratch}}/pgp-src", "{{scratch}}/signers"]
+    run: [sh, -c, 'git clone -q --no-hardlinks "$1" "$2" && cd "$2" && echo 9.9.7 > VERSION && git add VERSION && git -c user.email=a@b -c user.name=n commit -q -m v && commit=$(git rev-parse HEAD) && obj=$(printf "object %s\ntype commit\ntag v9.9.7\ntagger r <r@example.invalid> 1700000000 +0000\n\nv\n-----BEGIN PGP SIGNATURE-----\nZmFrZQ==\n-----END PGP SIGNATURE-----\n" "$commit" | git hash-object -t tag -w --stdin) && git update-ref refs/tags/v9.9.7 "$obj" && echo s > "$3"', sh, "{{tree}}", "{{scratch}}/pgp-src", "{{scratch}}/signers"]
     expect:
       exit: 0
   - name: allowed signers are set

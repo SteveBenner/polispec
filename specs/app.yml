@@ -1,6 +1,6 @@
 schema_version: 1
 name: polispec
-version: 0.56.0
+version: 0.56.1
 sweep_findings:
   summary: "Since 0.56.0 the rest of the 2026-11-04 sweep. Remote changes, more shell forms, untrusted input to polispec's own git calls and ledger writes, attestations, pins, restore, the git hook, and Postgres classification all fail closed or ask."
   remote_change: "Classify::Gh and Classify::HttpRemote raise a shell.exec with raw remote_change for gh repo, secret, variable, and ruleset writes, unrecognized mutating gh api endpoints, gh pr merge, gh pr edit --base, and non-GET HTTP calls to forge hosts. Guard.evaluate answers POLISPEC-REMOTE-CHANGE: warn in standard, deny in lock, no exception lifts it."
