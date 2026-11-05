@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.55.4] - 2026-11-04
+
+### Changed
+- Tracked documents no longer name machine-specific paths, a private network address, or a private repository. `CHANGELOG.md`, `FEATURES.md`, and one verification record use neutral placeholders.
+
+### Verdict changes
+- None. No code changed.
+
 ## [0.55.3] - 2026-11-04
 
 ### Security

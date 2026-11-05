@@ -1,6 +1,6 @@
 schema_version: 1
 name: polispec
-version: 0.55.3
+version: 0.55.4
 guard_fail_closed:
   summary: "Since 0.55.3 the guard asks about what it cannot read and protects its own switches. Guard.evaluate raises POLISPEC-SETTINGS-CHANGE and POLISPEC-SHELL-UNPARSED, warn in the standard edition and deny under lock, independent of the catalog gates and never lifted by an exception."
   settings: "polispec settings set|unset and rplugin settings set|unset polispec classify as policy.edit with settings_change true, settings_key, and settings_value. A settings_change action matches no protected or guarded path, so it asks rather than denies."

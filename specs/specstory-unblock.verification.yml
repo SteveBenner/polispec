@@ -27,7 +27,7 @@ checks:
     reason: The installed guard denied the agent-run probe; it was not retried through an alternative execution shape.
     source: Sven's terminal result supplied in this session
     input: bash -n /tmp/specstory-reliability/subagent-specstory.sh
-    cwd: ~/projects/App B
+    cwd: <project>
     output_classes: [secrets.read]
     output_path: /tmp/specstory-reliability/subagent-specstory.sh
     writes_deletes_or_opaque_actions: none
