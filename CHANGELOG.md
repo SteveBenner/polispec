@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.55.5] - 2026-11-04
+
+### Removed
+- The two deprecated freeze sources named after one application. `source: command` does the same job, and every consumer's trust ref had already moved to it. A policy still using one of the old names now files `freeze_source_unknown` and gets no window, the same as any unknown source.
+- `NEXT.md`, `TODO.md`, and `docs/CURRENT-STATE.md`, which were internal working notes. `README.md` and the peer-review package now point to `ROADMAP.md`.
+
+### Changed
+- Documents and recorded smoke entries use neutral project names (`app-a`, `app-b`, `app-c`, and `app-d`).
+
+### Verdict changes
+- None for a policy using `source: command` or a manual window. A freeze using a removed source no longer yields a window.
+
 ## [0.55.4] - 2026-11-04
 
 ### Changed

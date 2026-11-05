@@ -2,7 +2,7 @@
 
 An acquaintance working in AI research reviewed polispec on 14 October 2026 and shared this package with the maintainer. The reviewer has no affiliation with the project, and the review is not an audit or a certification. It is kept here unchanged, as received.
 
-What polispec does with it is described in [`docs/CURRENT-STATE.md`](../../../docs/CURRENT-STATE.md).
+What polispec does with it is listed in [`ROADMAP.md`](../../../ROADMAP.md).
 
 ## What was reviewed
 

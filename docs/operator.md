@@ -158,7 +158,7 @@ The global layer is read from `POLISPEC_GLOBAL`, a plain directory holding `glob
 
 ## Freeze source `command`
 
-A freeze with `source: command` runs its `command` argv in the prod checkout of its `project` (default the policy's own project), with a 5 s timeout, a 300 s cache and the findings described in `docs/schema.md`. The output is `{ "windows": [{ "kind", "from", "until", "detail" }] }`; a window covers now from `from` (less any lead) until `until`, and the window's `detail` shows in the freeze label. When the freeze sets `kind`, only windows of that kind apply. `source: app-a.activity` is a deprecated alias for `command: [bin/app-a, activity, --json]` without the kind filter; `source: app-a.calendar` is a deprecated alias for `command: [bin/app-a, calendar, freezes, --json]` with it.
+A freeze with `source: command` runs its `command` argv in the prod checkout of its `project` (default the policy's own project), with a 5 s timeout, a 300 s cache and the findings described in `docs/schema.md`. The output is `{ "windows": [{ "kind", "from", "until", "detail" }] }`; a window covers now from `from` (less any lead) until `until`, and the window's `detail` shows in the freeze label. When the freeze sets `kind`, only windows of that kind apply.
 
 ## Other error codes
 

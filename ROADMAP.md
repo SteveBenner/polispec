@@ -4,7 +4,7 @@ Planned work, not yet built. Nothing here is a commitment to a release, except w
 
 ## Independent review follow-up
 
-The qualification work from the independent review of 0.19.1. The two P0 items are committed: polispec claims no preventive enforcement until both are done. The rest is intended. The full list, the acceptance standard, and current status are in [`docs/CURRENT-STATE.md`](docs/CURRENT-STATE.md).
+The qualification work from the independent review of 0.19.1. The two P0 items are committed: polispec claims no preventive enforcement until both are done. The rest is intended.
 
 - **P0:** reproduce the post-write failure and prove prevention.
 - **P0:** test the authority boundary's failure modes.

@@ -809,7 +809,7 @@ polispec is pre-1.0 software in daily use by its maintainer. The guard is determ
 
 On 14 October 2026, an acquaintance working in AI research independently reviewed polispec **0.19.1**. They found a promising architecture and unusually candid documentation of its verification gaps. They asked for a smaller, harder, reproducible enforcement matrix before any broad claim of native protection. We intend to act on the review's recommendations. Its two highest-priority items come first: reproduce the post-write failure and prove prevention, and test the authority boundary's failure modes. Until both are done, polispec makes no claim of preventive enforcement.
 
-[`docs/CURRENT-STATE.md`](docs/CURRENT-STATE.md) has the full picture: each finding, where it stands in the current release, and what comes next. The review itself is kept unchanged in [`independent/assessments/2026-10-14-peer-review/`](independent/assessments/2026-10-14-peer-review/).
+[`ROADMAP.md`](ROADMAP.md) lists the follow-up work. The review itself is kept unchanged in [`independent/assessments/2026-10-14-peer-review/`](independent/assessments/2026-10-14-peer-review/).
 
 ## Honest limits
 
@@ -851,7 +851,6 @@ Today polispec governs where an agent may act and how code travels to users. Wit
 
 ## Documentation
 
-- [`docs/CURRENT-STATE.md`](docs/CURRENT-STATE.md): where polispec stands today, the independent review of 0.19.1, and the plan that follows from it.
 - [`docs/schema.md`](docs/schema.md): every key of the policy, roster, ledger, global layer, modules, and profiles, with examples.
 - [`docs/environments.md`](docs/environments.md): the environment manifest, applying environment control, `[ENVS]`, and git hooks.
 - [`docs/packages.md`](docs/packages.md): packages, `plan`, `apply`, classification, verdict replay, and `--with-stewardship`.

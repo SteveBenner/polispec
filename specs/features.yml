@@ -1732,8 +1732,6 @@ ignore:
 - CHANGELOG.md
 - VERSION
 - FEATURES.md
-- TODO.md
-- NEXT.md
 - ROADMAP.md
 - DECISIONS.md
 - TOKENS.jsonl

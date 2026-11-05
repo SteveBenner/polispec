@@ -5,12 +5,8 @@ module Polispec
   module Freeze
     CACHE_TTL = 300
     COMMAND_TIMEOUT = 5
-    COMMAND_SOURCES = %w[command app-a.calendar app-a.activity].freeze
-    ALIAS_COMMANDS = {
-      "app-a.calendar" => %w[bin/app-a calendar freezes --json].freeze,
-      "app-a.activity" => %w[bin/app-a activity --json].freeze
-    }.freeze
-    Window = Struct.new(:id, :kind, :from, :until_at, :source, :course, :detail, keyword_init: true) do
+    COMMAND_SOURCES = %w[command].freeze
+    Window =Struct.new(:id, :kind, :from, :until_at, :source, :course, :detail, keyword_init: true) do
       def to_h
         { "id" => id, "kind" => kind, "from" => from&.utc&.iso8601, "until" => until_at&.utc&.iso8601, "source" => source, "course" => course, "detail" => detail }.compact
       end
@@ -55,8 +51,6 @@ module Polispec
       end
 
       def command_argv(freeze)
-        return ALIAS_COMMANDS[freeze["source"]] if ALIAS_COMMANDS.key?(freeze["source"])
-
         argv = freeze["command"]
         argv.is_a?(Array) && !argv.empty? && argv.all? { |item| item.is_a?(String) && !item.empty? } ? argv : nil
       end
@@ -70,13 +64,11 @@ module Polispec
         owner, owner_project = command_owner(freeze, policy, project)
         return [] unless owner
 
-        alias_source = ALIAS_COMMANDS.key?(freeze["source"]) ? freeze["source"] : nil
         entries = calendar(owner, owner_project, argv)
-        entries = entries.select { |entry| entry["kind"] == freeze["kind"] } if alias_source == "app-a.calendar" || (alias_source.nil? && freeze["kind"])
+        entries = entries.select { |entry| entry["kind"] == freeze["kind"] } if freeze["kind"]
         entries.map do |entry|
           Window.new(id: freeze["id"], kind: entry["kind"], from: parse_time(entry["from"]), until_at: parse_time(entry["until"]),
-                     source: "command", course: alias_source == "app-a.activity" ? nil : entry["course"],
-                     detail: alias_source == "app-a.calendar" ? nil : entry["detail"])
+                     source: "command", course: entry["course"], detail: entry["detail"])
         end
       end
 

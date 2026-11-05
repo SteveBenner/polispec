@@ -134,4 +134,4 @@ Nothing is announced to the running session today. Confirm from the record:
 3. `polispec exceptions list` shows the entries and the pending proposals.
 4. `polispec status` and `polispec doctor` show the ledger, the runtime and the findings.
 
-What the record cannot answer: which sessions are still running, what a session was told at its start (session events are not recorded as judgments), whether a session is waiting on `/reload-plugins` or a Codex trust review, and when a particular exception was first used. The proposed features in `TODO.md` ("Change receipts and effect tracking") close those gaps.
+What the record cannot answer: which sessions are still running, what a session was told at its start (session events are not recorded as judgments), whether a session is waiting on `/reload-plugins` or a Codex trust review, and when a particular exception was first used.
