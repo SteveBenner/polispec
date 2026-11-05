@@ -56,7 +56,7 @@ is unreviewable, not a clean result. At a display boundary, it may show the
 original reply only after review; otherwise it shows the configured fallback.
 The recovery instruction preserves relevant privacy, consent, grade, submission,
 and support information. Static patterns identify selected explicit forms
-such as code fences, common terminal handoffs, developer paths, and architecture
+such as code fences, handoffs of development tools, developer paths, and architecture
 terms such as backend, frontend, and software or web framework.
 They recognize panel-versus-backend and slice-versus-backend phrasing without
 flagging panel or slice alone, so ordinary references such as a solar panel, a

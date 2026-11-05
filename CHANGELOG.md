@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.55.6] - 2026-11-05
+
+### Changed
+- `GL-NOTERM` in the `guided-learner` package (behavior version 2) now prefers steps inside the app and allows a terminal only as a fallback for the application's own commands when the application says the app cannot finish a step. The id and opcode are unchanged. The first `GL-NOTERM` detector, which matched opening or launching a terminal and copying or pasting into one, is removed; the detector for running development tools such as npm, git, ruby, and python stays.
+
+### Verdict changes
+- None for a policy of this repository. A consuming application that bundles the package no longer flags a reply that tells a learner to open a terminal or paste into one; a reply that tells a learner to run a development tool is still flagged.
+
 ## [0.55.5] - 2026-11-04
 
 ### Removed
