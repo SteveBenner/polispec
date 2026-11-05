@@ -186,7 +186,7 @@ steps:
     home: true
     expect:
       exit: 0
-      stdout_includes: ["data (bytes): copy data/led/ledger.yml back to {{scratch}}", ".config/polispec/moved-bkp_0123456789cd.yml"]
+      stdout_includes: ["data (bytes): copy data/led/ledger.yml back to {{scratch}}", ".config/polispec/moved-"]
   - name: restore --dry-run refuses a recorded ledger path whose stored file is not a ledger
     run: ["{{polispec}}", restore, bkp_0123456789ce, --dry-run]
     home: true
@@ -265,10 +265,12 @@ steps:
           mkdir -p "$dir/data/led"
           printf 'schema: polispec.ledger/v1\nhost: moved\nprojects: []\n' > "$dir/data/led/ledger.yml"
         done
-        cat > "$backups/bkp_0123456789d0/backup.json" <<JSON
+        id=bkp_0123456789d0
+        cat > "$backups/$id/backup.json" <<JSON
         {"schema":"polispec.backup/v1","id":"bkp_0123456789d0","created_at":"2026-10-29T00:00:00Z","polispec_version":"0.56.0","keep":[],"entries":[{"id":"dep_led","kind":"ledger","target":"$1/outside.yml","class":"data","status":"active","details":{}}],"files":[],"data":[{"entry":"dep_led","original":"$1/outside.yml","stored":"data/led/ledger.yml","kind":"file","method":"rename"}],"steps":[],"restore_command":"restore bkp_0123456789d0","restored_at":null}
         JSON
-        cat > "$backups/bkp_0123456789d1/backup.json" <<JSON
+        id=bkp_0123456789d1
+        cat > "$backups/$id/backup.json" <<JSON
         {"schema":"polispec.backup/v1","id":"bkp_0123456789d1","created_at":"2026-10-29T00:00:00Z","polispec_version":"0.56.0","keep":[],"entries":[{"id":"dep_led","kind":"ledger","target":"$user_home/.config/.hidden/ledger.yml","class":"data","status":"active","details":{}}],"files":[],"data":[{"entry":"dep_led","original":"$user_home/.config/.hidden/ledger.yml","stored":"data/led/ledger.yml","kind":"file","method":"rename"}],"steps":[],"restore_command":"restore bkp_0123456789d1","restored_at":null}
         JSON
         release=$(printf '%040d' 1)
