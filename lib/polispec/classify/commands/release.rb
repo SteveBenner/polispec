@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 require_relative "support"
+require_relative "../../native_settings"
 
 module Polispec
   module Classify
@@ -31,12 +32,20 @@ module Polispec
           return delegate(cmd, pos) if verb == "delegate"
           return web(cmd, pos) if verb == "web"
           return contract(cmd, pos) if verb == "contract"
+          return settings(cmd, pos) if verb == "settings"
           return [] unless OPERATOR_VERBS.include?(verb)
 
           project = pos[1]
           target = verb == "promote" ? Support.option_value(cmd.args, "--to") : pos[2]
           env = ENV_NAMES[target.to_s]
           [Support.act(verb, cmd.text, "path" => cmd.cwd, "project" => project, "env" => env)]
+        end
+
+        def settings(cmd, pos)
+          sub = pos[1].to_s
+          return [] unless %w[set unset].include?(sub)
+
+          [Support.act("policy.edit", cmd.text, "path" => NativeSettings.path, "settings_change" => true, "settings_key" => pos[2], "settings_value" => (sub == "set" ? pos[3] : "(unset)"))]
         end
 
         def contract(cmd, pos)

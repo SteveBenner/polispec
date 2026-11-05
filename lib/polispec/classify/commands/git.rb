@@ -23,15 +23,19 @@ module Polispec
         "merge" => :merge, "pull" => :merge, "rebase" => :rebase, "reset" => :reset, "push" => :push,
         "tag" => :tag, "branch" => :branch, "checkout" => :checkout, "switch" => :switch,
         "restore" => :fs_path, "rm" => :fs_path, "mv" => :fs_path, "apply" => :fs_path, "clean" => :clean,
-        "update-ref" => :update_ref, "filter-branch" => :rewrite_all, "filter-repo" => :rewrite_all,
+        "update-ref" => :update_ref, "config" => :config, "filter-branch" => :rewrite_all, "filter-repo" => :rewrite_all,
         "add" => :add, "fetch" => :fetch, "clone" => :clone, "init" => :init, "worktree" => :worktree, "submodule" => :submodule
       }.freeze
-      GLOBAL_VALUE = %w[-c --namespace --super-prefix --config-env].freeze
+      GLOBAL_VALUE = %w[-c --namespace --super-prefix --config-env --attr-source].freeze
       PUSH_VALUE = %w[-o --push-option --repo --receive-pack --exec].freeze
       CLONE_VALUE = %w[-b --branch --depth -o --origin --reference --template -c --config -j --jobs --separate-git-dir --filter -u --upload-pack].freeze
       BRANCH_VALUE = %w[-u --set-upstream-to --contains --no-contains --merged --no-merged --sort --format --points-at].freeze
       TAG_VALUE = %w[-m -F -u --contains --no-contains --points-at --merged --no-merged --sort --format].freeze
       COMMIT_VALUE_LETTERS = "mFCctu".freeze
+      CONFIG_VALUE = %w[-f --file --blob --type --default --includes-from].freeze
+      CONFIG_READ = %w[--get --get-all --get-regexp --list -l].freeze
+      CONFIG_UNSET = %w[--unset --unset-all --add --replace-all].freeze
+      CONFIG_KEYS = /\A(?:remote\..+\.(?:push|pushurl|url)|alias\..+|core\.(?:hookspath|sshcommand|fsmonitor)|url\..+\.(?:pushinsteadof|insteadof))\z/i.freeze
       ROOT_PATHSPECS = [".", ":/", ":/*", ":(top)", ":(top)*"].freeze
 
       Invocation = Struct.new(:cmd, :path, :sub, :args)
@@ -217,7 +221,21 @@ module Polispec
           body = text.sub(/\A\+/, "")
           src, dst = body.include?(":") ? body.split(":", 2) : [body, body]
           target = dst == "HEAD" ? current(inv) : dst
-          Spec.new(ref_name(target), target.to_s.start_with?("refs/tags/"), force, src.empty?, src.empty? ? nil : src)
+          name = body == ":" || dst.to_s.match?(/[*?\[{]/) ? "*" : ref_name(target)
+          Spec.new(name, target.to_s.start_with?("refs/tags/"), force, src.empty?, src.empty? ? nil : src)
+        end
+
+        def config(inv)
+          pos, flags = Support.split_args(inv.args, CONFIG_VALUE)
+          return [] if flags.any? { |flag| CONFIG_READ.include?(flag) }
+
+          verb = %w[set unset].include?(pos.first) ? pos.shift : nil
+          return [] if pos.empty?
+
+          writing = verb || pos.length > 1 || flags.any? { |flag| CONFIG_UNSET.include?(flag) }
+          return [] unless writing && CONFIG_KEYS.match?(pos.first.to_s)
+
+          [Support.act("policy.edit", inv.cmd.text, "path" => inv.path, "command" => "git config")]
         end
 
         def push_actions(inv, remote, spec, force, delete)
@@ -365,7 +383,7 @@ module Polispec
         def ref_name(raw)
           return nil if raw.nil?
 
-          raw.to_s.sub(/\A\+/, "").sub(%r{\Arefs/(?:heads|tags)/}, "").sub(%r{\Arefs/remotes/[^/]+/}, "").sub(%r{\A(?:origin|upstream)/}, "")
+          raw.to_s.sub(/\A\+/, "").sub(%r{\Arefs/(?:heads|tags)/}, "").sub(%r{\Aheads/}, "").sub(%r{\Arefs/remotes/[^/]+/}, "").sub(%r{\A(?:origin|upstream)/}, "")
         end
       end
     end

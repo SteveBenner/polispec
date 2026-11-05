@@ -9,6 +9,16 @@ polispec deploy  <project> <env> [--tag vX.Y.Z] [--skip-drain] [--dry-run] [--js
 
 `--json` prints one object. A failure is `{"ok":false,"error":{"code":"…","message":"…","payload":{…}}}` with exit status 1; a usage error exits 2. `--dry-run` runs every check and every gate and changes nothing.
 
+## Who can confirm an operator action
+
+Since 0.55.3 a typed confirmation is refused when `CLAUDECODE` is set or when an ancestor process is an agent harness (`claude`, `codex`, `hermes`, `gemini`, `antigravity`, `agy`, `deepseek`, `deepseek-tui`, or `pi`). Run operator commands from your own terminal, not from a harness's shell, and not through a terminal the harness started. A confirmer delegated by `polispec web` is judged as before.
+
+The smoke suite drives these commands through a pty, so its fixture sets `POLISPEC_TTY_CONFINE` to its scratch directory. The variable lifts the refusal only when polispec's state, ledger, releases, settings, exceptions, environment root, and every ledger project's repository all lie inside that directory, so a confirmed action can only change scratch state. The guard asks about a shell line that assigns the variable.
+
+This check raises the cost; it does not authenticate a person. A process running as your user can detach from its harness, and a program can change polispec's files without a shell line the guard can read. Without the sealed authority plane, polispec and an agent share one user, and the guard judges the calls it can see. The boundary against that is the sealed plane or OS isolation ([harness controls](harness-controls.md)).
+
+polispec's own state, settings, launchers, and fast-path files are protected paths: a write or delete the guard can read is denied with `POLISPEC-CONTROL-PROTECTION`. A session hook rewrites a fast-path file that does not match the policy and emits a `fastpath_mismatch` finding. An unsealed pause record counts only when it is well formed, runs at most 240 minutes, and is not dated in the future. `polispec doctor` reports `fastpath_mismatch` and `pause_record_rejected`.
+
 ## Git discipline
 
 Project promotion Git runs through Open3 with exact argv, never a shell. The helper refuses `--force`, `--force-with-lease`, `+refspec`, `reset`, `--hard`, `--no-ff` and `--mirror`. Test and stable only ever move by a non-forced, atomic push of a fast-forward; no merge commit is created on either. Every comparison uses the remote-tracking refs after a `git fetch origin --prune --tags` in the project's repo, so unpushed local commits are never promoted. After the push the local `test` or `stable` branch is advanced with a compare-and-swap `update-ref` (or `merge --ff-only` when it is checked out), and skipped when another worktree has it checked out.

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 require "strscan"
+require "shellwords"
 
 module Polispec
   module Classify
@@ -85,7 +86,8 @@ module Polispec
         end
       end
 
-      Script = Struct.new(:commands, :text, :opaque, :followed)
+      Script = Struct.new(:commands, :text, :opaque, :followed, :unparsed)
+      GATE_OVERRIDE = /\bPOLISPEC_TTY_CONFINE=/.freeze
 
       module_function
 
@@ -94,7 +96,8 @@ module Polispec
         parser = Parser.new(text.to_s, cwd, vars, depth)
         commands = parser.run
         nested = embedded_scripts(commands, depth)
-        Script.new(commands + nested.flat_map(&:commands), text.to_s, parser.opaque || nested.any?(&:opaque), (parser.followed + nested.flat_map(&:followed)).uniq)
+        override = text.to_s.match?(GATE_OVERRIDE) ? ["operator gate override"] : []
+        Script.new(commands + nested.flat_map(&:commands), text.to_s, parser.opaque || nested.any?(&:opaque), (parser.followed + nested.flat_map(&:followed)).uniq, (parser.unparsed + nested.flat_map(&:unparsed) + override).uniq)
       end
 
       def default_vars(cwd)
@@ -102,10 +105,17 @@ module Polispec
       end
 
       def embedded_scripts(commands, depth)
-        return [] if depth >= MAX_DEPTH
+        if depth >= MAX_DEPTH
+          deep = commands.any? { |cmd| !embedded_sources(cmd).empty? }
+          return deep ? [Script.new([], "", false, [], ["nesting too deep"])] : []
+        end
 
         commands.flat_map do |cmd|
-          embedded_sources(cmd).map { |source| parse(source, cmd.cwd, depth + 1) }
+          embedded_sources(cmd).map do |source|
+            script = parse(source, cmd.cwd, depth + 1)
+            script.unparsed -= [Parser::UNTERMINATED] unless SHELLS.include?(cmd.name)
+            script
+          end
         end
       end
 
@@ -263,8 +273,14 @@ module Polispec
       class Parser
         Segment = Struct.new(:words, :redirects, :pending, :start)
 
-        attr_reader :commands, :opaque, :followed
-        attr_accessor :vars, :cwd, :written, :unknown_writes
+        ANSI_SIMPLE = { "a" => "\a", "b" => "\b", "e" => "\e", "E" => "\e", "f" => "\f", "n" => "\n", "r" => "\r", "t" => "\t", "v" => "\v", "\\" => "\\", "'" => "'", '"' => '"' }.freeze
+        UNTERMINATED = "unterminated quote or heredoc".freeze
+        GIT_OVERRIDE = /\A(?:alias\.|core\.(?:sshcommand|hookspath|fsmonitor|pager|gitproxy)|remote\.|url\.)/i.freeze
+        GIT_GLOBAL_VALUE = %w[-C --git-dir --work-tree --namespace --super-prefix --attr-source].freeze
+        GIT_PUSH_VALUE = %w[-o --push-option --repo --receive-pack --exec].freeze
+
+        attr_reader :commands, :opaque, :followed, :unparsed
+        attr_accessor :vars, :cwd, :written, :unknown_writes, :switched
 
         def initialize(text, cwd, vars, depth, budget = nil, following = false)
           @budget = budget || FollowBudget.new(0, nil, false)
@@ -283,6 +299,8 @@ module Polispec
           @written = {}
           @unknown_writes = false
           @followed = []
+          @unparsed = []
+          @switched = false
         end
 
         def run
@@ -291,21 +309,28 @@ module Polispec
         end
 
         def parse_nested(source, following = @following)
-          return if @depth >= MAX_DEPTH
+          return (source.to_s.strip.empty? ? nil : mark_unparsed!("nesting too deep")) if @depth >= MAX_DEPTH
 
           child = Parser.new(source.to_s, @cwd, @vars.dup, @depth + 1, @budget, following)
+          child.switched = @switched
           @commands.concat(child.run)
+          absorb(child)
+        end
+
+        def absorb(child)
           @opaque ||= child.opaque
           @followed.concat(child.followed)
+          @unparsed.concat(child.unparsed - @unparsed)
+          @switched ||= child.switched
         end
 
         def parse_sourced(source)
           child = Parser.new(source.to_s, @cwd, @vars.dup, @depth + 1, @budget, true)
           child.written = @written.dup
           child.unknown_writes = @unknown_writes
+          child.switched = @switched
           @commands.concat(child.run)
-          @opaque ||= child.opaque
-          @followed.concat(child.followed)
+          absorb(child)
           @vars = child.vars
           @cwd = child.cwd
           @written = child.written
@@ -314,6 +339,11 @@ module Polispec
 
         def mark_opaque!
           @opaque = true
+        end
+
+        def mark_unparsed!(reason)
+          @unparsed << reason unless @unparsed.include?(reason)
+          nil
         end
 
         def set_cwd(dir)
@@ -345,6 +375,7 @@ module Polispec
             case tok[0]
             when :eof
               emit(seg, false)
+              mark_unparsed!(UNTERMINATED) unless @heredocs.empty?
               return
             when :word then add_word(seg, tok[1])
             when :redir then seg.pending = tok
@@ -382,11 +413,12 @@ module Polispec
 
         def add_word(seg, word)
           seg.start ||= @tok_start
+          @prev_word = word.to_s
           return seg.words << word unless seg.pending
 
           redirect = Redirect.new(seg.pending[1], seg.pending[2], word, nil)
           seg.redirects << redirect
-          @heredocs << [redirect, word.to_s, seg.pending[1] == "<<-"] if %w[<< <<-].include?(seg.pending[1])
+          @heredocs << [redirect, word.to_s, seg.pending[1] == "<<-", @quoted] if %w[<< <<-].include?(seg.pending[1])
           seg.pending = nil
         end
 
@@ -407,7 +439,7 @@ module Polispec
           end
           return [:word, process_substitution] if @ss.check(/[<>]\(/)
 
-          operator_token || word_token
+          arithmetic_command || operator_token || word_token
         end
 
         def skip_blanks
@@ -477,15 +509,18 @@ module Polispec
           @quoted = true
           @ss.getch
           word << (@ss.scan(/[^']*/) || "")
+          mark_unparsed!(UNTERMINATED) if @ss.eos?
           @ss.getch
         end
 
         def double_quoted(word)
           @quoted = true
           @ss.getch
-          until @ss.eos?
+          loop do
+            return mark_unparsed!(UNTERMINATED) if @ss.eos?
+
             char = @ss.peek(1)
-            break @ss.getch if char == '"'
+            return @ss.getch if char == '"'
 
             dq_char(word, char)
           end
@@ -494,7 +529,7 @@ module Polispec
         def dq_char(word, char)
           case char
           when "\\" then dq_escape(word)
-          when "$" then dollar(word)
+          when "$" then dollar(word, true)
           when "`" then backtick(word)
           else word << @ss.getch
           end
@@ -523,9 +558,13 @@ module Polispec
           word << (at_start && boundary ? @vars.fetch("HOME", Dir.home) : "~")
         end
 
-        def dollar(word)
+        def dollar(word, in_quotes = false)
           @ss.getch
-          if @ss.check(/\(\(/)
+          if !in_quotes && @ss.check(/'/)
+            ansi_c(word)
+          elsif !in_quotes && @ss.check(/"/)
+            double_quoted(word)
+          elsif @ss.check(/\(\(/)
             arithmetic(word)
           elsif @ss.check(/\(/)
             command_substitution(word)
@@ -536,16 +575,172 @@ module Polispec
           end
         end
 
-        def arithmetic(word)
+        def ansi_c(word)
+          @quoted = true
+          @ss.getch
+          loop do
+            return mark_unparsed!(UNTERMINATED) if @ss.eos?
+
+            char = @ss.getch
+            return if char == "'"
+
+            word << (char == "\\" ? ansi_escape : char)
+          end
+        end
+
+        def ansi_escape
+          nxt = @ss.getch
+          return "\\" if nxt.nil?
+          return ANSI_SIMPLE[nxt] if ANSI_SIMPLE.key?(nxt)
+
+          case nxt
+          when /[0-7]/ then byte_char(((nxt + (@ss.scan(/[0-7]{1,2}/) || "")).to_i(8)) & 0xFF)
+          when "x" then (digits = @ss.scan(/\h{1,2}/)) ? byte_char(digits.to_i(16)) : "\\x"
+          when "u" then unicode_char(@ss.scan(/\h{1,4}/), "\\u")
+          when "U" then unicode_char(@ss.scan(/\h{1,8}/), "\\U")
+          when "c" then (ctrl = @ss.getch) ? byte_char(ctrl.ord & 0x1f) : "\\c"
+          else "\\#{nxt}"
+          end
+        end
+
+        def byte_char(value)
+          [value].pack("C").force_encoding(Encoding::UTF_8).scrub("?")
+        end
+
+        def unicode_char(digits, literal)
+          return literal unless digits
+
+          [digits.to_i(16)].pack("U")
+        rescue RangeError
+          "#{literal}#{digits}"
+        end
+
+        def balanced_parens
+          out = +""
           depth = 0
           until @ss.eos?
             char = @ss.getch
+            out << char
             depth += 1 if char == "("
             depth -= 1 if char == ")"
             break if depth.zero?
           end
+          out
+        end
+
+        def pure_arithmetic?(span, for_clause = false)
+          return false unless span.start_with?("((") && span.end_with?("))")
+          return false if !for_clause && span.include?(";")
+
+          inner_closes_last?(span)
+        end
+
+        def inner_closes_last?(span)
+          depth = 0
+          span.each_char.with_index do |char, i|
+            depth += 1 if char == "("
+            depth -= 1 if char == ")"
+            return false if i >= 2 && i < span.length - 2 && depth < 2
+          end
+          true
+        end
+
+        def arithmetic_inner(span)
+          span.end_with?(")") ? span[1..-2].to_s : span[1..].to_s
+        end
+
+        def arithmetic_body(span, for_clause = false)
+          return nested_substitutions(span) if pure_arithmetic?(span, for_clause)
+
+          parse_nested(arithmetic_inner(span))
+          mark_unparsed!("arithmetic with commands")
+        end
+
+        def arithmetic(word)
+          arithmetic_body(balanced_parens)
           word << "0"
           word.dynamic = true
+        end
+
+        def arithmetic_command
+          return nil unless @ss.check(/\(\(/)
+
+          depth = 0
+          span = nil
+          @ss.rest.each_char.with_index do |char, i|
+            depth += 1 if char == "("
+            depth -= 1 if char == ")"
+            next unless depth.zero?
+
+            span = @ss.rest[0..i]
+            break
+          end
+          return nil unless span&.end_with?("))")
+
+          @ss.pos += span.bytesize
+          arithmetic_body(span, @prev_word == "for")
+          [:word, Word.new(span)]
+        end
+
+        def nested_substitutions(text, respect_single = true)
+          i = 0
+          while i < text.length
+            char = text[i]
+            if char == "\\"
+              i += 2
+            elsif char == "'" && respect_single
+              close = text.index("'", i + 1)
+              i = close ? close + 1 : text.length
+            elsif char == "$" && text[i + 1] == "("
+              i = substitution_at(text, i + 1)
+            elsif char == "`"
+              i = backtick_at(text, i)
+            else
+              i += 1
+            end
+          end
+        end
+
+        def substitution_at(text, open)
+          depth = 0
+          i = open
+          while i < text.length
+            char = text[i]
+            if char == "\\"
+              i += 1
+            elsif char == "("
+              depth += 1
+            elsif char == ")"
+              depth -= 1
+              break if depth.zero?
+            end
+            i += 1
+          end
+          span = text[open..i].to_s
+          if span.start_with?("((")
+            arithmetic_body(span)
+          else
+            parse_nested(span.end_with?(")") ? span[1..-2] : span[1..])
+          end
+          i + 1
+        end
+
+        def backtick_at(text, start)
+          inner = +""
+          i = start + 1
+          while i < text.length
+            char = text[i]
+            break if char == "`"
+
+            if char == "\\" && text[i + 1] == "`"
+              i += 1
+              char = "`"
+            end
+            inner << char
+            i += 1
+          end
+          parse_nested(inner)
+          i + 1
         end
 
         def command_substitution(word)
@@ -558,10 +753,34 @@ module Polispec
 
         def braced(word)
           @ss.getch
-          body = @ss.scan(/[^}]*/) || ""
-          @ss.getch
+          body = braced_body
+          nested_substitutions(body)
           name = body.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/) ? body : nil
           append_variable(word, name, "${#{body}}")
+        end
+
+        def braced_body
+          body = +""
+          depth = 1
+          until @ss.eos?
+            char = @ss.getch
+            if char == "\\"
+              body << char << @ss.getch.to_s
+            elsif char == "$" && @ss.check(/\(/)
+              body << char << balanced_parens
+            elsif char == "$" && @ss.check(/\{/)
+              body << char << @ss.getch
+              depth += 1
+            elsif char == "}"
+              depth -= 1
+              break if depth.zero?
+
+              body << char
+            else
+              body << char
+            end
+          end
+          body
         end
 
         def plain_variable(word)
@@ -601,22 +820,29 @@ module Polispec
         end
 
         def read_heredocs
-          @heredocs.each do |redirect, delim, strip|
+          @heredocs.each do |redirect, delim, strip, quoted|
             lines = []
+            found = false
             until @ss.eos?
               line = @ss.scan(/[^\n]*\n?/)
               check = line.chomp
               check = check.sub(/\A\t+/, "") if strip
-              break if check == delim
+              if check == delim
+                found = true
+                break
+              end
 
               lines << line
             end
+            mark_unparsed!(UNTERMINATED) unless found
             redirect.body = lines.join
+            nested_substitutions(redirect.body, false) unless quoted
           end
           @heredocs.clear
         end
 
         def emit(seg, piped)
+          @prev_word = nil
           finish_segment(seg)
           @pipe = nil unless piped
         end
@@ -627,12 +853,31 @@ module Polispec
           text = @s[(seg.start || @tok_start)...@tok_start].to_s.strip
           words = seg.words.dup
           env = take_assignments(words)
-          words.shift while KEYWORDS.include?(words.first.to_s)
+          strip_keywords(words)
           return set_variables(env) if words.empty? && seg.redirects.empty?
           return add_command([], seg.redirects, env, text, false) if words.empty?
-          return if CLAUSES.include?(words.first.to_s)
+
+          if words.first.to_s == "function"
+            words = words.drop(2)
+            words.shift while %w[( ) {].include?(words.first.to_s)
+            return keep_redirects(seg.redirects, env, text, false) if words.empty?
+          elsif CLAUSES.include?(words.first.to_s)
+            return keep_redirects(seg.redirects, env, text, false)
+          end
 
           dispatch(words, seg.redirects, env, text)
+        end
+
+        def strip_keywords(words)
+          while KEYWORDS.include?(words.first.to_s)
+            keyword = words.shift.to_s
+            words.shift while keyword == "time" && %w[-p --].include?(words.first.to_s)
+          end
+        end
+
+        def keep_redirects(redirects, env, text, sudo)
+          add_command([], redirects, env, text, sudo) unless redirects.empty?
+          nil
         end
 
         def take_assignments(words)
@@ -655,7 +900,7 @@ module Polispec
           sudo = false
           xargs = false
           loop do
-            return if words.empty?
+            return keep_redirects(redirects, env, text, sudo) if words.empty?
             break if syntax_invocation(words, env)
 
             handler = Wrappers.handler_for(words)
@@ -664,23 +909,70 @@ module Polispec
             sudo ||= %w[sudo doas].include?(File.basename(words.first))
             xargs ||= File.basename(words.first) == "xargs"
             words = Wrappers.public_send(handler, words, self, env)
-            return if words.nil?
+            return keep_redirects(redirects, env, text, sudo) if words.nil?
           end
           finalize(words, redirects, env, text, sudo, xargs)
         end
 
         def finalize(words, redirects, env, text, sudo, xargs = false)
           name = File.basename(words.first)
-          return change_directory(words) if %w[cd pushd].include?(name)
-          return export_variables(words) if %w[export declare local readonly typeset].include?(name)
+          if %w[cd pushd].include?(name)
+            keep_redirects(redirects, env, text, sudo)
+            return change_directory(words)
+          end
+          if %w[export declare local readonly typeset].include?(name)
+            keep_redirects(redirects, env, text, sudo)
+            return export_variables(words)
+          end
+          return keep_redirects(redirects, env, text, sudo) if follow_source(words, redirects, env, sudo, xargs)
 
-          return if follow_source(words, redirects, env, sudo, xargs)
+          git_sequence(words) if name == "git"
 
           syntax = syntax_invocation(words, env)
           host = !syntax && follow_script(words) == :followed
           added = add_command(words, redirects, env, text, sudo, xargs)
           added.host = true if host && added
           added.syntax_only = true if syntax && added
+        end
+
+        def git_sequence(words)
+          args = words.drop(1).map(&:to_s)
+          overrides = []
+          until args.empty?
+            arg = args.shift
+            if arg == "-c" || arg == "--config-env"
+              overrides << args.shift.to_s
+            elsif arg.start_with?("--config-env=")
+              overrides << arg.split("=", 2).last
+            elsif GIT_GLOBAL_VALUE.include?(arg)
+              args.shift
+            elsif !arg.start_with?("-")
+              args.unshift(arg)
+              break
+            end
+          end
+          mark_unparsed!("git configuration override") if overrides.any? { |value| GIT_OVERRIDE.match?(value) }
+          sub = args.shift
+          @switched = true if %w[checkout switch].include?(sub) && !args.include?("--")
+          mark_unparsed!("push after a branch switch") if sub == "push" && @switched && push_unnamed?(args)
+        end
+
+        def push_unnamed?(args)
+          positional = []
+          rest = args.dup
+          until rest.empty?
+            arg = rest.shift
+            if arg == "--"
+              positional.concat(rest)
+              break
+            elsif arg.start_with?("-") && arg.length > 1
+              rest.shift if GIT_PUSH_VALUE.include?(arg)
+            else
+              positional << arg
+            end
+          end
+          refspecs = positional.drop(1)
+          refspecs.empty? || refspecs.any? { |spec| spec.sub(/\A\+/, "").split(":", -1).include?("HEAD") }
         end
 
         def syntax_invocation(words, env)
@@ -807,6 +1099,8 @@ module Polispec
         end
 
         def add_command(words, redirects, env, text, sudo, xargs = false)
+          first = words.first
+          mark_unparsed!("command name from a substitution") if first.respond_to?(:dynamic?) && first.dynamic? && first.match?(/\A(?:\$\(|`)/)
           @pipe ||= []
           cmd = Command.new(argv: words, cwd: @cwd, redirects: redirects, env: env, pipeline: @pipe, index: @pipe.length, text: text, sudo: sudo, xargs: xargs)
           return halt_following unless !@following || @budget.spend
@@ -820,12 +1114,12 @@ module Polispec
 
       module Wrappers
         TABLE = {
-          "sudo" => :sudo, "doas" => :sudo, "env" => :env, "nohup" => :plain, "time" => :plain,
-          "command" => :command, "builtin" => :plain, "exec" => :plain, "nice" => :nice, "ionice" => :nice,
+          "sudo" => :sudo, "doas" => :sudo, "env" => :env, "nohup" => :plain, "time" => :time,
+          "command" => :command, "builtin" => :plain, "exec" => :exec, "script" => :script, "nice" => :nice, "ionice" => :nice,
           "timeout" => :timeout, "stdbuf" => :stdbuf, "setsid" => :plain, "unbuffer" => :plain,
           "xargs" => :xargs, "flock" => :flock, "eval" => :eval_command
         }.freeze
-        SUDO_ARGS = %w[-u -g -h -p -C -U -T -r -t -D -R].freeze
+        SUDO_VALUE_LETTERS = %w[u g h p C U T r t D R].freeze
 
         module_function
 
@@ -839,7 +1133,34 @@ module Polispec
         def shell(words, parser, _env)
           args = words.drop(1)
           idx = args.index { |arg| arg.match?(CODE_FLAG) }
-          parser.parse_nested(args[idx + 1]) if idx && args[idx + 1]
+          if idx
+            rest = args.drop(idx + 1)
+            rest.shift if rest.first == "--"
+            parser.parse_nested(rest.first) if rest.first
+          end
+          nil
+        end
+
+        def exec(words, _parser, _env)
+          skip_options(words.drop(1), %w[-a])
+        end
+
+        def time(words, _parser, _env)
+          skip_options(words.drop(1), %w[-f -o --format --output])
+        end
+
+        def script(words, parser, _env)
+          args = words.drop(1).map(&:to_s)
+          args.each_with_index do |arg, i|
+            value = if arg == "--command" || arg.match?(/\A-[A-Za-z]*c\z/) then args[i + 1]
+                    elsif arg.start_with?("--command=") then arg.split("=", 2).last
+                    end
+            next unless value
+
+            parser.parse_nested(value)
+            return nil
+          end
+          parser.mark_unparsed!("script without a command")
           nil
         end
 
@@ -863,7 +1184,7 @@ module Polispec
         end
 
         def sudo(words, _parser, env)
-          rest = skip_options(words.drop(1), SUDO_ARGS)
+          rest = skip_sudo_options(words.drop(1))
           while rest.first.to_s.match?(ASSIGNMENT)
             name, value = rest.shift.split("=", 2)
             env[name] = value.to_s
@@ -875,9 +1196,17 @@ module Polispec
           rest = words.drop(1)
           loop do
             first = rest.first.to_s
-            if %w[-C --chdir].include?(first)
+            if first == "-S" || first == "--split-string" || first.start_with?("--split-string=") || (first.start_with?("-S") && !first.start_with?("--"))
+              return env_split(rest, parser)
+            elsif %w[-C --chdir].include?(first)
               parser.set_cwd(rest[1])
               rest = rest.drop(2)
+            elsif first.start_with?("--chdir=")
+              parser.set_cwd(first.split("=", 2).last)
+              rest = rest.drop(1)
+            elsif first.start_with?("-C") && first.length > 2 && !first.start_with?("--")
+              parser.set_cwd(first[2..])
+              rest = rest.drop(1)
             elsif first == "-u"
               rest = rest.drop(2)
             elsif first.start_with?("-") && first != "-"
@@ -891,6 +1220,36 @@ module Polispec
             end
           end
           rest
+        end
+
+        def skip_sudo_options(args)
+          args = args.dup
+          while args.first.to_s.start_with?("-") && args.first != "--"
+            opt = args.shift.to_s
+            next if opt.start_with?("--")
+
+            letters = opt[1..].chars
+            at = letters.index { |letter| SUDO_VALUE_LETTERS.include?(letter) }
+            args.shift if at && at == letters.length - 1
+          end
+          args.shift if args.first == "--"
+          args
+        end
+
+        def env_split(rest, parser)
+          first = rest.first.to_s
+          if first.start_with?("--split-string=")
+            value = first.split("=", 2).last
+            tail = rest.drop(1)
+          elsif first == "-S" || first == "--split-string"
+            value = rest[1].to_s
+            tail = rest.drop(2)
+          else
+            value = first.delete_prefix("-S").delete_prefix("=")
+            tail = rest.drop(1)
+          end
+          parser.parse_nested([value, *tail.map { |arg| Shellwords.escape(arg.to_s) }].join(" "))
+          nil
         end
 
         def nice(words, _parser, _env)

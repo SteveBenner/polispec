@@ -22,7 +22,8 @@ module Polispec
         injections = matches.select { |control| control["effect"] == "inject" }
         root_risks = actions.select { |action| action.action_class == "shell.exec" && action.raw.is_a?(Hash) && action.raw["root_guard_risk"] }
         protected = actions.select { |action| protected_action?(action, Array(values["protected_paths"])) }
-        if !protected.empty?
+        guarded = actions.select { |action| guarded_action?(action, Array(values["guarded_paths"])) }
+        if !protected.empty? || !guarded.empty?
           denies << { "id" => "POLISPEC-CONTROL-PROTECTION", "reason" => "the call changes protected polispec authority" }
         end
         if values["root_guard"] == true && !root_risks.empty?
@@ -157,9 +158,29 @@ module Polispec
       end
       private_class_method :restriction_violated?
 
+      def guarded_action?(action, paths)
+        return false unless %w[fs.write fs.delete control.edit policy.edit].include?(action.action_class)
+        return false if action.env_hint["settings_change"] == true
+
+        target = action.env_hint["path"].to_s
+        return false if target.empty?
+
+        absolute = canonical_path(target)
+        deleting = action.action_class == "fs.delete"
+        paths.any? do |path|
+          guard = canonical_path(path)
+          absolute == guard || absolute.start_with?("#{guard}/") || (deleting && guard.start_with?("#{absolute}/"))
+        end
+      end
+
+      def guard_hit?(action, paths)
+        guarded_action?(action, paths)
+      end
+
       def protected_action?(action, paths)
         return proof_key_read?(action) if action.action_class == "secrets.read"
         return false unless %w[fs.write fs.delete control.edit policy.edit].include?(action.action_class)
+        return false if action.env_hint["settings_change"] == true
         target = action.env_hint["path"].to_s
         return false if target.empty?
         absolute = canonical_path(target)
@@ -171,7 +192,7 @@ module Polispec
           absolute == protected || absolute.start_with?("#{protected}/") || (!fallback && protected.start_with?("#{absolute}/"))
         end
       end
-      private_class_method :protected_action?
+      private_class_method :guarded_action?, :protected_action?
 
       def proof_key_read?(action)
         target = action.env_hint["path"].to_s
@@ -234,6 +255,8 @@ module Polispec
         actions = Array(values["actions"])
         trusted = values["trusted_declaration"]
         declared = ->(action) { trusted.respond_to?(:call) && trusted.call(action) }
+        settings = actions.select { |action| action.env_hint["settings_change"] == true }
+        unparsed = actions.select { |action| action.raw.is_a?(Hash) && action.raw["unparsed"] }
         undeclared = []
         if Catalog.gate?("mcp_undeclared")
           undeclared = actions.select { |action| action.action_class == "mcp.call" }.reject do |action|
@@ -244,20 +267,45 @@ module Polispec
         if Catalog.gate?("unknown_tool")
           unknown = actions.select { |action| action.raw.is_a?(Hash) && action.raw["unknown_tool"] == true }.reject { |action| declared.call(action) }
         end
-        return result if undeclared.empty? && unknown.empty?
+        return result if undeclared.empty? && unknown.empty? && settings.empty? && unparsed.empty?
         lifter = values["excepted"]
-        if lifter.respond_to?(:call)
+        if lifter.respond_to?(:call) && !(unknown + undeclared).empty?
           covered = (unknown + undeclared).map { |action| lifter.call(action) }
           unless covered.any?(&:nil?)
             result["exceptions"] = covered.uniq
-            return result
+            undeclared = []
+            unknown = []
           end
         end
-        code = undeclared.empty? ? "POLISPEC-TOOL-UNKNOWN" : "POLISPEC-MCP-UNDECLARED"
-        reason = undeclared.empty? ? "the non-read-only tool could not be positively classified" : "one or more MCP operations are not declared by protected controls or committed policy"
+        codes = []
+        reasons = []
+        steps = []
+        unless settings.empty?
+          codes << "POLISPEC-SETTINGS-CHANGE"
+          reasons << settings.map { |action| "the call changes polispec setting #{action.env_hint['settings_key']} to #{action.env_hint['settings_value']}" }.join("; ")
+          steps << "Ask the user before changing a polispec setting."
+        end
+        unless unparsed.empty?
+          codes << "POLISPEC-SHELL-UNPARSED"
+          why = unparsed.flat_map { |action| Array(action.raw["unparsed"]) }.uniq.join(", ")
+          reasons << "the shell line could not be fully read (#{why})"
+          steps << "Rewrite the line in plain form, or ask the user to approve it."
+        end
+        unless undeclared.empty?
+          codes << "POLISPEC-MCP-UNDECLARED"
+          reasons << "one or more MCP operations are not declared by protected controls or committed policy"
+          steps << "Ask the operator to declare the exact operation."
+        end
+        unless unknown.empty?
+          codes << "POLISPEC-TOOL-UNKNOWN"
+          reasons << "the non-read-only tool could not be positively classified"
+          steps << "Ask the operator to declare the exact operation."
+        end
+        return result if codes.empty?
+
         level = Editions.included?("unknown_call.ask", values["edition"]) ? "warn" : "deny"
-        result["verdict"] = Verdict.new(level: level, rule_id: code, reason: reason, next_step: "Ask the operator to declare the exact operation.")
-        result["ask_ids"] = Array(result["ask_ids"]) + [code] if level == "warn"
+        result["verdict"] = Verdict.new(level: level, rule_id: codes.first, reason: reasons.join("; "), next_step: steps.uniq.join(" "))
+        result["ask_ids"] = Array(result["ask_ids"]) + codes if level == "warn"
         result
       end
 

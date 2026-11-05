@@ -15,6 +15,7 @@ require_relative "../effect"
 require_relative "../sessions"
 require_relative "../notice"
 require_relative "../fastpath"
+require_relative "../protected_state"
 require_relative "../shadow"
 require_relative "../classify/benign"
 require_relative "../classify/shapes"
@@ -312,6 +313,9 @@ module Polispec
         control_gate = @plane["status"] == "active" || option_applies || HarnessControls::Features.enabled?("harness_controls")
         actions.concat(HarnessControls::RootGuard.classify(input.tool_name, input.tool_input, cwd)) if control_gate
         governed = baseline || relevant?(ledger, cwd, calls) || @plane["status"] == "active" || option_applies
+        guarded_paths = control_gate ? ProtectedState.paths(ledger) : []
+        unparsed = control_gate ? unparsed_actions(calls, cwd) : []
+        governed ||= !unparsed.empty? || actions.any? { |action| action.env_hint["settings_change"] == true || HarnessControls::Evaluate.guard_hit?(action, guarded_paths) }
         opaque = control_gate && governed && calls.any? { |tool, data| Classify.opaque_shell?(tool, data, cwd) }
         if control_gate && actions.empty? && governed
           known = calls.flat_map { |tool, data| Classify.positive(tool, data, cwd) }
@@ -321,6 +325,7 @@ module Polispec
         if opaque && actions.none? { |action| action.raw.is_a?(Hash) && action.raw["unknown_tool"] }
           actions << unknown_action(input, cwd, calls, true, true)
         end
+        actions.concat(unparsed)
         groups = group(actions, ledger, cwd, baseline)
         @explain_state = { "actions" => actions, "ledger" => ledger, "cwd" => cwd, "baseline" => baseline, "documents" => [] } if @explain
         mode = enforce_mode
@@ -368,7 +373,7 @@ module Polispec
       control_context = {
         "actions" => actions, "documents" => documents, "edition" => edition,
         "root_guard" => !Editions.allowed?("root_guard.optional", edition) || explicit_root_guard || scan["root_guard"] == true,
-        "protected_paths" => protected_paths, "role" => input.agent_type,
+        "protected_paths" => protected_paths, "guarded_paths" => guarded_paths, "role" => input.agent_type,
         "env" => legacy && legacy.env, "target" => nil, "target_for" => target_for,
         "engine_context" => { cwd: cwd, ledger: ledger, predicate_memo: {}, findings: [] },
         "trusted_declaration" => trusted_declaration(ledger, cwd, baseline, input),
@@ -744,6 +749,13 @@ module Polispec
       nil
     end
 
+    def unparsed_actions(calls, cwd)
+      calls.filter_map do |tool, data|
+        reasons = Classify.unparsed_reasons(tool, data, cwd)
+        Action.new(class: "shell.exec", env_hint: { "path" => cwd }, raw: { "unparsed" => reasons }) unless reasons.empty?
+      end
+    end
+
     def unknown_action(input, cwd, calls = [], opaque = false, shaped = opaque)
       name = input.tool_name.to_s
       klass = shaped ? "shell.exec" : diagnostic_read?(name) ? "tool.read" : "tool.internal"
@@ -952,6 +964,7 @@ module Polispec
       input = session_input(adapter, raw)
       cwd = input.cwd.to_s.empty? ? Dir.pwd : input.cwd.to_s
       ledger = Ledger.load
+      repair_fastpath(ledger)
       located = ledger.locate(cwd)
       live = located && located.project.status == "live"
       text = live ? SessionText.new(ledger, located.project, input, cwd, enforce_mode).to_s : ""
@@ -959,6 +972,14 @@ module Polispec
       return [nil, 0] unless live
 
       [text.empty? ? nil : adapter.render_session(text, input.event), 0]
+    end
+
+    def repair_fastpath(ledger)
+      return unless Fastpath.repair!(ledger)
+
+      Events.emit("polispec.finding", project: nil, kind: "fastpath_mismatch", detail: "rewrote fast path files whose content did not match the policy", policy_source: nil)
+    rescue StandardError
+      nil
     end
 
     def note_session(adapter, input, ledger, located, cwd, text)

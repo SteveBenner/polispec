@@ -132,7 +132,7 @@ steps:
     run: ["{{polispec}}", doctor]
     expect:
       exit: 1
-      stdout_includes: ["fresh  not_live  status onboarding: the guard does not enforce this project", "7 info)", "info findings folded: package_file_drift x1", "polispec doctor --all lists them"]
+      stdout_includes: ["fresh  not_live  status onboarding: the guard does not enforce this project", "8 info)", "info findings folded: package_file_drift x1", "polispec doctor --all lists them"]
   - name: status lists both projects
     run: ["{{polispec}}", status]
     expect:

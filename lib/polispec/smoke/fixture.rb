@@ -72,6 +72,7 @@ module Polispec
           "RPLUGINS_HOME" => File.join(scratch, "rplugins"),
           "POLISPEC_DATA_HOME" => File.join(scratch, "polispec-data"),
           "POLISPEC_SETTINGS" => File.join(scratch, "settings.yml"),
+          "POLISPEC_TTY_CONFINE" => scratch,
           "CODEX_HOME" => File.join(self.home, ".codex"),
           "POLISPEC_SMOKE" => File.join(scratch, "smoke.yml"),
           "POLISPEC_SPECS_REPO" => File.join(scratch, "specs-repo"),

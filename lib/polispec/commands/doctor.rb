@@ -6,6 +6,7 @@ require_relative "../validate_profiles"
 require_relative "../packages"
 require_relative "../native_pin"
 require_relative "../exceptions"
+require_relative "../fastpath"
 require_relative "../editions"
 require_relative "../personal_defaults"
 require_relative "../lint"
@@ -48,6 +49,8 @@ module Polispec
       traced_check("check judgments", findings) { check_judgments(findings) }
       traced_check("check guard health", findings) { check_guard_health(findings) }
       traced_check("check exceptions", findings) { check_exceptions(findings) }
+      traced_check("check pauses", findings) { check_pauses(ledger, findings) } if ledger
+      traced_check("check fastpath", findings) { check_fastpath(ledger, findings) } if ledger
       traced_check("check editions", findings) { check_editions(findings) }
       traced_check("check effect", findings) { check_effect(findings) }
       if Engine::Settings.lint_doctor?
@@ -519,6 +522,26 @@ module Polispec
       findings << finding(nil, "exceptions_invalid", problem) if problem
     rescue StandardError => error
       findings << finding(nil, "exceptions_invalid", "#{error.class}: #{error.message}")
+    end
+
+    def check_pauses(ledger, findings)
+      Engine::Pauses.rejected(ledger, Time.now).each do |record|
+        project = record["project"].is_a?(String) ? record["project"] : nil
+        findings << finding(project, "pause_record_rejected", "pause record for #{record['project'].inspect} started #{record['started_at'].inspect} is not honored: its fields are not consistent")
+      end
+    rescue StandardError => error
+      findings << finding(nil, "pause_record_rejected", "pause records cannot be checked: #{error.class}: #{error.message}")
+    end
+
+    def check_fastpath(ledger, findings)
+      case Fastpath.check(ledger)
+      when "mismatch"
+        findings << finding(nil, "fastpath_mismatch", "the fast path files in #{State.home} differ from what the policy expects; the next session start rewrites them")
+      when "stale"
+        findings << info(nil, "fastpath_stale", "a watched file is newer than the fast path files; the next guarded call refreshes them")
+      end
+    rescue StandardError => error
+      findings << finding(nil, "fastpath_mismatch", "the fast path cannot be checked: #{error.class}: #{error.message}")
     end
 
     def check_editions(findings)

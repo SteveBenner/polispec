@@ -102,7 +102,7 @@ module Polispec
                   when *DELETERS then Support.split_args(cmd.args).first
                   when "find" then find_deletes(cmd)
                   end
-          Array(paths).map { |path| [path, Support.abs(path, cmd.cwd)] }
+          Array(paths).map { |path| [path, Support.abs(Support.unproc(path, cmd.cwd), cmd.cwd)] }
         end
 
         def find_deletes(cmd)

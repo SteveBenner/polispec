@@ -43,6 +43,8 @@ A call asks (warns) for one of four reasons. The lever depends on which.
 | --- | --- | --- |
 | Unknown tool | `POLISPEC-TOOL-UNKNOWN` | The classifier cannot positively classify the tool, or a shell line runs `eval`, `source` or `.`, or cannot be parsed. Active only while catalog `tools/unknown` is. |
 | Undeclared MCP | `POLISPEC-MCP-UNDECLARED` | No trusted rule declares that server and operation. Active only while catalog `mcp/undeclared` is. |
+| Settings change | `POLISPEC-SETTINGS-CHANGE` | The call changes a polispec setting through `polispec settings` or `rplugin settings`. Always active; under lock it denies. Reading a setting is allowed. |
+| Unread shell | `POLISPEC-SHELL-UNPARSED` | The parser could not resolve part of the line: a command name from a substitution, commands in an arithmetic form, an unterminated quote or heredoc, nesting too deep, a git configuration override that changes what runs or where a push goes, a push with no named ref after a branch switch, or the terminal confinement variable. Always active; under lock it denies. Rewrite the line in plain form or ask the user. |
 | Environment rule warn | rule id such as `R-*` or `G-*` | A rule in a rulebook says `warn` for this class in this environment. |
 | Control ask | `POLISPEC-CONTROL-*` | The harness-control ceiling needs consent. |
 

@@ -4,6 +4,7 @@
 require "fileutils"
 require_relative "layers"
 require_relative "native_settings"
+require_relative "protected_state"
 require_relative "harness/base"
 require_relative "classify/tool"
 
@@ -28,19 +29,59 @@ module Polispec
     def refresh(ledger, context = {})
       return unless stale?(ledger, context)
 
-      FileUtils.mkdir_p(State.home, mode: 0o700)
-      FileUtils.mkdir_p(Catalog.state_dir, mode: 0o700)
-      watch_tmp = "#{watch_path}.#{Process.pid}"
-      File.write(watch_tmp, watched(ledger).join("\n") + "\n")
-      File.rename(watch_tmp, watch_path)
-      tools_tmp = "#{tools_path}.#{Process.pid}"
-      File.write(tools_tmp, skippable.join("\n") + "\n")
-      File.rename(tools_tmp, tools_path)
-      tmp = "#{path}.#{Process.pid}"
-      File.write(tmp, ([key(ledger, context)] + needles(ledger)).join("\n") + "\n")
-      File.rename(tmp, path)
+      write_files(ledger, key(ledger, context))
     rescue SystemCallError
       nil
+    end
+
+    def write_files(ledger, key_line)
+      FileUtils.mkdir_p(State.home, mode: 0o700)
+      FileUtils.mkdir_p(Catalog.state_dir, mode: 0o700)
+      expectation = expected(ledger)
+      write_atomic(watch_path, expectation["watch"].join("\n") + "\n")
+      write_atomic(tools_path, expectation["tools"].join("\n") + "\n")
+      write_atomic(path, ([key_line] + expectation["needles"]).join("\n") + "\n")
+    end
+
+    def write_atomic(target, text)
+      temp = "#{target}.#{Process.pid}"
+      File.write(temp, text)
+      File.rename(temp, target)
+    end
+
+    def expected(ledger)
+      { "watch" => watched(ledger), "tools" => skippable, "needles" => needles(ledger) }
+    end
+
+    def check(ledger)
+      return nil unless File.file?(path) && File.file?(tools_path) && File.file?(watch_path)
+
+      listed = lines_of(watch_path)
+      stamp = File.mtime(path)
+      want = expected(ledger)
+      return "stale" if listed.any? { |file| !File.exist?(file) || File.mtime(file) > stamp }
+      return "stale" if want["watch"].any? { |file| File.mtime(file) > stamp }
+
+      have ={ "watch" => listed, "tools" => lines_of(tools_path), "needles" => lines_of(path).drop(1) }
+      same = %w[watch tools needles].all? { |name| have[name].sort == want[name].reject(&:empty?).sort }
+      same ? "ok" : "mismatch"
+    rescue SystemCallError
+      nil
+    end
+
+    def repair!(ledger)
+      status = check(ledger)
+      return false unless %w[mismatch stale].include?(status)
+
+      key_line = File.open(path, &:gets).to_s.chomp
+      write_files(ledger, key_line)
+      status == "mismatch"
+    rescue SystemCallError
+      false
+    end
+
+    def lines_of(file)
+      File.readlines(file, chomp: true).reject(&:empty?)
     end
 
     def watched(ledger)
@@ -145,7 +186,8 @@ module Polispec
       live = ledger.projects.select { |project| project.status == "live" }
       baseline = Layers.baseline?
       tools = baseline || text_rules?
-      return [] if live.empty? && !tools
+      guarded = protected_needles(ledger)
+      return guarded if live.empty? && !tools
 
       list = [root, File.join(File.basename(File.dirname(root)), File.basename(root))]
       list.concat(tool_needles) if tools
@@ -154,7 +196,13 @@ module Polispec
         list.concat(roots(project.repo))
         list.concat(Array(project.worktree_globs).map { |glob| File.expand_path(glob).split("*").first.to_s })
       end
-      list.map { |needle| needle.to_s.downcase }.reject(&:empty?).uniq
+      (list.map { |needle| needle.to_s.downcase } + guarded).reject(&:empty?).uniq
+    end
+
+    def protected_needles(ledger)
+      ProtectedState.needles(ledger)
+    rescue StandardError
+      []
     end
 
     def roots(repo)

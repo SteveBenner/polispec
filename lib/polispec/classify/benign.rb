@@ -69,7 +69,7 @@ module Polispec
         "catalog" => [{ "list" => JSON_FLAG, "show" => JSON_FLAG }],
         "shadow" => [{ "status" => JSON_FLAG, "report" => JSON_FLAG }]
       }.freeze
-      WRAPPERS = %w[eval exec source env sudo doas nohup timeout xargs command builtin nice ionice stdbuf setsid unbuffer flock time bash sh zsh dash ksh ash].freeze
+      WRAPPERS = %w[eval exec source env sudo doas nohup timeout xargs command builtin nice ionice stdbuf setsid unbuffer flock time script bash sh zsh dash ksh ash].freeze
       OPAQUE = %w[eval source .].freeze
       WRITE_CLASSES = %w[fs.write policy.edit].freeze
       SUBSTITUTION = /\$\(|`|<\(|>\(/.freeze
@@ -122,6 +122,15 @@ module Polispec
         script.commands.all? { |cmd| command?(cmd) }
       rescue StandardError
         false
+      end
+
+      def unparsed_reasons(tool_name, tool_input, cwd)
+        return [] unless Support::BASH_TOOLS.include?(tool_name.to_s.downcase)
+
+        script = Support.script_for(tool_name, tool_input, cwd)
+        script.nil? ? [] : Array(script.unparsed)
+      rescue StandardError
+        ["parser error"]
       end
 
       def parsed_shell?(tool_name, tool_input, cwd)

@@ -267,12 +267,25 @@ module Polispec
                     require_relative "harness_controls/operator_records"
                     HarnessControls::OperatorRecords.read(STREAM).map { |record| validate_protected_pause(record, plane) }
                   else
-                    Logs.read(ledger.pauses_log)
+                    Logs.read(ledger.pauses_log).select { |record| valid_unsealed?(record, now) }
                   end
         records = records.select do |record|
-          record["project"] == project_id.to_s && parse(record["expires_at"]) && parse(record["expires_at"]) > now
+          record["project"] == project_id.to_s && parse(record["started_at"]) && parse(record["started_at"]) + (record["minutes"] * 60) > now
         end
         records.max_by { |record| record["started_at"].to_s }
+      end
+
+      def valid_unsealed?(record, now = Time.now)
+        return false unless well_formed?(record)
+
+        parse(record["started_at"]).to_i <= now.to_i + 60
+      end
+
+      def rejected(ledger, now = Time.now)
+        Logs.read(ledger.pauses_log).select do |record|
+          expires = record.is_a?(Hash) ? parse(record["expires_at"]) : nil
+          expires && expires > now && !valid_unsealed?(record, now)
+        end
       end
 
       def start!(ledger, project_id, minutes, reason, now = Time.now)
@@ -305,15 +318,23 @@ module Polispec
       end
       private_class_method :resolved_plane
 
-      def validate_protected_pause(record, plane)
-        auth = record.is_a?(Hash) ? record["authorization"] : nil
-        valid = record.is_a?(Hash) && record["schema"] == "polispec.pause/v1" && record["generation"] == plane["generation"]
-        valid &&= record["project"].is_a?(String) && !record["project"].empty? && record["project"].bytesize <= 128
+      def well_formed?(record)
+        return false unless record.is_a?(Hash)
+
+        valid = record["project"].is_a?(String) && !record["project"].empty? && record["project"].bytesize <= 128
         valid &&= record["minutes"].is_a?(Integer) && record["minutes"].between?(1, 240)
         valid &&= record["reason"].is_a?(String) && !record["reason"].empty? && record["reason"].bytesize <= 1024 && record["actor"] == "operator"
         started = parse(record["started_at"])
         expires = parse(record["expires_at"])
         valid &&= started && expires && expires.to_i - started.to_i == record["minutes"] * 60
+        valid ? true : false
+      end
+      private_class_method :well_formed?
+
+      def validate_protected_pause(record, plane)
+        auth = record.is_a?(Hash) ? record["authorization"] : nil
+        valid = record.is_a?(Hash) && record["schema"] == "polispec.pause/v1" && record["generation"] == plane["generation"]
+        valid &&= well_formed?(record)
         valid &&= auth.is_a?(Hash) && auth["generation"] == record["generation"] && auth["caller_operation"] == "pause" && auth["euid"] == 0
         valid &&= auth["append_operation"] == "operator_records.append.#{STREAM}" && auth.dig("launch_evidence", "verified") == true
         valid &&= auth["provenance_digest"].to_s.match?(/\A[a-f0-9]{64}\z/)
@@ -647,6 +668,11 @@ module Polispec
       def by_ref(hint, policy, _ctx)
         ref = normalize_ref(hint["ref"])
         return nil if ref.nil?
+
+        if ref == "*"
+          environments(policy).each { |name, spec| return name if spec["tier"].to_s == "prod" || name.to_s == "prod" }
+          return nil
+        end
 
         environments(policy).each { |name, spec| return name if spec["branch"] == ref }
         nil

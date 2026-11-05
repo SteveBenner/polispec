@@ -9,7 +9,9 @@ module Polispec
   module Classify
     module Support
       BASH_TOOLS = %w[bash shell sh run_shell_command execute_bash local_shell terminal run_terminal_cmd exec_command shell_command execute_command run_command].freeze
-      DISCARD = %r{\A(?:/dev/(?:null|zero|stdout|stderr|stdin|tty|full|random|urandom)\z|/dev/fd/|/proc/self/)}.freeze
+      DISCARD = %r{\A(?:/dev/(?:null|zero|stdout|stderr|stdin|tty|full|random|urandom)\z|/dev/fd/|/proc/self/fd/)}.freeze
+      PROC_ROOT = %r{\A/proc/(?:self|thread-self|\d+)/root(?=/|\z)}.freeze
+      PROC_CWD = %r{\A/proc/(?:self|thread-self)/cwd(?=/|\z)}.freeze
       POLICY_PATH = %r{(?:\A|/)specs/polispec(?:/|\z)}.freeze
       ENVS_BODY = %r{/\.agents/directives/envs\.md\z}.freeze
       PROOF_RECORD = %r{/proofs/[^/]+\.jsonl\z}.freeze
@@ -58,10 +60,22 @@ module Polispec
         word.respond_to?(:dynamic?) && word.dynamic?
       end
 
+      def unproc(path, cwd = nil)
+        text = path.to_s
+        if text.match?(PROC_ROOT)
+          rest = text.sub(PROC_ROOT, "")
+          rest.empty? ? "/" : rest
+        elsif cwd && text.match?(PROC_CWD)
+          File.join(cwd.to_s, text.sub(PROC_CWD, ""))
+        else
+          text
+        end
+      end
+
       def abs(path, cwd)
         return cwd.to_s if dynamic?(path)
 
-        File.expand_path(path.to_s, cwd.to_s)
+        File.expand_path(unproc(path, cwd), cwd.to_s)
       end
 
       def discard?(path)
@@ -143,6 +157,7 @@ module Polispec
       end
 
       def write_action(path, raw, extra = {}, input = nil)
+        path = unproc(path)
         return nil if discard?(path)
 
         klass = write_class(path, input)
@@ -166,6 +181,7 @@ module Polispec
       end
 
       def read_action(path, raw)
+        path = unproc(path)
         return nil if discard?(path)
 
         act("secrets.read", raw, "path" => path, "candidate" => true)

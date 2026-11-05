@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.55.3] - 2026-11-04
+
+### Security
+- **Changing a polispec setting now asks.** `polispec settings set|unset` and `rplugin settings set|unset polispec` were judged as ordinary development commands, so a call could turn enforcement off with no prompt. They now raise `POLISPEC-SETTINGS-CHANGE`: ask in the standard edition, deny under lock. Exceptions cannot lift it. Reading a setting is unaffected.
+- **A typed confirmation now refuses a process under an agent harness.** The operator check accepted any terminal, including a pty the agent created. `Operator::Tty` now walks the process ancestry and refuses when a harness is found or `CLAUDECODE` is set, unless every path the action can change is inside `POLISPEC_TTY_CONFINE`. This is not authentication: see "Who can confirm an operator action" in `docs/operator.md`.
+- **polispec's state, settings, launchers, and fast-path files are protected paths.** Writes and deletes the guard can read are denied with `POLISPEC-CONTROL-PROTECTION`, in every project. A session hook repairs a fast-path file that does not match the policy, and an unsealed pause record is honored only when it is well formed, 240 minutes or shorter, and not future-dated; its expiry now comes from its start and length.
+- **A shell line the parser cannot resolve now asks.** The parser used to drop what it could not read and judge the rest, which usually allowed the line. Unresolved constructs now raise `POLISPEC-SHELL-UNPARSED`, independent of the catalog gates: ask in the standard edition, deny under lock. Exceptions cannot lift it. On one development host's recorded sessions, 0.76% of distinct shell lines ask.
+- **The parser now reads more forms.** ANSI-C and locale quoting, arithmetic bodies, `${...}` bodies with nested substitutions, unquoted heredoc bodies, `function` definitions, `time` options, and more wrapper options (`exec -a`, `env -S`, `env --chdir=`, `sudo` option clusters, `bash -c --`, `script -c`) are parsed, and a command in any of them is judged. Redirects on a command that is otherwise dropped are kept.
+- **More push forms are judged as what they push to.** `heads/` destinations, wildcard and brace destinations, and the bare `:` refspec. A wildcard destination is judged against the prod environment. `git config` writes to push destinations, remote URLs, URL rewrites, aliases, hook paths, the SSH command, or the fsmonitor are `policy.edit`.
+- **`/proc` paths are judged as the paths they name.** `/proc/<pid>/root/...` and `/proc/self/cwd/...` resolve before classification, and only `/proc/self/fd/` counts as a discard target.
+
+### Verdict changes
+- `R-DEV` or `POLISPEC-CONTROLS` allow to `POLISPEC-SETTINGS-CHANGE` ask, for setting changes.
+- `R-DEV` or `POLISPEC-CONTROLS` allow to `POLISPEC-SHELL-UNPARSED` ask, for lines the parser cannot resolve.
+- `R-DEV` or `POLISPEC-CONTROLS` allow to `POLISPEC-CONTROL-PROTECTION` deny, for writes and deletes of polispec's own state.
+- `R-DEV` or `POLISPEC-CONTROLS` allow to `R-PROD-GIT` or `R-PROD-FS` deny, for pushes and writes that now resolve to prod.
+- `R-DEV` allow to `R-POLICY` ask, for the `git config` writes above.
+- `polispec doctor` adds the info finding `fastpath_stale` and the blocking findings `fastpath_mismatch` and `pause_record_rejected`.
+- `replay` re-judges recorded action rows and does not run the classifier, so it cannot show the parser's changes.
+
+### Known limits
+- A program running as the same user can change polispec's files, or run commands the shell parser never sees. The sealed authority plane or OS isolation is the boundary against that.
+- A `cd` to a dynamic path and an unexpanded glob are still judged at the working directory, and remote API calls through `gh` or HTTP clients are not judged as the ref they move.
+
 ## [0.55.2] - 2026-10-30
 
 ### Fixed
