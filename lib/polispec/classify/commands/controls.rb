@@ -18,7 +18,7 @@ module Polispec
                 else
                   []
                 end
-        paths.compact.map { |path| File.expand_path(path.to_s, cwd.to_s.empty? ? Dir.pwd : cwd.to_s) }.select { |path| control_path?(path) }.uniq.map do |path|
+        paths.compact.map { |path| Support.expand(path, cwd.to_s.empty? ? Dir.pwd : cwd.to_s) }.select { |path| control_path?(path) }.uniq.map do |path|
           Action.new(class: "control.edit", env_hint: { "path" => path }, raw: tool_name.to_s)
         end
       end

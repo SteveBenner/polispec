@@ -47,7 +47,7 @@ Claude Code documents `hookSpecificOutput.additionalContext` for PreToolUse, del
 
 Findings on unchanged lines carry `baseline: true` and never block (the ratchet). `polispec code baseline <repo>` records `{policy, path, count}` per repository key (sha256 of the origin URL, else the real path) under the state directory `baselines/`; a count only shrinks, and a write that raises it adds a SHOULD finding. A rule with `ratchet: false` treats every finding as changed.
 
-Waivers are read from `specs/polispec/code-waivers.yml` at the repository's HEAD. A `waive` entry suppresses the policy (or any policy under that id prefix) on the matching paths; a `tighten` entry raises its level. An entry past `review_after` is reported as expired and stops suppressing. `waivable: never` rules ignore waivers; `waiver_tty` rules need `approved`.
+Waivers are read from `specs/polispec/code-waivers.yml` at the repository's HEAD. A `waive` entry suppresses the policy (or any policy under that id prefix) on the matching paths; a `tighten` entry raises its level. An entry past `review_after` is reported as expired and stops suppressing. `waivable: never` rules ignore waivers; `waiver_tty` rules need `approved`. `approved` is a record, not a signature: it is protected only because changing the waivers file is a policy edit.
 
 ## Enforcers
 

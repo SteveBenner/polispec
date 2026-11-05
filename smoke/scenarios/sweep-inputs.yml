@@ -1,0 +1,159 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/plan, apply
+summary: untrusted input is refused at its entry point, a remote with control characters is not written to the ledger, git read by the guard does not run a repository's fsmonitor, a package cannot target harness or git internals, a symlinked specs directory is not written through, uninstall --all leaves a target polispec never recorded, exposure attestations carry the remote tip and a MAC, and a moved tag is refused
+fixture:
+  global: example
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      files:
+        "lib/app.rb": "puts 1\n"
+steps:
+  - name: a repository whose origin url holds a newline is created
+    run: [sh, -c, 'mkdir "$1" && cd "$1" && git init -q -b main && echo hi > README.md && git add README.md && git -c user.email=a@b -c user.name=n commit -q -m init && git remote add origin https://x.example/y.git && sed -i "s|url = https://x.example/y.git|url = \"https://x.example/y.git\\\\n    status: live\"|" .git/config', sh, "{{scratch}}/nl"]
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/nl/README.md"]
+  - name: apply refuses an origin url with control characters and writes no ledger entry
+    run: ["{{polispec}}", apply, environment-control, --repo, "{{scratch}}/nl", --variant, service, --dry-run]
+    expect:
+      exit: 1
+      stderr_includes: ["package_remote_invalid"]
+      files_absent: ["{{scratch}}/nl/specs"]
+  - name: a repository whose origin url starts with a dash is created
+    run: [sh, -c, 'mkdir "$1" && cd "$1" && git init -q -b main && echo hi > README.md && git add README.md && git -c user.email=a@b -c user.name=n commit -q -m init && printf "[remote \"origin\"]\n\turl = --upload-pack=true\n" >> .git/config', sh, "{{scratch}}/dash"]
+    expect:
+      exit: 0
+  - name: apply refuses an origin url that starts with a dash
+    run: ["{{polispec}}", apply, environment-control, --repo, "{{scratch}}/dash", --variant, service, --dry-run]
+    expect:
+      exit: 1
+      stderr_includes: ["package_remote_invalid"]
+      files_absent: ["{{scratch}}/dash/specs"]
+  - name: a repository whose config names an fsmonitor command is created
+    run: [sh, -c, 'mkdir "$1" && cd "$1" && git init -q -b main && echo hi > README.md && git add README.md && git -c user.email=a@b -c user.name=n commit -q -m init && git config core.fsmonitor "touch $1.marker; echo"', sh, "{{scratch}}/fsm"]
+    expect:
+      exit: 0
+  - name: lint reads the repository through git without running its fsmonitor
+    run: ["{{polispec}}", lint, "{{scratch}}/fsm"]
+    expect:
+      exit: [0, 1, 2]
+      files_absent: ["{{scratch}}/fsm.marker"]
+  - name: a package with a harness config target and a git hook target is created
+    run: [sh, -c, 'sed "s|^  specs/polispec/roster.yml: roster.yml|  .claude/settings.json: roster.yml\n  .git/hooks/post-checkout: roster.yml|" "$1/packages/environment-control/package.yml" > "$2"', sh, "{{tree}}", "{{scratch}}/forbidden-package.yml"]
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/forbidden-package.yml"]
+  - name: validate refuses package targets under harness and git internals
+    run: ["{{polispec}}", validate, package, "{{scratch}}/forbidden-package.yml"]
+    expect:
+      exit: 1
+      stdout_includes: ["package_target_forbidden: target may not begin with .claude", "package_target_forbidden: target may not begin with .git"]
+  - name: a repository whose specs directory is a symlink outside it is created
+    run: [sh, -c, 'mkdir "$1" "$2" && cd "$1" && git init -q -b main && echo hi > README.md && git add README.md && git -c user.email=a@b -c user.name=n commit -q -m init && ln -s "$2" specs', sh, "{{scratch}}/link", "{{scratch}}/outside"]
+    expect:
+      exit: 0
+  - name: apply refuses to write through a symlink that leaves the repository
+    run: ["{{polispec}}", apply, environment-control, --repo, "{{scratch}}/link", --variant, service]
+    expect:
+      exit: 1
+      stderr_includes: ["write_outside_repo"]
+      files_absent: ["{{scratch}}/outside/polispec"]
+  - name: a deployments manifest naming a directory polispec never recorded is written
+    run: [sh, -c, 'mkdir -p "$1" "$2" && echo mine > "$2/data.txt" && printf "{\"schema\":\"polispec.deployments/v1\",\"entries\":[{\"id\":\"dep_aaaaaaaaaaaa\",\"kind\":\"ledger\",\"target\":\"%s\",\"class\":\"data\",\"details\":{},\"source\":\"install\",\"recorded_at\":\"2026-11-04T00:00:00Z\",\"updated_at\":\"2026-11-04T00:00:00Z\",\"status\":\"active\"}]}" "$2" > "$1/deployments.json"', sh, "{{scratch}}/state", "{{scratch}}/precious"]
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/precious/data.txt"]
+  - name: uninstall --all lists the unrecorded target as refused and leaves it in place
+    run: ["{{polispec}}", uninstall, --all, --dry-run, --keep, "wiring,pins,rplugin"]
+    expect:
+      exit: 0
+      stdout_includes: ["refused: ledger", "left in place"]
+      files_exist: ["{{scratch}}/precious/data.txt"]
+  - name: a repository with a bare remote and one unpushed commit is created
+    run: [sh, -c, 'git init -q --bare -b main "$2" && mkdir "$1" && cd "$1" && git init -q -b main && echo a > a && git add a && git -c user.email=a@b -c user.name=n commit -q -m one && git remote add origin "$2" && git push -q origin main && echo b > b && git add b && git -c user.email=a@b -c user.name=n commit -q -m two', sh, "{{scratch}}/scan", "{{scratch}}/scan-remote.git"]
+    expect:
+      exit: 0
+  - name: the audit command is set to a command that exits clean
+    run: ["{{polispec}}", settings, set, polispec.exposure.audit_command, "true"]
+    expect:
+      exit: 0
+  - name: a scan records the remote tip it read and a MAC, and creates the key
+    run: ["{{polispec}}", exposure, scan, "{{scratch}}/scan", --json]
+    expect:
+      exit: 0
+      stdout_includes: ["\"status\":\"clean\"", "\"remote_tip\":\""]
+      files_exist: ["{{scratch}}/state/exposure.key"]
+  - name: a scan fails when the remote cannot be read
+    run: [sh, -c, 'git -C "$1" remote add dead /nonexistent/remote.git && "$2" exposure scan "$1" --remote dead', sh, "{{scratch}}/scan", "{{polispec}}"]
+    expect:
+      exit: 1
+      stderr_includes: ["could not be read"]
+  - name: a tag in a source clone is pinned
+    run: [sh, -c, 'git clone -q --local "$1" "$2" && cd "$2" && echo 9.9.9 > VERSION && git add VERSION && git -c user.email=a@b -c user.name=n commit -q -m v && git tag v9.9.9 && "$3" pin --source "$2" --ref v9.9.9', sh, "{{tree}}", "{{scratch}}/pin-src", "{{polispec}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["pinned v9.9.9"]
+      files_exist: ["{{scratch}}/state/pinned-tags.json"]
+  - name: a tag moved to another commit is refused with both commits named
+    run: [sh, -c, 'cd "$1" && echo x > MOVED && git add MOVED && git -c user.email=a@b -c user.name=n commit -q -m moved && git tag -f v9.9.9 >/dev/null && "$2" pin --source "$1" --ref v9.9.9', sh, "{{scratch}}/pin-src", "{{polispec}}"]
+    expect:
+      exit: 1
+      stderr_includes: ["pin_tag_moved", "was pinned at", "now resolves to", "--accept-moved-tag"]
+  - name: the moved tag is not accepted without a terminal even with the flag
+    run: ["{{polispec}}", pin, --source, "{{scratch}}/pin-src", --ref, v9.9.9, --accept-moved-tag]
+    expect:
+      exit: 1
+      stderr_includes: ["pin_tag_moved"]
+  - name: a backup whose stored file is a symbolic link and whose original is outside any owned path is written
+    run: [sh, -c, "id=bkp_cccccccccccc; d=\"$1/$id\"; mkdir -p \"$d/files\"; printf secret > \"$1/secret.txt\"; ln -s \"$1/secret.txt\" \"$d/files/leak\"; printf '{\"schema\":\"polispec.backup/v1\",\"id\":\"%s\",\"created_at\":\"2026-01-01T00:00:00Z\",\"keep\":[],\"entries\":[{\"id\":\"e1\",\"kind\":\"rplugin\",\"class\":\"rplugin\",\"target\":\"x\",\"details\":{}}],\"steps\":[{\"entry\":\"e1\",\"status\":\"ok\"}],\"files\":[{\"entry\":\"e1\",\"original\":\"%s/planted.txt\",\"stored\":\"files/leak\",\"kind\":\"file\",\"sha256_before\":\"x\",\"sha256_after\":\"absent\"}],\"data\":[]}' \"$id\" \"$2\" > \"$d/backup.json\"", sh, "{{scratch}}/polispec-data/backups", "{{scratch}}"]
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/polispec-data/backups/bkp_cccccccccccc/backup.json"]
+  - name: restore refuses the whole backup before acting and names the reasons
+    run: ["{{polispec}}", restore, bkp_cccccccccccc, --dry-run]
+    expect:
+      exit: 1
+      stderr_includes: ["refused and nothing was restored", "is not a path rplugin may own", "passes through a symbolic link"]
+      files_absent: ["{{scratch}}/planted.txt"]
+  - name: the audit command is set to a program under an unknown home directory
+    run: ["{{polispec}}", settings, set, polispec.exposure.audit_command, "~nosuchuser/audit"]
+    expect:
+      exit: 0
+  - name: a scan with that audit command is refused as not found instead of raising
+    run: ["{{polispec}}", exposure, scan, "{{scratch}}/scan"]
+    expect:
+      exit: 1
+      stderr_includes: ["was not found or is not executable"]
+  - name: an audit program that cannot be read is created
+    run: [sh, -c, 'printf "#!/bin/sh\nexit 0\n" > "$1" && chmod 0111 "$1"', sh, "{{scratch}}/audit-unreadable"]
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/audit-unreadable"]
+  - name: the audit command is set to the unreadable program
+    run: ["{{polispec}}", settings, set, polispec.exposure.audit_command, "{{scratch}}/audit-unreadable"]
+    expect:
+      exit: 0
+  - name: a scan with an unreadable audit program is refused naming it
+    run: ["{{polispec}}", exposure, scan, "{{scratch}}/scan"]
+    expect:
+      exit: 1
+      stderr_includes: ["is not readable"]
+  - name: a source clone carries a tag with a PGP signature block
+    run: [sh, -c, 'git clone -q --local "$1" "$2" && cd "$2" && echo 9.9.7 > VERSION && git add VERSION && git -c user.email=a@b -c user.name=n commit -q -m v && commit=$(git rev-parse HEAD) && obj=$(printf "object %s\ntype commit\ntag v9.9.7\ntagger r <r@example.invalid> 1700000000 +0000\n\nv\n-----BEGIN PGP SIGNATURE-----\nZmFrZQ==\n-----END PGP SIGNATURE-----\n" "$commit" | git hash-object -t tag -w --stdin) && git update-ref refs/tags/v9.9.7 "$obj" && echo s > "$3"', sh, "{{tree}}", "{{scratch}}/pgp-src", "{{scratch}}/signers"]
+    expect:
+      exit: 0
+  - name: allowed signers are set
+    run: ["{{polispec}}", settings, set, polispec.pin.allowed_signers, "{{scratch}}/signers"]
+    expect:
+      exit: 0
+  - name: pin refuses a tag whose signature is not an SSH signature
+    run: ["{{polispec}}", pin, --source, "{{scratch}}/pgp-src", --ref, v9.9.7]
+    expect:
+      exit: 1
+      stderr_includes: ["does not carry an SSH signature"]
+  - name: allowed signers are cleared again
+    run: ["{{polispec}}", settings, unset, polispec.pin.allowed_signers]
+    expect:
+      exit: 0

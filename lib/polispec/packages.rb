@@ -4,6 +4,7 @@
 require "stringio"
 require "tempfile"
 require_relative "operator/git"
+require_relative "git_safe"
 require_relative "registration"
 require_relative "lint"
 
@@ -378,7 +379,7 @@ module Polispec
       end
 
       def repo_root
-        out, status = Trace.capture2(Environments::GIT_ENV, "git", "-C", File.expand_path(@options.repo), "rev-parse", "--show-toplevel", err: File::NULL, trace: :quiet)
+        out, status = Trace.capture2(GitSafe.env, *GitSafe.argv(File.expand_path(@options.repo), "rev-parse", "--show-toplevel"), err: File::NULL, trace: :quiet)
         raise Operator::Failure.new("not_a_git_repo", "#{@options.repo} is not a git repository") unless status.success?
 
         File.realpath(out.strip)
@@ -490,6 +491,17 @@ module Polispec
         raise Operator::Failure.new("scaffold_invalid", "rendered templates do not validate", "problems" => problems) unless problems.empty?
       end
 
+      def inside_repo!(path)
+        probe = File.dirname(path)
+        probe = File.dirname(probe) until File.exist?(probe) || probe == File.dirname(probe)
+        real = File.realpath(probe)
+        return if real == @root || real.start_with?("#{@root}/")
+
+        raise Operator::Failure.new("write_outside_repo", "#{path} would be written outside #{@root} through a symlink", "target" => real)
+      rescue SystemCallError
+        raise Operator::Failure.new("write_outside_repo", "#{path} could not be checked against #{@root}")
+      end
+
       def atomic_write(path, text, mode = nil)
         temp = "#{path}.#{Process.pid}.tmp"
         File.write(temp, text)
@@ -505,6 +517,7 @@ module Polispec
         conflicts = []
         file_actions.each do |item|
           path = File.join(@root, item[:path])
+          inside_repo!(path) if %w[add replace].include?(item[:action])
           case item[:action]
           when "add"
             written << item[:path]
@@ -567,7 +580,10 @@ module Polispec
         parsed = Schema::Document.parse(updated, @manifest)
         return note("manifest", "skipped", "#{File.basename(@manifest)} would not parse after the pointer is added; not written") unless parsed.is_a?(Hash)
 
-        atomic_write(@manifest, updated, File.stat(@manifest).mode & 0o777) unless @options.dry
+        unless @options.dry
+          inside_repo!(@manifest)
+          atomic_write(@manifest, updated, File.stat(@manifest).mode & 0o777)
+        end
         @touched << @manifest.sub("#{@root}/", "")
         note("manifest", would("done"), @options.dry ? "append pointer to #{File.basename(@manifest)}" : "pointer appended to #{File.basename(@manifest)}")
       rescue Schema::Document::ParseError
@@ -581,17 +597,22 @@ module Polispec
 
       def remote_url
         result = @git.run("remote", "get-url", "origin")
-        result.ok? ? result.out.strip : nil
+        return nil unless result.ok?
+
+        url = result.out.strip
+        raise Operator::Failure.new("package_remote_invalid", "the origin remote of #{@root} holds control characters, whitespace or a leading dash and is not written to the ledger") if url.match?(/[[:cntrl:]]|[[:space:]]/) || url.start_with?("-")
+
+        url
       end
 
       def entry_for_ledger
         repo = home_relative(@root)
         parent = home_relative(File.dirname(@root))
-        lines = ["  - id: #{@id}", "    status: onboarding", "    repo: #{repo}"]
+        lines = ["  - id: #{@id}", "    status: onboarding", "    repo: #{JSON.generate(repo)}"]
         remote = remote_url
-        lines << "    remote: #{remote}" if remote && !remote.empty?
+        lines << "    remote: #{JSON.generate(remote)}" if remote && !remote.empty?
         lines.concat([
-          "    worktree_globs: [#{parent}/.#{File.basename(@root)}-wt/*]", "    trust_ref: #{@params['trust_ref'] || 'stable'}",
+          "    worktree_globs: #{JSON.generate(["#{parent}/.#{File.basename(@root)}-wt/*"])}", "    trust_ref: #{JSON.generate((@params['trust_ref'] || 'stable').to_s)}",
           "    policy: #{POLICY_FILE}", "    roster: #{ROSTER_FILE}", "    related: []", "    onboarded: #{@today}",
           "    owner: #{Registration.owner_flow}", "    registered_by: #{JSON.generate(Registration.actor)}"
         ])
@@ -600,11 +621,11 @@ module Polispec
 
       def record_lines(digests)
         lines = ["      - name: #{package.name}"]
-        lines << "        variant: #{@variant}" if @variant
-        lines.concat(["        version: #{package.version}", "        applied_at: #{@today}"])
+        lines << "        variant: #{JSON.generate(@variant.to_s)}" if @variant
+        lines.concat(["        version: #{JSON.generate(package.version.to_s)}", "        applied_at: #{@today}"])
         unless digests.empty?
           lines << "        files:"
-          digests.each { |path, digest| lines << "          #{path}: #{digest}" }
+          digests.each { |path, digest| lines << "          #{JSON.generate(path.to_s)}: #{JSON.generate(digest.to_s)}" }
         end
         lines
       end

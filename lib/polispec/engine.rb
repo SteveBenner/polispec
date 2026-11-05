@@ -1,7 +1,9 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require "open3"
 require "securerandom"
+require "timeout"
 require_relative "classify/shell"
 require_relative "layers"
 require_relative "predicates"
@@ -463,6 +465,13 @@ module Polispec
     module Envs
       module_function
 
+      REMOTE_CLASSES = %w[git.push git.rewrite git.branch git.tag].freeze
+      REPO_CLASSES = (REMOTE_CLASSES + %w[git.merge git.commit release.publish]).freeze
+      HARDENED_GIT = ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "safe.bareRepository=explicit"].freeze
+      CLEARED_GIT_ENV = { "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_CONFIG_PARAMETERS" => nil, "GIT_EXTERNAL_DIFF" => nil, "GIT_TERMINAL_PROMPT" => "0" }.freeze
+      REMOTE_DEADLINE = 2
+      REGEXP_DEADLINE = 0.05
+
       def hint_of(action)
         raw = action.env_hint || {}
         stringify(raw)
@@ -481,7 +490,7 @@ module Polispec
         return ledger.project(hint["project"]) if hint["project"]
 
         paths = paths_of(hint)
-        return located_project(paths, ledger, cwd) || spec_owner(paths, ledger, cwd) unless paths.empty?
+        return located_project(paths, ledger, cwd) || spec_owner(paths, ledger, cwd, hint["recursive"]) || remote_owner(action, hint, ledger) unless paths.empty?
 
         home = ledger.locate(cwd)
         home ? home.project : named_owner(hint, ledger)
@@ -542,14 +551,81 @@ module Polispec
         end.each(&:join)
       end
 
-      def spec_owner(paths, ledger, cwd)
+      def spec_owner(paths, ledger, cwd, recursive = false)
         HookMemo.fetch(:prefetch_policies, ledger.object_id) { prefetch_policies(ledger); true }
         ledger.projects.find do |project|
           next false unless project.status == "live"
 
           policy = HookMemo.fetch(:spec_policy, ledger.object_id, project.id) { PolicySource.load(project, ledger: ledger)[0] }
-          paths.any? { |path| by_spec_paths(canonical(absolute(path, cwd)), policy) }
+          paths.any? { |path| by_spec_paths(canonical(absolute(path, cwd)), policy, recursive) }
         end
+      end
+
+      def remote_owner(action, hint, ledger)
+        return nil unless REPO_CLASSES.include?(action.action_class)
+
+        wanted = REMOTE_CLASSES.include?(action.action_class) ? remote_urls(hint).map { |url| remote_key(url) }.compact : []
+        repo = hint["repo"].to_s.downcase
+        ledger.projects.find do |project|
+          next false unless project.status == "live" && !project.remote.to_s.empty?
+
+          key = remote_key(project.remote)
+          key && (wanted.include?(key) || (!repo.empty? && key.end_with?("/#{repo}")))
+        end
+      end
+
+      def remote_urls(hint)
+        remote = hint["remote"].to_s
+        return [remote] if url_like?(remote)
+
+        name = remote.empty? ? "origin" : remote
+        dir = hint["path"].to_s
+        return [] if name.start_with?("-") || dir.empty?
+
+        found = push_url(dir, name)
+        found ? [found] : []
+      end
+
+      def url_like?(text)
+        text.include?("://") || text.match?(/\A[\w.-]+@[\w.-]+:/) || text.start_with?("/", "./", "../", "~")
+      end
+
+      def remote_key(url)
+        text = url.to_s.strip
+        text = File.expand_path(text) if text.start_with?("/", "./", "../", "~")
+        text = canonical(text) if text.start_with?("/")
+        text = text.downcase.sub(%r{\A[a-z+]+://}, "").sub(%r{\A[^@/]+@}, "")
+        text = text.sub(":", "/") unless text.start_with?("/")
+        text = text.sub(%r{/+\z}, "").sub(/\.git\z/, "")
+        text.empty? ? nil : text
+      end
+
+      def push_url(dir, name)
+        HookMemo.fetch(:push_url, dir, name) { push_url_uncached(dir, name) }
+      end
+
+      def push_url_uncached(dir, name)
+        return nil unless File.directory?(dir)
+
+        reader, writer = IO.pipe
+        pid = Process.spawn(CLEARED_GIT_ENV, "git", *HARDENED_GIT, "-C", dir, "remote", "get-url", "--push", name, in: File::NULL, out: writer, err: File::NULL)
+        writer.close
+        out = nil
+        begin
+          Timeout.timeout(REMOTE_DEADLINE) do
+            out = reader.read(4096)
+            Process.wait(pid)
+          end
+        rescue Timeout::Error
+          Process.kill("KILL", pid)
+          Process.wait(pid)
+          out = nil
+        ensure
+          reader.close
+        end
+        out.to_s.strip.empty? ? nil : out.strip
+      rescue SystemCallError
+        nil
       end
 
       def named_owner(hint, ledger)
@@ -561,12 +637,28 @@ module Polispec
           next false unless project.status == "live"
 
           policy = HookMemo.fetch(:spec_policy, ledger.object_id, project.id) { PolicySource.load(project, ledger: ledger)[0] }
-          environments(policy).values.any? { |spec| names_match?(spec, unit, db) }
+          environments(policy).values.any? { |spec| names_match?(spec, unit, db, hint) }
         end
       end
 
-      def names_match?(spec, unit, db)
-        (unit && Array(spec["services"]).include?(unit)) || (db && Array((spec["data"] || {})["databases"]).include?(db))
+      def names_match?(spec, unit, db, hint = {})
+        (unit && Array(spec["services"]).any? { |service| unit_match?(unit, service, hint) }) || (db && Array((spec["data"] || {})["databases"]).include?(db))
+      end
+
+      def unit_match?(unit, service, hint = {})
+        return true if unit == service
+        return File.fnmatch?(unit, service) if unit.match?(/[*?\[]/) && !hint["regexp"]
+        return regexp_match?(unit, service) if hint["regexp"]
+
+        false
+      end
+
+      def regexp_match?(pattern, service)
+        Regexp.new(pattern, timeout: REGEXP_DEADLINE).match?(service) || File.fnmatch?(pattern, service)
+      rescue Regexp::TimeoutError
+        true
+      rescue RegexpError
+        service.include?(pattern)
       end
 
       def first_value(hint, key)
@@ -682,7 +774,7 @@ module Polispec
         unit = unit_name(hint["unit"])
         return nil unless unit
 
-        environments(policy).each { |name, spec| return name if Array(spec["services"]).include?(unit) }
+        environments(policy).each { |name, spec| return name if Array(spec["services"]).any? { |service| unit_match?(unit, service, hint) } }
         nil
       end
 
@@ -710,7 +802,7 @@ module Polispec
         return nil if path.nil? || Polispec::Engine.store_ref?(path)
 
         abs = canonical(absolute(path, ctx[:cwd]))
-        by_spec_paths(abs, policy) || by_policy_checkout(abs, policy, ctx) || dev_location(abs, policy, ctx)
+        by_spec_paths(abs, policy, hint["recursive"]) || by_policy_checkout(abs, policy, ctx) || dev_location(abs, policy, ctx)
       end
 
       def release_read?(action, target, ctx)
@@ -749,18 +841,25 @@ module Polispec
         false
       end
 
-      def by_spec_paths(abs, policy)
+      def by_spec_paths(abs, policy, recursive = false)
         ENV_NAMES.each do |name|
           spec = environments(policy)[name]
-          return name if spec && spec_path_hit?(abs, spec)
+          return name if spec && spec_path_hit?(abs, spec, recursive)
         end
         nil
       end
 
-      def spec_path_hit?(abs, spec)
+      def spec_path_hit?(abs, spec, recursive = false)
         dirs = Array((spec["data"] || {})["dirs"]).map { |dir| canonical(File.expand_path(dir)) }
         globs = (Array(spec["unit_files"]) + Array(spec["env_files"]) + Array(spec["secrets"])).reject { |glob| Polispec::Engine.store_ref?(glob) }
-        dirs.any? { |dir| under?(abs, dir) } || globs.any? { |glob| File.fnmatch?(File.expand_path(glob), abs, File::FNM_PATHNAME | File::FNM_DOTMATCH) }
+        return true if dirs.any? { |dir| under?(abs, dir) } || globs.any? { |glob| File.fnmatch?(File.expand_path(glob), abs, File::FNM_PATHNAME | File::FNM_DOTMATCH) }
+
+        recursive && globs.any? { |glob| glob_below?(File.expand_path(glob), abs) }
+      end
+
+      def glob_below?(glob, abs)
+        literal = glob.split(%r{(?=/)}).take_while { |part| !part.match?(/[*?\[{]/) }.join
+        literal == abs || literal.start_with?("#{abs}/") || abs == "/"
       end
 
       def by_policy_checkout(abs, policy, ctx)
@@ -1108,13 +1207,56 @@ module Polispec
           next true if match[key].nil?
           actual = key == "tool" ? ctx[:tool] : key == "role" ? ctx[:role] : hint[key]
           if key == "path"
-            File.fnmatch?(match[key].to_s, actual.to_s, File::FNM_PATHNAME | File::FNM_DOTMATCH)
+            path_ok?(match[key].to_s, actual.to_s, ctx)
           elsif key == "tool"
             match[key].to_s.casecmp?(actual.to_s)
           else
             match[key].to_s == actual.to_s
           end
         end
+      end
+
+      PATH_FLAGS = File::FNM_PATHNAME | File::FNM_DOTMATCH | File::FNM_EXTGLOB
+      PATH_GLOB = /[*?\[{]/.freeze
+
+      def path_ok?(pattern, actual, ctx)
+        return false if pattern.empty? || actual.empty?
+
+        base = ctx[:cwd].to_s.empty? ? Dir.pwd : ctx[:cwd].to_s
+        absolute = File.expand_path(actual, base)
+        actuals = [actual, absolute, Envs.canonical(absolute)].uniq
+        path_patterns(pattern, absolute, base).any? { |candidate| actuals.any? { |text| path_pattern?(candidate, text) } }
+      end
+
+      def path_patterns(pattern, absolute, base)
+        list = [pattern]
+        rooted = pattern.start_with?("/", "~", "*", "?", "[", "{")
+        list << File.join(repository_root(absolute, base), pattern) unless rooted
+        list.concat(list.filter_map { |entry| canonical_pattern(entry) })
+        list.uniq
+      end
+
+      def repository_root(absolute, base)
+        Classify::Support::Repo.find(absolute)&.root || base
+      rescue StandardError
+        base
+      end
+
+      def canonical_pattern(pattern)
+        return nil unless pattern.start_with?("/")
+
+        literal = pattern.split(PATH_GLOB, 2).first.to_s
+        directory = literal.end_with?("/") ? literal.chomp("/") : File.dirname(literal)
+        return nil if directory.empty?
+
+        real = Envs.canonical(directory)
+        real == directory ? nil : "#{real}#{pattern[directory.length..]}"
+      end
+
+      def path_pattern?(pattern, text)
+        return true if File.fnmatch?(pattern, text, PATH_FLAGS)
+
+        pattern.end_with?("/**") && File.fnmatch?("#{pattern}/*", text, PATH_FLAGS)
       end
 
       def shape_ok?(match, action)

@@ -69,7 +69,7 @@ module Polispec
         "catalog" => [{ "list" => JSON_FLAG, "show" => JSON_FLAG }],
         "shadow" => [{ "status" => JSON_FLAG, "report" => JSON_FLAG }]
       }.freeze
-      WRAPPERS = %w[eval exec source env sudo doas nohup timeout xargs command builtin nice ionice stdbuf setsid unbuffer flock time script bash sh zsh dash ksh ash].freeze
+      WRAPPERS = %w[eval exec source env sudo doas nohup timeout xargs command builtin nice ionice stdbuf setsid unbuffer flock time script bash sh zsh dash ksh mksh ash csh tcsh fish chrt taskset unshare chroot watch xvfb-run].freeze
       OPAQUE = %w[eval source .].freeze
       WRITE_CLASSES = %w[fs.write policy.edit].freeze
       SUBSTITUTION = /\$\(|`|<\(|>\(/.freeze

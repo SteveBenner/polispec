@@ -11,7 +11,9 @@ module Polispec
 
       NAMES = %w[curl wget http https xh].freeze
       WEB_TOOLS = %w[webfetch web_fetch].freeze
-      LOCAL_URL = %r{\A(?:[a-z][a-z0-9+.-]*://)?(?:127\.0\.0\.1|localhost|\[::1\]|0\.0\.0\.0)(?::\d+)?(?:[/?#]|\z)}i.freeze
+      HTTPIE_PROGRAMS = %w[http https xh].freeze
+      HTTPIE_LOCAL = %r{\A:(\d+)?(/.*)?\z}.freeze
+      ADDRESS_PART = /\A(?:0x\h+|\d+)\z/i.freeze
       SAFE_METHODS = %w[GET HEAD].freeze
       CURL_BODY_FLAGS = %w[-d -F -T --json --form --upload-file].freeze
       CURL_BODY_PREFIXES = %w[--data --form-string].freeze
@@ -19,6 +21,7 @@ module Polispec
       GUARDED_PREFIXES = %w[/api/v1/exceptions/ /api/v1/author /api/v1/state /api/v1/register /api/v1/session].freeze
       PLAN_APPLY = %r{\A/api/v1/plans/[^/]+/apply/?\z}.freeze
       HTTPIE_DATA = /\A[^=:@\s]+(?::=|=@|=)/.freeze
+      HTTPIE_UPLOAD = /\A[^=:@\s]*(?:@|=@)/.freeze
       HTTPIE_QUERY = /\A[^=\s]+==/.freeze
       METHOD_WORD = /\A[A-Za-z]+\z/.freeze
 
@@ -30,10 +33,10 @@ module Polispec
         end
 
         def classify(cmd)
-          url = cmd.args.map(&:to_s).find { |arg| web_url?(arg) }
+          url = cmd.args.map(&:to_s).find { |arg| web_url?(candidate(arg, cmd.name)) }
           return [] unless url
 
-          uri = parse(url)
+          uri = parse(candidate(url, cmd.name))
           return [] unless uri
 
           path = uri.path.to_s.empty? ? "/" : uri.path
@@ -56,6 +59,32 @@ module Polispec
           [Support.act("policy.edit", raw, hint.merge("shape" => ["web_local"]))]
         end
 
+        def candidate(arg, name)
+          match = HTTPIE_PROGRAMS.include?(name) ? HTTPIE_LOCAL.match(arg) : nil
+          match ? "http://localhost:#{match[1] || 80}#{match[2]}" : arg
+        end
+
+        def local_host?(host)
+          name = host.to_s.delete("[]").downcase.chomp(".")
+          return true if %w[localhost ::1 0:0:0:0:0:0:0:1].include?(name)
+
+          value = address_value(name.delete_prefix("::ffff:"))
+          !value.nil? && (value.zero? || value >> 24 == 127)
+        end
+
+        def address_value(name)
+          parts = name.split(".", -1)
+          return nil unless (1..4).cover?(parts.length) && parts.all? { |part| ADDRESS_PART.match?(part) }
+
+          numbers = parts.map { |part| Integer(part) }
+          last = numbers.pop
+          return nil if numbers.any? { |number| number > 255 } || last >= 256**(4 - numbers.length)
+
+          numbers.each_with_index.sum { |number, index| number << (8 * (3 - index)) } + last
+        rescue ArgumentError
+          nil
+        end
+
         def parse(text)
           require "uri"
           text = "http://#{text}" unless text.include?("://")
@@ -71,11 +100,12 @@ module Polispec
         end
 
         def web_url?(text)
-          return false unless LOCAL_URL.match?(text) || text.match?(%r{\Ahttps://}i)
+          return false if text.to_s.empty? || text.start_with?("-")
 
           uri = parse(text)
           return false unless uri
-          return true if LOCAL_URL.match?(text) && local_port?(uri.port)
+          return true if local_host?(uri.host) && local_port?(uri.port)
+          return false unless text.match?(%r{\Ahttps://}i)
 
           configured = Engine::Settings.web_public_origin
           [configured, running_origin].compact.any? do |origin|
@@ -143,7 +173,7 @@ module Polispec
           verb = before.find { |arg| METHOD_WORD.match?(arg) }
           return true if verb && !SAFE_METHODS.include?(verb.upcase)
 
-          after.any? { |arg| HTTPIE_DATA.match?(arg) && !HTTPIE_QUERY.match?(arg) }
+          after.any? { |arg| (HTTPIE_DATA.match?(arg) || HTTPIE_UPLOAD.match?(arg)) && !HTTPIE_QUERY.match?(arg) }
         end
       end
     end

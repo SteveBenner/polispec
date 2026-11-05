@@ -108,6 +108,8 @@ module Polispec
         return cached unless cached.nil?
 
         windows = fetch_calendar(policy, checkout, argv)
+        return [] if windows.nil?
+
         write_cached(path, windows)
         windows
       end
@@ -125,29 +127,40 @@ module Polispec
         program = checkout && File.expand_path(argv.first, checkout)
         unless program && File.executable?(program) && File.file?(program)
           finding(policy, "freeze_source_unavailable", "#{argv.first} is not available in #{checkout || 'the prod checkout'}; no freeze windows")
-          return []
+          return nil
         end
         parse_calendar(policy, run_calendar([program, *argv.drop(1)], checkout))
       rescue StandardError => e
         finding(policy, "freeze_source_unavailable", "#{e.class}: #{e.message}")
-        []
+        nil
       end
 
       def run_calendar(argv, checkout)
-        out = nil
-        Open3.popen3(*argv, chdir: checkout) do |stdin, stdout, stderr, waiter|
-          stdin.close
-          reader = drain(stdout)
-          drain(stderr)
-          unless waiter.join(COMMAND_TIMEOUT)
-            Process.kill("KILL", waiter.pid)
-            raise Polispec::Error, "freeze command timed out"
-          end
-          raise Polispec::Error, "freeze command exited #{waiter.value.exitstatus}" unless waiter.value.success?
+        out_read, out_write = IO.pipe
+        err_read, err_write = IO.pipe
+        pid = Process.spawn([argv.first, argv.first], *argv.drop(1), in: File::NULL, out: out_write, err: err_write, chdir: checkout, pgroup: true)
+        out_write.close
+        err_write.close
+        reader = drain(out_read)
+        drain(err_read)
+        waiter = Process.detach(pid)
+        raise Polispec::Error, "freeze command timed out" unless waiter.join(COMMAND_TIMEOUT)
 
-          out = reader.value
-        end
-        out
+        kill_group(pid)
+        raise Polispec::Error, "freeze command exited #{waiter.value.exitstatus}" unless waiter.value.success?
+
+        raise Polispec::Error, "freeze command output was not closed in time" unless reader.join(COMMAND_TIMEOUT)
+
+        reader.value
+      ensure
+        kill_group(pid) if pid
+        [out_read, out_write, err_read, err_write].compact.each { |stream| stream.close unless stream.closed? }
+      end
+
+      def kill_group(pid)
+        Process.kill("KILL", -pid)
+      rescue Errno::ESRCH, Errno::EPERM
+        nil
       end
 
       def drain(stream)
@@ -168,10 +181,10 @@ module Polispec
         return windows.select { |entry| entry.is_a?(Hash) } if windows.is_a?(Array)
 
         finding(policy, "freeze_source_unavailable", "freeze command output has no windows array")
-        []
+        nil
       rescue JSON::ParserError => e
         finding(policy, "freeze_source_unavailable", "freeze command output is not JSON: #{e.message[0, 80]}")
-        []
+        nil
       end
 
       def read_cached(path)

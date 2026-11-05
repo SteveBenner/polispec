@@ -7,6 +7,7 @@ require_relative "native_pin"
 require_relative "stewardship"
 require_relative "runtime"
 require_relative "exceptions"
+require_relative "code/paths"
 
 module Polispec
   module ProtectedState
@@ -14,9 +15,12 @@ module Polispec
 
     def paths(ledger)
       list = [entry { State.home }]
+      list << entry { File.join(State.home, "exposure.key") }
       list << entry { ledger.pauses_log } if ledger.respond_to?(:pauses_log)
       list << entry { ledger.allow_once_log } if ledger.respond_to?(:allow_once_log)
       list << entry { NativeSettings.path }
+      list << entry { Code::Paths.specs_link }
+      list << entry { File.join(NativePin.data_home, "backups") }
       list << entry { File.join(config_home, "rplugin", "polispec", "settings.yml") }
       list << entry { File.join(state_base, "rplugin", "polispec", "settings.resolved.json") }
       list.concat(launcher_paths)

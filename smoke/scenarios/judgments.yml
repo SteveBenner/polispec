@@ -80,7 +80,7 @@ steps:
       stdout_excludes: ["permissionDecision"]
     parity: ignore
   - name: the trace names the tool, the session, the fast-path key and the reason
-    run: [sh, -c, 'test "$(wc -l < "$1")" -eq 1 && grep -q "\"tool\":\"skill\"" "$1" && grep -q "\"session\":\"skip-session\"" "$1" && grep -Eq "\"key\":\"[0-9a-f]{64}\"" "$1" && grep -q "\"skip\":\"no_match\"" "$1" && test "$(wc -l < "$2")" -eq 3', sh, "{{scratch}}/state/skips.jsonl", "{{scratch}}/state/judgments.jsonl"]
+    run: [sh, -c, 'test "$(wc -l < "$1")" -eq 1 && grep -q "\"tool\":\"skill\"" "$1" &&grep -q "\"session\":\"skip-session\"" "$1" && grep -Eq "\"key\":\"[0-9a-f]{64}\"" "$1" && grep -q "\"skip\":\"no_match\"" "$1" && test "$(wc -l < "$2")" -eq 3', sh, "{{scratch}}/state/skips.jsonl", "{{scratch}}/state/judgments.jsonl"]
     expect:
       exit: 0
     parity: ignore

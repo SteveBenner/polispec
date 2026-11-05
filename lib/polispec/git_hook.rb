@@ -3,12 +3,13 @@
 
 require_relative "classify/commands/support"
 require_relative "deployments"
+require_relative "git_safe"
 
 module Polispec
   class GitHook
     HOOKS = %w[pre-commit pre-push reference-transaction].freeze
     USAGE = "usage: polispec hook git <pre-commit|pre-push|reference-transaction> [git hook args...]\n       polispec hook git install <project-id> <dev|test|prod|all> [--dry-run]\n       polispec hook git uninstall <project-id> <dev|test|prod|all>"
-    GIT_ENV = { "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_CEILING_DIRECTORIES" => nil, "GIT_OPTIONAL_LOCKS" => "0" }.freeze
+    GIT_ENV = { "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_CEILING_DIRECTORIES" => nil, "GIT_OPTIONAL_LOCKS" => "0" }.merge(GitSafe::CONFIG_ENV).freeze
     ZERO = /\A0+\z/.freeze
     SHIM_DIR = "git-hooks"
     SHEBANG = "#!/bin/sh".freeze
@@ -37,27 +38,39 @@ module Polispec
     end
 
     def judge(hook, args)
+      @env = nil
       return 0 if ENV["POLISPEC_OPERATOR"] == "1"
 
-      @env = nil
       decide(hook, args)
     rescue StandardError, ScriptError => e
       warn "polispec: git hook error #{e.class}: #{e.message}"
-      closed? ? 1 : 0
+      if closed?
+        warn "polispec: the ref change is refused because the guard could not be read; the operator can run the command with POLISPEC_OPERATOR=1"
+        1
+      else
+        0
+      end
     end
 
     def closed?
-      Engine::Settings.enforce_mode == "enforce" && @env == "prod"
+      Engine::Settings.enforce_mode == "enforce"
     rescue StandardError
-      false
+      true
     end
 
     def decide(hook, args)
-      cwd = toplevel
-      return 0 unless cwd
+      cwd = checkout_root
+      raise Polispec::Error, "cannot tell which repository this hook runs for" unless cwd
 
       ledger = Ledger.load
       located = ledger.locate(cwd)
+      unless located
+        owner = installed_checkout
+        if owner
+          cwd = owner
+          located = ledger.locate(cwd)
+        end
+      end
       return 0 unless located && located.project.status == "live"
 
       project = located.project
@@ -78,10 +91,40 @@ module Polispec
       status
     end
 
-    def toplevel
-      out, status = Trace.capture2(GIT_ENV, "git", "rev-parse", "--show-toplevel", err: File::NULL, trace: :quiet)
-      status.success? ? out.strip : nil
+    def repository_env
+      env = GIT_ENV.dup
+      given = ENV["GIT_DIR"].to_s
+      return env if given.empty?
+
+      env["GIT_DIR"] = File.expand_path(given, Dir.pwd)
+      common = ENV["GIT_COMMON_DIR"].to_s
+      env["GIT_COMMON_DIR"] = File.expand_path(common, Dir.pwd) unless common.empty?
+      env
+    end
+
+    def checkout_root
+      out, status = Trace.capture2(repository_env, "git", "rev-parse", "--path-format=absolute", "--git-common-dir", err: File::NULL, trace: :quiet)
+      common = out.strip
+      return nil unless status.success? && !common.empty?
+
+      File.basename(common) == ".git" ? File.dirname(common) : common
     rescue SystemCallError
+      nil
+    end
+
+    def installed_checkout
+      out, status = Trace.capture2(repository_env, "git", "config", "--get", "core.hooksPath", err: File::NULL, trace: :quiet)
+      return nil unless status.success?
+
+      base = File.expand_path(File.join(State.home, SHIM_DIR))
+      shim = File.expand_path(out.strip, Dir.pwd)
+      return nil unless shim.start_with?("#{base}/")
+
+      project, name = shim.delete_prefix("#{base}/").split("/")
+      return nil unless project && ENVIRONMENTS.include?(name)
+
+      Installer.new(project, name, out: File.open(File::NULL, "w"), resolve_policy: false).checkout_path(name)
+    rescue SystemCallError, Polispec::Error
       nil
     end
 

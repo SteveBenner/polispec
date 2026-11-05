@@ -383,7 +383,7 @@ module Polispec
       end
 
       def argv_for(command, vars)
-        Shellwords.split(interpolate(command, vars)).map { |word| expand_home(word) }
+        Shellwords.split(command.to_s).map { |word| expand_home(interpolate(word, vars)) }
       end
 
       def expand_home(word)

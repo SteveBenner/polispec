@@ -7,7 +7,11 @@ require "fileutils"
 require "securerandom"
 require "stringio"
 require "time"
+require "yaml"
+require "date"
 require "open3"
+require "find"
+require_relative "git_safe"
 require_relative "deployments"
 require_relative "native_install"
 require_relative "native_pin"
@@ -26,6 +30,8 @@ module Polispec
     PHRASE = "uninstall polispec"
     RESTORE_PHRASE = "restore polispec"
     REWIRE_ORDER = %w[pin rplugin hooks git_hooks controls].freeze
+    COMMIT_PATTERN = /\A[0-9a-f]{40}\z/.freeze
+    DATA_KINDS = %w[ledger settings state].freeze
     PRELOAD = %w[Changes Effect Chain GitHook Layers Events Exceptions Ledger Delegate Runtime].freeze
 
     module_function
@@ -92,8 +98,80 @@ module Polispec
           .sort_by { |entry| [ORDER.index(entry["kind"]) || ORDER.length, entry["target"].to_s] }
     end
 
+    def owned_targets
+      {
+        "ledger" => [Ledger.default_path],
+        "settings" => [NativeSettings.path],
+        "state" => [State.home],
+        "pin" => [NativePin.current_link],
+        "rplugin" => [Stewardship.store_link]
+      }
+    end
+
+    def same_path?(left, right)
+      !left.to_s.empty? && !right.to_s.empty? && File.expand_path(left.to_s) == File.expand_path(right.to_s)
+    end
+
+    def owned?(entry)
+      kind = entry["kind"]
+      target = entry["target"].to_s
+      details = entry["details"].is_a?(Hash) ? entry["details"] : {}
+      return owned_targets[kind].any? { |expected| same_path?(expected, target) } && owned_pin_link?(kind, details) if owned_targets.key?(kind)
+
+      case kind
+      when "git_hooks" then owned_git_hooks?(target, details)
+      when "hooks" then owned_hooks?(target, details)
+      when "controls" then owned_controls?(target)
+      when "plugin" then owned_plugin?(target, details)
+      else false
+      end
+    rescue StandardError
+      false
+    end
+
+    def owned_pin_link?(kind, details)
+      return true unless kind == "pin"
+
+      bin = details["bin_link"].to_s
+      bin.empty? || same_path?(bin, NativePin.bin_link)
+    end
+
+    def owned_git_hooks?(target, details)
+      base = File.expand_path(File.join(State.home, GitHook::SHIM_DIR))
+      shim = File.expand_path(target)
+      return false unless shim.start_with?("#{base}/")
+
+      env = File.basename(shim)
+      project = File.basename(File.dirname(shim))
+      checkout = GitHook::Installer.new(project, env, out: File.open(File::NULL, "w"), resolve_policy: false).checkout_path(env)
+      same_path?(checkout, details["checkout"])
+    end
+
+    def owned_hooks?(target, details)
+      receipts = File.expand_path(File.join(State.home, "installs"))
+      receipt = File.expand_path(details["receipt"].to_s)
+      return false unless receipt.start_with?("#{receipts}/") && File.file?(receipt)
+
+      record = JSON.parse(File.read(receipt))
+      record.is_a?(Hash) && same_path?(record["target"], target)
+    end
+
+    def owned_controls?(target)
+      HarnessControls::Lifecycle.owned_installations.any? { |item| item["installation_id"] == target }
+    end
+
+    def owned_plugin?(target, details)
+      if details["harness"] == "claude"
+        target.start_with?("claude:polispec@") && target == "claude:#{details['key']}" && same_path?(details["settings"], File.join(Stewardship.claude_home, "settings.json"))
+      else
+        base = File.expand_path(File.join(Deployments.codex_home, "plugins"))
+        expanded = File.expand_path(target)
+        expanded.start_with?("#{base}/") && File.basename(expanded).include?("polispec")
+      end
+    end
+
     def git_config_path(checkout)
-      out, status = Trace.capture2({ "GIT_DIR" => nil, "GIT_WORK_TREE" => nil }, "git", "-C", checkout, "rev-parse", "--git-path", "config", err: File::NULL, trace: :quiet)
+      out, status = Trace.capture2(GitSafe.env, *GitSafe.argv(checkout, "rev-parse", "--git-path", "config"), err: File::NULL, trace: :quiet)
       status.success? ? File.expand_path(out.strip, checkout) : nil
     rescue SystemCallError
       nil
@@ -153,6 +231,8 @@ module Polispec
       select_entries(list, keep).map do |entry|
         live = Deployments.status_of(entry)
         Trace.info("deployment", kind: entry["kind"], target: Trace.path(entry["target"].to_s), live: live)
+        next { "entry" => entry, "live" => live, "files" => [], "describe" => "refused: #{entry['kind']} #{entry['target']} is not a target polispec recorded for this kind; left in place", "refused" => true } unless owned?(entry)
+
         { "entry" => entry, "live" => live, "files" => live == "gone" && entry["kind"] != "hooks" ? [] : files_for(entry), "describe" => describe(entry) }
       end
     end
@@ -219,14 +299,15 @@ module Polispec
     end
 
     def execute(id, dir, keep, json)
-      plan = build_plan(keep, true)
+      full = build_plan(keep, true)
+      plan = full.reject { |item| item["refused"] }
       FileUtils.mkdir_p(backups_dir, mode: 0o700)
       FileUtils.mkdir_p(dir, mode: 0o700)
       Trace.info("backup directory", id: id, dir: Trace.path(dir))
       backup = {
         "schema" => SCHEMA, "id" => id, "created_at" => Time.now.utc.iso8601, "polispec_version" => Polispec.version,
         "runtime_root" => Runtime.root, "keep" => keep, "entries" => plan.map { |item| item["entry"] },
-        "files" => [], "data" => [], "steps" => [], "restore_command" => restore_command(id), "restored_at" => nil
+        "files" => [], "data" => [], "steps" => full.select { |item| item["refused"] }.map { |item| { "entry" => item["entry"]["id"], "kind" => item["entry"]["kind"], "target" => item["entry"]["target"], "status" => "refused", "detail" => item["describe"] } }, "restore_command" => restore_command(id), "restored_at" => nil
       }
       manifest = Deployments.path
       FileUtils.cp(manifest, File.join(dir, "deployments.json"), preserve: true) if File.file?(manifest)
@@ -388,7 +469,7 @@ module Polispec
       return "it lies in the global shelf #{shelf}" if shelf && (expanded == shelf || expanded.start_with?("#{shelf}/"))
 
       dir = File.directory?(expanded) ? expanded : File.dirname(expanded)
-      out, status = Trace.capture2({ "GIT_DIR" => nil, "GIT_WORK_TREE" => nil }, "git", "-C", dir, "rev-parse", "--show-toplevel", err: File::NULL, trace: :quiet)
+      out, status = Trace.capture2(GitSafe.env, *GitSafe.argv(dir, "rev-parse", "--show-toplevel"), err: File::NULL, trace: :quiet)
       status.success? ? "it lies in the git working tree #{out.strip}" : nil
     rescue SystemCallError
       nil
@@ -430,7 +511,7 @@ module Polispec
     end
 
     def report(backup, dir, json)
-      failed = backup["steps"].reject { |step| %w[ok gone reported kept].include?(step["status"]) }
+      failed = backup["steps"].reject { |step| %w[ok gone reported kept refused].include?(step["status"]) }
       ok = failed.empty?
       if json
         puts JSON.generate({ "ok" => ok, "backup_id" => backup["id"], "backup_dir" => dir, "keep" => backup["keep"], "steps" => backup["steps"], "restore_command" => backup["restore_command"] })
@@ -455,9 +536,273 @@ module Polispec
         data = JSON.parse(File.read(file))
         raise Polispec::Error, "#{file} is not a #{SCHEMA} document" unless data.is_a?(Hash) && data["schema"] == SCHEMA
 
+        validate!(data, dir, id)
         [data, dir]
       rescue JSON::ParserError => e
         raise Polispec::Error, "#{file} is not valid JSON: #{e.message.lines.first.to_s.strip}"
+      end
+
+      def validate!(backup, dir, id)
+        problems = manifest_problems(backup, dir, id)
+        return if problems.empty?
+
+        raise Polispec::Error, "backup #{id} is refused and nothing was restored: #{problems.first(8).join('; ')}#{problems.length > 8 ? "; and #{problems.length - 8} more" : ''}"
+      end
+
+      def manifest_problems(backup, dir, id)
+        problems = []
+        base = real_or_nil(UninstallAll.backups_dir)
+        real_dir = real_or_nil(dir)
+        problems << "the backup directory is not #{File.join(base.to_s, id)}" unless base && real_dir == File.join(base, id)
+        %w[entries files data steps].each do |key|
+          list = backup[key]
+          problems << "#{key} is not a list of records" unless list.is_a?(Array) && list.all?(Hash)
+        end
+        return problems unless problems.empty?
+
+        entries = backup["entries"].to_h { |entry| [entry["id"], entry] }
+        backup["entries"].each { |entry| problems.concat(entry_problems(entry)) }
+        backup["files"].each { |record| problems.concat(record_problems(record, entries, dir, %w[file symlink], "file")) }
+        backup["data"].each { |record| problems.concat(record_problems(record, entries, dir, %w[file dir], "data")) }
+        problems
+      end
+
+      def entry_problems(entry)
+        label = "entry #{entry['id'].inspect}"
+        return ["#{label} has an unknown kind #{entry['kind'].inspect}"] unless Deployments::KINDS.include?(entry["kind"])
+
+        details = entry["details"].is_a?(Hash) ? entry["details"] : {}
+        case entry["kind"]
+        when "pin" then pin_problems(label, details)
+        when "rplugin" then rplugin_problems(label, details)
+        else []
+        end
+      end
+
+      def pin_problems(label, details)
+        return [] if details.empty?
+
+        problems = []
+        commit = details["commit"].to_s
+        release = details["release"].to_s
+        problems << "#{label} pin commit #{commit.inspect} is not 40 hex digits" unless COMMIT_PATTERN.match?(commit)
+        releases = real_or_nil(NativePin.releases_dir)
+        expanded = File.expand_path(release)
+        problems << "#{label} pin release #{release.inspect} is not #{File.join(NativePin.releases_dir, commit)}" unless releases && release == expanded && expanded == File.join(releases, commit) && !release.match?(/[\0\n\r]/)
+        bin = details["bin_link"].to_s
+        problems << "#{label} pin bin link #{bin.inspect} is not #{NativePin.bin_link}" unless bin.empty? || UninstallAll.same_path?(bin, NativePin.bin_link)
+        problems
+      end
+
+      def rplugin_problems(label, details)
+        %w[source ref].filter_map do |key|
+          value = details[key].to_s
+          "#{label} rplugin #{key} #{value.inspect} is not an argument rplugin may be given" if value.start_with?("-") || value.match?(/[\0\n\r]/)
+        end
+      end
+
+      def record_problems(record, entries, dir, kinds, label)
+        entry = entries[record["entry"]]
+        return ["#{label} record for #{record['original'].inspect} names no entry"] unless entry
+
+        original = record["original"]
+        problems = []
+        problems << "#{label} kind #{record['kind'].inspect} is not one of #{kinds.join(', ')}" unless kinds.include?(record["kind"])
+        stored = stored_problems(record, dir, original, label == "file")
+        problems << "#{original.inspect} is not a path #{entry['kind']} may own" unless original_allowed?(entry, original) || (stored.empty? && moved_state_allowed?(entry, original, record, dir))
+        problems.concat(stored)
+        problems.concat(link_problems(entry, record)) if record["kind"] == "symlink"
+        problems
+      end
+
+      def within?(exact, trees, path)
+        exact.any? { |item| item == path } || trees.any? { |item| path == item || path.start_with?("#{item}/") }
+      end
+
+      def plain_absolute?(value)
+        value.is_a?(String) && value.start_with?("/") && !value.match?(/[\0\n\r]/) && File.expand_path(value) == value
+      end
+
+      def original_allowed?(entry, original)
+        return false unless plain_absolute?(original)
+
+        exact, trees = owned_paths(entry, original)
+        within?(exact, trees, original)
+      rescue StandardError
+        false
+      end
+
+      def moved_state_allowed?(entry, original, record, dir)
+        return false unless %w[ledger settings].include?(entry["kind"]) && record["kind"] == "file" && plain_absolute?(original)
+        return false unless original == entry["target"].to_s && !UninstallAll.present?(original) && config_target?(original)
+
+        document = YAML.safe_load(File.read(File.join(dir, record["stored"].to_s)), permitted_classes: [Date, Time], aliases: false)
+        return false unless document.is_a?(Hash)
+
+        entry["kind"] == "settings" ? settings_document?(document) : ledger_document?(document)
+      rescue StandardError
+        false
+      end
+
+      def config_roots
+        roots = [ENV["XDG_CONFIG_HOME"].to_s, File.join(Dir.home, ".config")].reject(&:empty?)
+        roots.map { |root| File.expand_path(root) }.uniq
+      end
+
+      def config_target?(original)
+        return false unless original.downcase.end_with?(".yml", ".yaml")
+
+        config_roots.any? do |root|
+          next false unless original.start_with?("#{root}/")
+
+          parts = original.delete_prefix("#{root}/").split("/")
+          next false if parts.empty? || parts.any? { |part| part.start_with?(".") }
+
+          real = settled_path(original)
+          base = settled_path(root)
+          real && base && real.start_with?("#{base}/")
+        end
+      end
+
+      def settled_path(path)
+        tail = []
+        head = path
+        until head == "/" || File.exist?(head)
+          tail.unshift(File.basename(head))
+          head = File.dirname(head)
+        end
+        real = real_or_nil(head)
+        real && File.join(real, *tail)
+      end
+
+      def ledger_document?(document)
+        document["schema"].to_s.start_with?("polispec.ledger/") && document["projects"].is_a?(Array) && document["projects"].all?(Hash)
+      end
+
+      def settings_document?(document)
+        return false if document.empty?
+
+        document.keys.all? { |key| NativeSettings.definition(key.to_s) }
+      end
+
+      def link_problems(entry, record)
+        link = record["link_target"]
+        original = record["original"]
+        return ["symlink #{original.inspect} records no link target"] unless link.is_a?(String) && !link.empty? && !link.match?(/[\0\n\r]/)
+
+        target = File.expand_path(link, File.dirname(original.to_s))
+        return pin_link_problems(record, target) if entry["kind"] == "pin"
+
+        exact, trees = owned_paths(entry, target)
+        trees += link_roots(entry)
+        within?(exact, trees, target) ? [] : ["symlink #{original.inspect} points at #{target.inspect}, which #{entry['kind']} may not own"]
+      rescue StandardError
+        ["symlink #{record['original'].inspect} has a link target that cannot be checked"]
+      end
+
+      def pin_link_problems(record, target)
+        original = record["original"].to_s
+        releases = File.expand_path(NativePin.releases_dir)
+        release = "#{releases}/"
+        name = target.delete_prefix(release).split("/")
+        allowed =
+          if UninstallAll.same_path?(original, NativePin.current_link)
+            target.start_with?(release) && name.length == 1 && !name.first.empty?
+          elsif UninstallAll.same_path?(original, NativePin.bin_link)
+            target == File.join(File.expand_path(NativePin.current_link), "bin", "polispec") ||
+              (target.start_with?(release) && name.length == 3 && name[1] == "bin" && name[2] == "polispec" && !name.first.empty?)
+          else
+            false
+          end
+        allowed ? [] : ["symlink #{original.inspect} points at #{target.inspect}, which a pin may not link to"]
+      end
+
+      def link_roots(entry)
+        case entry["kind"]
+        when "pin" then [NativePin.data_home]
+        when "rplugin" then [Stewardship.plugins_home]
+        else []
+        end
+      end
+
+      def control_paths
+        @control_paths ||= begin
+          home = "/@home@"
+          project = "/@project@"
+          values = { "home" => home, "project" => project }
+          found = []
+          %w[project user managed].each do |scope|
+            found.concat(Array(HarnessControls::Backends.fetch("claude-code").send(:paths_for, scope, project, home)))
+            { "codex" => :paths_for, "hermes" => :paths_for, "antigravity" => :paths_for, "os" => :artifact_paths }.each do |name, method|
+              found.concat(HarnessControls::Backends.fetch(name).send(method, scope, values).values)
+            end
+          end
+          found.compact.uniq.map { |path| path.start_with?(home, project) ? [:suffix, path.sub(%r{\A/@(?:home|project)@}, "")] : [:exact, path] }
+        end
+      end
+
+      def control_path?(original)
+        control_paths.any? { |kind, path| kind == :exact ? original == path : original.end_with?(path) && original.length > path.length }
+      end
+
+      def owned_paths(entry, original)
+        details = entry["details"].is_a?(Hash) ? entry["details"] : {}
+        project = details["project"].to_s
+        projects = project.start_with?("/") && !project.match?(/[\0\n\r]/) ? [File.join(project, ".claude"), File.join(project, ".codex")] : []
+        case entry["kind"]
+        when "ledger" then [[computed { Ledger.default_path }].compact, []]
+        when "settings" then [[computed { NativeSettings.path }].compact, []]
+        when "state" then [[], [computed { State.home }].compact]
+        when "pin" then [[computed { NativePin.current_link }, computed { NativePin.bin_link }].compact, []]
+        when "rplugin" then [[computed { Stewardship.store_link }].compact, []]
+        when "git_hooks" then [computed { UninstallAll.owned_git_hooks?(entry["target"].to_s, details) ? [UninstallAll.git_config_path(details["checkout"].to_s)].compact : [] } || [], []]
+        when "hooks" then [[], [computed { State.home }, computed { Stewardship.claude_home }, computed { NativeInstall.codex_home }, *projects].compact]
+        when "controls" then [control_path?(original) ? [original] : [], []]
+        else [[], []]
+        end
+      end
+
+      def computed
+        yield
+      rescue StandardError
+        nil
+      end
+
+      def stored_problems(record, dir, original, hashed)
+        stored = record["stored"]
+        label = "stored #{stored.inspect} for #{original.inspect}"
+        return ["#{label} is not a path inside the backup"] unless stored.is_a?(String) && !stored.empty? && !stored.start_with?("/") && !stored.match?(/[\0\n\r]/) && stored.split("/").none? { |part| part.empty? || part == ".." }
+
+        symlink = record["kind"] == "symlink"
+        current = dir
+        parts = stored.split("/")
+        parts.each_with_index do |part, index|
+          current = File.join(current, part)
+          return ["#{label} passes through a symbolic link"] if File.symlink?(current) && !(symlink && index == parts.length - 1)
+        end
+        return [] if symlink
+
+        real = real_or_nil(current)
+        base = real_or_nil(dir)
+        return ["#{label} does not resolve inside the backup"] unless real && base && real.start_with?("#{base}/")
+        return ["#{label} is not a regular file"] if record["kind"] == "file" && !File.file?(real)
+        return ["#{label} is not a directory"] if record["kind"] == "dir" && !File.directory?(real)
+        return dir_problems(real, label) if record["kind"] == "dir"
+        return [] unless hashed
+
+        Digest::SHA256.file(real).hexdigest == record["sha256_before"].to_s ? [] : ["#{label} does not match its recorded SHA-256"]
+      end
+
+      def dir_problems(real, label)
+        found = []
+        Find.find(real) { |path| found << path if File.symlink?(path) }
+        found.empty? ? [] : ["#{label} holds a symbolic link at #{found.first}"]
+      end
+
+      def real_or_nil(path)
+        File.realpath(path)
+      rescue SystemCallError
+        nil
       end
 
       def list(json:)
@@ -478,15 +823,30 @@ module Polispec
         0
       end
 
+      def rewire_detail(entry)
+        details = entry["details"] || {}
+        case entry["kind"]
+        when "rplugin" then " (rplugin install #{details['source']}#{details['ref'].to_s.empty? ? '' : " --ref #{details['ref']}"})"
+        when "pin" then " (link #{NativePin.current_link} -> #{File.join(NativePin.releases_dir, details['commit'].to_s)}; bin link #{NativePin.bin_link} -> #{File.join(NativePin.current_link, 'bin', 'polispec')}; else pin #{details['ref']} from #{details['source']})"
+        else ""
+        end
+      end
+
       def plan_lines(backup, mode)
         lines = backup["data"].map { |item| "data (bytes): copy #{item['stored']} back to #{item['original']} when that path is absent" }
         if mode == "rewire"
           steps = backup["steps"].select { |step| step["status"] == "ok" }.map { |step| step["entry"] }
           chosen = backup["entries"].select { |entry| steps.include?(entry["id"]) && REWIRE_ORDER.include?(entry["kind"]) }
           chosen = chosen.sort_by { |entry| REWIRE_ORDER.index(entry["kind"]) }
-          lines += chosen.map { |entry| "rewire #{entry['kind']}: #{entry['target']}" }
+          lines += chosen.map { |entry| "rewire #{entry['kind']}: #{entry['target']}#{rewire_detail(entry)}" }
         else
-          lines += backup["files"].map { |record| "bytes: copy #{record['stored']} back to #{record['original']} unless edited since" }
+          lines += backup["files"].map do |record|
+            if record["kind"] == "symlink"
+              "link: recreate #{record['original']} -> #{record['link_target']} unless edited since"
+            else
+              "bytes: copy #{record['stored']} back to #{record['original']} unless edited since"
+            end
+          end
         end
         lines
       end

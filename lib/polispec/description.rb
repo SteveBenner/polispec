@@ -4,6 +4,7 @@
 require "json"
 require "yaml"
 require "open3"
+require_relative "git_safe"
 
 module Polispec
   module Description
@@ -22,7 +23,7 @@ module Polispec
     }.freeze
     RUNTIME_FLOOR = [0, 35, 0].freeze
     KINDS = %w[policy environments roster global module package spec].freeze
-    GIT_ENV = { "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_OPTIONAL_LOCKS" => "0" }.freeze
+    GIT_ENV = { "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_OPTIONAL_LOCKS" => "0" }.merge(GitSafe::CONFIG_ENV).freeze
 
     module_function
 

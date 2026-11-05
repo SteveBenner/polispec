@@ -12,9 +12,9 @@ module Polispec
       READ_ONLY = %w[
         status log diff show ls-files ls-remote ls-tree rev-parse rev-list blame annotate grep cat-file describe shortlog
         show-ref name-rev remote config help version reflog for-each-ref merge-base diff-tree diff-index diff-files
-        range-diff cherry count-objects fsck verify-commit verify-tag whatchanged stash add notes archive bundle gc prune
+        range-diff cherry count-objects fsck verify-commit verify-tag whatchanged add notes archive bundle gc prune
         repack maintenance sparse-checkout lfs difftool mergetool show-branch var check-ignore check-attr mktree
-        hash-object pack-objects format-patch send-email bisect symbolic-ref commit-tree write-tree read-tree
+        hash-object pack-objects format-patch send-email bisect symbolic-ref commit-tree write-tree
         request-pull instaweb daemon citool gui gitk fast-export fast-import unpack-objects index-pack update-index
         column credential cat-file ls-tree
       ].freeze
@@ -24,6 +24,7 @@ module Polispec
         "tag" => :tag, "branch" => :branch, "checkout" => :checkout, "switch" => :switch,
         "restore" => :fs_path, "rm" => :fs_path, "mv" => :fs_path, "apply" => :fs_path, "clean" => :clean,
         "update-ref" => :update_ref, "config" => :config, "filter-branch" => :rewrite_all, "filter-repo" => :rewrite_all,
+        "stash" => :stash, "read-tree" => :read_tree,
         "add" => :add, "fetch" => :fetch, "clone" => :clone, "init" => :init, "worktree" => :worktree, "submodule" => :submodule
       }.freeze
       GLOBAL_VALUE = %w[-c --namespace --super-prefix --config-env --attr-source].freeze
@@ -38,7 +39,7 @@ module Polispec
       CONFIG_KEYS = /\A(?:remote\..+\.(?:push|pushurl|url)|alias\..+|core\.(?:hookspath|sshcommand|fsmonitor)|url\..+\.(?:pushinsteadof|insteadof))\z/i.freeze
       ROOT_PATHSPECS = [".", ":/", ":/*", ":(top)", ":(top)*"].freeze
 
-      Invocation = Struct.new(:cmd, :path, :sub, :args)
+      Invocation = Struct.new(:cmd, :path, :sub, :args, :tree)
       Spec = Struct.new(:name, :tag, :force, :delete, :source)
 
       class << self
@@ -49,10 +50,22 @@ module Polispec
           return [] unless inv
 
           handler = HANDLERS[inv.sub]
-          return public_send(handler, inv) if handler
+          return with_tree(inv, public_send(handler, inv)) if handler
           return [] if READ_ONLY.include?(inv.sub)
 
-          [Support.act("fs.write", cmd.text, "path" => inv.path, "unknown" => true, "command" => "git #{inv.sub}")]
+          with_tree(inv, [Support.act("fs.write", cmd.text, "path" => inv.path, "unknown" => true, "command" => "git #{inv.sub}")])
+        end
+
+        def with_tree(inv, actions)
+          return actions if inv.tree.nil? || inv.tree == inv.path
+
+          branch = Support::Repo.current_branch(inv.tree)
+          copies = actions.select { |act| act.env_hint["path"] == inv.path }.flat_map do |act|
+            hints = [act.env_hint.merge("path" => inv.tree)]
+            hints << hints.first.merge("ref" => branch) if branch && hints.first["ref"] && hints.first["ref"] != branch
+            hints.map { |hint| Action.new(class: act.action_class, env_hint: hint, raw: act.raw) }
+          end
+          actions + copies
         end
 
         def shapes(cmd)
@@ -82,7 +95,7 @@ module Polispec
           return true if flags.any? { |flag| %w[-A --all -u --update].include?(flag) }
 
           root = Support::Repo.find(inv.path)&.root
-          pos.any? { |spec| ROOT_PATHSPECS.include?(spec) || (root && !Support.dynamic?(spec) && File.expand_path(spec, inv.path) == root) }
+          pos.any? { |spec| ROOT_PATHSPECS.include?(spec) || (root && !Support.dynamic?(spec) && Support.expand(spec, inv.path) == root) }
         end
 
         def commit_all?(args)
@@ -118,23 +131,28 @@ module Polispec
         end
 
         def add(inv)
-          bulk_add?(inv) ? [Support.write_action(inv.path, inv.cmd.text)] : []
+          bulk_add?(inv) ? tree_writes(inv) : []
         end
 
         def invocation(cmd)
           path = cmd.cwd
+          path = git_dir_path(cmd.env["GIT_DIR"].to_s, path) if cmd.env["GIT_DIR"]
+          where = path
+          tree = cmd.env["GIT_WORK_TREE"] ? cmd.env["GIT_WORK_TREE"].to_s : nil
           args = cmd.args.dup
           while (arg = args.shift)
             if arg == "-C"
-              path = Support.abs(args.shift, path)
+              dir = args.shift
+              path = Support.abs(dir, path)
+              where = Support.abs(dir, where)
             elsif arg == "--git-dir" || arg.start_with?("--git-dir=")
               path = git_dir_path(arg == "--git-dir" ? args.shift : arg.split("=", 2).last, path)
             elsif arg == "--work-tree" || arg.start_with?("--work-tree=")
-              path = Support.abs(arg == "--work-tree" ? args.shift : arg.split("=", 2).last, path)
+              tree = arg == "--work-tree" ? args.shift : arg.split("=", 2).last
             elsif GLOBAL_VALUE.include?(arg)
               args.shift
             elsif !arg.start_with?("-")
-              return Invocation.new(cmd, path, arg, args)
+              return Invocation.new(cmd, path, arg, args, tree && Support.abs(tree, where))
             end
           end
           nil
@@ -166,7 +184,34 @@ module Polispec
         end
 
         def fs_path(inv)
-          [Support.write_action(inv.path, inv.cmd.text)]
+          tree_writes(inv) + pathspec_writes(inv)
+        end
+
+        def tree_writes(inv)
+          [inv.path, inv.tree].compact.uniq.map { |dir| Support.write_action(dir, inv.cmd.text) }
+        end
+
+        def pathspec_writes(inv)
+          return [] unless %w[checkout restore rm mv].include?(inv.sub)
+
+          args = inv.args.map(&:to_s)
+          specs = args.include?("--") ? args.drop(args.index("--") + 1) : args.reject { |arg| arg.start_with?("-") }
+          bases = [inv.path, inv.tree].compact.uniq
+          specs.product(bases).filter_map do |spec, base|
+            action = Support.write_action(Support.abs(spec, base), inv.cmd.text)
+            action if action && action.action_class != "fs.write"
+          end
+        end
+
+        def stash(inv)
+          return [] if %w[list show].include?(inv.args.first)
+
+          fs_path(inv)
+        end
+
+        def read_tree(inv)
+          flags = Support.split_args(inv.args).last
+          flags.any? { |flag| flag == "-m" || flag == "-u" || flag.match?(/\A-[a-zA-Z]*[mu][a-zA-Z]*\z/) || flag == "--reset" } ? fs_path(inv) : []
         end
 
         def clean(inv)
@@ -177,16 +222,22 @@ module Polispec
         end
 
         def reset(inv)
-          pos, flags = Support.split_args(inv.args)
-          return [] if flags.include?("-p") || flags.include?("--patch") || inv.args.include?("--")
+          before, after = inv.args.map(&:to_s).partition.with_index { |_, i| i < (inv.args.index("--") || inv.args.length) }
+          pos, flags = Support.split_args(before)
+          return [] if flags.include?("-p") || flags.include?("--patch")
 
-          mode = flags.any? { |flag| %w[--hard --soft --mixed --merge --keep].include?(flag) }
+          touches = flags.any? { |flag| %w[--hard --merge --keep].include?(flag) } || pospath?(inv, pos) || after.length > 1
           rev = pos.find { |arg| !File.exist?(File.join(inv.path, arg)) }
-          return mode ? fs_path(inv) : [] if rev.nil? || %w[HEAD @].include?(rev)
+          return touches ? fs_path(inv) : [] if rev.nil? || %w[HEAD @].include?(rev)
 
           out = [action(inv, "git.rewrite", ref: current(inv))]
           out << action(inv, "git.rewrite", ref: ref_name(rev)) if branch_like?(rev)
+          out.concat(fs_path(inv)) if touches
           out
+        end
+
+        def pospath?(inv, pos)
+          pos.any? { |arg| File.exist?(File.join(inv.path, arg)) }
         end
 
         def branch_like?(rev)
@@ -291,15 +342,18 @@ module Polispec
           created = Support.option_value(inv.args, "-b", "-B", "--orphan")
           return branch_created(inv, created, inv.args.include?("-B")) if created
           return fs_path(inv) if inv.args.include?("--") || inv.args.first == "."
+          return [] if inv.args.any? { |arg| %w[-p --patch].include?(arg) }
 
-          []
+          pos, = Support.split_args(inv.args)
+          pos.empty? ? [] : fs_path(inv)
         end
 
         def switch(inv)
           created = Support.option_value(inv.args, "-c", "-C", "--create", "--force-create")
-          return [] unless created
+          return branch_created(inv, created, inv.args.include?("-C") || inv.args.include?("--force-create")) if created
 
-          branch_created(inv, created, inv.args.include?("-C") || inv.args.include?("--force-create"))
+          pos, = Support.split_args(inv.args)
+          pos.empty? ? [] : fs_path(inv)
         end
 
         def branch_created(inv, name, force)

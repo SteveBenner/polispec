@@ -115,7 +115,7 @@ steps:
         printf 'kept\n' > "$dir/files/seed/original.txt"
         printf 'moved\n' > "$dir/data/seed/moved.txt"
         cat > "$dir/backup.json" <<JSON
-        {"schema":"polispec.backup/v1","id":"bkp_0123456789ab","created_at":"2026-10-27T00:00:00Z","polispec_version":"0.50.0","runtime_root":"$2","keep":["pins"],"entries":[{"id":"dep_one","kind":"hooks","target":"$3/.codex/config.toml","class":"wiring","status":"active","details":{}}],"files":[{"entry":"dep_one","original":"$1/seed/original.txt","stored":"files/seed/original.txt","mode":420,"kind":"file","sha256_before":"x","sha256_after":null}],"data":[{"entry":"dep_two","original":"$1/seed/moved.txt","stored":"data/seed/moved.txt","kind":"file","method":"rename"}],"steps":[{"entry":"dep_one","kind":"hooks","target":"$3/.codex/config.toml","status":"ok","detail":"rewrite"}],"restore_command":"restore bkp_0123456789ab","restored_at":null}
+        {"schema":"polispec.backup/v1","id":"bkp_0123456789ab","created_at":"2026-10-27T00:00:00Z","polispec_version":"0.50.0","runtime_root":"$2","keep":["pins"],"entries":[{"id":"dep_one","kind":"hooks","target":"$3/.codex/config.toml","class":"wiring","status":"active","details":{"project":"$1/seed"}}],"files":[{"entry":"dep_one","original":"$1/seed/.codex/original.txt","stored":"files/seed/original.txt","mode":420,"kind":"file","sha256_before":"78051faade059d70866df6a3fb83ef348721fd74a87e93ef95c493f87d0d236b","sha256_after":null}],"data":[{"entry":"dep_one","original":"$1/seed/.codex/moved.txt","stored":"data/seed/moved.txt","kind":"file","method":"rename"}],"steps":[{"entry":"dep_one","kind":"hooks","target":"$3/.codex/config.toml","status":"ok","detail":"rewrite"}],"restore_command":"restore bkp_0123456789ab","restored_at":null}
         JSON
         echo written
       - sh
@@ -154,10 +154,43 @@ steps:
       json: { ok: true, dry_run: true, backup_id: bkp_0123456789ab, mode: bytes }
       stdout_includes: ["bytes: copy files/seed/original.txt back to "]
   - name: the restore dry runs wrote nothing
-    run: [sh, -c, 'test ! -e "$1/seed/original.txt" && test ! -e "$1/seed/moved.txt" && echo untouched', sh, "{{scratch}}"]
+    run: [sh, -c, 'test ! -e "$1/seed/.codex/original.txt" && test ! -e "$1/seed/.codex/moved.txt" && echo untouched', sh, "{{scratch}}"]
     expect:
       exit: 0
       stdout_includes: [untouched]
+  - name: backups of a moved ledger are written, one holding a ledger and one holding other text
+    run:
+      - sh
+      - -c
+      - |
+        set -e
+        for id in bkp_0123456789cd bkp_0123456789ce; do
+          dir="$1/polispec-data/backups/$id"
+          mkdir -p "$dir/data/led"
+          cat > "$dir/backup.json" <<JSON
+        {"schema":"polispec.backup/v1","id":"$id","created_at":"2026-10-28T00:00:00Z","polispec_version":"0.56.0","keep":[],"entries":[{"id":"dep_led","kind":"ledger","target":"$1/home/.config/polispec/moved-$id.yml","class":"data","status":"active","details":{}}],"files":[],"data":[{"entry":"dep_led","original":"$1/home/.config/polispec/moved-$id.yml","stored":"data/led/ledger.yml","kind":"file","method":"rename"}],"steps":[],"restore_command":"restore $id","restored_at":null}
+        JSON
+        done
+        printf 'schema: polispec.ledger/v1\nhost: moved\nprojects: []\n' > "$1/polispec-data/backups/bkp_0123456789cd/data/led/ledger.yml"
+        printf 'not a ledger\n' > "$1/polispec-data/backups/bkp_0123456789ce/data/led/ledger.yml"
+        echo written
+      - sh
+      - "{{scratch}}"
+    expect:
+      exit: 0
+      stdout_includes: [written]
+  - name: restore --dry-run accepts a ledger that uninstall moved away from its recorded path
+    run: ["{{polispec}}", restore, bkp_0123456789cd, --dry-run]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["data (bytes): copy data/led/ledger.yml back to {{scratch}}/home/.config/polispec/moved-bkp_0123456789cd.yml"]
+  - name: restore --dry-run refuses a recorded ledger path whose stored file is not a ledger
+    run: ["{{polispec}}", restore, bkp_0123456789ce, --dry-run]
+    home: true
+    expect:
+      exit: 1
+      stderr_includes: ["is not a path ledger may own"]
   - name: the real restore without a terminal is refused naming the phrase
     run: ["{{polispec}}", restore, bkp_0123456789ab]
     home: true
@@ -179,6 +212,8 @@ steps:
       json:
         backups:
           - { id: bkp_0123456789ab, restored_at: null }
+          - { id: bkp_0123456789cd, restored_at: null }
+          - { id: bkp_0123456789ce, restored_at: null }
   - name: restore of an id that no backup holds is refused
     run: ["{{polispec}}", restore, bkp_ffffffffffff, --dry-run]
     home: true
@@ -215,3 +250,59 @@ steps:
     expect:
       exit: 2
       stderr_includes: ["unknown argument --nope"]
+  - name: backups naming a moved ledger outside the config directory and under a hidden directory, and pin links, are written
+    run:
+      - sh
+      - -c
+      - |
+        set -e
+        for id in bkp_0123456789d0 bkp_0123456789d1; do
+          dir="$1/polispec-data/backups/$id"
+          mkdir -p "$dir/data/led"
+          printf 'schema: polispec.ledger/v1\nhost: moved\nprojects: []\n' > "$dir/data/led/ledger.yml"
+        done
+        cat > "$1/polispec-data/backups/bkp_0123456789d0/backup.json" <<JSON
+        {"schema":"polispec.backup/v1","id":"bkp_0123456789d0","created_at":"2026-10-29T00:00:00Z","polispec_version":"0.56.0","keep":[],"entries":[{"id":"dep_led","kind":"ledger","target":"$1/outside.yml","class":"data","status":"active","details":{}}],"files":[],"data":[{"entry":"dep_led","original":"$1/outside.yml","stored":"data/led/ledger.yml","kind":"file","method":"rename"}],"steps":[],"restore_command":"restore bkp_0123456789d0","restored_at":null}
+        JSON
+        cat > "$1/polispec-data/backups/bkp_0123456789d1/backup.json" <<JSON
+        {"schema":"polispec.backup/v1","id":"bkp_0123456789d1","created_at":"2026-10-29T00:00:00Z","polispec_version":"0.56.0","keep":[],"entries":[{"id":"dep_led","kind":"ledger","target":"$1/home/.config/.hidden/ledger.yml","class":"data","status":"active","details":{}}],"files":[],"data":[{"entry":"dep_led","original":"$1/home/.config/.hidden/ledger.yml","stored":"data/led/ledger.yml","kind":"file","method":"rename"}],"steps":[],"restore_command":"restore bkp_0123456789d1","restored_at":null}
+        JSON
+        for pair in "d2:/etc" "d3:$1/polispec-data/releases/0123456789abcdef0123456789abcdef01234567"; do
+          id="bkp_0123456789${pair%%:*}"
+          link="${pair#*:}"
+          dir="$1/polispec-data/backups/$id"
+          mkdir -p "$dir/files"
+          cat > "$dir/backup.json" <<JSON
+        {"schema":"polispec.backup/v1","id":"$id","created_at":"2026-10-29T00:00:00Z","polispec_version":"0.56.0","keep":[],"entries":[{"id":"dep_pin","kind":"pin","target":"$1/polispec-data/current","class":"pin","status":"active","details":{}}],"files":[{"entry":"dep_pin","original":"$1/polispec-data/current","stored":"files/current","mode":420,"kind":"symlink","link_target":"$link","sha256_before":null,"sha256_after":null}],"data":[],"steps":[],"restore_command":"restore $id","restored_at":null}
+        JSON
+        done
+        echo written
+      - sh
+      - "{{scratch}}"
+    expect:
+      exit: 0
+      stdout_includes: [written]
+  - name: restore --dry-run refuses a moved ledger path outside the config directory
+    run: ["{{polispec}}", restore, bkp_0123456789d0, --dry-run]
+    home: true
+    expect:
+      exit: 1
+      stderr_includes: ["is not a path ledger may own"]
+  - name: restore --dry-run refuses a moved ledger path under a hidden directory
+    run: ["{{polispec}}", restore, bkp_0123456789d1, --dry-run]
+    home: true
+    expect:
+      exit: 1
+      stderr_includes: ["is not a path ledger may own"]
+  - name: restore --dry-run refuses a pin link that points outside the releases directory
+    run: ["{{polispec}}", restore, bkp_0123456789d2, --dry-run, --mode, bytes]
+    home: true
+    expect:
+      exit: 1
+      stderr_includes: ["which a pin may not link to"]
+  - name: restore --dry-run prints the pin link target it would recreate
+    run: ["{{polispec}}", restore, bkp_0123456789d3, --dry-run, --mode, bytes]
+    home: true
+    expect:
+      exit: 0
+      stdout_includes: ["link: recreate {{scratch}}/polispec-data/current -> {{scratch}}/polispec-data/releases/0123456789abcdef0123456789abcdef01234567"]

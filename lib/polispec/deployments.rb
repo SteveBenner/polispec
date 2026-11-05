@@ -6,6 +6,7 @@ require "digest"
 require "fileutils"
 require "time"
 require "open3"
+require_relative "git_safe"
 require_relative "state"
 require_relative "native_pin"
 require_relative "stewardship"
@@ -212,7 +213,7 @@ module Polispec
       checkout = details["checkout"].to_s
       return "gone" if checkout.empty? || !File.directory?(checkout)
 
-      out, status = Trace.capture2({ "GIT_DIR" => nil, "GIT_WORK_TREE" => nil }, "git", "-C", checkout, "config", "--get", "core.hooksPath", err: File::NULL, trace: :quiet)
+      out, status = Trace.capture2({ "GIT_DIR" => nil, "GIT_WORK_TREE" => nil }.merge(GitSafe::CONFIG_ENV), "git", "-C", checkout, "config", "--get", "core.hooksPath", err: File::NULL, trace: :quiet)
       return "drifted" unless status.success?
 
       File.expand_path(out.strip, checkout) == target ? "present" : "drifted"
@@ -282,7 +283,7 @@ module Polispec
         end
         next unless checkout && File.directory?(checkout)
 
-        out, status = Trace.capture2({ "GIT_DIR" => nil, "GIT_WORK_TREE" => nil }, "git", "-C", checkout, "config", "--get", "core.hooksPath", err: File::NULL, trace: :quiet)
+        out, status = Trace.capture2({ "GIT_DIR" => nil, "GIT_WORK_TREE" => nil }.merge(GitSafe::CONFIG_ENV), "git", "-C", checkout, "config", "--get", "core.hooksPath", err: File::NULL, trace: :quiet)
         next unless status.success? && File.expand_path(out.strip, checkout) == shim
 
         { kind: "git_hooks", target: shim, details: { "project" => project, "env" => env, "checkout" => checkout } }

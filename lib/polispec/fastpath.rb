@@ -17,6 +17,9 @@ module Polispec
     end
 
     WATCH_CAP = 200
+    LIVE_MARK = "!live"
+    LIVE_JUDGED = %w[grep glob search_file_content list_directory search_files read_many_files webfetch web_fetch].freeze
+    FORMAT = 2
 
     def watch_path
       File.join(State.home, "fastpath.watch")
@@ -50,7 +53,12 @@ module Polispec
     end
 
     def expected(ledger)
-      { "watch" => watched(ledger), "tools" => skippable, "needles" => needles(ledger) }
+      tools = live?(ledger) ? (skippable - LIVE_JUDGED) + [LIVE_MARK] : skippable
+      { "watch" => watched(ledger), "tools" => tools, "needles" => needles(ledger) }
+    end
+
+    def live?(ledger)
+      ledger.projects.any? { |project| project.status == "live" }
     end
 
     def check(ledger)
@@ -124,7 +132,7 @@ module Polispec
     def key(ledger, context = {})
       global = Layers.fingerprint
       plane = context["plane"].is_a?(Hash) ? context["plane"] : { "status" => "unsealed" }
-      material = [ledger.digest.to_s, global, plane["status"], plane["generation"], context["control_digest"], context["edition"], context["fail_mode"], context["root_guard"], context["mcp_default"]]
+      material = [FORMAT, ledger.digest.to_s, global, plane["status"], plane["generation"], context["control_digest"], context["edition"], context["fail_mode"], context["root_guard"], context["mcp_default"]]
       Digest::SHA256.hexdigest(material.map(&:to_s).join("\0"))
     end
 
@@ -184,17 +192,15 @@ module Polispec
     def needles(ledger)
       root = File.expand_path(ledger.envs_root)
       live = ledger.projects.select { |project| project.status == "live" }
-      baseline = Layers.baseline?
-      tools = baseline || text_rules?
       guarded = protected_needles(ledger)
-      return guarded if live.empty? && !tools
-
-      list = [root, File.join(File.basename(File.dirname(root)), File.basename(root))]
-      list.concat(tool_needles) if tools
-      live.each do |project|
-        list << project.id << File.basename(project.repo.to_s)
-        list.concat(roots(project.repo))
-        list.concat(Array(project.worktree_globs).map { |glob| File.expand_path(glob).split("*").first.to_s })
+      list = tool_needles.dup
+      unless live.empty?
+        list << root << File.join(File.basename(File.dirname(root)), File.basename(root))
+        live.each do |project|
+          list << project.id << File.basename(project.repo.to_s)
+          list.concat(roots(project.repo))
+          list.concat(Array(project.worktree_globs).map { |glob| File.expand_path(glob).split("*").first.to_s })
+        end
       end
       (list.map { |needle| needle.to_s.downcase } + guarded).reject(&:empty?).uniq
     end

@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.56.0] - 2026-11-05
+
+Closes the remaining findings of the 2026-11-04 security sweep. The classifier reads more of what a line does, and polispec stops trusting several inputs it used to take at face value. Same limit as 0.55.3: this raises the cost for an agent sharing the user's account and is not authentication.
+
+### Added
+- `POLISPEC-REMOTE-CHANGE`: `gh repo`, `secret`, `variable`, and `ruleset` writes, unrecognized mutating `gh api` endpoints, `gh pr merge`, `gh pr edit --base`, and non-GET HTTP calls to forge hosts ask (deny under lock). No exception lifts it.
+- `lib/polispec/git_safe.rb`: polispec's git calls no longer run a repository's `core.fsmonitor`.
+- Setting `polispec.pin.allowed_signers` and `POLISPEC_ALLOWED_SIGNERS` for `install.sh`: when set, a tag must verify.
+- `polispec pin --accept-moved-tag`: a tag that moved since it was first pinned raises `pin_tag_moved` unless the operator accepts it at a terminal.
+- Exposure records carry an HMAC under the protected key `<state home>/exposure.key`.
+- Errors `package_remote_invalid`, `package_target_forbidden`, and `write_outside_repo`.
+
+### Changed
+- A write to `.git` internals, to an ancestor of `specs/polispec`, or through a symlink to either is judged as both a write and a policy edit.
+- `polispec exposure scan` reads the remote tip itself and fails if the remote is unreachable. The tracking ref no longer proves a push is up to date.
+- A scan's `command_digest` covers the resolved program and its contents, and the contents of any file named by an absolute argument, so changing the audit script voids its records. A non-absolute program resolves through a fixed list of directories, not `PATH`.
+- While a project is live, Grep, Glob, search, WebFetch, and MCP calls always reach the judge. The tools a baseline declares benign still skip when no needle matches. Without a baseline, only shell, Read, and write tools can skip. The first call after an idle period can take a second or more.
+- The delete, supervision, pin, tag, base, and visibility predicates answer true on an error or a timeout, so a failed check no longer lets a deny or warn rule written as `predicate: true` pass. `lock_held`, `live_binary`, and `in_development` still answer false, because a malformed lock file or a host without `/proc` must not deny every write or delete. A rule written `predicate: false` does not fire on an error.
+- Restore accepts a ledger or settings target outside the default path only under the config directory, with a YAML name, nothing already there, and contents that parse as that kind. A pin's links may point only into the releases directory.
+- With `polispec.pin.allowed_signers` set, only an SSH-signed tag can pass, and a repository's config cannot pick the verifier.
+- Non-ASCII text in a shell line no longer risks an internal deny: the parser reads whole characters, and a line it still cannot read asks.
+- The pin source cache is keyed by source URL, so `--source` is honored.
+- `polispec restore` validates the whole manifest before acting on any of it, and the dry run lists every action.
+- The git hook judges the repository git handed it, from `GIT_DIR` and `GIT_COMMON_DIR`, not the working directory. A hook error under enforce now refuses in every environment and names `POLISPEC_OPERATOR=1`.
+- `match.path` matches after resolving symlinks as well as lexically, a trailing `/**` covers all depths, braces expand, and a relative pattern resolves against the repository root. This widens allow rules as well as deny rules; no shipped allow rule uses `path`.
+- A regex timeout in `text_matches` counts as a match.
+- Policy files over 4 MiB fail closed.
+- Freeze commands and pack runners run in their own process group and are killed at the deadline. A failed freeze fetch is not cached, and a one-element argv never goes through `sh`. A ref-pinned pack uses the Gemfile of its extract.
+- Release gates split a command template before substituting values.
+
+### Fixed
+- The classifier now reads glob and brace expansion for writers, readers, and git; static `$(echo X)` substitutions; `${D%/}` and similar forms; flag clusters and attached values for downloaders, `cp`, `mv`, `tar`, `sort`, `sed -i`, and `perl -i`; `busybox`, `toybox`, and more shells and wrappers; `find -exec`; `sh -c` positional variables; and `git stash`, `read-tree`, `reset`, and `checkout` of a branch as writes.
+- More secret readers: `sed`, `dd`, `tar`, `rev`, recursive `grep`, `xargs -a`, `git hash-object`, `git diff --no-index`, editors, upload flags, `source FILE`, the Grep and Glob tools, and WebFetch `file://`.
+- More service stops: `systemctl --message`, unit globs, `pkill -f` patterns, `busctl`, `dbus-send`, `/etc/init.d`, and `kill` fed by `pidof`.
+- Delete tools and patch deletes count as writes. `mv` sources and `rsync --delete` destinations count as deletes. Indented or split patch headers are read, and a Bash `apply_patch` heredoc is judged like the tool.
+- An MCP call's identity comes only from the tool name, and its path arguments are judged.
+- A push from a clone outside the ledger is judged by its push URL. A call's relevance no longer depends on a project's name appearing in the input text.
+- Postgres: comment markers inside quotes no longer hide later statements. `EXPLAIN ANALYZE`, `SELECT INTO`, `LOAD`, `COPY ... PROGRAM`, `\!`, `\copy`, `\gexec`, and `vacuumdb` are writes.
+- `gh release --draft --draft=false` takes the last value. `web_local` recognizes `127.1`, numeric loopback forms, userinfo, and httpie's `:PORT`.
+- A crafted remote URL can no longer inject ledger YAML. Package targets cannot name harness config or `.git`. Symlinked `specs` and `.agents` directories cannot redirect a write outside the repository.
+- `uninstall --all` acts only on targets it could have written. `replay` no longer fails without `LANG`.
+- Reading `<state home>/exposure.key` is refused, and the backups directory and the default specs link are protected paths.
+- An unset variable at the head of a line, as in `$NOPE git push origin main:stable`, no longer hides the command after it. `$GIT push origin main:stable` is judged as a git push, a dropped head before `stop`, `restart`, `kill`, or `rm`-style flags asks, and an assignment after a dropped head asks. A git command that moves refs or discards work whose repository path comes from an unresolved variable asks. A git work tree that differs from the repository is judged as well as the repository.
+- Deep nesting and long non-ASCII heredocs no longer stall the parser.
+
+### Verdict changes
+- Deny or ask replaces allow for the forms under Fixed, and for `POLISPEC_*` overrides set on a mutating git command (ask). A predicate rule that errors now matches rather than passes, so `G-DELETE-PROTECTED` and similar rules can fire on a failed check.
+- A static substitution such as `$(echo git) push origin main:stable` is judged as what it resolves to, so it can deny where 0.55.3 asked.
+- `R-DEV` allow becomes `G-PUBLIC-PUSH` deny under a rulebook that uses `match.push_unscanned`: a branch push to a public remote is refused until `polispec exposure scan` records that local tip, even when the tip equals the tracking ref. Attestations from before this release carry no `mac` and cover nothing, so the next push after upgrading needs a fresh scan.
+
+### Known limits
+- A same-user program can compute any text. Inline interpreter file writes and a reader's operand from a non-literal substitution are not seen (`docs/operator.md`).
+- An `approved` string in a code-spec waiver is a record, not a signature. It is protected only because changing that file is a policy edit.
+- The sealed plane, trust chain, and web app were not reviewed in this sweep.
+
 ## [0.55.5] - 2026-11-04
 
 ### Removed

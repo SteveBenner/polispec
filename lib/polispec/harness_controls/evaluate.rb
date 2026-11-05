@@ -199,6 +199,8 @@ module Polispec
         return false if target.empty?
 
         absolute = canonical_path(target)
+        return true if absolute == canonical_path(File.join(State.home, "exposure.key"))
+
         protected = canonical_path(File.join(State.home, "proof"))
         absolute == protected || absolute.start_with?("#{protected}/")
       end
@@ -257,6 +259,7 @@ module Polispec
         declared = ->(action) { trusted.respond_to?(:call) && trusted.call(action) }
         settings = actions.select { |action| action.env_hint["settings_change"] == true }
         unparsed = actions.select { |action| action.raw.is_a?(Hash) && action.raw["unparsed"] }
+        remote = actions.select { |action| action.raw.is_a?(Hash) && action.raw["remote_change"] }
         undeclared = []
         if Catalog.gate?("mcp_undeclared")
           undeclared = actions.select { |action| action.action_class == "mcp.call" }.reject do |action|
@@ -267,7 +270,7 @@ module Polispec
         if Catalog.gate?("unknown_tool")
           unknown = actions.select { |action| action.raw.is_a?(Hash) && action.raw["unknown_tool"] == true }.reject { |action| declared.call(action) }
         end
-        return result if undeclared.empty? && unknown.empty? && settings.empty? && unparsed.empty?
+        return result if undeclared.empty? && unknown.empty? && settings.empty? && unparsed.empty? && remote.empty?
         lifter = values["excepted"]
         if lifter.respond_to?(:call) && !(unknown + undeclared).empty?
           covered = (unknown + undeclared).map { |action| lifter.call(action) }
@@ -290,6 +293,11 @@ module Polispec
           why = unparsed.flat_map { |action| Array(action.raw["unparsed"]) }.uniq.join(", ")
           reasons << "the shell line could not be fully read (#{why})"
           steps << "Rewrite the line in plain form, or ask the user to approve it."
+        end
+        unless remote.empty?
+          codes << "POLISPEC-REMOTE-CHANGE"
+          reasons << "the call changes a remote repository (#{remote.map { |action| action.raw["remote_change"] }.uniq.join(', ')})"
+          steps << "Ask the user before changing the remote repository."
         end
         unless undeclared.empty?
           codes << "POLISPEC-MCP-UNDECLARED"

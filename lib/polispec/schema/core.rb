@@ -16,6 +16,7 @@ module Polispec
       "verify" => []
     }.freeze
     CONTROL_LIMIT = 256
+    FORBIDDEN_TARGETS = %w[.git .claude .codex .hermes .pi .gemini .cursor .vscode .github/workflows].freeze
     CALENDAR_LIMIT = 256
     DIR = File.join(ROOT, "schemas")
     Result = Struct.new(:ok, :schema, :errors) do
@@ -82,6 +83,7 @@ module Polispec
 
         map.each do |target, source|
           errors << Error.new("#{pointer}/#{target}", "target must be a repository-relative path without ..") unless safe_relative?(target)
+          errors << Error.new("#{pointer}/#{target}", "package_target_forbidden: target may not begin with #{FORBIDDEN_TARGETS.find { |lead| forbidden_target?(target, lead) }}") if FORBIDDEN_TARGETS.any? { |lead| forbidden_target?(target, lead) }
           errors << Error.new("#{pointer}/#{target}", "source must be a path inside the package without ..") unless safe_relative?(source)
         end
       end
@@ -95,6 +97,11 @@ module Polispec
         errors << Error.new("/params/#{name}/allowed", "is supported for string params only") if body["allowed"] && body["type"] != "string"
       end
       errors
+    end
+
+    def forbidden_target?(target, lead)
+      parts = target.to_s.downcase.split("/")
+      parts.first(lead.split("/").length) == lead.split("/")
     end
 
     def safe_relative?(path)

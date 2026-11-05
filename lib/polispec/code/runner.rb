@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require "open3"
+require "timeout"
 require_relative "../plugin_store"
 
 module Polispec
@@ -136,7 +138,7 @@ module Polispec
         raise Error, "enforcer #{ref} not found in the pack" unless real
 
         File.chmod(0o700, real) if @pack.source.kind == :dir && !File.executable?(real)
-        out, err, status = Open3.capture3(plugin_roots(rule), *[real, path, *Array(rule.enforcer["args"])], stdin_data: text)
+        out, err, status = capture(plugin_roots(rule), [real, path, *Array(rule.enforcer["args"])], text, nil, (rule.enforcer["budget_ms"] || DEFAULT_BUDGET_MS) / 1000.0)
         if status.exitstatus == INDETERMINATE_EXIT && out.strip.empty? && rule.enforcer["on_indeterminate"] == "warn" && rule.blocking_level?
           detail = Code.squash(err.to_s)[0, 200]
           raise Indeterminate, detail.empty? ? "enforcer exited 3 with no verdict" : detail
@@ -168,20 +170,21 @@ module Polispec
       end
 
       def rubocop_offenses(rules, text, path)
-        gemfile = File.join(@pack.repo, "Gemfile")
-        raise Error, "polispec-specs has no Gemfile; rubocop enforcers are skipped" unless File.file?(gemfile)
+        gemfile = pinned_gemfile
+        raise Error, "polispec-specs has no Gemfile; rubocop enforcers are skipped" unless gemfile
 
         config = rubocop_config_file(rules)
         cops = rules.map { |rule| rule.enforcer["cop"].to_s }.reject(&:empty?).uniq
-        env, prefix = rubocop_command(gemfile)
+        env, prefix, home = rubocop_command(gemfile)
         command = prefix + ["-c", config, "--only", cops.join(","), "--stdin", path, "--format", "json", "--no-color", "--cache", "false", "--no-server"]
+        budget = RUBOCOP_BUDGET_MS / 1000.0
         out = nil
         2.times do |attempt|
-          out, err, status = Open3.capture3(env, *command, stdin_data: text, chdir: @pack.repo)
+          out, err, status = capture(env, command, text, home, budget)
           break if out.lstrip.start_with?("{")
           raise Error, "rubocop failed (#{status.exitstatus}): #{err.to_s[0, 160]}" unless attempt.zero? && err.to_s.include?("RuboCop::Server")
 
-          Open3.capture3(env, *(prefix + ["--stop-server"]), chdir: @pack.repo)
+          capture(env, prefix + ["--stop-server"], "", home, budget)
         end
         json = out.split(/^={20}$/).first.to_s
         data = JSON.parse(json)
@@ -198,12 +201,75 @@ module Polispec
         target
       end
 
+      def pinned_gemfile
+        source = @pack.source
+        return (File.file?(File.join(@pack.repo, "Gemfile")) ? File.join(@pack.repo, "Gemfile") : nil) unless source.kind == :git
+        return nil unless source.exist?("Gemfile")
+
+        dir = File.join(Paths.pack_cache_dir, "gemfile-#{source.tree_id}")
+        %w[Gemfile Gemfile.lock].each do |name|
+          target = File.join(dir, name)
+          next if File.file?(target) || !source.exist?(name)
+
+          Code.write_atomic(target, source.read(name), 0o600)
+        end
+        File.join(dir, "Gemfile")
+      end
+
       def rubocop_command(gemfile)
         env = { "BUNDLE_GEMFILE" => gemfile, "GEM_HOME" => nil, "GEM_PATH" => nil, "RUBYOPT" => nil }
-        bin = ruby_bin_for(File.dirname(gemfile))
+        vendored = File.join(@pack.repo, "vendor", "bundle")
+        env["BUNDLE_PATH"] = vendored if File.directory?(vendored) && File.dirname(gemfile) != @pack.repo
+        bin = ruby_bin_for(@pack.repo)
         env["PATH"] = "#{bin}:#{ENV['PATH']}" if bin
         bundle = bin ? File.join(bin, "bundle") : "bundle"
-        [env, [bundle, "exec", "rubocop"]]
+        [env, [bundle, "exec", "rubocop"], File.dirname(gemfile)]
+      end
+
+      def capture(env, command, stdin_data, chdir, budget)
+        input_read, input_write = IO.pipe
+        out_read, out_write = IO.pipe
+        err_read, err_write = IO.pipe
+        options = { in: input_read, out: out_write, err: err_write, pgroup: true }
+        options[:chdir] = chdir if chdir
+        pid = Process.spawn(env, *command, **options)
+        [input_read, out_write, err_write].each(&:close)
+        feeder = Thread.new { feed(input_write, stdin_data) }
+        out = drain(out_read)
+        err = drain(err_read)
+        waiter = Process.detach(pid)
+        raise Timeout::Error, "command exceeded its budget" unless waiter.join(budget)
+
+        kill_group(pid)
+        [out.value, err.value, waiter.value]
+      ensure
+        kill_group(pid) if pid
+        [input_read, input_write, out_read, out_write, err_read, err_write].compact.each { |stream| stream.close unless stream.closed? }
+        feeder&.join(0.1)
+      end
+
+      def feed(stream, text)
+        stream.write(text.to_s)
+      rescue Errno::EPIPE, IOError
+        nil
+      ensure
+        stream.close unless stream.closed?
+      end
+
+      def drain(stream)
+        thread = Thread.new do
+          stream.read
+        rescue IOError
+          ""
+        end
+        thread.report_on_exception = false
+        thread
+      end
+
+      def kill_group(pid)
+        Process.kill("KILL", -pid)
+      rescue Errno::ESRCH, Errno::EPERM
+        nil
       end
 
       def ruby_bin_for(repo)

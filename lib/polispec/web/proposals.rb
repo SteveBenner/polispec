@@ -12,6 +12,7 @@ require "tmpdir"
 require "yaml"
 require_relative "../plan"
 require_relative "../registration"
+require_relative "../git_safe"
 require_relative "../description"
 require_relative "../changes"
 require_relative "../sessions"
@@ -34,7 +35,7 @@ module Polispec
         "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_OPTIONAL_LOCKS" => "0",
         "GIT_AUTHOR_NAME" => "polispec web", "GIT_AUTHOR_EMAIL" => "polispec@localhost",
         "GIT_COMMITTER_NAME" => "polispec web", "GIT_COMMITTER_EMAIL" => "polispec@localhost"
-      }.freeze
+      }.merge(GitSafe::CONFIG_ENV).freeze
       STATUS_MAP = {
         "confirm_required" => [422, "confirm_required"], "plan_changed" => [409, "conflict"], "conflict" => [409, "conflict"],
         "unknown_project" => [404, "not_found"], "path_unknown" => [404, "not_found"], "unknown_entry" => [404, "not_found"],

@@ -51,7 +51,7 @@ module Polispec
         def contract(cmd, pos)
           return [] unless pos[1] == "approve"
 
-          target = pos[2] ? File.expand_path(pos[2], cmd.cwd.to_s) : cmd.cwd
+          target = pos[2] ? Support.expand(pos[2], cmd.cwd.to_s) : cmd.cwd
           [Support.act("policy.edit", cmd.text, "path" => target)]
         end
 
@@ -61,7 +61,7 @@ module Polispec
           return [] unless confirmed || GOVERNED_TARGETS.include?(target)
 
           repo = Support.option_value(cmd.args, "--repo")
-          attrs = { "path" => repo ? File.expand_path(repo, cmd.cwd.to_s) : cmd.cwd }
+          attrs = { "path" => repo ? Support.expand(repo, cmd.cwd.to_s) : cmd.cwd }
           attrs["project"] = target.delete_prefix("project:") if target.start_with?("project:")
           [Support.act("policy.edit", cmd.text, attrs)]
         end

@@ -156,16 +156,16 @@ module Polispec
       end
 
       def patch_calls(data)
-        text = (data["input"] || data["patch"] || data["command"] || data["content"]).to_s
+        text = %w[input patch command content].map { |key| data[key] }.grep(String).join("\n")
         calls = []
         current = nil
         text.each_line do |line|
-          if (match = line.match(/^\*\*\* (Update|Add|Delete) File: (.+)$/))
+          if (match = line.match(/^\s*\*\*\* (Update|Add|Delete) File:\s*(.+)$/))
             kind = match[1]
             path = match[2].strip
             current = { "old" => kind == "Add" ? nil : path, "new" => kind == "Delete" ? nil : path, "delete" => kind == "Delete", "added" => [], "kind" => kind }
             calls << current
-          elsif current && (match = line.match(/^\*\*\* Move to: (.+)$/))
+          elsif current && (match = line.match(/^\s*\*\*\* Move to:\s*(.+)$/))
             current["new"] = match[1].strip
             current["delete"] = true
           elsif current && current["kind"] != "Delete" && line.start_with?("+")

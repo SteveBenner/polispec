@@ -4,12 +4,14 @@
 
 require "json"
 require_relative "../predicates"
+require_relative "../git_safe"
 
 module Polispec
   class ExposureCommand
     USAGE = "usage: polispec exposure scan [<repo-dir>] [--remote R] [--ref REF] [--source SRC] [--json]"
     AUDIT_TIMEOUT = 600
     KILL_GRACE = 5
+    LS_REMOTE_TIMEOUT = 30
     VALUE_FLAGS = %w[--remote --ref --source].freeze
 
     def self.run(args)
@@ -77,22 +79,37 @@ module Polispec
       to = Predicates.git_ok(repo, "rev-parse", "-q", "--verify", "refs/heads/#{local}^{commit}") || Predicates.git_ok(repo, "rev-parse", "-q", "--verify", "#{local}^{commit}")
       return fail_with("#{local} does not name a commit in #{repo}", "error") unless to
 
-      from = tracking_tip(repo, options[:remote], ref) || Exposure.empty_tree(repo)
-      run_audit(repo, url, remote_key, ref, from, to, argv)
+      return fail_with("#{Engine::Settings::EXPOSURE_AUDIT_KEY} holds a NUL byte; nothing was recorded", "error") if argv.any? { |arg| arg.to_s.include?("\0") }
+
+      resolved = Exposure.resolved_command(argv)
+      return fail_with("the audit command #{resolved} is not readable, so its digest cannot be recorded; nothing was recorded", "error") if resolved && !File.readable?(resolved)
+      return fail_with("the audit command #{argv.first} was not found or is not executable in #{Exposure.program_dirs.join(', ')}; set #{Engine::Settings::EXPOSURE_AUDIT_KEY} to an absolute path; nothing was recorded", "error") unless resolved
+
+      tip = remote_tip(repo, url, ref)
+      return fail_with("the remote #{remote_key} could not be read for #{ref}; a scan needs the remote tip and nothing was recorded", "error") if tip.nil?
+
+      from = tip.empty? ? Exposure.empty_tree(repo) : tip
+      run_audit(repo, url, remote_key, ref, from, to, [resolved, *argv.drop(1)], tip)
+    end
+
+    def remote_tip(repo, url, ref)
+      Thread.current[:polispec_deadline] = Predicates.monotonic + LS_REMOTE_TIMEOUT + 1
+      out, status, = Predicates.capture(GitSafe.argv(repo, "ls-remote", "--", url, "refs/heads/#{ref}"), env: GitSafe.env("GIT_TERMINAL_PROMPT" => "0"), timeout: LS_REMOTE_TIMEOUT)
+      return nil unless status.success?
+
+      line = out.lines.map { |text| text.chomp.split("\t", 2) }.find { |_sha, name| name == "refs/heads/#{ref}" }
+      line ? line.first.to_s : ""
+    rescue Predicates::Expired, StandardError
+      nil
+    ensure
+      Thread.current[:polispec_deadline] = nil
     end
 
     def resolve_repo(path)
       Predicates.git_ok(File.expand_path(path || Dir.pwd), "rev-parse", "--show-toplevel")
     end
 
-    def tracking_tip(repo, remote, ref)
-      name = Visibility.remote_name(repo, remote)
-      return nil if Visibility.url_like?(name)
-
-      Predicates.git_ok(repo, "rev-parse", "-q", "--verify", "refs/remotes/#{name}/#{ref}^{commit}")
-    end
-
-    def run_audit(repo, url, remote_key, ref, from, to, argv)
+    def run_audit(repo, url, remote_key, ref, from, to, argv, tip)
       env = {
         "POLISPEC_EXPOSURE_REPO" => repo,
         "POLISPEC_EXPOSURE_FROM" => from,
@@ -104,18 +121,19 @@ module Polispec
       return fail_with("the audit command could not start: #{outcome[1]}; nothing was recorded", "error") if outcome.first == :error
       return fail_with("the audit command exited #{outcome[1]}; nothing was recorded", "failed") unless outcome[1].zero?
 
-      record = record_for(repo, url, remote_key, ref, from, to)
+      record = record_for(repo, url, remote_key, ref, from, to, tip)
       Exposure.append(record["repo"], record)
       report({ "status" => "clean", "record" => record }, JSON.generate(record), 0)
     end
 
-    def record_for(repo, url, remote_key, ref, from, to)
+    def record_for(repo, url, remote_key, ref, from, to, tip)
       {
         "repo" => Visibility.normalize(Predicates.repo_origin_url(repo) || url),
         "remote" => remote_key,
         "ref" => ref,
         "from" => from,
         "to" => to,
+        "remote_tip" => tip,
         "tree" => Predicates.git_ok(repo, "rev-parse", "-q", "--verify", "#{to}^{tree}").to_s,
         "command_digest" => Exposure.command_digest,
         "at" => Time.now.utc.iso8601

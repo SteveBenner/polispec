@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: MIT
 
 require_relative "editions"
+require_relative "git_safe"
 
 module Polispec
   module Predicates
     NAMES = %w[lock_held live_binary delete_protected delete_protected_file delete_unbacked supervised pin_regress tag_claimed base_unpushed public_remote public_path push_unscanned in_development].freeze
     BUDGET = 2.0
+    FAIL_CLOSED = %w[delete_protected delete_protected_file delete_unbacked supervised pin_regress tag_claimed base_unpushed public_remote public_path push_unscanned].freeze
     CONTENTS_LEAVES = %w[* .* .[!.]* ..?* .??*].freeze
     LOCK_MANIFEST = "TMP_AGENT_FILE_LOCKS.yml".freeze
     UNOWNED_WINDOW = 600
@@ -68,9 +70,9 @@ module Polispec
         send("check_#{name}", action, ctx)
       end
     rescue Expired
-      Result.new(false, nil, "#{name} exceeded its #{BUDGET.to_i} s budget")
+      Result.new(FAIL_CLOSED.include?(name.to_s), nil, "#{name} exceeded its #{BUDGET.to_i} s budget")
     rescue StandardError => e
-      Result.new(false, nil, "#{name} failed: #{e.class}: #{e.message}")
+      Result.new(FAIL_CLOSED.include?(name.to_s), nil, "#{name} failed: #{e.class}: #{e.message}")
     end
 
     def deadline_for
@@ -128,7 +130,7 @@ module Polispec
     end
 
     def git(dir, *args)
-      out, status, = capture(["git", "-C", dir.to_s, *args], env: PolicySource::GIT_ENV)
+      out, status, = capture(GitSafe.argv(dir, *args), env: GitSafe.env)
       [out, status]
     end
 
@@ -366,7 +368,9 @@ module Polispec
       return false if name.nil?
 
       units = status[:units]
-      data["fuzzy"] ? units.any? { |unit| unit == name || unit.include?(name) } : units.include?(name)
+      return units.any? { |unit| unit == name || unit.include?(name) || Engine::Envs.unit_match?(name, unit, data) } if data["fuzzy"]
+
+      units.any? { |unit| Engine::Envs.unit_match?(name, unit, data) }
     end
 
     def supervisor_status
@@ -689,14 +693,10 @@ module Polispec
       local = source ? push_source_commit(dir, source) : git_ok(dir, "rev-parse", "-q", "--verify", "refs/heads/#{ref}^{commit}") || git_ok(dir, "rev-parse", "-q", "--verify", "HEAD^{commit}")
       return no unless local
 
-      tip = Visibility.url_like?(name) ? nil : git_ok(dir, "rev-parse", "-q", "--verify", "refs/remotes/#{name}/#{ref}^{commit}")
-      return no if tip == local
-
-      from = tip || Exposure.empty_tree(dir)
-      return no if Exposure.covers_branch?(repo_key, remote_key, ref, from, local)
+      return no if Exposure.covers_branch?(repo_key, remote_key, ref, local)
 
       pushed = source ? "#{source} pushed to #{ref}" : ref
-      yes("#{pushed} at #{local[0, 9]} has no exposure scan against #{tip ? tip[0, 9] : 'an empty remote'}; run #{scan_hint(dir, name, ref, source)}")
+      yes("#{pushed} at #{local[0, 9]} has no exposure scan against the remote tip; run #{scan_hint(dir, name, ref, source)}")
     end
 
     def push_source_commit(dir, source)

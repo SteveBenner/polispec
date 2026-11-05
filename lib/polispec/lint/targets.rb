@@ -4,6 +4,7 @@
 require "open3"
 require "tmpdir"
 require_relative "shipped"
+require_relative "../git_safe"
 
 module Polispec
   module Lint
@@ -42,7 +43,7 @@ module Polispec
       end
 
       def git_files(root)
-        out, status = Trace.capture2(Layers::GIT_ENV, "git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard", err: File::NULL, trace: :quiet)
+        out, status = Trace.capture2(GitSafe.env, *GitSafe.argv(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"), err: File::NULL, trace: :quiet)
         return nil unless status.success?
 
         out.split("\0").reject(&:empty?).sort.uniq
@@ -187,7 +188,7 @@ module Polispec
       end
 
       def read_blobs(root, commit, names)
-        Open3.popen2(Layers::GIT_ENV, "git", "-C", root, "cat-file", "--batch", err: File::NULL) do |input, output, _thread|
+        Open3.popen2(GitSafe.env, *GitSafe.argv(root, "cat-file", "--batch"), err: File::NULL) do |input, output, _thread|
           input.binmode
           output.binmode
           names.each do |relative|
@@ -339,9 +340,9 @@ module Polispec
       end
 
       def shelf_repo_names(source)
-        args = ["git", "-C", source.repo, "ls-tree", "-r", "--name-only", source.ref]
+        args = GitSafe.argv(source.repo, "ls-tree", "-r", "--name-only", source.ref)
         args.concat(["--", source.path]) unless source.path.to_s.empty?
-        out, status = Trace.capture2(Layers::GIT_ENV, *args, err: File::NULL, trace: :quiet)
+        out, status = Trace.capture2(GitSafe.env, *args, err: File::NULL, trace: :quiet)
         return [] unless status.success?
 
         prefix = source.path.to_s.empty? ? "" : "#{source.path}/"

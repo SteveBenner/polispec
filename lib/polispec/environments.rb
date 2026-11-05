@@ -1,13 +1,15 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require_relative "git_safe"
+
 module Polispec
   module Environments
     Blob = Struct.new(:sha, :digest, :text, :data, :errors, keyword_init: true)
     Combined = Struct.new(:data, :digest, :errors, :finding, keyword_init: true)
     FILE = "environments.yml"
     DEFAULT_POLICY = "specs/polispec/policy.yml"
-    GIT_ENV = { "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_OPTIONAL_LOCKS" => "0" }.freeze
+    GIT_ENV = { "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_OPTIONAL_LOCKS" => "0" }.merge(GitSafe::CONFIG_ENV).freeze
 
     module_function
 

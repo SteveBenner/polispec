@@ -15,6 +15,7 @@ module Polispec
       POLICY_PATH = %r{(?:\A|/)specs/polispec(?:/|\z)}.freeze
       ENVS_BODY = %r{/\.agents/directives/envs\.md\z}.freeze
       PROOF_RECORD = %r{/proofs/[^/]+\.jsonl\z}.freeze
+      GIT_INTERNALS = %w[refs packed-refs HEAD config hooks].freeze
       ENVS_ROW = "[ENVS]"
       EDIT_KEYS = %w[old_string new_string old_str new_str old_text new_text oldText newText].freeze
       CONTENT_KEYS = %w[content file_text text contents].freeze
@@ -75,7 +76,14 @@ module Polispec
       def abs(path, cwd)
         return cwd.to_s if dynamic?(path)
 
-        File.expand_path(unproc(path, cwd), cwd.to_s)
+        expand(unproc(path, cwd), cwd.to_s)
+      end
+
+      def expand(path, base = nil)
+        text = path.to_s.delete("\0")
+        base ? File.expand_path(text, base) : File.expand_path(text)
+      rescue ArgumentError
+        File.expand_path(File.join(".", text), base || Dir.pwd)
       end
 
       def discard?(path)
@@ -118,6 +126,35 @@ module Polispec
         PROOF_RECORD.match?(path) && File.file?(File.join(File.dirname(File.dirname(path)), "specs", "features.yml"))
       end
 
+      def git_internal?(path)
+        parts = path.to_s.split("/")
+        at = parts.index(".git")
+        return false unless at
+
+        rest = parts.drop(at + 1)
+        return true if rest.empty?
+
+        rest = rest.drop(2) if rest.first == "worktrees"
+        GIT_INTERNALS.include?(rest.first)
+      end
+
+      def policy_ancestor?(path)
+        return false unless File.directory?(path)
+        return true if File.basename(path) == "specs" && File.directory?(File.join(path, "polispec"))
+
+        !File.exist?(File.join(path, ".git")) && File.directory?(File.join(path, "specs", "polispec"))
+      rescue SystemCallError
+        false
+      end
+
+      def real(path)
+        existing = File.expand_path(path.to_s)
+        existing = File.dirname(existing) until File.exist?(existing) || existing == "/"
+        File.join(File.realpath(existing), File.expand_path(path.to_s)[existing.length..].to_s)
+      rescue SystemCallError, ArgumentError
+        path.to_s
+      end
+
       def write_class(path, input = nil)
         return "proof.write" if proof_record?(path)
         return "policy.edit" if delegate_grants_file?(path)
@@ -127,6 +164,21 @@ module Polispec
         return "fs.write" unless File.basename(path) == "AGENTS.md"
 
         agents_touches_row?(path, input) ? "policy.edit" : "fs.write"
+      end
+
+      def policy_sensitive?(path)
+        return true if git_internal?(path) || policy_ancestor?(path)
+
+        resolved = real(path)
+        resolved != path && (POLICY_PATH.match?(resolved) || git_internal?(resolved))
+      end
+
+      def with_policy_edits(actions)
+        actions.flat_map do |action|
+          next [action] unless action.action_class == "fs.write" && action.env_hint["policy_sensitive"]
+
+          [action, Action.new(class: "policy.edit", env_hint: action.env_hint, raw: action.raw)]
+        end
       end
 
       def agents_touches_row?(path, input)
@@ -151,7 +203,7 @@ module Polispec
       end
 
       def read_text(path)
-        File.file?(path) ? File.read(path) : nil
+        File.file?(path) ? File.read(path).scrub("\uFFFD") : nil
       rescue SystemCallError
         nil
       end
@@ -164,7 +216,8 @@ module Polispec
         strings = klass == "fs.write" ? write_strings(input) : []
         bytes = strings.empty? ? nil : strings.sum(&:bytesize)
         text, truncated = strings.empty? ? [nil, nil] : clip(strings.join("\n"))
-        act(klass, raw, extra.merge("path" => path, "bytes" => bytes, "text" => text, "text_truncated" => truncated))
+        sensitive = klass == "fs.write" && policy_sensitive?(path) ? { "policy_sensitive" => true } : {}
+        act(klass, raw, extra.merge(sensitive).merge("path" => path, "bytes" => bytes, "text" => text, "text_truncated" => truncated))
       end
 
       def write_strings(input)
@@ -180,11 +233,11 @@ module Polispec
         [text.byteslice(0, TEXT_LIMIT).scrub(""), true]
       end
 
-      def read_action(path, raw)
+      def read_action(path, raw, extra = {})
         path = unproc(path)
         return nil if discard?(path)
 
-        act("secrets.read", raw, "path" => path, "candidate" => true)
+        act("secrets.read", raw, extra.merge("path" => path, "candidate" => true))
       end
 
       def split_args(args, with_value = [])
@@ -214,6 +267,39 @@ module Polispec
           end
         end
         nil
+      end
+
+      def option_value_cluster(args, letters, longs = [])
+        args.each_with_index do |arg, i|
+          text = arg.to_s
+          if text.start_with?("--")
+            longs.each do |name|
+              return args[i + 1] if text == name && args[i + 1]
+              return text.delete_prefix("#{name}=") if text.start_with?("#{name}=")
+            end
+          elsif text.start_with?("-") && text.length > 1
+            text[1..].each_char.with_index do |char, at|
+              break unless char.match?(/[A-Za-z]/)
+              next unless letters.include?(char)
+
+              rest = text[(at + 2)..].to_s
+              return rest unless rest.empty?
+              return args[i + 1] if args[i + 1]
+
+              break
+            end
+          end
+        end
+        nil
+      end
+
+      def cluster_flag?(args, letter)
+        args.any? { |arg| arg.to_s.match?(/\A-[A-Za-z]+\z/) && arg.to_s.include?(letter) }
+      end
+
+      def expand_paths(word, cwd)
+        expanded = Shell.expand_word(word, cwd)
+        expanded.nil? ? [word] : expanded
       end
 
       def option_values(args, *names)

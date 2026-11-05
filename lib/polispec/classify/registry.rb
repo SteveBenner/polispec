@@ -58,7 +58,7 @@ module Polispec
         return call(tool_name, tool_input, cwd)
       end
       found = Registry.families.values.flat_map { |klass| Array(klass.call(tool_name, tool_input, cwd)) }
-      Shapes.annotate(found, tool_name, tool_input, cwd)
+      Shapes.annotate(Support.with_policy_edits(found), tool_name, tool_input, cwd)
     end
 
     def self.benign?(tool_name, tool_input, cwd)
@@ -83,6 +83,11 @@ module Polispec
 
     def self.command_cwds(tool_name, tool_input, cwd)
       Benign.command_cwds(tool_name, tool_input, cwd)
+    end
+
+    def self.sourced_reads(tool_name, tool_input, cwd)
+      family = Registry.family("secrets")
+      family ? Array(family.sourced(tool_name, tool_input, cwd)) : []
     end
 
     def self.positive(tool_name, tool_input, cwd)

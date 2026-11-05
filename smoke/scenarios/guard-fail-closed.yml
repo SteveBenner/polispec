@@ -112,11 +112,21 @@ steps:
       harness: claude
       event: pretool
       tool: Bash
-      input: { command: "$(echo git) push origin main:stable" }
+      input: { command: "$(which git) push origin main:stable" }
       cwd: "{{project.shop}}"
     expect:
       decision: ask
       rule: POLISPEC-SHELL-UNPARSED
+  - name: a static command name from a substitution is judged as that command
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "$(echo git) push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
   - name: a git configuration override asks
     hook:
       harness: claude

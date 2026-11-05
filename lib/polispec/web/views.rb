@@ -12,6 +12,7 @@ require_relative "../manifest"
 require_relative "../exceptions"
 require_relative "../packages"
 require_relative "../probes"
+require_relative "../git_safe"
 require_relative "../plan"
 require_relative "../description"
 require_relative "../freeze"
@@ -39,7 +40,7 @@ module Polispec
       UNITS = { "s" => 1, "m" => 60, "h" => 3600, "d" => 86_400 }.freeze
       ENVS = %w[dev test prod].freeze
       KINDS = %w[project path global module].freeze
-      GIT_ENV = { "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_OPTIONAL_LOCKS" => "0" }.freeze
+      GIT_ENV = { "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_OPTIONAL_LOCKS" => "0" }.merge(GitSafe::CONFIG_ENV).freeze
       REF_FORMAT = %r{\A[A-Za-z0-9][A-Za-z0-9._/-]{0,99}\z}.freeze
       LAYER_LABELS = { "catalog" => "Catalog", "shipped" => "Shipped", "global" => "Global shelf", "repo" => "Project" }.freeze
       CHIP_BANDS = { "catalog" => "shipped", "global" => "global" }.freeze

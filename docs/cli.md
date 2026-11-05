@@ -33,7 +33,7 @@ Read-only means no file, ledger, shelf or state write. `--json` is accepted wher
 | `sessions list` | Recent sessions and the policy each started under | agent | reads |
 | `editions [--check]` | What the standard and lock editions allow | agent | reads |
 | `deployments [--scan]` | Where polispec is installed | agent | reads; `--scan` backfills the manifest |
-| `exposure scan [REPO] [--remote R] [--ref REF] [--source SRC]` | Audit a branch before a push to a public remote and record an attestation; `--source` audits the local SRC that a `SRC:REF` push publishes to REF | agent | runs `polispec.exposure.audit_command`; writes an attestation under the state home |
+| `exposure scan [REPO] [--remote R] [--ref REF] [--source SRC]` | Audit a branch before a push to a public remote and record an attestation; `--source` audits the local SRC that a `SRC:REF` push publishes to REF. The scan reads the remote tip with a bounded `git ls-remote` and fails when the remote cannot be reached. Each attestation carries `remote_tip` and an HMAC under `exposure.key` in the state home, and a record without a valid HMAC covers nothing; the audit command is resolved to an absolute path and its file digest is part of the record, so a changed `PATH` or binary invalidates earlier records | agent | runs `polispec.exposure.audit_command`; writes an attestation under the state home |
 | `settings list\|get` | Effective settings and their source | agent | reads |
 | `version` | Installed version | agent | reads |
 
@@ -60,7 +60,7 @@ Plan targets: a package (`environment-control` and others), `project:ID`, `globa
 
 | Verb | Use | Authority | Reads or writes |
 | --- | --- | --- | --- |
-| `pin [--ref TAG] [--dry-run]` | Install a read-only release and swap `current`, after replaying the judgment corpus through it; refuses with `pin_unexplained_verdicts` | agent + yes | writes the data home |
+| `pin [--ref TAG] [--source SRC] [--accept-moved-tag] [--dry-run]` | Install a read-only release and swap `current`, after replaying the judgment corpus through it; refuses with `pin_unexplained_verdicts`, with `pin_tag_moved` when a tag already pinned now names another commit, and with `pin_tag_unverified` when `polispec.pin.allowed_signers` is set and the tag does not verify | agent + yes; `--accept-moved-tag` needs the operator's terminal and the typed phrase `accept moved tag <tag>` | writes the data home and `pinned-tags.json` in the state home |
 | `shadow start --runtime TREE`, `shadow stop` | Run a candidate runtime in shadow beside the live guard, then end it | agent + yes | writes `shadow.json` in the state home |
 | `install --harness H` | Wire hooks and skill links | agent + yes | writes harness settings, with backups |
 | `uninstall --harness H` | Remove marked hooks and links | agent + yes | writes |
@@ -88,6 +88,12 @@ Plan targets: a package (`environment-control` and others), `project:ID`, `globa
 | `pause PROJECT`, `allow-once ID` | Suspend the guard briefly, redeem one grant | operator | |
 
 An agent never pushes `test` or `stable` and never runs git against `stable`.
+
+### Pinned tags
+
+`pin` records each tag it pins as tag to commit in `pinned-tags.json` in the state home. A tag that already has a record and now resolves to another commit is refused with `pin_tag_moved`, which names both commits, because a tag that moves silently would put different code under the same release name. The operator accepts a moved tag with `--accept-moved-tag` from a real terminal and the typed phrase `accept moved tag <tag>`; an agent shell cannot. A rewrite of this repository's public history moves every tag, so after it each `pin` of an already pinned tag needs `--accept-moved-tag` once. `rplugin install` does not go through this check, so a host installed that way is unaffected.
+
+Each source URL has its own cache of the source repository under the data home, named by a digest of the URL, so `--source B` never reads the cache of `--source A`. Setting `polispec.pin.allowed_signers` to an SSH allowed-signers file makes `pin` run `git verify-tag` against it and refuse an unsigned or unverified tag; with the setting unset, `pin` prints that the tag was not signature-checked. `install.sh` does the same with `POLISPEC_ALLOWED_SIGNERS` and prints the commit it pins.
 
 ## Prove features
 

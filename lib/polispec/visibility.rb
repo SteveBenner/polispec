@@ -52,7 +52,7 @@ module Polispec
     def remote_url(dir, name = nil)
       return name.to_s if url_like?(name)
 
-      Predicates.git_ok(dir, "remote", "get-url", remote_name(dir, name))
+      Predicates.git_ok(dir, "remote", "get-url", "--push", remote_name(dir, name))
     end
 
     def read_lists

@@ -26,6 +26,10 @@ module Polispec
       end
       regexp.match?(text)
     rescue StandardError => e
+      if e.class.name == "Regexp::TimeoutError"
+        Predicates.record(Predicates::Result.new(false, nil, "#{KEY}: the pattern exceeded #{TIMEOUT}s and counts as a match"), ctx)
+        return true
+      end
       Predicates.record(Predicates::Result.new(false, nil, "#{KEY}: #{e.message}"), ctx)
       false
     end

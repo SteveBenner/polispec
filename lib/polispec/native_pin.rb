@@ -7,12 +7,19 @@ require "time"
 require "open3"
 require "fileutils"
 require "find"
+require "digest"
+require_relative "git_safe"
+require_relative "operator/git"
 
 module Polispec
   module NativePin
     URL_PATTERN = %r{\A(https?|ssh|git)://|\A[^/]+@[^:]+:}
     REF_PATTERN = %r{\A[0-9A-Za-z][0-9A-Za-z._/-]*\z}
-    READ_VERBS = %w[rev-parse show-ref show].freeze
+    READ_VERBS = %w[rev-parse show-ref show verify-tag cat-file].freeze
+    SIGNERS_KEY = "polispec.pin.allowed_signers"
+    VERIFY_CONFIG = ["-c", "gpg.format=ssh", "-c", "gpg.program=/usr/bin/gpg", "-c", "gpg.ssh.program=/usr/bin/ssh-keygen", "-c", "gpg.x509.program=/usr/bin/gpgsm"].freeze
+    PINNED_TAGS = "pinned-tags.json"
+    TRANSPORTS = "https:http:ssh:git"
 
     module_function
 
@@ -33,8 +40,80 @@ module Polispec
       File.join(data_home, "current")
     end
 
-    def source_cache
-      File.join(data_home, "source.git")
+    def source_cache(source)
+      File.join(data_home, "source-#{Digest::SHA256.hexdigest(source.to_s)[0, 16]}.git")
+    end
+
+    def pinned_tags_path
+      File.join(State.home, PINNED_TAGS)
+    end
+
+    def pinned_tags
+      data = JSON.parse(File.read(pinned_tags_path))
+      data.is_a?(Hash) ? data : {}
+    rescue SystemCallError, JSON::ParserError
+      {}
+    end
+
+    def record_tag(ref, commit)
+      tags = pinned_tags.merge(ref => commit)
+      FileUtils.mkdir_p(State.home, mode: 0o700)
+      temporary = "#{pinned_tags_path}.#{Process.pid}.tmp"
+      File.write(temporary, "#{JSON.pretty_generate(tags)}\n", perm: 0o600)
+      File.rename(temporary, pinned_tags_path)
+    end
+
+    def check_moved!(ref, commit, accept, dry_run, notes)
+      known = pinned_tags[ref]
+      return if known.nil? || known == commit
+
+      failure = Operator::Failure.new("pin_tag_moved", "tag #{ref} was pinned at #{known} and now resolves to #{commit}; a moved tag is refused unless the operator passes --accept-moved-tag from a terminal and types the phrase", "recorded" => known, "now" => commit)
+      raise failure unless accept
+
+      if dry_run
+        notes << "tag #{ref} moved from #{known[0, 12]} to #{commit[0, 12]}; the pin would ask for the phrase accept moved tag #{ref}"
+        return
+      end
+      begin
+        Operator::Tty.confirm!("accept moved tag #{ref}", prompt: "tag #{ref} moved from #{known} to #{commit}")
+      rescue Operator::Tty::NotTty, Operator::Tty::PhraseMismatch
+        raise failure
+      end
+    end
+
+    def signed_tag?(path, ref)
+      body = git("-C", path, "cat-file", "tag", "refs/tags/#{ref}")
+      body.match?(/-----BEGIN (PGP|SSH) SIGNATURE-----/)
+    rescue Polispec::Error
+      false
+    end
+
+    def ssh_signed_tag?(path, ref)
+      body = git("-C", path, "cat-file", "tag", "refs/tags/#{ref}")
+      body.include?("-----BEGIN SSH SIGNATURE-----") && !body.match?(/-----BEGIN (PGP|SIGNED MESSAGE)/)
+    rescue Polispec::Error
+      false
+    end
+
+    def verify_tag!(path, ref, notes)
+      signers = Engine::Settings.text(SIGNERS_KEY, "")
+      if signers.empty?
+        notes << "tag #{ref} is #{signed_tag?(path, ref) ? 'signed but' : 'unsigned and'} was not signature-checked; set #{SIGNERS_KEY} to a signers file to require a verified tag"
+        return
+      end
+      file = File.expand_path(signers)
+      raise Operator::Failure.new("pin_tag_unverified", "#{SIGNERS_KEY} names #{file}, which is not a file") unless File.file?(file)
+
+      unless ssh_signed_tag?(path, ref)
+        raise Operator::Failure.new("pin_tag_unverified", "tag #{ref} does not carry an SSH signature, so it cannot be checked against #{file}")
+      end
+
+      begin
+        git("-C", path, *VERIFY_CONFIG, "-c", "gpg.ssh.allowedSignersFile=#{file}", "verify-tag", ref)
+      rescue Polispec::Error => e
+        raise Operator::Failure.new("pin_tag_unverified", "tag #{ref} is unsigned or does not verify against #{file}: #{e.message}")
+      end
+      notes << "tag #{ref} verified against #{file}"
     end
 
     def bin_link
@@ -69,9 +148,12 @@ module Polispec
     end
 
     def git(*args)
-      env = { "LC_ALL" => "C", "GIT_TERMINAL_PROMPT" => "0" }
-      mode = READ_VERBS.include?(args.first == "-C" ? args[2] : args.first) ? :quiet : nil
-      out, err, status = Trace.capture3(env, "git", *args, trace: mode)
+      env = GitSafe.env("LC_ALL" => "C", "GIT_TERMINAL_PROMPT" => "0", "GIT_ALLOW_PROTOCOL" => TRANSPORTS)
+      rest = args.dup
+      rest.shift(2) while %w[-C -c].include?(rest.first)
+      verb = rest.first
+      mode = READ_VERBS.include?(verb) ? :quiet : nil
+      out, err, status = Trace.capture3(env, *GitSafe.argv_bare(*args), trace: mode)
       raise Polispec::Error, "git #{args.first(2).join(' ')} failed: #{(err.empty? ? out : err).strip.lines.last.to_s.strip}" unless status.success?
 
       out
@@ -91,7 +173,7 @@ module Polispec
       end
     end
 
-    def pin!(ref: nil, source: nil, dry_run: false, gate: nil)
+    def pin!(ref: nil, source: nil, dry_run: false, gate: nil, accept_moved: false)
       ref = (ref || default_ref).to_s
       raise Polispec::Error, "invalid ref #{ref.inspect}" unless REF_PATTERN.match?(ref)
 
@@ -105,7 +187,7 @@ module Polispec
       fetched = nil
       path = given
       if remote
-        path = source_cache
+        path = source_cache(given)
         if File.directory?(path)
           steps << "fetch tags from #{given} into #{path}"
           unless dry_run
@@ -119,7 +201,7 @@ module Polispec
           unless dry_run
             FileUtils.mkdir_p(data_home)
             Trace.step("clone source", source: given, into: Trace.path(path)) do
-              git("clone", "--bare", "--filter=blob:none", given, path)
+              git("clone", "--bare", "--filter=blob:none", "--", given, path)
             end
             fetched = "cloned #{given} into #{path}"
           end
@@ -142,6 +224,8 @@ module Polispec
         Trace.info("resolved", ref: ref, commit: found)
         found
       end
+      verify_tag!(path, ref, result["notes"])
+      check_moved!(ref, commit, accept_moved, dry_run, result["notes"])
       release = File.join(releases_dir, commit)
       result["commit"] = commit
       result["release"] = release
@@ -157,6 +241,7 @@ module Polispec
       Trace.step("gate the pin") { gate.call(result) } if gate && !dry_run
       steps << "point #{current_link} at releases/#{commit}"
       Trace.step("swap current link", link: Trace.path(current_link), target: "releases/#{commit}") { swap_current(commit) } unless dry_run
+      record_tag(ref, commit) unless dry_run
 
       result["bin_link"] = Trace.step("link ~/.local/bin/polispec") { link_bin!(result["notes"], steps, dry_run) }
       Trace.step("record deployment") { record_deployment(result, given) } unless dry_run
@@ -193,11 +278,11 @@ module Polispec
       FileUtils.mkdir_p(tmp)
       begin
         if Trace.on?
-          Trace.command(["git", "-C", path, "archive", "--format=tar", commit])
+          Trace.command(GitSafe.argv_bare("-C", path, "archive", "--format=tar", commit))
           Trace.command(["tar", "-x", "-C", tmp])
           archive_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         end
-        statuses = Open3.pipeline(["git", "-C", path, "archive", "--format=tar", commit], ["tar", "-x", "-C", tmp])
+        statuses = Open3.pipeline(GitSafe.argv_bare("-C", path, "archive", "--format=tar", commit), ["tar", "-x", "-C", tmp])
         if Trace.on?
           statuses.each { |item| Trace.exit_line(item.exitstatus || -1, (Process.clock_gettime(Process::CLOCK_MONOTONIC) - archive_started) * 1000) }
         end

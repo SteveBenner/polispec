@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: MIT
 
+require_relative "../git_safe"
+
 module Polispec
   module Operator
     class Failure < Polispec::Error
@@ -71,7 +73,7 @@ module Polispec
       end
 
       def self.clone(source, dest)
-        argv = ["git", "clone", "--quiet", source, dest]
+        argv = ["git", "clone", "--quiet", "--", source, dest]
         out, err, status = Polispec::Trace.capture3(env, *argv)
         return if status.success?
 
@@ -87,7 +89,7 @@ module Polispec
       end
 
       def self.env
-        { "GIT_TERMINAL_PROMPT" => "0", "LC_ALL" => "C", "GIT_PAGER" => "cat", "POLISPEC_OPERATOR" => "1" }
+        { "GIT_TERMINAL_PROMPT" => "0", "LC_ALL" => "C", "GIT_PAGER" => "cat", "POLISPEC_OPERATOR" => "1" }.merge(Polispec::GitSafe::CONFIG_ENV)
       end
 
       def initialize(dir)

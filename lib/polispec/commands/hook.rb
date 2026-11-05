@@ -110,11 +110,11 @@ module Polispec
       DeferredEvents.active = true
       within_budget do
         if mode == "pretool"
-          output, status = pretool_result(adapter, { "controls_file" => nil, "controls_project" => nil }, raw)
+          output, status = pretool_result(adapter, { "controls_file" => nil, "controls_project" => nil }, readable_input(raw))
           [status, output.to_s]
         else
           begin
-            text, status = session_result(adapter, raw)
+            text, status = session_result(adapter, readable_input(raw))
             [status, text.to_s]
           rescue Errno::EPIPE, IOError, Polispec::Error
             [1, ""]
@@ -312,10 +312,11 @@ module Polispec
         option_applies = options["controls_file"] && (!options["controls_project"] || project_applies?(options["controls_project"], cwd, actions))
         control_gate = @plane["status"] == "active" || option_applies || HarnessControls::Features.enabled?("harness_controls")
         actions.concat(HarnessControls::RootGuard.classify(input.tool_name, input.tool_input, cwd)) if control_gate
-        governed = baseline || relevant?(ledger, cwd, calls) || @plane["status"] == "active" || option_applies
+        sourced = calls.flat_map { |tool, data| Classify.sourced_reads(tool, data, cwd) }
+        governed = baseline || relevant?(ledger, cwd, actions + sourced) || @plane["status"] == "active" || option_applies
         guarded_paths = control_gate ? ProtectedState.paths(ledger) : []
         unparsed = control_gate ? unparsed_actions(calls, cwd) : []
-        governed ||= !unparsed.empty? || actions.any? { |action| action.env_hint["settings_change"] == true || HarnessControls::Evaluate.guard_hit?(action, guarded_paths) }
+        governed ||= !unparsed.empty? || actions.any? { |action| action.env_hint["settings_change"] == true || (action.raw.is_a?(Hash) && action.raw["remote_change"]) || HarnessControls::Evaluate.guard_hit?(action, guarded_paths) }
         opaque = control_gate && governed && calls.any? { |tool, data| Classify.opaque_shell?(tool, data, cwd) }
         if control_gate && actions.empty? && governed
           known = calls.flat_map { |tool, data| Classify.positive(tool, data, cwd) }
@@ -326,6 +327,7 @@ module Polispec
           actions << unknown_action(input, cwd, calls, true, true)
         end
         actions.concat(unparsed)
+        actions.concat(sourced)
         groups = group(actions, ledger, cwd, baseline)
         @explain_state = { "actions" => actions, "ledger" => ledger, "cwd" => cwd, "baseline" => baseline, "documents" => [] } if @explain
         mode = enforce_mode
@@ -403,7 +405,11 @@ module Polispec
       end
     rescue EOFError
       raise Polispec::Error, "hook input is empty" if bytes.empty?
-      bytes
+      readable_input(bytes)
+    end
+
+    def readable_input(raw)
+      raw.to_s.dup.force_encoding(Encoding::UTF_8).scrub("\uFFFD")
     end
 
     def hard_deny(harness, error)
@@ -789,20 +795,17 @@ module Polispec
       expanded
     end
 
-    def relevant?(ledger, cwd, calls)
+    def relevant?(ledger, cwd, actions)
       live = ledger.projects.select { |project| project.status == "live" }
       return false if live.empty?
 
       located = ledger.locate(cwd)
       return true if located && located.project.status == "live"
 
-      haystack = calls.map { |_, data| [data["command"], data["file_path"], data["path"], data["notebook_path"]].compact.join(" ") }.join(" ").downcase
-      live.any? { |project| needles(project, ledger).any? { |needle| haystack.include?(needle) } }
-    end
-
-    def needles(project, ledger)
-      root = File.expand_path(ledger.envs_root)
-      [project.id, File.basename(project.repo.to_s), root, File.join(File.basename(File.dirname(root)), File.basename(root))].map(&:downcase).reject(&:empty?)
+      actions.any? do |action|
+        owner = Engine::Envs.owner(action, ledger, cwd)
+        owner && owner.status == "live"
+      end
     end
 
     def group(actions, ledger, cwd, baseline = false)

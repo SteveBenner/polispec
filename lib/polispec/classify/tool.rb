@@ -8,11 +8,16 @@ module Polispec
     module Tool
       WRITE_TOOLS = %w[edit write multiedit notebookedit str_replace_editor str_replace_based_edit_tool create_file write_file edit_file replace_in_file replace insert_edit_into_file].freeze
       DELETE_TOOLS = %w[delete delete_file remove_file].freeze
-      READ_TOOLS = %w[read notebookread read_file view grep search_file_content read_many_files].freeze
+      READ_TOOLS = %w[read notebookread read_file view view_image grep search_file_content read_many_files glob list_directory search_files].freeze
+      FETCH_TOOLS = %w[webfetch web_fetch].freeze
+      PATH_LIST_KEYS = %w[paths file_paths files].freeze
+      FILE_URL = %r{\Afile://(?:localhost)?(/.*)\z}i.freeze
+      RECURSIVE_TOOLS = %w[grep search_file_content glob list_directory search_files].freeze
+      PATCH_KEYS = %w[input patch command diff].freeze
       PATCH_TOOLS = %w[apply_patch applypatch patch].freeze
       PATH_KEYS = %w[file_path notebook_path path filepath target_file file absolute_path filename].freeze
-      PATCH_FILE = /^\*\*\* (Add|Update|Delete) File:\s*(.+?)\s*$/.freeze
-      PATCH_MOVE = /^\*\*\* Move to:\s*(.+?)\s*$/.freeze
+      PATCH_FILE = /^\s*\*\*\* (Add|Update|Delete) File:\s*(.+?)\s*$/.freeze
+      PATCH_MOVE = /^\s*\*\*\* Move to:\s*(.+?)\s*$/.freeze
 
       module_function
 
@@ -20,21 +25,44 @@ module Polispec
         name = tool_name.to_s.downcase
         cwd = Dir.pwd if cwd.to_s.empty?
         if DELETE_TOOLS.include?(name)
-          write_paths(tool_input).map { |path| Support.act("fs.delete", "#{name} #{Support.abs(path, cwd)}", "path" => Support.abs(path, cwd)) }
+          write_paths(tool_input).flat_map do |path|
+            target = Support.abs(path, cwd)
+            [Support.write_action(target, "#{name} #{target}"), Support.act("fs.delete", "#{name} #{target}", "path" => target)].compact
+          end
         elsif WRITE_TOOLS.include?(name)
           write_entries(tool_input).map { |path, entry| write(path, name, cwd, entry) }.compact
         elsif PATCH_TOOLS.include?(name)
           patch_changes(tool_input).flat_map do |change|
             rows = []
-            rows << Support.act("fs.delete", "#{name} #{Support.abs(change["old"], cwd)}", "path" => Support.abs(change["old"], cwd)) if change["delete"]
+            if change["delete"]
+              old = Support.abs(change["old"], cwd)
+              rows << Support.write_action(old, "#{name} #{old}")
+              rows << Support.act("fs.delete", "#{name} #{old}", "path" => old)
+            end
             rows << write(change["new"], name, cwd, change["added"] ? { "new_string" => change["added"].join("\n") } : nil) if change["new"]
             rows.compact
           end
         elsif READ_TOOLS.include?(name)
-          read_paths(tool_input).map { |path| Support.read_action(Support.abs(path, cwd), "#{name} #{Support.abs(path, cwd)}") }.compact
+          extra = RECURSIVE_TOOLS.include?(name) ? { "recursive" => true } : {}
+          read_paths(tool_input).map { |path| Support.read_action(Support.abs(path, cwd), "#{name} #{Support.abs(path, cwd)}", extra) }.compact
+        elsif FETCH_TOOLS.include?(name)
+          file_url_reads(tool_input, name)
         else
           []
         end
+      end
+
+      def file_url_reads(input, name)
+        url = Support.dig(input, "url", "uri").to_s.strip
+        match = FILE_URL.match(url)
+        return [] unless match
+
+        path = Support.unproc(percent_decoded(match[1]))
+        [Support.read_action(path, "#{name} #{path}")].compact
+      end
+
+      def percent_decoded(text)
+        text.gsub(/(?:%\h\h)+/) { |run| [run.delete("%")].pack("H*").force_encoding(Encoding::UTF_8).scrub("\uFFFD") }.scrub("\uFFFD")
       end
 
       def write(path, name, cwd, input = nil)
@@ -47,21 +75,21 @@ module Polispec
       end
 
       def write_entries(input)
-        if input.is_a?(Hash) && input["edits"].is_a?(Array)
-          edits = input["edits"]
-          return [] if edits.empty? || edits.length > Harness::Base::MULTI_LIMIT
-
-          return edits.filter_map do |entry|
+        found = []
+        value = Support.dig(input, *PATH_KEYS)
+        found << [value, input] if value.is_a?(String) && !value.empty?
+        if input.is_a?(Hash) && input["edits"].is_a?(Array) && input["edits"].length <= Harness::Base::MULTI_LIMIT
+          input["edits"].each do |entry|
             path = entry.is_a?(Hash) ? Support.dig(entry, *PATH_KEYS) : nil
-            [path, entry] if path.is_a?(String) && !path.empty?
+            found << [path, entry] if path.is_a?(String) && !path.empty?
           end
         end
-        value = Support.dig(input, *PATH_KEYS)
-        value.is_a?(String) && !value.empty? ? [[value, input]] : []
+        found
       end
 
       def read_paths(input)
-        write_paths(input)
+        listed = PATH_LIST_KEYS.flat_map { |key| Array(Support.dig(input, key)) }.grep(String).reject(&:empty?)
+        write_paths(input) + listed
       end
 
       def patch_paths(input)
@@ -69,7 +97,7 @@ module Polispec
       end
 
       def patch_changes(input)
-        text = input.is_a?(Hash) ? Array(Support.dig(input, "input", "patch", "command", "diff")).flatten.join("\n") : input.to_s
+        text = input.is_a?(Hash) ? PATCH_KEYS.flat_map { |key| Array(Support.dig(input, key)) }.flatten.join("\n") : input.to_s
         changes = []
         current = nil
         text.each_line do |line|

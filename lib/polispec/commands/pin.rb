@@ -6,12 +6,13 @@ require "tmpdir"
 require "open3"
 require "fileutils"
 require_relative "../native_pin"
+require_relative "../git_safe"
 require_relative "../changes"
 require_relative "../replay"
 
 module Polispec
   class PinCommand
-    USAGE = "usage: polispec pin [--ref <tag>] [--source <path-or-git-url>] [--dry-run] [--json]"
+    USAGE = "usage: polispec pin [--ref <tag>] [--source <path-or-git-url>] [--accept-moved-tag] [--dry-run] [--json]"
 
     def self.run(args)
       new.run(args)
@@ -23,7 +24,7 @@ module Polispec
 
       before = options[:dry_run] ? nil : Changes.epoch
       previous = options[:dry_run] ? nil : current_release
-      result = Trace.step("pin", ref: options[:ref], dry_run: options[:dry_run] ? true : nil) { NativePin.pin!(ref: options[:ref], source: options[:source], dry_run: options[:dry_run], gate: gate(options)) }
+      result = Trace.step("pin", ref: options[:ref], dry_run: options[:dry_run] ? true : nil) { NativePin.pin!(ref: options[:ref], source: options[:source], dry_run: options[:dry_run], gate: gate(options), accept_moved: options[:accept_moved]) }
       record_change(result, before, previous) unless options[:dry_run]
       preview = options[:dry_run] ? dry_replay(result, options) : nil
       if options[:json]
@@ -89,11 +90,11 @@ module Polispec
       return nil unless commit
 
       source = (given || NativePin.default_source).to_s
-      path = NativePin.url?(source) ? NativePin.source_cache : File.expand_path(source)
+      path = NativePin.url?(source) ? NativePin.source_cache(source) : File.expand_path(source)
       return nil unless File.directory?(path)
 
       temp = Dir.mktmpdir("polispec-pin-replay-")
-      statuses = Open3.pipeline(["git", "-C", path, "archive", "--format=tar", commit], ["tar", "-x", "-C", temp])
+      statuses = Open3.pipeline(GitSafe.argv_bare("-C", path, "archive", "--format=tar", commit), ["tar", "-x", "-C", temp])
       return { path: temp, temp: temp } if statuses.all?(&:success?)
 
       FileUtils.remove_entry(temp)
@@ -121,13 +122,14 @@ module Polispec
     end
 
     def parse(args)
-      options = { ref: nil, source: nil, dry_run: false, json: false }
+      options = { ref: nil, source: nil, dry_run: false, json: false, accept_moved: false }
       queue = args.dup
       until queue.empty?
         arg = queue.shift
         case arg
         when "--ref" then options[:ref] = queue.shift
         when "--source" then options[:source] = queue.shift
+        when "--accept-moved-tag" then options[:accept_moved] = true
         when "--dry-run" then options[:dry_run] = true
         when "--json" then options[:json] = true
         else

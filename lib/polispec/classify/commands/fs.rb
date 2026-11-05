@@ -9,17 +9,23 @@ module Polispec
     module Fs
       extend Support::Family
 
-      NAMES = %w[rm rmdir unlink shred touch mkdir chmod chown chgrp truncate tee patch install ln mv cp rsync scp dd sed perl curl wget tar unzip gzip gunzip bzip2 xz find rename].freeze
+      NAMES = %w[rm rmdir unlink shred touch mkdir chmod chown chgrp truncate tee patch install ln mv cp rsync scp dd sed perl curl wget tar unzip gzip gunzip bzip2 xz find rename sort].freeze
       READ_ONLY_EXEC = %w{cat grep egrep fgrep rg ls head tail wc file stat echo printf md5sum sha1sum sha256sum du test [ true false basename dirname readlink realpath}.freeze
       REMOTE = %r{\A[\w.@-]+:(?!/)}.freeze
       DEST_VALUE = %w[-t --target-directory -S --suffix -m --mode -o -g --owner --group -e --rsh --exclude --include --filter --files-from --exclude-from --include-from].freeze
       SCP_VALUE = %w[-P -i -o -F -J -l -S -c].freeze
       SED_VALUE = %w[-e -f -l --expression --file --line-length].freeze
       PERL_VALUE = %w[-e -E -I -M -m -0 -x].freeze
-      IN_PLACE = /\A--in-place|\A-[a-zA-Z]*i/.freeze
+      IN_PLACE = /\A--in-place/.freeze
+      RUBY_VALUE = %w[-e -I -r -C -F -E -W].freeze
+      PERL_VALUE_LETTERS = %w[M m I e E x X d D C F].freeze
+      SED_WRITE_AFTER_S = /\bs(.)(?:\\.|(?!\1).)*\1(?:\\.|(?!\1).)*\1[a-zA-Z0-9]*[wW][ \t]*([^\n]+)/.freeze
+      SED_WRITE_COMMAND = /(?:\A|[\n;{}])[ \t]*(?:[0-9$]+|\/(?:\\.|[^\/])*\/)?(?:,(?:[0-9$]+|\/(?:\\.|[^\/])*\/))?!?[ \t]*[wW][ \t]*(\S[^\n]*)/.freeze
+      RSYNC_DELETE = /\A--(?:delete(?:-\w+)?|del)\z/.freeze
       DELETERS = %w[rm rmdir unlink shred].freeze
       FIND_FILTER = /\A-(?:i?name|i?path|i?wholename|i?regex|type|[acm]time|[acm]min|newer\w*|size|user|group|perm|empty|inum|links|i?lname|samefile|uid|gid|nouser|nogroup|executable|readable|writable)\z/.freeze
       LOCKFILES = %w[Cargo.lock Gemfile.lock package-lock.json pnpm-lock.yaml yarn.lock uv.lock poetry.lock].freeze
+      EXTRA_WRITERS = %w[ruby awk gawk].freeze
       COMPRESSORS = %w[gzip gunzip bzip2 xz].freeze
       COMPRESSOR_VALUE = %w[-S --suffix -T --threads -M --memlimit --format -F].freeze
       STDOUT_LONG = %w[--stdout --to-stdout --test --list].freeze
@@ -30,7 +36,7 @@ module Polispec
       class << self
         def classify(cmd)
           writes = write_paths(cmd).map { |path| Support.write_action(path, cmd.text) }
-          writes + unresolved_mkdirs(cmd) + redirect_writes(cmd) + deletes(cmd) + FsWalk.actions(cmd)
+          writes + unresolved_mkdirs(cmd) + redirect_writes(cmd) + deletes(cmd) + policy_removals(cmd) + FsWalk.actions(cmd)
         end
 
         def to_stdout?(cmd)
@@ -73,6 +79,14 @@ module Polispec
           end
         end
 
+        def policy_removals(cmd)
+          return [] unless DELETERS.include?(cmd.name) || %w[mv rsync].include?(cmd.name)
+
+          delete_paths(cmd).filter_map do |_word, path|
+            Support.act("policy.edit", cmd.text, "path" => path, "command" => cmd.name) if Support.policy_ancestor?(path)
+          end
+        end
+
         def unresolved_delete?(cmd)
           return false unless cmd.name == "rm" && recursive_delete?(cmd)
 
@@ -101,6 +115,8 @@ module Polispec
           paths = case cmd.name
                   when *DELETERS then Support.split_args(cmd.args).first
                   when "find" then find_deletes(cmd)
+                  when "mv" then moved_sources(cmd)
+                  when "rsync" then rsync_destination(cmd)
                   end
           Array(paths).map { |path| [path, Support.abs(Support.unproc(path, cmd.cwd), cmd.cwd)] }
         end
@@ -112,6 +128,18 @@ module Polispec
 
           starts = args.take_while { |arg| !arg.start_with?("-") && !%w[( ! ,].include?(arg) }
           starts.empty? ? ["."] : starts
+        end
+
+        def moved_sources(cmd)
+          pos, = Support.split_args(cmd.args, DEST_VALUE)
+          Support.option_value_cluster(cmd.args, %w[t], %w[--target-directory]) ? pos : pos.first([pos.length - 1, 0].max)
+        end
+
+        def rsync_destination(cmd)
+          pos, flags = Support.split_args(cmd.args, DEST_VALUE)
+          return [] unless flags.any? { |flag| RSYNC_DELETE.match?(flag) } && pos.length >= 2
+
+          pos.last.to_s.match?(REMOTE) ? [] : [pos.last]
         end
 
         def cargo_clean?(cmd)
@@ -176,7 +204,7 @@ module Polispec
         end
 
         def write_paths(cmd)
-          return [] unless NAMES.include?(cmd.name)
+          return [] unless NAMES.include?(cmd.name) || EXTRA_WRITERS.include?(cmd.name)
           return [] if to_stdout?(cmd)
 
           paths = targets(cmd)
@@ -191,11 +219,13 @@ module Polispec
           when "rm", "rmdir", "unlink", "shred", "mkdir", "rename"
             nonempty(Support.split_args(args).first)
           when "gzip", "gunzip", "bzip2", "xz", "tee" then Support.split_args(args).first
+          when "sort" then sorted(cmd)
           when "touch" then nonempty(Support.split_args(args, %w[-d -r -t --date --reference]).first)
           when "chmod", "chown", "chgrp" then nonempty(Support.split_args(args).first.drop(1))
           when "truncate" then nonempty(Support.split_args(args, %w[-s -r --size --reference]).first)
           when "mv" then moved(args)
-          when "cp", "rsync", "scp", "install", "ln" then destination(cmd)
+          when "rsync" then rsync_targets(cmd)
+          when "cp", "scp", "install", "ln" then destination(cmd)
           else specific(cmd)
           end
         end
@@ -203,7 +233,8 @@ module Polispec
         def specific(cmd)
           case cmd.name
           when "dd" then nonempty(cmd.args.filter_map { |arg| arg[/\Aof=(.+)/, 1] })
-          when "sed", "perl" then in_place(cmd)
+          when "sed", "perl", "ruby" then in_place(cmd)
+          when "awk", "gawk" then awk_in_place(cmd)
           when "patch" then nonempty(Support.split_args(cmd.args, %w[-p -i -d -o --input --directory --strip]).first)
           when "curl" then curl(cmd)
           when "wget" then wget(cmd)
@@ -217,16 +248,21 @@ module Polispec
           list.nil? || list.empty? ? nil : list
         end
 
+        def sorted(cmd)
+          out = Support.option_value_cluster(cmd.args, %w[o], %w[--output])
+          out ? [out] : []
+        end
+
         def moved(args)
           pos, = Support.split_args(args, DEST_VALUE)
-          target = Support.option_value(args, "-t", "--target-directory")
+          target = Support.option_value_cluster(args, %w[t], %w[--target-directory])
           nonempty(target ? pos + [target] : pos)
         end
 
         def destination(cmd)
           value = cmd.name == "scp" ? DEST_VALUE + SCP_VALUE : DEST_VALUE
           pos, flags = Support.split_args(cmd.args, value)
-          target = Support.option_value(cmd.args, "-t", "--target-directory")
+          target = Support.option_value_cluster(cmd.args, %w[t], %w[--target-directory])
           return [target] if target
           return pos if cmd.name == "install" && flags.include?("-d")
           return nil if pos.length < 2
@@ -234,36 +270,132 @@ module Polispec
           pos.last.to_s.match?(REMOTE) ? [] : [pos.last]
         end
 
-        def in_place(cmd)
-          value = cmd.name == "sed" ? SED_VALUE : PERL_VALUE
-          pos, flags = Support.split_args(cmd.args, value)
-          return [] unless flags.any? { |flag| IN_PLACE.match?(flag) }
+        def rsync_targets(cmd)
+          logs = Support.option_values(cmd.args, "--log-file")
+          main = destination(cmd)
+          list = Array(main) + logs
+          list.empty? ? main : list
+        end
 
-          scripted = flags.any? { |flag| %w[-e -E -f --expression --file].include?(flag) }
+        def awk_in_place(cmd)
+          args = cmd.args.map(&:to_s)
+          at = args.index { |arg| arg == "-i" || arg == "--include" }
+          named = at ? args[at + 1] : args.find { |arg| arg.match?(/\A-i.+/) }&.delete_prefix("-i")
+          return [] unless named.to_s == "inplace"
+
+          pos, = Support.split_args(args, %w[-F -v -f -i -e --include --source --file])
+          scripted = args.any? { |arg| %w[-f -e --file --source].include?(arg) }
           nonempty(scripted ? pos : pos.drop(1))
         end
 
+        def in_place(cmd)
+          return sed_targets(cmd) if cmd.name == "sed"
+
+          pos, flags = Support.split_args(cmd.args, cmd.name == "ruby" ? RUBY_VALUE : PERL_VALUE)
+          return [] unless flags.any? { |flag| perl_in_place?(flag) }
+
+          scripted = flags.any? { |flag| flag.match?(/\A-[0-9A-Za-z]*[eE]/) }
+          nonempty(scripted ? pos : pos.drop(1))
+        end
+
+        def perl_in_place?(flag)
+          return true if IN_PLACE.match?(flag)
+          return false unless flag.match?(/\A-[0-9A-Za-z]+/)
+
+          flag[1..].each_char do |char|
+            return true if char == "i"
+            return false if PERL_VALUE_LETTERS.include?(char)
+          end
+          false
+        end
+
+        def sed_targets(cmd)
+          scripts, files, edits = sed_parse(cmd.args.map(&:to_s))
+          written = scripts.flat_map { |script| sed_writes(script) }
+          list = (edits ? files : []) + written
+          list.empty? ? (edits ? nil : []) : list
+        end
+
+        def sed_parse(args)
+          scripts = []
+          files = []
+          edits = false
+          scripted = false
+          index = 0
+          while index < args.length
+            arg = args[index]
+            if arg == "--"
+              files.concat(args.drop(index + 1))
+              break
+            elsif arg.start_with?("--")
+              edits = true if IN_PLACE.match?(arg)
+              if arg == "--expression" || arg == "--file"
+                scripts << args[index + 1] if arg == "--expression"
+                scripted = true
+                index += 1
+              elsif arg.start_with?("--expression=")
+                scripts << arg.split("=", 2).last
+                scripted = true
+              elsif arg.start_with?("--file=")
+                scripted = true
+              elsif arg == "--line-length"
+                index += 1
+              end
+            elsif arg.start_with?("-") && arg.length > 1
+              chars = arg[1..]
+              chars.each_char.with_index do |char, at|
+                if char == "i"
+                  edits = true
+                  break
+                elsif char == "e" || char == "f"
+                  value = chars[(at + 1)..].to_s
+                  if value.empty?
+                    index += 1
+                    value = args[index].to_s
+                  end
+                  scripts << value if char == "e"
+                  scripted = true
+                  break
+                elsif char == "l"
+                  index += 1 if chars[(at + 1)..].to_s.empty?
+                  break
+                end
+              end
+            else
+              files << arg
+            end
+            index += 1
+          end
+          scripts << files.shift unless scripted || files.empty?
+          [scripts, files, edits]
+        end
+
+        def sed_writes(script)
+          text = script.to_s
+          (text.scan(SED_WRITE_AFTER_S).map(&:last) + text.scan(SED_WRITE_COMMAND).flatten).map(&:strip).reject(&:empty?)
+        end
+
         def curl(cmd)
-          out = Support.option_value(cmd.args, "-o", "--output")
+          out = Support.option_value_cluster(cmd.args, %w[o], %w[--output])
           return [] if out == "-"
 
           dir = Support.option_value(cmd.args, "--output-dir")
-          out ||= "." if cmd.args.include?("-O") || cmd.args.include?("--remote-name")
+          out ||= "." if Support.cluster_flag?(cmd.args, "O") || cmd.args.include?("--remote-name")
           out ? [dir ? File.join(dir, out) : out] : []
         end
 
         def wget(cmd)
-          out = Support.option_value(cmd.args, "-O", "--output-document")
+          out = Support.option_value_cluster(cmd.args, %w[O], %w[--output-document])
           return [] if out == "-"
 
-          dir = Support.option_value(cmd.args, "-P", "--directory-prefix")
+          dir = Support.option_value_cluster(cmd.args, %w[P], %w[--directory-prefix])
           out ||= "."
           [dir ? File.join(dir, out) : out]
         end
 
         def archive(cmd)
           args = cmd.args
-          return [Support.option_value(args, "-C", "--directory") || "."] if extract_mode?(args)
+          return [Support.option_value_cluster(args, %w[C], %w[--directory]) || "."] if extract_mode?(args)
           return [] unless create_mode?(args)
 
           file = Support.option_value(args, "-f", "--file") || cluster_file(args)
@@ -292,7 +424,7 @@ module Polispec
         def unzip(cmd)
           return [] if cmd.args.any? { |arg| %w[-l -p -t -v].include?(arg) }
 
-          [Support.option_value(cmd.args, "-d") || "."]
+          [Support.option_value_cluster(cmd.args, %w[d]) || "."]
         end
 
         def find(cmd)

@@ -9,10 +9,16 @@ module Polispec
       extend Support::Family
 
       NAMES = %w[psql createdb dropdb pg_dump pg_dumpall pg_restore vacuumdb reindexdb clusterdb].freeze
-      CONNECT_VALUE = %w[-h --host -p --port -U --username -d --dbname -c --command -f --file -o --output -L --log-file -v --set --variable -F --field-separator -R --record-separator -P --pset -T --table-attr -O --owner -E --encoding -l --locale -D --tablespace -j --jobs -n --schema -N --exclude-schema -t --table -Z --compress -S --superuser --role --format].freeze
+      PSQL_VALUE = %w[-c --command -d --dbname -f --file -F --field-separator -h --host -L --log-file -o --output -p --port -P --pset -R --record-separator -T --table-attr -U --username -v --set --variable].freeze
+      CONNECT_VALUE = %w[--maintenance-db -h --host -p --port -U --username -d --dbname -c --command -f --file -o --output -L --log-file -v --set --variable -F --field-separator -R --record-separator -P --pset -T --table-attr -O --owner -E --encoding -l --locale -D --tablespace -j --jobs -n --schema -N --exclude-schema -t --table -Z --compress -S --superuser --role --format].freeze
       DUMP_VALUE = (CONNECT_VALUE + %w[-T --exclude-table --exclude-table-data --lock-wait-timeout --section]).uniq.freeze
-      WRITE_SQL = /\A\s*(?:insert|update|delete|drop|create|alter|truncate|grant|revoke|vacuum|reindex|cluster|comment|merge|upsert|call|do|refresh|reset|import|security|lock|listen|notify|discard|prepare|execute|set\s+role|\\i\b|\\ir\b|\\!|\\copy\b.*\bfrom\b|copy\b(?!.*\bto\b))/i.freeze
-      CTE_WRITE = /\b(?:insert\s+into|update\s+\S+\s+set|delete\s+from)\b/i.freeze
+      WRITE_SQL = /\A\s*(?:insert|update|delete|drop|create|alter|truncate|grant|revoke|vacuum|reindex|cluster|comment|merge|upsert|call|do|refresh|reset|import|security|lock|listen|notify|discard|prepare|execute|load|set\s+role|copy\b(?!.*\bto\b))/i.freeze
+      COPY_PROGRAM = /\bcopy\b.*\b(?:to|from)\s+program\b/im.freeze
+      CTE_WRITE = /\b(?:insert\s+into|update\s+(?:only\s+)?\S+\s+(?:as\s+\S+\s+)?set|delete\s+from|merge\s+into)\b/i.freeze
+      SELECT_INTO = /\A\s*(?:with\b.*?)?\bselect\b.*?\binto\b/im.freeze
+      EXPLAIN = /\A\s*explain\s*(?:\((?<opts>[^)]*)\)|(?<words>(?:(?:analyze|analyse|verbose)\s+)+))?(?<rest>.*)\z/im.freeze
+      META_WRITE = /\A\\(?:!|include_relative\b|include\b|ir\b|i\b|gexec\b|copy\b.*(?:\bfrom\b|\bto\s+program\b)|[ogw]\s*\|)/im.freeze
+      DOLLAR_TAG = /\G\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/.freeze
       MAX_SQL = 1_000_000
       OPAQUE = "drop opaque input".freeze
 
@@ -30,12 +36,13 @@ module Polispec
         end
 
         def psql(cmd)
-          return [] if dump_fed?(cmd) || cmd.args.any? { |arg| arg == "-l" || arg == "--list" }
+          _pos, flags = Support.split_args(cmd.args, PSQL_VALUE)
+          return [] if dump_fed?(cmd) || flags.any? { |arg| arg == "-l" || arg == "--list" }
 
           sources = sql_sources(cmd)
           return [] if sources.nil? || (sources != :unknown && !sources.any? { |sql| write_sql?(sql) })
 
-          [write_action(cmd, database(cmd, CONNECT_VALUE))]
+          [write_action(cmd, database(cmd, PSQL_VALUE))]
         end
 
         def dump_fed?(cmd)
@@ -69,15 +76,109 @@ module Polispec
         def read_sql(path)
           return nil unless File.file?(path) && File.size(path) <= MAX_SQL
 
-          File.read(path)
+          File.read(path).scrub("\uFFFD")
         rescue SystemCallError
           nil
         end
 
         def write_sql?(sql)
-          sql.to_s.gsub(%r{/\*.*?\*/}m, " ").gsub(/--[^\n]*/, " ").split(";").any? do |statement|
-            WRITE_SQL.match?(statement) || (statement.strip.match?(/\Awith\b/i) && CTE_WRITE.match?(statement))
+          statements(sql).any? { |statement| write_statement?(statement) }
+        end
+
+        def write_statement?(statement)
+          text = statement.strip
+          return false if text.empty?
+          return META_WRITE.match?(text) if text.start_with?("\\")
+          return true if WRITE_SQL.match?(text) || COPY_PROGRAM.match?(text) || SELECT_INTO.match?(text)
+          return true if text.match?(/\Awith\b/i) && CTE_WRITE.match?(text)
+
+          explained_write?(text)
+        end
+
+        def explained_write?(text)
+          match = EXPLAIN.match(text)
+          return false unless match
+
+          analyzed = match[:opts].to_s.match?(/analy[sz]e(?!\s+(?:false|off|0))/i) || match[:words].to_s.match?(/analy[sz]e/i)
+          analyzed && write_statement?(match[:rest])
+        end
+
+        def statements(sql)
+          text = sql.to_s
+          found = []
+          current = +""
+          index = 0
+          while index < text.length
+            char = text[index]
+            pair = text[index, 2]
+            if pair == "--"
+              index = text.index("\n", index) || text.length
+              current << " "
+            elsif pair == "/*"
+              index = comment_end(text, index)
+              current << " "
+            elsif char == "'"
+              index = quoted_end(text, index, "'", index.positive? && text[index - 1].match?(/[eE]/))
+              current << " ? "
+            elsif char == '"'
+              index = quoted_end(text, index, '"', false)
+              current << " ? "
+            elsif char == "$" && (tag = DOLLAR_TAG.match(text, index))
+              finish = text.index(tag[0], index + tag[0].length)
+              index = finish ? finish + tag[0].length : text.length
+              current << " ? "
+            elsif char == "\\"
+              found << current
+              current = +""
+              line_end = text.index("\n", index) || text.length
+              found << text[index...line_end]
+              index = line_end
+            elsif char == ";"
+              found << current
+              current = +""
+              index += 1
+            else
+              current << char
+              index += 1
+            end
           end
+          found << current
+          found
+        end
+
+        def comment_end(text, start)
+          depth = 0
+          index = start
+          while index < text.length
+            pair = text[index, 2]
+            if pair == "/*"
+              depth += 1
+              index += 2
+            elsif pair == "*/"
+              depth -= 1
+              index += 2
+              return index if depth.zero?
+            else
+              index += 1
+            end
+          end
+          text.length
+        end
+
+        def quoted_end(text, start, quote, backslash)
+          index = start + 1
+          while index < text.length
+            if backslash && text[index] == "\\"
+              index += 2
+            elsif text[index] == quote
+              return index + 1 unless text[index + 1] == quote
+
+              index += 2
+            else
+              index += 1
+            end
+          end
+          text.length
         end
 
         def database(cmd, value_opts)
@@ -134,8 +235,9 @@ module Polispec
         end
 
         def maintenance(cmd)
-          pos, = Support.split_args(cmd.args, CONNECT_VALUE)
-          db = Support.option_value(cmd.args, "-d", "--dbname") || pos.first
+          pos, flags = Support.split_args(cmd.args, CONNECT_VALUE)
+          db = Support.option_value(cmd.args, "-d", "--dbname") || pos.first || cmd.env["PGDATABASE"]
+          db ||= "*" if flags.any? { |flag| flag == "-a" || flag == "--all" }
           db ? [write_action(cmd, extract_name(db))] : []
         end
       end

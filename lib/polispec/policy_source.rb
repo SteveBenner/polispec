@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 require_relative "layers"
+require_relative "git_safe"
 
 module Polispec
   module PolicySource
@@ -13,7 +14,7 @@ module Polispec
       { "match" => { "class" => %w[data.write policy.edit] }, "verdict" => "warn" },
       { "match" => {}, "verdict" => "allow" }
     ].freeze
-    GIT_ENV = { "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_OPTIONAL_LOCKS" => "0" }.freeze
+    GIT_ENV = { "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_OPTIONAL_LOCKS" => "0" }.merge(GitSafe::CONFIG_ENV).freeze
 
     class << self
       def load(project, ledger: nil)
@@ -179,6 +180,7 @@ module Polispec
         key = env_sha ? "#{sha}-#{env_sha}" : sha
         cached = read_cache(kind, key)
         return cached if cached
+        return oversize_blob(sha) if [sha, env_sha].compact.any? { |id| git(repo, "cat-file", "-s", id).to_i > Layers::MAX_DOCUMENT_BYTES }
 
         text = git(repo, "cat-file", "blob", sha)
         return nil if text.nil?
@@ -188,6 +190,10 @@ module Polispec
         blob = build(kind, key, text, project, env_text, ref)
         write_cache(kind, blob)
         blob
+      end
+
+      def oversize_blob(sha)
+        Blob.new(sha: sha, digest: "oversize:#{sha}", data: nil, errors: [{ "pointer" => "", "message" => "is larger than #{Layers::MAX_DOCUMENT_BYTES} bytes and is treated as malformed" }])
       end
 
       def blob_sha(repo, ref, path)

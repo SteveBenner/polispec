@@ -4,12 +4,14 @@
 require "pathname"
 require_relative "hook_memo"
 require_relative "catalog"
+require_relative "git_safe"
 
 module Polispec
   module Layers
     PROFILES = %w[personal service live].freeze
+    MAX_DOCUMENT_BYTES = 4 * 1024 * 1024
     SEVERITY = { "allow" => 0, "warn" => 1, "deny" => 2 }.freeze
-    GIT_ENV = { "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_OPTIONAL_LOCKS" => "0" }.freeze
+    GIT_ENV = { "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_OPTIONAL_LOCKS" => "0" }.merge(GitSafe::CONFIG_ENV).freeze
     MODULE_NAME = /\A[a-z0-9][a-z0-9-]{0,40}\z/
     PARAM_NAME = /\A[a-z][a-z0-9_]*\z/
     PARAM_TYPES = %w[string integer number boolean list].freeze
@@ -153,17 +155,31 @@ module Polispec
 
       def read_dir(relative)
         file = File.join(source.root, relative)
-        File.file?(file) ? File.read(file) : nil
+        return nil unless File.file?(file)
+        raise Schema::Document::ParseError, oversize(relative) if File.size(file) > MAX_DOCUMENT_BYTES
+
+        File.read(file)
       rescue SystemCallError
         nil
       end
 
       def read_repo(relative)
         object = "#{source.ref}:#{[source.path, relative].reject { |part| part.to_s.empty? }.join('/')}"
-        out, status = Open3.capture2(GIT_ENV, "git", "-C", source.repo, "show", object, err: File::NULL)
-        status.success? ? out : nil
+        Open3.popen2(GitSafe.env, *GitSafe.argv(source.repo, "show", object), err: File::NULL) do |stdin, stdout, waiter|
+          stdin.close
+          out = stdout.read(MAX_DOCUMENT_BYTES + 1).to_s
+          if out.bytesize > MAX_DOCUMENT_BYTES
+            Process.kill("KILL", waiter.pid)
+            raise Schema::Document::ParseError, oversize(relative)
+          end
+          waiter.value.success? ? out : nil
+        end
       rescue SystemCallError
         nil
+      end
+
+      def oversize(relative)
+        "#{relative} is larger than #{MAX_DOCUMENT_BYTES} bytes and is treated as malformed"
       end
     end
 
@@ -474,8 +490,14 @@ module Polispec
         shelf = store
         return "" unless shelf
 
-        scoped = live_path_entries(safe_ledger).map { |entry| [entry.id, entry.path, shelf.read(entry.policy).to_s].join("\n") }
+        scoped = live_path_entries(safe_ledger).map { |entry| [entry.id, entry.path, fingerprint_text(shelf, entry.policy)].join("\n") }
         sha([shipped_layer([])&.digest.to_s, shelf.source.key.inspect, shelf.global_text.to_s, shelf.profiles_text.to_s, *scoped].join("\n--\n"))
+      end
+
+      def fingerprint_text(shelf, relative)
+        shelf.read(relative).to_s
+      rescue Schema::Document::ParseError => e
+        e.message
       end
 
       def fallback_rules

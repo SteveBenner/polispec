@@ -206,14 +206,27 @@ module Polispec
       current_body = File.file?(body_path) ? File.read(body_path) : nil
       next_agents = upsert_row(current_agents, rendered.row, rendered.project)
       [
-        { path: body_path, content: rendered.body, changed: current_body != rendered.body },
-        { path: agents_path, content: next_agents, changed: current_agents != next_agents }
+        { path: body_path, content: rendered.body, changed: current_body != rendered.body, root: root },
+        { path: agents_path, content: next_agents, changed: current_agents != next_agents, root: root }
       ]
+    end
+
+    def inside_root!(file)
+      root = File.realpath(File.expand_path(file[:root]))
+      probe = File.dirname(file[:path])
+      probe = File.dirname(probe) until File.exist?(probe) || probe == File.dirname(probe)
+      real = File.realpath(probe)
+      return if real == root || real.start_with?("#{root}/")
+
+      raise Polispec::Error, "write_outside_repo: #{file[:path]} would be written outside #{root} through a symlink"
+    rescue SystemCallError, TypeError
+      raise Polispec::Error, "write_outside_repo: #{file[:path]} could not be checked against its repository root"
     end
 
     def apply(file)
       return unless file[:changed]
 
+      inside_root!(file)
       Lint.guard_write!(file[:content], path: file[:path], format: :text)
       FileUtils.mkdir_p(File.dirname(file[:path]))
       mode = File.file?(file[:path]) ? File.stat(file[:path]).mode & 0o777 : 0o644

@@ -3,6 +3,7 @@
 
 require_relative "classify/commands/support"
 require_relative "layers"
+require_relative "git_safe"
 
 module Polispec
   module Resolve
@@ -10,7 +11,7 @@ module Polispec
 
     TIERS = %w[dev test prod].freeze
     SKIP_PREFIXES = %w[/tmp/ /dev/ /proc/ /sys/ /var/tmp/].freeze
-    GIT_ENV = { "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_CEILING_DIRECTORIES" => nil }.freeze
+    GIT_ENV = { "GIT_DIR" => nil, "GIT_WORK_TREE" => nil, "GIT_INDEX_FILE" => nil, "GIT_CEILING_DIRECTORIES" => nil }.merge(GitSafe::CONFIG_ENV).freeze
     SUPPORT = Classify::Support
     REPO = Classify::Support::Repo
 
@@ -160,7 +161,7 @@ module Polispec
         unit = hint["unit"].to_s
         fuzzy = hint["fuzzy"]
         best(environment_specs.select do |_, _, spec|
-          Array(spec["services"]).any? { |service| File.fnmatch?(unit, service) || (fuzzy && (service.include?(unit) || File.fnmatch?(service, unit))) }
+          Array(spec["services"]).any? { |service| Polispec::Engine::Envs.unit_match?(unit, service, hint) || (fuzzy && (service.include?(unit) || File.fnmatch?(service, unit))) }
         end)
       end
 

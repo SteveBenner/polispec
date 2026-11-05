@@ -1,0 +1,821 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/hook pretool|session
+summary: remote repository changes through gh and HTTP ask, a ref created through the API is judged as a push to that ref, writes into git internals are policy edits, git commands that rewrite a work tree are writes, a push from a clone outside the ledger is judged as the project owning its remote, glob and brace paths are expanded, a path from a substitution asks, clustered flags name their path, readers of a secrets directory are judged, delete tools write and delete, services are matched by pattern, MCP path arguments are judged, a move or rsync delete is a delete, and a generated or inline program that runs a process asks
+fixture:
+  global: example
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+      files:
+        "lib/app.rb": "puts 1\n"
+steps:
+  - name: deleting a remote repository asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "gh repo delete example/shop --yes" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-REMOTE-CHANGE
+  - name: a mutating API call to an unrecognized endpoint asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "gh api -X PUT repos/example/shop/topics -f names=x" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-REMOTE-CHANGE
+  - name: creating the stable ref through the API is a stable push
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "gh api repos/example/shop/git/refs -f ref=refs/heads/stable -f sha=0000000" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: an HTTP request that deletes the stable ref is a stable push
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "curl -X DELETE https://api.github.com/repos/example/shop/git/refs/heads/stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: a write into a hooks directory is a policy edit
+    hook:
+      harness: claude
+      event: pretool
+      tool: Write
+      input: { file_path: "{{project.shop}}/.git/hooks/pre-push", content: "x" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+  - name: stashing in the prod checkout is a write there
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git -C {{checkout.shop.stable}} stash" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: a hard reset with a trailing double dash in the prod checkout is a write there
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git -C {{checkout.shop.stable}} reset --hard HEAD~1 --" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+  - name: switching to an existing branch in the prod checkout is a write there
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "GIT_WORK_TREE={{checkout.shop.stable}} git checkout main" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: a clone outside the ledger is set up
+    run: [git, init, -q, "{{scratch}}/outside"]
+    expect:
+      exit: 0
+  - name: the outside clone gets the shop remote
+    run: [git, remote, add, origin, "{{scratch}}/projects/shop.git"]
+    cwd: "{{scratch}}/outside"
+    expect:
+      exit: 0
+  - name: a stable push from the outside clone is judged as the shop project
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin main:stable" }
+      cwd: "{{scratch}}/outside"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: a brace list names every path it expands to
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "touch {{project.shop}}/a {{checkout.shop.stable}}/{f,g}" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: a path taken from a substitution asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "cd $(cat {{project.shop}}/lib/app.rb) && touch f" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: a cluster of short flags names its output path
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "curl -sSLo {{checkout.shop.stable}}/f https://example.invalid/x" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: an in-place perl edit with a numeric flag names its file
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "perl -0pi -e 's/a/b/' {{checkout.shop.stable}}/VERSION" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: a shell reading a decoded pipe asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "echo Z2l0 | base64 -d | sh" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: a find that runs a stable push is a stable push
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "find . -maxdepth 0 -exec git push origin main:stable +" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: inline code that runs a process asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "python3 -c 'import os; os.system(\"id\")'" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: a delete tool aimed at the prod checkout is a write there
+    hook:
+      harness: claude
+      event: pretool
+      tool: Delete
+      input: { file_path: "{{checkout.shop.stable}}/VERSION" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: an MCP file write aimed at the prod checkout is a write there
+    hook:
+      harness: claude
+      event: pretool
+      tool: mcp__files__write_file
+      input: { path: "{{checkout.shop.stable}}/f", content: "x" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: moving the prod checkout away is a delete
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "mv {{checkout.shop.stable}} {{scratch}}/gone" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+  - name: a stop through the bus is a service stop
+    run: ["{{polispec}}", classify, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name":"Bash","tool_input":{"command":"busctl call org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager StopUnit ss shop.service replace"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["service.control"]
+  - name: an echo substitution is read as its literal path
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "cd $(echo {{checkout.shop.stable}}) && touch f" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: a variable set from an echo substitution carries its literal
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "D=$(echo {{checkout.shop.stable}}); cd $D; touch f" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: a stable ref named through an echo substitution is a stable push
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin main:$(echo stable)" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: a parameter expansion trimming a known directory resolves
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "D={{checkout.shop.stable}}/; cd ${D%/} && touch f" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: a default expansion over a known directory resolves
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "D={{checkout.shop.stable}}; cd ${D:-/nowhere} && touch f" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: a cd through a parameter expansion nothing resolves asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "cd ${UNSET_DIR%/} && touch f" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: a read assignment forgets the variable it replaces
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "D=/safe; read D <<< {{checkout.shop.stable}}; cd ${D%/}x && touch f" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: a cd under CDPATH asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "CDPATH={{project.shop}}; cd lib && touch f" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: a vim operand is a read
+    run: ["{{polispec}}", classify, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name": "Bash", "tool_input": {"command": "vim {{project.shop}}/lib/app.rb"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["secrets.read"]
+  - name: xargs -a names a read
+    run: ["{{polispec}}", classify, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name": "Bash", "tool_input": {"command": "xargs -a {{project.shop}}/lib/app.rb echo"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["secrets.read"]
+  - name: git hash-object names a read
+    run: ["{{polispec}}", classify, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name": "Bash", "tool_input": {"command": "git hash-object {{project.shop}}/lib/app.rb"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["secrets.read"]
+  - name: git diff --no-index names both reads
+    run: ["{{polispec}}", classify, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name": "Bash", "tool_input": {"command": "git diff --no-index /dev/null {{project.shop}}/lib/app.rb"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["secrets.read"]
+  - name: perl -n names its file operand as a read
+    run: ["{{polispec}}", classify, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name": "Bash", "tool_input": {"command": "perl -ne print {{project.shop}}/lib/app.rb"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["secrets.read"]
+  - name: a read tool with a paths list reads each path
+    run: ["{{polispec}}", classify, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name": "read_many_files", "tool_input": {"paths": ["{{project.shop}}/lib/app.rb"]}}'
+    expect:
+      exit: 0
+      stdout_includes: ["secrets.read"]
+  - name: a file URL fetch is a read
+    run: ["{{polispec}}", classify, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name": "WebFetch", "tool_input": {"url": "file://{{project.shop}}/lib/app.rb"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["secrets.read"]
+  - name: rsync --log-file writes its log into the prod checkout
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "rsync --log-file={{checkout.shop.stable}}/f a b" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: gawk -i inplace edits the prod file
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "gawk -i inplace 1 {{checkout.shop.stable}}/VERSION" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: ruby -pi edits the prod file
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "ruby -pi -e 1 {{checkout.shop.stable}}/VERSION" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: sudo --chdir moves the working directory into the prod checkout
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "sudo --chdir={{checkout.shop.stable}} touch f" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: sudo -D moves the working directory into the prod checkout
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "sudo -D {{checkout.shop.stable}} touch f" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: fish -c runs a stable push
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "fish -c 'git push origin main:stable'" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: chrt runs a stable push
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "chrt -i 0 git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: taskset runs a stable push
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "taskset -c 0 git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: unshare runs a stable push
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "unshare git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: chroot runs a stable push
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "chroot / git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: watch runs a stable push
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "watch -n1 git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: xvfb-run runs a stable push
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "xvfb-run git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: a stable push handed to ssh asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "ssh host git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: a stable push handed to docker exec asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "docker exec c git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: a stable push typed into tmux asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "tmux send-keys 'git push origin main:stable' Enter" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: a plain command handed to ssh stays allowed
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "ssh host ls" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: dbus-send StopUnit is a service stop
+    run: ["{{polispec}}", classify, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name": "Bash", "tool_input": {"command": "dbus-send --system --dest=org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager.StopUnit string:shop.service string:replace"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["service.control"]
+  - name: an init script stop is a service stop
+    run: ["{{polispec}}", classify, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name": "Bash", "tool_input": {"command": "/etc/init.d/shop stop"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["service.control"]
+  - name: a stop on a unit named through an echo substitution is a service stop
+    run: ["{{polispec}}", classify, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name": "Bash", "tool_input": {"command": "systemctl stop $(echo shop)"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["service.control"]
+  - name: apply_patch with a heredoc body writes each header's path
+    run: ["{{polispec}}", classify, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name": "Bash", "tool_input": {"command": "apply_patch <<''E''\n*** Begin Patch\n*** Add File: {{checkout.shop.stable}}/f\n+b\n*** End Patch\nE"}}'
+    expect:
+      exit: 0
+      stdout_includes: ["fs.write"]
+  - name: the prod checkout is given an fsmonitor command that leaves a marker
+    run: [git, -C, "{{checkout.shop.stable}}", config, core.fsmonitor, "touch {{scratch}}/fsmonitor.marker; echo"]
+    expect:
+      exit: 0
+  - name: reading a tracked release file does not run the checkout's fsmonitor
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "cat {{checkout.shop.stable}}/lib/app.rb" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+      files_absent: ["{{scratch}}/fsmonitor.marker"]
+  - name: a quoted double dash does not hide a drop from the SQL scan
+    run: [sh, -c, "ruby -rjson -e 'puts JSON.generate(%q(tool_name)=>%q(Bash),%q(tool_input)=>{%q(command)=>ARGV[0]},%q(cwd)=>ARGV[1])' \"$1\" \"$2\" | \"$3\" classify --json", sh, "psql -c \"select '--'; drop table t\" prod", "{{scratch}}", "{{polispec}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["\"class\":\"data.write\"", "\"db\":\"prod\""]
+  - name: explain analyze of a delete is a data write
+    run: [sh, -c, "ruby -rjson -e 'puts JSON.generate(%q(tool_name)=>%q(Bash),%q(tool_input)=>{%q(command)=>ARGV[0]},%q(cwd)=>ARGV[1])' \"$1\" \"$2\" | \"$3\" classify --json", sh, "psql -c 'explain analyze delete from t' prod", "{{scratch}}", "{{polispec}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["\"class\":\"data.write\""]
+  - name: vacuumdb --all names every database
+    run: [sh, -c, "ruby -rjson -e 'puts JSON.generate(%q(tool_name)=>%q(Bash),%q(tool_input)=>{%q(command)=>ARGV[0]},%q(cwd)=>ARGV[1])' \"$1\" \"$2\" | \"$3\" classify --json", sh, "vacuumdb --all", "{{scratch}}", "{{polispec}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["\"db\":\"*\""]
+  - name: a later false value overrides an earlier draft flag
+    run: [sh, -c, "ruby -rjson -e 'puts JSON.generate(%q(tool_name)=>%q(Bash),%q(tool_input)=>{%q(command)=>ARGV[0]},%q(cwd)=>ARGV[1])' \"$1\" \"$2\" | \"$3\" classify --json", sh, "gh release create v1 --draft --draft=false", "{{scratch}}", "{{polispec}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["\"channel\":\"latest\""]
+  - name: gh pr merge is also a remote change
+    run: [sh, -c, "ruby -rjson -e 'puts JSON.generate(%q(tool_name)=>%q(Bash),%q(tool_input)=>{%q(command)=>ARGV[0]},%q(cwd)=>ARGV[1])' \"$1\" \"$2\" | \"$3\" classify --json", sh, "gh pr merge 5", "{{scratch}}", "{{polispec}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["\"class\":\"git.merge\"", "\"remote_change\":\"gh pr merge\""]
+  - name: a short loopback address is the local web service
+    run: [sh, -c, "ruby -rjson -e 'puts JSON.generate(%q(tool_name)=>%q(Bash),%q(tool_input)=>{%q(command)=>ARGV[0]},%q(cwd)=>ARGV[1])' \"$1\" \"$2\" | \"$3\" classify --json", sh, "curl -X POST http://127.1:7421/api/v1/state", "{{scratch}}", "{{polispec}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["\"class\":\"policy.edit\""]
+  - name: an httpie port shorthand is the local web service
+    run: [sh, -c, "ruby -rjson -e 'puts JSON.generate(%q(tool_name)=>%q(Bash),%q(tool_input)=>{%q(command)=>ARGV[0]},%q(cwd)=>ARGV[1])' \"$1\" \"$2\" | \"$3\" classify --json", sh, "http POST :7421/api/v1/state", "{{scratch}}", "{{polispec}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["\"class\":\"policy.edit\""]
+  - name: a ref moved through GIT_DIR from another directory is a stable push
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "GIT_DIR={{checkout.shop.stable}}/.git git update-ref refs/heads/stable HEAD" }
+      cwd: "{{scratch}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: a polispec override on a git command asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "POLISPEC_LEDGER={{scratch}}/none.yml git commit --allow-empty -m x" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: relinking the specs directory is refused
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "ln -sfn {{scratch}}/other {{scratch}}/polispec-home/specs" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: POLISPEC-CONTROL-PROTECTION
+  - name: the prod git hook is installed
+    run: ["{{polispec}}", hook, git, install, shop, prod]
+    expect:
+      exit: 0
+  - name: a ref moved through GIT_DIR from another directory is refused by the hook
+    run: [sh, -c, 'cd "$2" && GIT_DIR="$1/.git" git update-ref refs/heads/viaenv HEAD', sh, "{{checkout.shop.stable}}", "{{scratch}}"]
+    expect:
+      exit: 128
+      stderr_includes: ["R-PROD-GIT"]
+      files_absent: ["{{checkout.shop.stable}}/.git/refs/heads/viaenv"]
+  - name: a ref moved from inside the git directory is refused by the hook
+    run: [sh, -c, 'cd "$1/.git" && git update-ref refs/heads/insidegit HEAD', sh, "{{checkout.shop.stable}}"]
+    expect:
+      exit: 128
+      stderr_includes: ["R-PROD-GIT"]
+      files_absent: ["{{checkout.shop.stable}}/.git/refs/heads/insidegit"]
+  - name: an empty command substitution does not hide the push after it
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "true $(echo);git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: an empty variable does not hide the push after it
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "X=; true $X;git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: an empty substitution before a redirect does not hide the policy write
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "echo hi $(echo)>specs/polispec/policy.yml" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: R-POLICY
+  - name: non-ASCII text parses and a push after it is still denied
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "echo café; git commit -m café; git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: non-ASCII text alone is allowed
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "echo café && git status" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: a work tree elsewhere does not change which repository a push moves
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "GIT_WORK_TREE={{scratch}} git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: the work-tree flag does not change which repository a push moves
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git --work-tree={{scratch}} push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: an unknown home directory in a path does not crash the guard
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "cat ~nosuchuser/x && rm ~nosuchuser/*" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: a percent-encoded non-UTF-8 file URL does not crash the guard
+    hook:
+      harness: claude
+      event: pretool
+      tool: WebFetch
+      input: { url: "file:///tmp/caf%C3%A9%FF.txt" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: ordinary shell stays allowed
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git status && ls lib/*.rb && git checkout main" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: a work tree that is the production checkout judges a merge as a production branch move
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git --work-tree={{checkout.shop.stable}} merge main" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: a work tree that is the production checkout makes a reset a production edit
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git --work-tree={{checkout.shop.stable}} reset --hard" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: a work tree from the environment is judged the same way
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "GIT_WORK_TREE={{checkout.shop.stable}} git commit -am x" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+  - name: a relative work tree resolves against the directory the command was moved to
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git --work-tree=stable -C {{checkout.shop.stable}}/.. reset --hard" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-FS
+  - name: a command the parser could not finish reading keeps the push it had read
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin main:stable; python3 ~nosuchuser/x" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: an escape that yields an invalid codepoint keeps the push before it
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin main:stable; echo $'\\uD800'" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: a NUL escape in a word keeps the push before it
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin main:stable; rm $'a\\x00b'" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: a leading wildcard strip resolves the repository for git -C
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "d={{project.shop}}/@@x; git -C ${d%%/@@*} push origin main:stable" }
+      cwd: "{{scratch}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: an unresolved parameter as the git -C directory asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git -C ${NOPE%%x*} log" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: an unset variable ahead of a command does not hide the push
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "$NOPE git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: deeply nested groups ask instead of exhausting the parser
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( echo hi ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) )" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED

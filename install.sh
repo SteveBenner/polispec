@@ -27,7 +27,7 @@ fi
 
 ref="${POLISPEC_REF:-}"
 if [ -z "$ref" ]; then
-  ref="$(git ls-remote --tags --refs "$source_url" \
+  ref="$(git ls-remote --tags --refs -- "$source_url" \
     | sed -n 's|.*refs/tags/v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p' \
     | sort -t. -k1,1n -k2,2n -k3,3n \
     | tail -n 1)"
@@ -54,7 +54,36 @@ fi
 tmp="$(mktemp -d)"
 trap 'rm -rf -- "$tmp"' EXIT
 
-git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$ref" "$source_url" "$tmp/src"
+git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$ref" -- "$source_url" "$tmp/src"
+
+commit="$(git -C "$tmp/src" rev-parse HEAD)"
+allowed_signers="${POLISPEC_ALLOWED_SIGNERS:-}"
+if [ -n "$allowed_signers" ]; then
+  if [ ! -f "$allowed_signers" ]; then
+    echo "polispec install: POLISPEC_ALLOWED_SIGNERS names $allowed_signers, which is not a file" >&2
+    exit 1
+  fi
+  tag_body="$(git -C "$tmp/src" cat-file tag "refs/tags/$ref" 2>/dev/null || true)"
+  case "$tag_body" in
+    *"-----BEGIN SSH SIGNATURE-----"*) ;;
+    *)
+      echo "polispec install: tag $ref does not carry an SSH signature, so it cannot be checked against $allowed_signers" >&2
+      exit 1 ;;
+  esac
+  case "$tag_body" in
+    *"-----BEGIN PGP"* | *"-----BEGIN SIGNED MESSAGE"*)
+      echo "polispec install: tag $ref carries a signature that is not an SSH signature" >&2
+      exit 1 ;;
+  esac
+  if ! git -C "$tmp/src" -c gpg.format=ssh -c gpg.program=/usr/bin/gpg -c gpg.ssh.program=/usr/bin/ssh-keygen -c gpg.x509.program=/usr/bin/gpgsm -c gpg.ssh.allowedSignersFile="$allowed_signers" verify-tag "$ref" >/dev/null 2>&1; then
+    echo "polispec install: tag $ref is unsigned or does not verify against $allowed_signers" >&2
+    exit 1
+  fi
+  echo "tag $ref verified against $allowed_signers"
+else
+  echo "tag $ref was not signature-checked; set POLISPEC_ALLOWED_SIGNERS to a signers file to require a verified tag"
+fi
+echo "pinning $ref at commit $commit"
 
 if [ "$dry_run" = "1" ]; then
   ruby "$tmp/src/bin/polispec" pin --source "$source_url" --ref "$ref" --dry-run

@@ -43,6 +43,17 @@ if [ "$mode" = pretool ] && [ -f "$state/fastpath.txt" ] && [ -f "$state/fastpat
     if [ -z "$tool" ] || ! grep -qxF -- "$tool" "$state/fastpath.tools"; then fresh=0; fi
   fi
   if [ "$fresh" = 1 ]; then
+    case "$tool" in
+      '!'*) fresh=0 ;;
+    esac
+  fi
+  if [ "$fresh" = 1 ] && [ "$first_tool" = "*" ] && grep -qxF -- '!live' "$state/fastpath.tools"; then
+    case "$tool" in
+      read | bash | shell | exec_command | terminal | local_shell | run_command | execute_command | monitor | edit | multiedit | notebookedit | write | str_replace_editor | str_replace_based_edit_tool | create_file | write_file | edit_file | replace_in_file | replace | insert_edit_into_file | apply_patch | applypatch | patch) ;;
+      *) fresh=0 ;;
+    esac
+  fi
+  if [ "$fresh" = 1 ]; then
     second=""
     { IFS= read -r _first && IFS= read -r second || true; } < "$state/fastpath.txt"
     [ -n "$second" ] || skip "$tool" no_needles

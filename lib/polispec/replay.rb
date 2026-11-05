@@ -192,7 +192,7 @@ module Polispec
     end
 
     def changelog_section(tree, version)
-      text = File.read(File.join(tree, "CHANGELOG.md"))
+      text = File.read(File.join(tree, "CHANGELOG.md"), mode: "rb").force_encoding(Encoding::UTF_8).scrub
       match = text.match(/^## \[?#{Regexp.escape(version)}\]?[^\n]*\n(.*?)(?=^## |\z)/m)
       match && match[1]
     rescue SystemCallError
