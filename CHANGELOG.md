@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.56.4] - 2026-11-06
+
+### Fixed
+
+- `polispec manifest <id> --write` no longer commits `host`. The value is the ledger's host name or the machine name, and a repository holding `polispec.manifest.json` can be public. The printed manifest and the host-wide index keep it, and `polispec.manifest/v1` no longer requires it. A manifest committed earlier keeps its `host`, in its history too, until the next `--write` removes it from the current file. No verdict changes.
+
 ## [0.56.3] - 2026-11-06
 
 ### Fixed

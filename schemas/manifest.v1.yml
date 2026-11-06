@@ -3,7 +3,7 @@ $id: polispec.manifest/v1
 title: Polispec manifest
 type: object
 additionalProperties: false
-required: [schema, id, kind, status, owner, description, host, edition, enforce, environments, layers, roster, promotions, findings, badge_url, declared]
+required: [schema, id, kind, status, owner, description, edition, enforce, environments, layers, roster, promotions, findings, badge_url, declared]
 properties:
   schema: { const: polispec.manifest/v1 }
   id: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,40}$" }

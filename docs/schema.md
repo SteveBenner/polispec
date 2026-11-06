@@ -239,7 +239,7 @@ The exceptions verbs are accepted by the schema in both editions, but `delegate 
 
 ## Manifest: `polispec.manifest/v1`, and the index: `polispec.index/v1`
 
-`polispec manifest <id>` prints the manifest of a project or path entry; `polispec manifest <id> --write` writes `polispec.manifest.json` and `.polispec/badge.svg` into the project's main worktree and commits exactly those two files on main with the message `Update the polispec manifest` (it refuses for a path entry, when the index has staged changes and when the worktree is not on main), and `polispec manifest badge <id>` prints the badge SVG.
+`polispec manifest <id>` prints the manifest of a project or path entry; `polispec manifest <id> --write` writes `polispec.manifest.json` and `.polispec/badge.svg` into the project's main worktree and commits exactly those two files on main with the message `Update the polispec manifest` (it refuses for a path entry, when the index has staged changes and when the worktree is not on main; the committed file leaves out the printed manifest's `host`, because a repository can be public), and `polispec manifest badge <id>` prints the badge SVG.
 
 | Key | Type | Meaning |
 | --- | --- | --- |

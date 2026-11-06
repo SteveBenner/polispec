@@ -52,6 +52,11 @@ steps:
   - name: the committed manifest validates and the working tree is clean
     run: [sh, -c, '"$1" validate manifest "$2/polispec.manifest.json" && test -z "$(git -C "$2" status --porcelain)"', sh, "{{polispec}}", "{{project.shop}}"]
     expect: { exit: 0 }
+  - name: the committed manifest has no host and the printed one keeps it
+    run: [sh, -c, '! grep -q "\"host\":" "$2/polispec.manifest.json" && "$1" manifest shop --json', sh, "{{polispec}}", "{{project.shop}}"]
+    expect:
+      exit: 0
+      stdout_includes: ['"host":"']
   - name: the write left a change record
     run: ["{{polispec}}", changes, list]
     expect:

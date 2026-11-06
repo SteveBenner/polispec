@@ -22,6 +22,7 @@ module Polispec
     INDEX_SCHEMA = "polispec.index/v1"
     APP_FILE = "polispec.app.yml"
     MANIFEST_FILE = "polispec.manifest.json"
+    COMMITTED_OMITS = %w[host].freeze
     BADGE_FILE = ".polispec/badge.svg"
     INDEX_DIR = "/var/lib/polispec/index"
     INDEX_DIR_ENV = "POLISPEC_INDEX_DIR"
@@ -308,10 +309,11 @@ module Polispec
       manifest = Trace.step("compose manifest", project: id) { validate!("manifest", self.for(id, ledger: ledger)) }
       Trace.info("manifest composed", status: manifest["status"], enforce: manifest["enforce"], policy_digest: manifest.dig("policy", "digest"), effective_digest: manifest.dig("layers", "effective_digest"), findings: manifest["findings"].to_h.values.map(&:length).sum) if Trace.on?
       paths = [MANIFEST_FILE, BADGE_FILE]
+      committed = manifest.reject { |key, _| COMMITTED_OMITS.include?(key) }
       Trace.step("write #{MANIFEST_FILE}", path: (Trace.path(File.join(repo, MANIFEST_FILE)) if Trace.on?)) do
-        Lint.guard_write!(manifest_json(manifest), path: File.join(repo, MANIFEST_FILE), format: :json)
-        write_atomic(File.join(repo, MANIFEST_FILE), manifest_json(manifest))
-        Trace.info("wrote file", path: MANIFEST_FILE, bytes: manifest_json(manifest).bytesize) if Trace.on?
+        Lint.guard_write!(manifest_json(committed), path: File.join(repo, MANIFEST_FILE), format: :json)
+        write_atomic(File.join(repo, MANIFEST_FILE), manifest_json(committed))
+        Trace.info("wrote file", path: MANIFEST_FILE, bytes: manifest_json(committed).bytesize) if Trace.on?
       end
       Trace.step("write badge", path: (Trace.path(File.join(repo, BADGE_FILE)) if Trace.on?)) do
         write_atomic(File.join(repo, BADGE_FILE), badge_svg(manifest))
