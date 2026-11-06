@@ -59,8 +59,9 @@ module Polispec
 
       class Hermetic
         MAX_ENTRIES = 200_000
+        NAMED_PATHS = 5
 
-        attr_reader :scratch, :env, :violations, :truncated
+        attr_reader :scratch, :env, :violations, :truncated, :reruns
 
         def self.for(project, tier, id)
           config = project.hermetic(tier)
@@ -77,6 +78,7 @@ module Polispec
           @env = {}
           @violations = []
           @truncated = []
+          @reruns = []
         end
 
         def prepare
@@ -89,11 +91,13 @@ module Polispec
           end
         end
 
-        def exec(argv, chdir:, env: {}, timeout: DEFAULT_TIMEOUT)
-          before = @roots.map { |root| fingerprint(root) }
-          execution = Polispec::Operator::Gates.exec(argv, chdir: chdir, env: env.merge(@env), timeout: timeout)
-          after = @roots.map { |root| fingerprint(root) }
-          changed = @roots.each_index.select { |index| before[index] != after[index] }.map { |index| @roots[index] }
+        def exec(argv, chdir:, env: {}, timeout: DEFAULT_TIMEOUT, rerun: false)
+          execution, changed = watched(argv, chdir, env, timeout)
+          if rerun && execution.ok? && !changed.empty?
+            @reruns << { "command" => argv.join(" "), "changed" => changed }
+            Polispec::Trace.info("hermetic rerun", roots: changed.length)
+            execution, changed = watched(argv, chdir, env, timeout)
+          end
           unless changed.empty?
             execution.violation = "wrote outside its location: #{changed.join(', ')}"
             @violations << execution.violation
@@ -108,10 +112,29 @@ module Polispec
 
         def finish
           kept = !prune
-          { "scratch" => scratch, "kept" => kept, "truncated" => truncated.uniq }
+          summary = { "scratch" => scratch, "kept" => kept, "truncated" => truncated.uniq }
+          reruns.empty? ? summary : summary.merge("reruns" => reruns)
         end
 
         private
+
+        def watched(argv, chdir, env, timeout)
+          before = @roots.map { |root| fingerprint(root) }
+          execution = Polispec::Operator::Gates.exec(argv, chdir: chdir, env: env.merge(@env), timeout: timeout)
+          after = @roots.map { |root| fingerprint(root) }
+          changed = @roots.each_index.reject { |index| before[index] == after[index] }
+          [execution, changed.map { |index| named(@roots[index], before[index], after[index]) }]
+        end
+
+        def named(root, before, after)
+          was = before || {}
+          now = after || {}
+          paths = (was.keys | now.keys).reject { |path| path.empty? || was[path] == now[path] }.sort
+          return root if paths.empty?
+
+          more = paths.length - NAMED_PATHS
+          "#{root} (#{paths.first(NAMED_PATHS).join(', ')}#{more.positive? ? " and #{more} more" : ''})"
+        end
 
         def prune
           directories = Dir.glob(File.join(scratch, "**", "*"), File::FNM_DOTMATCH).select { |path| File.directory?(path) && !File.symlink?(path) }
@@ -127,14 +150,14 @@ module Polispec
         end
 
         def fingerprint(root)
-          return "absent" unless File.exist?(root) || File.symlink?(root)
+          return nil unless File.exist?(root) || File.symlink?(root)
 
-          entries = []
+          entries = {}
           Find.find(root) do |path|
             stat = File.lstat(path)
             next if stat.directory?
 
-            entries << [path.delete_prefix(root), stat.size, (stat.mtime.to_i * 1_000_000_000) + stat.mtime.nsec].join("\0")
+            entries[path.delete_prefix(root).delete_prefix("/")] = [stat.size, (stat.mtime.to_i * 1_000_000_000) + stat.mtime.nsec]
             if entries.length >= MAX_ENTRIES
               @truncated << root
               break
@@ -142,7 +165,7 @@ module Polispec
           rescue SystemCallError
             next
           end
-          Digest::SHA256.hexdigest(entries.sort.join("\n"))
+          entries
         end
       end
 
@@ -464,6 +487,7 @@ module Polispec
             result = { "id" => gate["id"], "result" => "pass", "duration_ms" => now_ms - started }
             result.merge!(proof_fields(outcome)) if gate["builtin"] == "features_proven"
             result["hermetic"] = false if gate["hermetic"] == false && !gate["builtin"]
+            result["rerun"] = outcome["changed"] if outcome && !gate["builtin"]
             Polispec::Trace.info("gate result", id: gate["id"], result: "pass")
             result
           end
@@ -497,12 +521,12 @@ module Polispec
         end
 
         guard = gate["hermetic"] == false ? nil : Hermetic.for(context.project, tier_of(context.project, context.to), new_id("gate"))
-        execution = guard ? guard.exec(argv, chdir: chdir, env: extra, timeout: DEFAULT_TIMEOUT) : exec(argv, chdir: chdir, env: extra)
+        execution = guard ? guard.exec(argv, chdir: chdir, env: extra, timeout: DEFAULT_TIMEOUT, rerun: true) : exec(argv, chdir: chdir, env: extra)
         guard&.finish
         if execution.violation
           raise Failure.new("gate_failed", "gate #{gate['id']} #{execution.violation}", "gate_id" => gate["id"], "command" => argv.join(" "), "output_tail" => execution.tail)
         end
-        return if execution.ok?
+        return guard&.reruns&.first if execution.ok?
 
         reason = execution.timed_out ? "timed out" : "exited #{execution.code}"
         raise Failure.new("gate_failed", "gate #{gate['id']} #{reason}", "gate_id" => gate["id"], "command" => argv.join(" "), "output_tail" => execution.tail)

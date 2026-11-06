@@ -139,7 +139,7 @@ A freeze without `source` is a manual window. `source: command` runs `command`, 
 
 ### `hermetic.<env>`
 
-`isolate` (list of environment variable names) and `protected_roots` (list of paths, `~` and `$HOME` expanded). Declared for `test` or `prod`; applied to the deploy steps, `deploy.health.run` and command gates of that stage. See `docs/operator.md`.
+`isolate` (list of environment variable names) and `protected_roots` (list of paths, `~` and `$HOME` expanded). Declared for `test` or `prod`; applied to the deploy steps, `deploy.health.run` and command gates of that stage. A passing gate or health run that saw a root change runs once more. See `docs/operator.md`.
 
 ### `data_classes.<name>`
 

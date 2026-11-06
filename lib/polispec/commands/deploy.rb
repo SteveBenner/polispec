@@ -60,6 +60,7 @@ module Polispec
         puts "  deploy block: #{result['deploy_source']}" if result["deploy_source"]
         result["steps"].each { |step| puts "  step #{step['command']}: exit #{step['exit']}" }
         puts "  health: #{result.dig('health', 'status')} (#{result.dig('health', 'detail')})"
+        Array(result.dig("hermetic", "reruns")).each { |rerun| puts "  health ran twice; changed during the first run: #{rerun['changed'].join('; ')}" }
         puts "  pinned_behind: #{result['pinned_behind']}"
         puts "  WARNING: #{result['queues_paused']}" if result["queues_paused"]
       end

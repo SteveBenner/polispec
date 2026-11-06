@@ -359,7 +359,7 @@ The same idea runs through [code specs](docs/code-specs.md). A spec is a tree of
 
 **Freezes.** Manual windows, recurring rules, or a command that prints JSON windows. The command can be another project's calendar, as in the classroom pattern where releases stop before class and before deadlines.
 
-**Hermetic runs.** `hermetic.<env>` isolates environment variables into scratch space and fails a gate or step that writes under a protected root.
+**Hermetic runs.** `hermetic.<env>` isolates environment variables into scratch space and fails a gate or step that writes under a protected root. A gate or health run that passes while a root changed runs once more, so a write from something else on the host does not fail it, and the changed files stay on the record.
 
 **Data classes.** Declare where each kind of data may live; `data.copy` across classes is refused.
 

@@ -74,7 +74,7 @@ module Polispec
         paused = paused_note(resume_failure(run[:drain]))
         detail = [run[:detail], paused].compact.join("; ")
         record = Polispec::Trace.step("record", id: record_id) do
-          State.append_jsonl("deploys", record_for(project, name, run[:sha], run[:tag], health, pinned, record_id, detail.empty? ? nil : detail, skipped, run[:drain], deploy_source))
+          State.append_jsonl("deploys", record_for(project, name, run[:sha], run[:tag], health, pinned, record_id, detail.empty? ? nil : detail, skipped, run[:drain], deploy_source, guard&.reruns))
         end
         Polispec::Trace.info("deploy health", status: health["status"], detail: health["detail"]) if Polispec::Trace.on?
         result = result_for(project, name, run[:dir], run[:sha], run[:tag], run[:version], run[:outcome][:steps], health, pinned, actor, record, started)
@@ -492,11 +492,11 @@ module Polispec
         { steps: steps, failed: false }
       end
 
-      def run_command(ctx, argv, timeout)
+      def run_command(ctx, argv, timeout, rerun: false)
         guard = ctx[:guard]
         return Gates.exec(argv, chdir: ctx[:dir], env: ctx[:env], timeout: timeout) unless guard
 
-        guard.exec(argv, chdir: ctx[:dir], env: ctx[:env], timeout: timeout)
+        guard.exec(argv, chdir: ctx[:dir], env: ctx[:env], timeout: timeout, rerun: rerun)
       end
 
       def check_health(config, ctx)
@@ -514,7 +514,7 @@ module Polispec
         argv = Gates.argv_for(config["run"], ctx[:vars])
         return { "status" => "failed", "detail" => "health run is empty" } if argv.empty?
 
-        execution = run_command(ctx, argv, config["timeout_s"] || STEP_TIMEOUT)
+        execution = run_command(ctx, argv, config["timeout_s"] || STEP_TIMEOUT, rerun: true)
         return { "status" => "ok", "detail" => "run exited 0 in #{execution.duration_ms} ms" } if execution.ok?
         return { "status" => "timeout", "detail" => "run timed out: #{argv.join(' ')}" } if execution.timed_out
 
@@ -582,11 +582,11 @@ module Polispec
         git.tag_version(tag) < git.tag_version(latest)
       end
 
-      def record_for(project, name, sha, tag, health, pinned, id = Gates.new_id("dpl"), detail = nil, skipped = false, drain = nil, deploy_source = nil)
+      def record_for(project, name, sha, tag, health, pinned, id = Gates.new_id("dpl"), detail = nil, skipped = false, drain = nil, deploy_source = nil, reruns = nil)
         {
           "id" => id, "project" => project.id, "env" => name, "sha" => sha, "tag" => tag, "health" => health["status"],
           "pinned_behind" => pinned, "at" => Time.now.utc.iso8601, "detail" => detail, "drain" => (skipped ? "skipped" : drain),
-          "via" => Polispec::Delegate.via, "deploy_source" => deploy_source
+          "via" => Polispec::Delegate.via, "deploy_source" => deploy_source, "reruns" => (reruns unless reruns.to_a.empty?)
         }.compact
       end
 

@@ -71,6 +71,7 @@ module Polispec
         puts "#{head}: #{result['project']} to #{result['to']} at #{result['to_sha'][0, 12]} (#{result['tag']}, actor #{result['actor']})"
         result["gates"].each do |gate|
           puts "  gate #{gate['id']}: #{gate['result']} (#{gate['duration_ms']} ms)"
+          puts "    passed on a second run; changed during the first: #{gate['rerun'].join('; ')}" if gate["rerun"]
           Array(gate["findings"]).each { |finding| puts "    proof: #{Polispec::Proof::Gate.describe(finding)}" }
         end
         if result["dry_run"] && result["proof_weakening"]
@@ -82,6 +83,7 @@ module Polispec
         puts "  record #{result['record_id']}; release #{result.dig('release', 'status')}"
         result["deploys"].each do |deploy|
           puts "  deploy #{deploy['env']}: health #{deploy.dig('health', 'status')}, #{deploy['steps'].length} steps" if deploy.key?("env")
+          Array(deploy.dig("hermetic", "reruns")).each { |rerun| puts "    health ran twice; changed during the first run: #{rerun['changed'].join('; ')}" }
           puts "  WARNING: #{deploy['queues_paused']}" if deploy["queues_paused"]
         end
       end

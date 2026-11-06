@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.56.2] - 2026-11-05
+
+### Fixed
+
+- A write to a protected root by something else on the host no longer fails a passing gate or health run. Hermetic runs compare a protected root before and after each command, so a scheduled job writing there during the run read as `wrote outside its location`; on a promote to stable the branch had already moved, so it looked like a failed release. A command gate or `deploy.health.run` that exits zero while a root changed now runs once more with the same command and environment, and fails only if a root changes again (`Gates::Hermetic#exec`, `lib/polispec/operator/gates.rb`). This loosens the check in one case: a leak that writes only once, such as a file created when absent, passes on the second run. The first run's changed files stay on the record: `rerun` on the gate's row, `hermetic.reruns` on the deploy result, and `reruns` on the deploy row, and `promote` and `deploy` print them. A gate that rerun spends its command's cost twice.
+- `wrote outside its location` names the changed files, up to five and a count of the rest, not only the root. Deploy steps never run twice, because a step may not be repeatable, so a step that changes a root fails as before.
+
 ## [0.56.1] - 2026-11-05
 
 ### Fixed
