@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.56.5] - 2026-11-06
+
+### Fixed
+
+- A `for` or `select` clause now forgets any earlier value of its variable. Before this, `t=main; for t in stable; do git push origin main:$t; done` was judged as a push to `main` and allowed.
+- Each value of a `for` list of literal words is judged, so `for t in a b; do echo x > "$S/w-$t.txt"; done` resolves to its two real paths instead of an unknown target that could ask or deny. Up to 16 combinations across a line of at most 16 KiB are read this way; a list with a glob, a brace, or a substitution, and a line over those limits, leaves the variable unresolved as before.
+- An assignment whose value cannot be read, such as `t=$(cat x)`, and `mapfile` or `readarray` now forget any earlier value of the variable. Before this, `t=main; t=$(cat x); git push origin main:$t` was read as a push to `main`.
+
+### Verdict changes
+
+- `R-PROD-GIT` to the verdict of an unresolved ref, deny to allow where no other rule applies: a line that sets a variable to `stable` and then reassigns it from a value that cannot be read, before pushing with it.
+
+- `R-DEV` to `R-PROD-GIT`, and `NO-RULE` to `R-PROD-GIT`, allow to deny: a line that reuses a variable as a loop variable and pushes to the production branch.
+- `POLISPEC-TOOL-UNKNOWN` to `NO-RULE` or `R-DEV`, ask to allow, and `POLISPEC-CONTROL-PROTECTION` to `NO-RULE` or `R-DEV`, deny to allow: a loop run from a directory that holds a protected path, whose write targets are not protected once its literal values are read. A target that stays unresolved keeps its verdict.
+- `R-DEV` or `NO-RULE` to the rule a literal path would meet, such as `G-SCRATCH-ULIMIT-PAD`: a loop whose write targets now resolve to a path that rule governs.
+
 ## [0.56.4] - 2026-11-06
 
 ### Fixed

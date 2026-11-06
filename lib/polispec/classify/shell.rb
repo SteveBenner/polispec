@@ -37,6 +37,10 @@ module Polispec
       GLOB_TOTAL = 0.5
       MAX_NESTING = 16
       MAX_PARAM_VALUE = 4096
+      MAX_LOOP_PASSES = 16
+      MAX_LOOP_TEXT = 16_384
+      LOOP_NAME = /\A[A-Za-z_][A-Za-z0-9_]*\z/.freeze
+      LOOP_PATTERN_CHARS = /[{}*?\[]/.freeze
       UNREADABLE = "line could not be read"
       SAFE_PATH_PROGRAMS = %w[pwd dirname basename realpath readlink mktemp date whoami id hostname uname].freeze
       PATH_WRITERS = %w[rm rmdir unlink shred touch mkdir chmod chown chgrp truncate tee install ln mv cp rsync scp rename cd pushd].freeze
@@ -150,13 +154,39 @@ module Polispec
 
       def parse_text(text, cwd, depth, vars, holder = nil)
         vars ||= default_vars(cwd)
+        initial = vars.dup
         parser = Parser.new(text, cwd, vars, depth)
         holder << parser if holder
         commands = parser.run
+        passes = loop_choices(parser, text, depth).map do |choice|
+          again = Parser.new(text, cwd, initial.dup, depth)
+          again.loop_choice = choice
+          again.run
+          again
+        end
+        parsers = passes.empty? ? [parser] : passes
+        commands = parsers.flat_map(&:commands).uniq { |cmd| command_key(cmd) } unless passes.empty?
         nested = embedded_scripts(commands, depth)
         override = text.to_s.match?(GATE_OVERRIDE) ? ["operator gate override"] : []
         inline = commands.any? { |cmd| inline_hazard?(cmd) } ? ["inline code runs or deletes"] : []
-        Script.new(commands + nested.flat_map(&:commands), text.to_s, parser.opaque || nested.any?(&:opaque), (parser.followed + nested.flat_map(&:followed)).uniq, (parser.unparsed + nested.flat_map(&:unparsed) + override + inline).uniq, (parser.sourced + nested.flat_map { |script| Array(script.sourced) }).uniq)
+        Script.new(commands + nested.flat_map(&:commands), text.to_s, parsers.any?(&:opaque) || nested.any?(&:opaque), (parsers.flat_map(&:followed) + nested.flat_map(&:followed)).uniq, (parsers.flat_map(&:unparsed) + nested.flat_map(&:unparsed) + override + inline).uniq, (parsers.flat_map(&:sourced) + nested.flat_map { |script| Array(script.sourced) }).uniq)
+      end
+
+      def loop_choices(parser, text, depth)
+        return [] if depth.positive? || text.to_s.bytesize > MAX_LOOP_TEXT
+
+        used = parser.loops.each_with_index.select do |(name, values), _index|
+          values && text.to_s.match?(/\$\{?#?#{name}\b/)
+        end
+        return [] if used.empty? || used.map { |(_, values), _| values.length }.inject(:*) > MAX_LOOP_PASSES
+
+        lists = used.map { |(_, values), index| values.map { |value| [index, value] } }
+        lists.first.product(*lists.drop(1)).map(&:to_h)
+      end
+
+      def command_key(cmd)
+        redirects = Array(cmd.redirects).map { |redirect| [redirect.op, redirect.fd, redirect.target.to_s, redirect.body.to_s] }
+        [cmd.argv.map(&:to_s), cmd.cwd, redirects, cmd.env.to_h.map { |key, value| [key, value.to_s] }, cmd.sudo, cmd.host, cmd.xargs]
       end
 
       def inline_hazard?(cmd)
@@ -451,7 +481,8 @@ module Polispec
         GIT_GLOBAL_VALUE = %w[-C --git-dir --work-tree --namespace --super-prefix --attr-source].freeze
         GIT_PUSH_VALUE = %w[-o --push-option --repo --receive-pack --exec].freeze
 
-        attr_reader :commands, :opaque, :followed, :unparsed, :sourced
+        attr_reader :commands, :opaque, :followed, :unparsed, :sourced, :loops
+        attr_writer :loop_choice
         attr_accessor :vars, :cwd, :written, :unknown_writes, :switched, :recursive
 
         def initialize(text, cwd, vars, depth, budget = nil, following = false)
@@ -463,6 +494,8 @@ module Polispec
           @vars = vars
           @depth = depth
           @commands = []
+          @loops = []
+          @loop_choice = nil
           @pipe = nil
           @heredocs = []
           @tok_start = 0
@@ -1252,10 +1285,23 @@ module Polispec
             words.shift while %w[( ) {].include?(words.first.to_s)
             return keep_redirects(seg.redirects, env, text, false) if words.empty?
           elsif CLAUSES.include?(words.first.to_s)
+            note_loop(words) if %w[for select].include?(words.first.to_s)
             return keep_redirects(seg.redirects, env, text, false)
           end
 
           dispatch(words, seg.redirects, env, text)
+        end
+
+        def note_loop(words)
+          name = words[1].to_s
+          return unless name.match?(LOOP_NAME)
+
+          @vars.delete(name)
+          values = words[2].to_s == "in" ? words.drop(3) : []
+          literal = values.any? && values.none? { |word| word.dynamic? || word.has_glob || word.to_s.match?(LOOP_PATTERN_CHARS) }
+          index = @loops.length
+          @loops << [name, literal ? values.map(&:to_s) : nil]
+          @vars[name] = @loop_choice[index] if @loop_choice&.key?(index)
         end
 
         VARIABLE_HEAD = /\A\$(?:{[^{}]*}|[A-Za-z_][A-Za-z0-9_]*)\z/.freeze
@@ -1308,7 +1354,13 @@ module Polispec
 
         def set_variables(env)
           mark_unparsed!("cd under CDPATH") unless env["CDPATH"].to_s.empty?
-          env.each { |name, value| @vars[name] = value.to_s unless value.dynamic? }
+          env.each do |name, value|
+            if value.dynamic?
+              @vars.delete(name)
+            else
+              @vars[name] = value.to_s
+            end
+          end
         end
 
         def dispatch(words, redirects, env, text)
@@ -1460,6 +1512,9 @@ module Polispec
           when "read"
             read_names(args).each { |name| @vars.delete(name) }
             @vars.delete("REPLY")
+          when "mapfile", "readarray"
+            args.each { |arg| @vars.delete(arg) if arg.match?(LOOP_NAME) }
+            @vars.delete("MAPFILE")
           end
         end
 
@@ -1713,9 +1768,11 @@ module Polispec
         def export_variables(words)
           words.drop(1).each do |word|
             @exported[word.to_s] = true if File.basename(words.first.to_s) == "export" && word.to_s.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
-            next unless word.match?(ASSIGNMENT) && !(word.respond_to?(:dynamic?) && word.dynamic?)
+            next unless word.match?(ASSIGNMENT)
 
             name, value = word.split("=", 2)
+            next @vars.delete(name) if word.respond_to?(:dynamic?) && word.dynamic?
+
             mark_unparsed!("cd under CDPATH") if name == "CDPATH" && !value.to_s.empty?
             @vars[name] = value.to_s
             @exported[name] = true if File.basename(words.first.to_s) == "export"

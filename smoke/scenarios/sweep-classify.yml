@@ -819,3 +819,59 @@ steps:
     expect:
       decision: ask
       rule: POLISPEC-SHELL-UNPARSED
+  - name: a loop variable does not keep an earlier value
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "t=main; for t in stable; do git push origin main:$t; done" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: every literal loop value is judged
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "for b in main stable; do git push origin main:$b; done" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: a loop list from a substitution drops the earlier value
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "t=stable; for t in $(cat branches); do git push origin main:$t; done" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: an assignment from a substitution drops the earlier value
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "t=stable; t=$(cat branch); git push origin main:$t" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: a write target built from literal loop values is judged at its real paths
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "for t in a b; do echo x > {{project.shop}}/lib/w-$t.txt; done" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: a loop write into the production checkout is judged at its real path
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "for t in a b; do echo x > {{checkout.shop.stable}}/w-$t.txt; done" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
