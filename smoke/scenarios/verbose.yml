@@ -138,6 +138,13 @@ steps:
     expect:
       exit: 0
       stderr_includes: ["| first", "still running", "| second"]
+  - name: a held trace prints no heartbeat, and the silence after it does
+    run: [sh, -c, 'ruby -e "require File.join(ARGV[0], %q(lib/polispec)); Polispec::Trace.configure(:text, op: %q(probe)); Polispec::Trace.hold { sleep 3 }; Polispec::Trace.info(%q(released)); sleep 3; Polispec::Trace.finish(0)" "$0" 2>"$1/held.txt"; echo "exit=$?"; echo "held-beats=$(sed -n "1,/released/p" "$1/held.txt" | grep -c "still running")"; sed -n "/released/,\$p" "$1/held.txt" | grep -q "still running" && echo after-release-beats', "{{tree}}", "{{scratch}}"]
+    env: { POLISPEC_VERBOSE_HEARTBEAT: "1" }
+    timeout: 60
+    expect:
+      exit: 0
+      stdout_includes: ["exit=0", "held-beats=0", "after-release-beats"]
   - name: the child stdout is a pipe while the pty setting is off
     run: [ruby, -e, 'require File.join(ARGV[0], "lib/polispec"); require File.join(ARGV[0], "lib/polispec/operator/gates"); Polispec::Trace.configure(:text, op: "probe"); Polispec::Operator::Gates.exec(["sh", "-c", "test -t 1 && echo out-is-tty || echo out-is-pipe"], chdir: Dir.pwd); Polispec::Trace.finish(0)', "{{tree}}"]
     expect:
