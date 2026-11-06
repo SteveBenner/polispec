@@ -48,6 +48,10 @@ module Polispec
         File.join(scratch, "gitconfig")
       end
 
+      def git_template
+        File.join(scratch, "git-template")
+      end
+
       def envs_root
         File.join(scratch, "envs")
       end
@@ -110,7 +114,8 @@ module Polispec
         codex_home = File.join(layout.home, ".codex")
         FileUtils.mkdir_p(codex_home)
         File.write(File.join(codex_home, "config.toml"), "")
-        File.write(layout.gitconfig, "[user]\n\tname = smoke\n\temail = smoke@example.invalid\n[init]\n\tdefaultBranch = main\n[protocol \"file\"]\n\tallow = always\n")
+        %w[hooks info].each { |dir| FileUtils.mkdir_p(File.join(layout.git_template, dir)) }
+        File.write(layout.gitconfig, "[user]\n\tname = smoke\n\temail = smoke@example.invalid\n[init]\n\tdefaultBranch = main\n\ttemplateDir = \"#{layout.git_template}\"\n[protocol \"file\"]\n\tallow = always\n")
         seed_ledger(layout, tree)
         write_global(layout, spec)
         write_files(spec["files"], layout.files, layout)
