@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.56.7] - 2026-11-06
+
+### Fixed
+
+- `git apply --cached PATCH` is judged by the paths its patch names, because it changes only the index and a commit can carry that into a policy read from a ref. It keeps its earlier verdict when the patch cannot be read or the paths cannot be proved: standard input, a patch written earlier on the same line, a quoted or space-holding path, and any flag that could retarget it, such as `--directory`.
+- A plain `$(mktemp)` or `$(mktemp -d)` resolves to a path under the temporary directory instead of an unknown target, so `s=$(mktemp -d); echo x > "$s/f"` no longer counts as a write to the working directory. A `-p` or template argument, and any line that names `TMPDIR`, leave it unresolved as before. A `..` that walks out of the path is judged where it lands.
+- A variable that `case` arms set to different values no longer takes the last arm's value. The command is judged against every arm's value, up to 16 copies, so a protected path in any arm is caught, and the variable itself stays unresolved.
+
+### Known limit
+
+- A redirect target computed at runtime is still judged as the working directory, so it is not stopped outside a directory that holds a protected path. Across 21,980 Bash commands from one host's last seven days, 218 used a target the parser could not resolve; asking on all of them was judged to cost more than the gap risks.
+
+### Verdict changes
+
+- `POLISPEC-CONTROL-PROTECTION` to `NO-RULE` or `R-DEV`, deny to allow: `git apply --cached` of a readable patch naming unprotected paths, and a write to a fresh `mktemp` path, run from a directory that holds a protected path.
+- `R-DEV` or `NO-RULE` to `POLISPEC-CONTROL-PROTECTION`, allow to deny: a line that sets a variable to a protected path in one `case` arm and a different path in a later arm, then writes to it.
+- `R-DEV` or `NO-RULE` to the rule a literal path would meet, such as `G-SCRATCH-ULIMIT-PAD`: a `mktemp` or `git apply --cached` target that now resolves to a path that rule governs.
+
 ## [0.56.6] - 2026-11-06
 
 ### Fixed
