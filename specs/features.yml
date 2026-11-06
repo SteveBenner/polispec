@@ -1751,7 +1751,7 @@ ignore:
 - skills/**/*.md
 - config.yml
 trusted_producers:
-- id: host-retired
-  key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC112KGe5nLi4FmcWId4nMl+4U1UZxW3SPID9jcdAypx polispec-proof@retired
+- id: host-primary
+  key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDbhr5etgzpaBmyGBoF3TwWSZSfzDXi3w84VKoFFfew0 polispec-proof@primary
   kind: host
 exceptions: []
