@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.57.1] - 2026-11-06
+
+### Fixed
+
+- A `smoke run` uses half the inodes. `/tmp` is a tmpfs here with a fixed inode count, and the suite's scratch repositories exhausted it while bytes stayed free, so every new temporary file on the host failed with ENOSPC. `Smoke::Layout#git_template` and the fixture's `gitconfig` now set `init.templateDir` to a template holding only empty `hooks` and `info` directories, so a repository or clone a scenario creates has no sample hooks. `smoke/scenarios/sweep-inputs.yml` clones polispec with `--no-local` rather than `--no-hardlinks`, so `pin-src` and `pgp-src` each hold one pack rather than the source's loose objects. Measured on one pass of the full suite against the parent commit: 37,774 inodes and 445 MiB before, 18,931 and 237 MiB after, with sample hooks down from 2,436 to 0 and `sweep-inputs` from 19,942 inodes to 3,513. `--against` runs the installed release's nested runs with that release's own fixture, so those keep their sample hooks until the release is installed.
+
 ## [0.57.0] - 2026-11-06
 
 ### Added
