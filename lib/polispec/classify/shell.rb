@@ -42,6 +42,8 @@ module Polispec
       LOOP_NAME = /\A[A-Za-z_][A-Za-z0-9_]*\z/.freeze
       LOOP_PATTERN_CHARS = /[{}*?\[]/.freeze
       UNREADABLE = "line could not be read"
+      FRESH_TEMP_NAME = "tmp.XXXXXXXXXX".freeze
+      MAX_ALTERNATE_COMMANDS = 16
       SAFE_PATH_PROGRAMS = %w[pwd dirname basename realpath readlink mktemp date whoami id hostname uname].freeze
       PATH_WRITERS = %w[rm rmdir unlink shred touch mkdir chmod chown chgrp truncate tee install ln mv cp rsync scp rename cd pushd].freeze
       GLOB_WRITERS = %w[rm rmdir unlink shred touch mkdir chmod chown chgrp truncate tee install ln mv cp rsync scp rename patch dd sed perl curl wget tar unzip gzip gunzip bzip2 xz find].freeze
@@ -55,7 +57,7 @@ module Polispec
       BRACE_LIST = /\{[^{}]*(?:,|\.\.)[^{}]*\}/.freeze
 
       class Word < String
-        attr_accessor :dynamic, :has_glob, :subst, :subst_lead, :param_form, :unresolved
+        attr_accessor :dynamic, :has_glob, :subst, :subst_lead, :param_form, :unresolved, :alternates
 
         def dynamic?
           dynamic ? true : false
@@ -492,6 +494,7 @@ module Polispec
           @ss = StringScanner.new(text)
           @cwd = cwd.to_s.empty? ? Dir.pwd : cwd.to_s
           @vars = vars
+          @vars[:tmpdir_named] = true if text.to_s.include?("TMPDIR")
           @depth = depth
           @commands = []
           @loops = []
@@ -512,6 +515,7 @@ module Polispec
           @previous = nil
           @recursive = false
           @nesting = 0
+          @case_frames = []
         end
 
         def run
@@ -1027,6 +1031,7 @@ module Polispec
           return nil unless inner.length == 1
 
           cmd = inner.first
+          return fresh_temp_path(cmd, in_quotes) if cmd.name == "mktemp"
           return nil unless STATIC_PRINTERS.include?(cmd.name) && cmd.redirects.empty? && cmd.env.empty? && !cmd.sudo
           return nil if cmd.args.any? { |arg| dynamic_word?(arg) || (arg.respond_to?(:glob?) && arg.glob?) }
 
@@ -1038,6 +1043,15 @@ module Polispec
           return nil if !in_quotes && text.match?(/[\s*?\[]/)
 
           text
+        end
+
+        def fresh_temp_path(cmd, in_quotes)
+          return nil if @vars[:tmpdir_named] || !cmd.redirects.empty? || !cmd.env.empty? || cmd.sudo
+          return nil if cmd.args.any? { |arg| dynamic_word?(arg) } || !(cmd.args.empty? || cmd.args.map(&:to_s) == ["-d"])
+
+          base = ENV.fetch("TMPDIR", "").empty? ? "/tmp" : ENV.fetch("TMPDIR")
+          text = File.join(base, FRESH_TEMP_NAME)
+          !in_quotes && text.match?(/[\s*?\[]/) ? nil : text
         end
 
         def echo_text(args)
@@ -1210,6 +1224,8 @@ module Polispec
             word << literal
             word.dynamic = true
             word.unresolved = true
+            values = name && @vars[:alternates]&.fetch(name, nil)
+            (word.alternates ||= {})[literal] = values if values
           end
         end
 
@@ -1285,7 +1301,7 @@ module Polispec
             words.shift while %w[( ) {].include?(words.first.to_s)
             return keep_redirects(seg.redirects, env, text, false) if words.empty?
           elsif CLAUSES.include?(words.first.to_s)
-            note_loop(words) if %w[for select].include?(words.first.to_s)
+            note_clause(words)
             return keep_redirects(seg.redirects, env, text, false)
           end
 
@@ -1354,13 +1370,48 @@ module Polispec
 
         def set_variables(env)
           mark_unparsed!("cd under CDPATH") unless env["CDPATH"].to_s.empty?
-          env.each do |name, value|
-            if value.dynamic?
-              @vars.delete(name)
-            else
-              @vars[name] = value.to_s
-            end
+          env.each { |name, value| assign_variable(name, value.dynamic? ? nil : value.to_s) }
+        end
+
+        def assign_variable(name, value)
+          (@case_frames.last[name] ||= [@vars[name]]) << value unless @case_frames.empty?
+          @vars[:alternates]&.delete(name)
+          value ? @vars[name] = value : @vars.delete(name)
+        end
+
+        def note_clause(words)
+          case words.first.to_s
+          when "case" then @case_frames << {}
+          when "esac" then close_case(@case_frames.pop)
+          when "for", "select"
+            @vars[:alternates]&.delete(words[1].to_s)
+            note_loop(words)
           end
+        end
+
+        def close_case(frame)
+          frame.to_h.each do |name, values|
+            known = values.compact.uniq
+            next if known.length < 2 && values.drop(1).all?
+
+            @vars.delete(name)
+            (@vars[:alternates] ||= {})[name] = known unless known.empty?
+          end
+        end
+
+        def alternate_commands(cmd)
+          slots = (cmd.argv + cmd.redirects.map(&:target)).select { |word| word.respond_to?(:alternates) && word.alternates }
+          slots.flat_map { |word| word.alternates.flat_map { |literal, values| values.map { |value| alternate_command(cmd, word, literal, value) } } }.first(MAX_ALTERNATE_COMMANDS)
+        end
+
+        def alternate_command(cmd, word, literal, value)
+          text = word.to_s.sub(literal) { value }
+          swapped = Word.new(text)
+          swapped.dynamic = word.alternates.length > 1 || text.match?(/[$`]/)
+          copy = cmd.dup
+          copy.argv = cmd.argv.map { |item| item.equal?(word) ? swapped : item }
+          copy.redirects = cmd.redirects.map { |item| item.target.equal?(word) ? Redirect.new(item.op, item.fd, swapped, item.body) : item }
+          copy
         end
 
         def dispatch(words, redirects, env, text)
@@ -1771,7 +1822,7 @@ module Polispec
             next unless word.match?(ASSIGNMENT)
 
             name, value = word.split("=", 2)
-            next @vars.delete(name) if word.respond_to?(:dynamic?) && word.dynamic?
+            next assign_variable(name, nil) if word.respond_to?(:dynamic?) && word.dynamic?
 
             mark_unparsed!("cd under CDPATH") if name == "CDPATH" && !value.to_s.empty?
             @vars[name] = value.to_s
@@ -1786,6 +1837,7 @@ module Polispec
           redirects = expand_redirects(redirects)
           note_path_operands(words, redirects)
           note_git_paths(words)
+          distrust_written_patch(words)
           words, redirects = apply_links(words, redirects) unless @links.empty?
           @pipe ||= []
           cmd = Command.new(argv: words, cwd: @cwd, redirects: redirects, env: env, pipeline: @pipe, index: @pipe.length, text: text, sudo: sudo, xargs: xargs, recursive: @recursive, reads: reads)
@@ -1793,6 +1845,7 @@ module Polispec
 
           @pipe << cmd
           @commands << cmd
+          @commands.concat(alternate_commands(cmd))
           record_writes(cmd)
           record_links(cmd)
           cmd
@@ -1850,6 +1903,16 @@ module Polispec
 
         GIT_PATH_OPTIONS = %w[-C --git-dir --work-tree].freeze
         GIT_VALUE_OPTIONS = %w[-c --namespace --super-prefix --attr-source --config-env --exec-path].freeze
+
+        def distrust_written_patch(words)
+          return unless File.basename(words.first.to_s) == "git" && words.include?("apply")
+
+          words.drop(words.index("apply") + 1).each do |word|
+            next if word.start_with?("-") || !word.respond_to?(:dynamic=)
+
+            word.dynamic = true if @unknown_writes || @written.key?(resolve(word))
+          end
+        end
 
         def note_git_paths(words)
           return unless File.basename(words.first.to_s) == "git"

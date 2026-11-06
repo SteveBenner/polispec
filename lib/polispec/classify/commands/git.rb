@@ -22,7 +22,7 @@ module Polispec
         "commit" => :commit, "cherry-pick" => :commit, "revert" => :commit, "am" => :commit,
         "merge" => :merge, "pull" => :merge, "rebase" => :rebase, "reset" => :reset, "push" => :push,
         "tag" => :tag, "branch" => :branch, "checkout" => :checkout, "switch" => :switch,
-        "restore" => :fs_path, "rm" => :fs_path, "mv" => :fs_path, "apply" => :fs_path, "clean" => :clean,
+        "restore" => :fs_path, "rm" => :fs_path, "mv" => :fs_path, "apply" => :apply, "clean" => :clean,
         "update-ref" => :update_ref, "config" => :config, "filter-branch" => :rewrite_all, "filter-repo" => :rewrite_all,
         "stash" => :stash, "read-tree" => :read_tree,
         "add" => :add, "fetch" => :fetch, "clone" => :clone, "init" => :init, "worktree" => :worktree, "submodule" => :submodule
@@ -37,6 +37,7 @@ module Polispec
       CONFIG_READ = %w[--get --get-all --get-regexp --list -l].freeze
       CONFIG_UNSET = %w[--unset --unset-all --add --replace-all].freeze
       CONFIG_KEYS = /\A(?:remote\..+\.(?:push|pushurl|url)|alias\..+|core\.(?:hookspath|sshcommand|fsmonitor)|url\..+\.(?:pushinsteadof|insteadof))\z/i.freeze
+      APPLY_INDEX_ONLY = %w[--cached --unidiff-zero --recount --ignore-whitespace --ignore-space-change -v --verbose].freeze
       ROOT_PATHSPECS = [".", ":/", ":/*", ":(top)", ":(top)*"].freeze
 
       Invocation = Struct.new(:cmd, :path, :sub, :args, :tree)
@@ -185,6 +186,65 @@ module Polispec
 
         def fs_path(inv)
           tree_writes(inv) + pathspec_writes(inv)
+        end
+
+        def apply(inv)
+          paths = cached_patch_paths(inv)
+          return fs_path(inv) unless paths
+
+          paths.product([inv.path, inv.tree].compact.uniq).filter_map do |path, base|
+            Support.write_action(Support.abs(path, base), inv.cmd.text)
+          end
+        end
+
+        def cached_patch_paths(inv)
+          flags, files = inv.args.partition { |arg| arg.to_s.start_with?("-") }
+          names = flags.map(&:to_s)
+          return nil unless names.include?("--cached") && (names - APPLY_INDEX_ONLY).empty?
+          return nil unless files.length == 1 && !Support.dynamic?(files.first)
+
+          text = Shell.read_script(Support.abs(files.first, inv.path))
+          text && patch_paths(text)
+        end
+
+        def patch_paths(text)
+          found = []
+          text.each_line do |line|
+            entry = patch_header_paths(line.chomp)
+            return nil if entry == :unreadable
+
+            found.concat(entry)
+          end
+          found.empty? ? nil : found.uniq
+        end
+
+        def patch_header_paths(line)
+          case line
+          when /\A(?:---|) (.*)\z/ then strip_patch_prefix(Regexp.last_match(1).split("\t").first.to_s)
+          when /\A(?:rename|copy) (?:from|to) (.+)\z/ then Regexp.last_match(1).start_with?("\"") ? :unreadable : [Regexp.last_match(1)]
+          when /\Adiff --git (.*)\z/ then diff_git_paths(Regexp.last_match(1))
+          else []
+          end
+        end
+
+        def diff_git_paths(rest)
+          sides = rest.split(" ")
+          return :unreadable unless sides.length == 2
+
+          sides.flat_map do |side|
+            stripped = strip_patch_prefix(side)
+            return :unreadable if stripped == :unreadable
+
+            stripped
+          end
+        end
+
+        def strip_patch_prefix(path)
+          return [] if path == "/dev/null"
+          return :unreadable if path.empty? || path.start_with?("\"") || !path.include?("/")
+
+          rest = path.split("/", 2).last
+          rest.to_s.empty? ? :unreadable : [rest]
         end
 
         def tree_writes(inv)
