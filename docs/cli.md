@@ -12,7 +12,7 @@ Authority values:
 | sealed operator | The operator authenticated through the protected launcher. A terminal and phrase alone are insufficient. |
 | internal | Called by a harness, the launcher or another command. Not run by hand. |
 
-Read-only means no file, ledger, shelf or state write. `--json` is accepted where listed in `polispec help`. `--verbose` traces any run to stderr.
+Read-only means no file, ledger, shelf or state write. `--json` is accepted where listed in `polispec help`. `--verbose` traces any run to stderr, and `promote` and `deploy` do so by default on a terminal.
 
 ## Inspect
 

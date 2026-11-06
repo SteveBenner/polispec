@@ -12,6 +12,11 @@ module Polispec
     ENV_OFF = ["", "0", "false", "off"].freeze
     FLAG_ERROR = "polispec: --verbose takes text or json".freeze
     ENV_ERROR = "polispec: POLISPEC_VERBOSE takes 1, text, json or off".freeze
+    OPERATIONS = %w[promote deploy].freeze
+    HEARTBEAT_S = 30
+    WATCH_TICK_S = 1
+    HEARTBEAT_ENV = "POLISPEC_VERBOSE_HEARTBEAT".freeze
+    PROGRESS_ENV = "POLISPEC_PROGRESS".freeze
 
     @mode = :off
     @mutex = Mutex.new
@@ -20,6 +25,12 @@ module Polispec
     @started = nil
     @file = nil
     @op = nil
+    @watch = nil
+    @held = 0
+    @running = nil
+    @steps = []
+    @last_line = nil
+    @last_output = nil
 
     module_function
 
@@ -29,6 +40,32 @@ module Polispec
 
     def json?
       @mode == :json
+    end
+
+    def automatic(argv, stream = $stderr)
+      stop = argv.index("--") || argv.length
+      verb = argv.first(stop).find { |token| !token.start_with?("-") }
+      return nil unless OPERATIONS.include?(verb)
+
+      require_relative "engine"
+      case Polispec::Engine::Settings.verbose_operations
+      when "always" then :text
+      when "auto" then stream.tty? ? :text : nil
+      end
+    end
+
+    def hold
+      return yield unless on?
+
+      @mutex.synchronize { @held += 1 }
+      begin
+        yield
+      ensure
+        @mutex.synchronize do
+          @held -= 1
+          @last_line = now
+        end
+      end
     end
 
     def extract(argv, env)
@@ -83,11 +120,17 @@ module Polispec
         @depth = 0
         @op = op.to_s
         @mode = mode == :json ? :json : :text
+        @last_line = @last_output = now
+        @held = 0
+        @running = nil
+        @steps = []
       end
       @file = Logfile.open(@mode, @op)
       failed = @file.nil? && Logfile.failure
       write_line(0, "# trace polispec #{Polispec.version} #{@op} pid #{Process.pid}", "begin", "op" => @op, "pid" => Process.pid, "version" => Polispec.version)
       info("trace file unavailable", error: failed) if failed
+      @watch = Thread.new { watch_loop }
+      @watch.report_on_exception = false
       self
     end
 
@@ -103,6 +146,8 @@ module Polispec
     end
 
     def reset!
+      @watch.kill if @watch
+      @watch = nil
       @mutex.synchronize do
         @file.close if @file
         @file = nil
@@ -123,6 +168,7 @@ module Polispec
       clean = compact(fields)
       write_line(@depth, "> #{one_line(label)}#{Stream.fields(clean)}", "step", "phase" => "start", "label" => label.to_s, "fields" => clean)
       failure = nil
+      @mutex.synchronize { @steps.push(label.to_s) }
       begin
         @depth += 1
         yield
@@ -131,6 +177,7 @@ module Polispec
         raise
       ensure
         @depth -= 1
+        @mutex.synchronize { @steps.pop }
         close_step(label, started, failure)
       end
     end
@@ -149,6 +196,10 @@ module Polispec
       words = argv.is_a?(Array) ? argv.map(&:to_s) : [argv.to_s]
       text = argv.is_a?(Array) ? Shellwords.join(words) : argv.to_s
       shown = chdir && File.expand_path(chdir.to_s) != Dir.pwd ? " (in #{path(chdir.to_s)})" : ""
+      @mutex.synchronize do
+        @running = [one_line(text), now]
+        @last_output = now
+      end
       write_line(@depth, "$ #{one_line(text)}#{shown}", "command", "argv" => words, "cwd" => chdir.nil? ? nil : chdir.to_s)
       nil
     end
@@ -156,6 +207,7 @@ module Polispec
     def exit_line(code, ms, timed_out: false)
       return nil unless on?
 
+      @mutex.synchronize { @running = nil }
       shown = Stream.duration(ms)
       write_line(@depth, "= exit #{code} in #{shown}#{timed_out ? ' (timed out)' : ''}", "exit", "code" => code, "ms" => ms.round, "timed_out" => timed_out ? true : false)
       nil
@@ -164,6 +216,7 @@ module Polispec
     def output(text, stream: :out, depth: nil)
       return nil unless on?
 
+      @mutex.synchronize { @last_output = now }
       level = depth || @depth + 1
       line = Stream.clean(text.to_s).sub(/\r?\n\z/, "")
       marker = stream == :err ? "2| " : "| "
@@ -254,8 +307,41 @@ module Polispec
 
         emit_stream(line)
         @file = Logfile.write(@file, @mode, line, elapsed, depth)
+        @last_line = now
       end
       nil
+    end
+
+    def watch_loop
+      loop do
+        sleep WATCH_TICK_S
+        beat if heartbeat_due?
+      rescue StandardError
+        nil
+      end
+    end
+
+    def heartbeat_due?
+      @mutex.synchronize { on? && @held.zero? && now - @last_line >= heartbeat_seconds }
+    end
+
+    def heartbeat_seconds
+      seconds = ENV[HEARTBEAT_ENV].to_i
+      seconds.positive? ? seconds : HEARTBEAT_S
+    end
+
+    def beat
+      stamp = now
+      running, step, quiet = @mutex.synchronize { [@running, @steps.last, stamp - @last_output] }
+      fields = {}
+      if running
+        fields[:command] = running[0][0, 80]
+        fields[:elapsed_s] = (stamp - running[1]).round
+      else
+        fields[:step] = step
+      end
+      fields[:silent_s] = quiet.round
+      info("still running", **fields)
     end
 
     def emit_stream(line)
@@ -357,6 +443,6 @@ module Polispec
       info(first.empty? ? "output #{total} bytes" : "output #{total} bytes: #{first}")
     end
 
-    private_class_method :now, :compact, :one_line, :reason, :close_step, :write_line, :emit_stream, :drain_at, :without_trace, :traced, :binmode_all, :feed, :summarize, :from_env, :silent?
+    private_class_method :now, :compact, :one_line, :reason, :close_step, :write_line, :emit_stream, :drain_at, :watch_loop, :heartbeat_due?, :heartbeat_seconds, :beat, :without_trace, :traced, :binmode_all, :feed, :summarize, :from_env, :silent?
   end
 end

@@ -38,7 +38,7 @@ polispec is a versioned rulebook plus a guard that gives every agent tool call i
 | Put software or a directory outside a repository under polispec | `polispec-register` |
 | New project serving users | `polispec plan environment-control --repo R --variant service\|distributed\|library`, then `apply` with the same arguments |
 | Check a file | `polispec validate auto FILE`, then `polispec lint` and read its findings |
-| Watch an operation | add `--verbose` to promote, deploy, apply, pin, install, doctor or smoke |
+| Watch an operation | add `--verbose` to promote, deploy, apply, pin, install, doctor or smoke; promote and deploy already stream on a terminal, but not in an agent shell |
 | Promote to test | `polispec promote PROJECT --to test` (tags; never push `test`) |
 | Change polispec itself, its install, a package, the shelf or the ledger | `rules/polispec-stewardship.md`: plan first, user's yes for anything not tightening |
 | Browser view of policy | Tell the person to run `polispec web`; never run it or call its API (`G-WEB-AGENT` warns when that subspec is active) |

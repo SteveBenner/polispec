@@ -42,6 +42,9 @@ module Polispec
       LINT_DOCTOR_KEY = "polispec.lint.doctor"
       LINT_STRICT_KEY = "polispec.lint.strict"
       VERBOSE_TRACE_KEY = "polispec.verbose.trace"
+      VERBOSE_OPERATIONS_KEY = "polispec.verbose.operations"
+      VERBOSE_PTY_KEY = "polispec.verbose.pty"
+      VERBOSE_OPERATIONS = %w[auto always off].freeze
       WEB_BIND_KEY = "polispec.web.bind"
       WEB_PORT_KEY = "polispec.web.port"
       WEB_THEME_KEY = "polispec.web.theme"
@@ -121,6 +124,19 @@ module Polispec
         text(VERBOSE_TRACE_KEY, "on").downcase != "off"
       rescue StandardError
         true
+      end
+
+      def verbose_operations
+        value = text(VERBOSE_OPERATIONS_KEY, "auto").downcase
+        VERBOSE_OPERATIONS.include?(value) ? value : "auto"
+      rescue StandardError
+        "auto"
+      end
+
+      def verbose_pty?
+        text(VERBOSE_PTY_KEY, "off").downcase == "on"
+      rescue StandardError
+        false
       end
 
       def web_bind

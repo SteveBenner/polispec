@@ -82,6 +82,7 @@ module Polispec
       end
 
       def run(argv)
+        $stdout.sync = true unless ENV[Trace::PROGRESS_ENV].to_s.empty?
         argv, mode, error = extract_trace(argv)
         if error
           warn error
@@ -128,7 +129,10 @@ module Polispec
 
       def extract_trace(argv)
         wanted = ENV.key?("POLISPEC_VERBOSE") || argv.any? { |token| token.start_with?("-v", "--verbose") }
-        wanted ? Trace.extract(argv, ENV) : [argv, nil, nil]
+        kept, mode, error = wanted ? Trace.extract(argv, ENV) : [argv, nil, nil]
+        return [kept, Trace.automatic(kept), nil] if mode.nil? && error.nil? && !ENV.key?("POLISPEC_VERBOSE")
+
+        [kept, mode, error]
       end
 
       def invoke_traced(entry, verb, args, mode)

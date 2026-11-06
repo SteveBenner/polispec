@@ -245,7 +245,9 @@ Limits. A clean sweep proves schema acceptance, loader-safe YAML, and agreement 
 
 An operation prints one summary when it ends. `--verbose` (also `--verbose=text`, `--verbose=json`, `-v`) streams what it does while it does it, so a promotion, a deploy, `exceptions add` or `uninstall --all` can be watched instead of waited for. `POLISPEC_VERBOSE=1|text|json` does the same for one process (the flag wins; `0`, `false`, `off` or empty is off). Any verb takes the flag except `hook` and `code-hook`, which ignore both the flag and the variable so the guard never writes to stderr because of them. The exception is `hook git install` and `hook git uninstall`, which are installers and do take it; `hook git pre-commit` and the other git hooks stay silent.
 
-The trace goes to stderr and nowhere else. What an operation prints on stdout, its `--json` document and its exit status are the same with and without the flag, and without the flag nothing is traced. A line looks like this:
+Since 0.57.0 `promote` and `deploy` stream with no flag when stderr is a terminal, so a promotion to stable is visible right after you type the phrase. `polispec.verbose.operations` sets this: `auto` (the default), `always` (wherever stderr goes, including an agent shell and a delegate run log), or `off` (only the flag or the variable). The flag and the variable win over the setting, so `POLISPEC_VERBOSE=0` silences one run. An agent shell has no terminal, so under `auto` an agent passes `--verbose` to watch a run.
+
+The trace goes to stderr and nowhere else. What an operation prints on stdout, its `--json` document and its exit status are the same with and without the trace. Without the flag or the variable nothing else is traced. A line looks like this:
 
 ```
 [   12.3s]   > gate G-CLEAN
@@ -254,7 +256,11 @@ The trace goes to stderr and nowhere else. What an operation prints on stdout, i
 [   12.4s]   + gate G-CLEAN (112 ms)
 ```
 
-`>` opens a step and `+` closes it with its duration, `!` closes it failed with the reason, `-` is an information line with `key=value` fields, `$` is a command, `=` its exit status, `|` is a line of the child's stdout and `2|` of its stderr, and `#` marks the start and the end of the run. Indent is nesting. A child's output appears line by line as the child writes it, so the test deploy of a promotion shows the smoke suite's progress; a read-only git call shows its command and a one-line summary instead of its output.
+`>` opens a step and `+` closes it with its duration, `!` closes it failed with the reason, `-` is an information line with `key=value` fields, `$` is a command, `=` its exit status, `|` is a line of the child's stdout and `2|` of its stderr, and `#` marks the start and the end of the run. Indent is nesting. A read-only git call shows its command and a one-line summary instead of its output.
+
+How live it is. A child's output appears as the child flushes it. polispec's own children flush each line, and a `smoke run` health check prints one line per scenario as each finishes, so the test deploy of a promotion shows its progress. Python children get `PYTHONUNBUFFERED=1`. Other programs that buffer a pipe, such as a Ruby script or `rake`, may hold their output until they flush or exit. For those, a run that has written nothing for 30 seconds prints `still running`, with the command, how long it has run, and how long it has been silent, and repeats every 30 seconds. `POLISPEC_VERBOSE_HEARTBEAT` changes the interval, and the line is paused while the typed phrase is awaited.
+
+`polispec.verbose.pty on` gives those programs a pseudo-terminal on stdout and stderr, so they print line by line. It is off by default because a program can act differently on a terminal: it may page, prompt, or draw progress bars, and a production deploy step could stall. polispec sets `TERM=dumb`, `NO_COLOR=1`, `PAGER=cat`, and `GIT_PAGER=cat` to reduce that. Stdin stays closed and no new controlling terminal is made, so a child still cannot answer a typed-phrase prompt. It applies to gate, deploy, health, and after steps, not to the git calls.
 
 What it covers, by group:
 

@@ -36,7 +36,15 @@ module Polispec
         results = []
         host = nil
         if select_scenarios?
-          results = scenarios.map { |entry| run_entry(entry, out, against) }
+          entries = scenarios
+          progress = !ENV[Polispec::Trace::PROGRESS_ENV].to_s.empty?
+          $stderr.puts "smoke: #{entries.length} scenarios" if progress
+          results = entries.each_with_index.map do |entry, index|
+            began = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            item = run_entry(entry, out, against)
+            report_progress(item, index + 1, entries.length, Process.clock_gettime(Process::CLOCK_MONOTONIC) - began) if progress
+            item
+          end
           recorded = if options.record
                        Polispec::Trace.step("record results") { record_all(results) }
                      else
@@ -91,6 +99,19 @@ module Polispec
         return true if options.units.empty?
 
         options.units.any? { |pattern| pattern.end_with?("*") ? unit.start_with?(pattern.delete_suffix("*")) : unit == pattern }
+      end
+
+      def report_progress(item, number, total, seconds)
+        $stderr.puts "scenario #{number}/#{total} #{item['verdict']} #{item['unit'] || '-'} #{item['file']} (#{format('%.1f', seconds)} s)"
+        return if item["verdict"] == "pass"
+
+        step = item["steps"].find { |candidate| !candidate["ok"] && !candidate["inconclusive"] } || item["steps"].find { |candidate| !candidate["ok"] }
+        if step
+          entry = step["checks"].find { |check| !check["ok"] }
+          $stderr.puts "  #{step['name']}: #{entry ? "#{entry['check']} #{entry['detail']}" : ''}".rstrip
+        elsif item["reason"]
+          $stderr.puts "  #{item['reason']}"
+        end
       end
 
       def scenarios

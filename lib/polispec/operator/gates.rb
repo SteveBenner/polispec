@@ -12,6 +12,7 @@ module Polispec
   module Operator
     module Gates
       DEFAULT_TIMEOUT = 900
+      PTY_ENV = { "TERM" => "dumb", "NO_COLOR" => "1", "PAGER" => "cat", "GIT_PAGER" => "cat" }.freeze
       BUILTINS = %w[clean_tree version_homes_agree sha_ran_on_test sha_ran_on not_frozen soaked health_required logs_quiet requires_live features_proven].freeze
       TIERS = { "test" => "test", "stable" => "prod", "prod" => "prod" }.freeze
       LOGS_COUNT_KEY = "polispec.logs.count_command"
@@ -376,24 +377,52 @@ module Polispec
         code = 1
         timed_out = false
         Polispec::Trace.command(argv, chdir: chdir)
-        Open3.popen2e(env, *argv, chdir: chdir) do |stdin, out, waiter|
-          stdin.close
-          reader = Thread.new { Polispec::Trace.on? ? Polispec::Trace.drain(out) : out.read }
-          if waiter.join(timeout)
-            code = waiter.value.exitstatus || 1
-          else
-            timed_out = true
-            terminate(waiter)
+        traced = Polispec::Trace.on?
+        child_env = traced ? { "PYTHONUNBUFFERED" => "1", Polispec::Trace::PROGRESS_ENV => "1" }.merge(env) : env
+        if traced && Polispec::Engine::Settings.verbose_pty?
+          code, timed_out, output = exec_pty(argv, chdir, child_env, timeout)
+        else
+          Open3.popen2e(child_env, *argv, chdir: chdir) do |stdin, out, waiter|
+            stdin.close
+            code, timed_out, output = collect(out, waiter, timeout)
           end
-          reader.join(3)
-          output = reader.alive? ? "" : reader.value.to_s
-          reader.kill
         end
         Polispec::Trace.exit_line(code, now_ms - started, timed_out: timed_out)
         Execution.new(code, output, now_ms - started, timed_out)
       rescue SystemCallError => e
         Polispec::Trace.exit_line(127, now_ms - started)
         Execution.new(127, "#{argv.first}: #{e.message}", now_ms - started, false)
+      end
+
+      def exec_pty(argv, chdir, child_env, timeout)
+        require "pty"
+        master, slave = PTY.open
+        begin
+          pid = Process.spawn(PTY_ENV.merge(child_env), *argv, chdir: chdir, in: File::NULL, out: slave, err: slave)
+          slave.close
+          waiter = Process.detach(pid)
+          code, timed_out, output = collect(master, waiter, timeout)
+          [code, timed_out, output.gsub("\r\n", "\n")]
+        ensure
+          slave.close unless slave.closed?
+          master.close unless master.closed?
+        end
+      end
+
+      def collect(out, waiter, timeout)
+        code = 1
+        timed_out = false
+        reader = Thread.new { Polispec::Trace.on? ? Polispec::Trace.drain(out) : out.read }
+        if waiter.join(timeout)
+          code = waiter.value.exitstatus || 1
+        else
+          timed_out = true
+          terminate(waiter)
+        end
+        reader.join(3)
+        output = reader.alive? ? "" : reader.value.to_s
+        reader.kill
+        [code, timed_out, output]
       end
 
       def terminate(waiter)

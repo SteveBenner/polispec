@@ -37,6 +37,63 @@ steps:
     expect:
       exit: 0
       stdout_includes: ["kinds=", "begin", "end"]
+  - name: on a terminal with no flag promote dry-run streams its trace
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run]
+    cwd: "{{project.shop}}"
+    tty: []
+    expect:
+      exit: 0
+      stdout_includes: ["# trace polispec", "> gates"]
+  - name: through a pipe with no flag promote dry-run prints no trace
+    run: [sh, -c, '"$0" promote shop --to test --dry-run 2>"$1/err.txt" >/dev/null; echo "exit=$?"; echo "trace-lines=$(grep -c "# trace polispec" "$1/err.txt")"', "{{polispec}}", "{{scratch}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ["exit=0", "trace-lines=0"]
+  - name: POLISPEC_VERBOSE set to 0 keeps the trace off on a terminal
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run]
+    cwd: "{{project.shop}}"
+    env: { POLISPEC_VERBOSE: "0" }
+    tty: []
+    expect:
+      exit: 0
+      stdout_excludes: ["# trace polispec"]
+  - name: the operations setting is turned off
+    run: ["{{polispec}}", settings, set, polispec.verbose.operations, "off"]
+    expect:
+      exit: 0
+  - name: with operations off a terminal run prints no trace
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run]
+    cwd: "{{project.shop}}"
+    tty: []
+    expect:
+      exit: 0
+      stdout_excludes: ["# trace polispec"]
+  - name: with operations off --verbose still traces on a terminal
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run, --verbose]
+    cwd: "{{project.shop}}"
+    tty: []
+    expect:
+      exit: 0
+      stdout_includes: ["# trace polispec", "> gates"]
+  - name: the operations setting is restored to auto after off
+    run: ["{{polispec}}", settings, set, polispec.verbose.operations, "auto"]
+    expect:
+      exit: 0
+  - name: the operations setting is turned to always
+    run: ["{{polispec}}", settings, set, polispec.verbose.operations, "always"]
+    expect:
+      exit: 0
+  - name: with operations always a pipe run prints the trace
+    run: [sh, -c, '"$0" promote shop --to test --dry-run 2>"$1/err.txt" >/dev/null; echo "exit=$?"; echo "trace-lines=$(grep -c "# trace polispec" "$1/err.txt")"', "{{polispec}}", "{{scratch}}"]
+    cwd: "{{project.shop}}"
+    expect:
+      exit: 0
+      stdout_includes: ["exit=0", "trace-lines=1"]
+  - name: the operations setting is restored to auto after always
+    run: ["{{polispec}}", settings, set, polispec.verbose.operations, "auto"]
+    expect:
+      exit: 0
   - name: promote to test with --verbose streams the gates, the publish and the push
     run: ["{{polispec}}", promote, shop, --to, test, --verbose]
     expect:
@@ -74,3 +131,35 @@ steps:
     expect:
       exit: 2
       stderr_includes: ["--verbose takes text or json"]
+  - name: a traced child prints its first line at once, a heartbeat while it is silent and its last line after
+    run: [ruby, -e, 'require File.join(ARGV[0], "lib/polispec"); require File.join(ARGV[0], "lib/polispec/operator/gates"); Polispec::Trace.configure(:text, op: "probe"); Polispec::Operator::Gates.exec(["sh", "-c", "echo first; sleep 3; echo second"], chdir: Dir.pwd); Polispec::Trace.finish(0)', "{{tree}}"]
+    env: { POLISPEC_VERBOSE_HEARTBEAT: "1" }
+    timeout: 60
+    expect:
+      exit: 0
+      stderr_includes: ["| first", "still running", "| second"]
+  - name: the child stdout is a pipe while the pty setting is off
+    run: [ruby, -e, 'require File.join(ARGV[0], "lib/polispec"); require File.join(ARGV[0], "lib/polispec/operator/gates"); Polispec::Trace.configure(:text, op: "probe"); Polispec::Operator::Gates.exec(["sh", "-c", "test -t 1 && echo out-is-tty || echo out-is-pipe"], chdir: Dir.pwd); Polispec::Trace.finish(0)', "{{tree}}"]
+    expect:
+      exit: 0
+      stderr_includes: ["out-is-pipe"]
+  - name: the pty setting is turned on
+    run: ["{{polispec}}", settings, set, polispec.verbose.pty, "on"]
+    expect:
+      exit: 0
+  - name: with the pty setting on the child stdout is a terminal and its stdin is not
+    run: [ruby, -e, 'require File.join(ARGV[0], "lib/polispec"); require File.join(ARGV[0], "lib/polispec/operator/gates"); Polispec::Trace.configure(:text, op: "probe"); Polispec::Operator::Gates.exec(["sh", "-c", "test -t 1 && echo out-is-tty; test -t 0 && echo in-is-tty || echo in-is-not-tty"], chdir: Dir.pwd); Polispec::Trace.finish(0)', "{{tree}}"]
+    expect:
+      exit: 0
+      stderr_includes: ["out-is-tty", "in-is-not-tty"]
+  - name: the pty setting is restored to off
+    run: ["{{polispec}}", settings, set, polispec.verbose.pty, "off"]
+    expect:
+      exit: 0
+  - name: smoke progress lines are written to stderr when the progress variable is set
+    run: ["{{polispec}}", smoke, run, --unit, commands/version, --no-record, --out, "{{scratch}}/progress"]
+    env: { POLISPEC_PROGRESS: "1" }
+    timeout: 120
+    expect:
+      exit: 0
+      stderr_includes: ["smoke: 1 scenarios", "scenario 1/1 pass commands/version"]

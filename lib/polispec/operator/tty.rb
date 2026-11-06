@@ -83,20 +83,22 @@ module Polispec
 
       def confirm!(phrase, prompt: nil)
         Trace.step("waiting for the typed phrase on the terminal", phrase: phrase) do
-          next confirm_delegated!(phrase, prompt) if delegated?
+          Trace.hold do
+            next confirm_delegated!(phrase, prompt) if delegated?
 
-          ancestor = agent_ancestor
-          raise NotTty, "this action needs your own terminal; it was started under #{ancestor}, and an agent cannot confirm it" if ancestor && !confined?
+            ancestor = agent_ancestor
+            raise NotTty, "this action needs your own terminal; it was started under #{ancestor}, and an agent cannot confirm it" if ancestor && !confined?
 
-          tty = console
-          raise NotTty, "this action needs an interactive terminal (a TTY on stdin and a controlling console); an agent shell cannot run it" unless tty && $stdin.tty?
+            tty = console
+            raise NotTty, "this action needs an interactive terminal (a TTY on stdin and a controlling console); an agent shell cannot run it" unless tty && $stdin.tty?
 
-          tty.puts(prompt) if prompt
-          tty.write("Type exactly: #{phrase}\n> ")
-          typed = tty.gets
-          raise PhraseMismatch, "the typed phrase did not match; nothing was done" unless typed && typed.chomp == phrase
+            tty.puts(prompt) if prompt
+            tty.write("Type exactly: #{phrase}\n> ")
+            typed = tty.gets
+            raise PhraseMismatch, "the typed phrase did not match; nothing was done" unless typed && typed.chomp == phrase
 
-          true
+            true
+          end
         end
       end
 

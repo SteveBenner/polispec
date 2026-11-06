@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.57.0] - 2026-11-06
+
+### Added
+
+- `promote` and `deploy` stream their trace to stderr with no flag when stderr is a terminal, so a promotion no longer looks hung after the typed phrase. `polispec.verbose.operations` is `auto` (the default), `always`, or `off`; `--verbose` and `POLISPEC_VERBOSE` still win, and `POLISPEC_VERBOSE=0` silences one run. An agent shell and a delegate run stay silent under `auto`. A terminal promote or deploy now also writes a trace file, unless `polispec.verbose.trace` is off.
+- A trace prints `still running` after 30 seconds with no line written and every 30 seconds after, with the command, how long it has run, and how long it has been silent. It is paused while the typed phrase is awaited. `POLISPEC_VERBOSE_HEARTBEAT` sets the interval.
+- `polispec.verbose.pty`, default `off`: while a trace is on, gate, deploy, health, and after steps get a pseudo-terminal on stdout and stderr, so a program that buffers a pipe prints line by line. Stdin stays closed and no new controlling terminal is made.
+
+### Fixed
+
+- A child's output is now live, as `--verbose` documented. A `smoke run` health check printed nothing until it exited, and a polispec child's stdout was held in the pipe. While a trace is on, children get `PYTHONUNBUFFERED=1` and `POLISPEC_PROGRESS=1`; a polispec child then syncs its stdout, and `smoke run` writes one line per scenario to stderr as each finishes. With the trace off, the child's environment is unchanged.
+
+No verdict changes.
+
 ## [0.56.8] - 2026-11-06
 
 ### Fixed
