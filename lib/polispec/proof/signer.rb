@@ -7,6 +7,8 @@ module Polispec
   module Proof
     module Signer
       KEY_NAME = "producer_ed25519"
+      NAME_PATTERN = /\A[a-z0-9][a-z0-9-]{0,31}\z/.freeze
+      GENERATED_NAME_BYTES = 4
 
       module_function
 
@@ -23,8 +25,10 @@ module Polispec
         false
       end
 
-      def short_host
-        Socket.gethostname.to_s.split(".").first.to_s
+      def check_name!(name)
+        return name if NAME_PATTERN.match?(name.to_s)
+
+        raise Polispec::Error, "invalid_name: a producer name uses 1 to 32 lowercase letters, digits, and hyphens, and starts with a letter or digit"
       end
 
       def producer_id(key = key_path)
@@ -45,11 +49,12 @@ module Polispec
         { "id" => producer_id(key), "key" => public_line(key), "kind" => "host" }
       end
 
-      def generate(key = key_path)
+      def generate(key = key_path, name: SecureRandom.hex(GENERATED_NAME_BYTES))
+        check_name!(name)
         raise Polispec::Error, "key_exists: #{key} already exists" if File.exist?(key) || File.exist?("#{key}.pub")
 
         FileUtils.mkdir_p(File.dirname(key), mode: 0o700)
-        _out, err, status = Trace.capture3("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "polispec-proof@#{short_host}", "-f", key, trace: :silent)
+        _out, err, status = Trace.capture3("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "polispec-proof@#{name}", "-f", key, trace: :silent)
         raise Polispec::Error, "keygen_failed: #{err.to_s.strip}" unless status.success?
 
         trust_entry(key)

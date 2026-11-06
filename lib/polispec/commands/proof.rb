@@ -22,7 +22,7 @@ module Polispec
              polispec proof status [--ref REF] [--json]
              polispec proof verify [--ref REF]
              polispec proof except FEATURE [--target T]... --reason TEXT --owner NAME --expires DATE
-             polispec proof keygen [--json]
+             polispec proof keygen [--name NAME] [--json]
     TEXT
     VALUE_FLAGS = {
       "run" => %w[--target --out],
@@ -30,7 +30,7 @@ module Polispec
       "status" => %w[--ref],
       "verify" => %w[--ref],
       "except" => %w[--target --reason --owner --expires],
-      "keygen" => []
+      "keygen" => %w[--name]
     }.freeze
     SWITCHES = {
       "run" => [],
@@ -468,9 +468,11 @@ module Polispec
     def run_keygen(opts)
       return usage unless opts[:rest].empty?
 
+      name = opts[:values]["--name"]
+      Proof::Signer.check_name!(name) if name
       Operator::Gates.require_terminal!("proof keygen")
       Operator::Gates.confirm!("create proof key")
-      entry = Proof::Signer.generate
+      entry = name ? Proof::Signer.generate(name: name) : Proof::Signer.generate
       if opts[:switches].include?("--json")
         puts JSON.generate(entry)
       else

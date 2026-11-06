@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 require "tmpdir"
+require "securerandom"
 require "socket"
 require_relative "smoke"
 

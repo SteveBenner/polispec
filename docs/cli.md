@@ -106,7 +106,7 @@ Since 0.49.0. A repository that holds `specs/features.yml` proves each feature o
 | `proof status [--ref REF]` | Every feature and target cell as proven, stale, failing, missing, excepted or not_applicable, then the unmapped changed files | agent | reads |
 | `proof verify [--ref REF]` | Manifest schema, every proofs file's schema, chain and signatures, expired or over-long exceptions and unparsable producer keys; exit 1 on any finding | agent | reads |
 | `proof except FEATURE [--target T]... --reason TEXT --owner NAME --expires DATE` | Add an exception to `specs/features.yml`, at most 90 days out | agent | writes the manifest; the operator confirms it at `promote --to stable` as a weakening change |
-| `proof keygen` | Create the host producer key and print the `trusted_producers` entry to add | operator, on a terminal, after the typed phrase `create proof key` | writes the key under the state home |
+| `proof keygen` | Create the host producer key under a random or `--name` id, never the machine name, and print the `trusted_producers` entry to add | operator, on a terminal, after the typed phrase `create proof key` | writes the key under the state home |
 
 ## Authority and exceptions
 

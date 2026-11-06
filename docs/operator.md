@@ -292,7 +292,7 @@ The package adds the project module `specs/polispec/modules/proof.yml`, which ev
 
 ### The host key
 
-`polispec proof keygen` creates `<state home>/proof/producer_ed25519` (mode 0600, in a 0700 directory). It needs a terminal and the typed phrase `create proof key`, and prints the `trusted_producers` entry to add to `specs/features.yml`:
+`polispec proof keygen [--name NAME]` creates `<state home>/proof/producer_ed25519` (mode 0600, in a 0700 directory). The producer id is `host-<NAME>`; without `--name` it uses eight random hex characters, because the id is published in every proof record and in `specs/features.yml`, and a machine name there exposes the machine. It refuses `key_exists` while a key is at that path. It needs a terminal and the typed phrase `create proof key`, and prints the `trusted_producers` entry to add to `specs/features.yml`:
 
 ```yaml
 trusted_producers:

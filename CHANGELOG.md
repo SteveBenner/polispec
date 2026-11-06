@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.56.3] - 2026-11-06
+
+### Fixed
+
+- `polispec proof keygen` no longer names the key after the machine. The producer id is published in every proof record and in `specs/features.yml`, so a project that committed its proofs also published its host name. The id is now eight random hex characters, or the name given with the new `--name` option. A key that already exists keeps its name; to replace one, move it aside, run keygen, update `trusted_producers`, and rerun the proofs. No verdict changes.
 ## [0.56.2] - 2026-11-05
 
 ### Fixed

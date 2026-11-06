@@ -245,3 +245,35 @@ steps:
     expect:
       exit: 1
       stderr_includes: [chain_broken]
+  - name: keygen refuses a name outside the plain form before it asks for the phrase
+    run: ["{{polispec}}", proof, keygen, --name, "My.Host"]
+    env: { POLISPEC_PROOF_KEY: "{{scratch}}/refusedkey" }
+    expect:
+      exit: 1
+      stderr_includes: [invalid_name]
+  - name: keygen without a name creates a key
+    run: ["{{polispec}}", proof, keygen]
+    tty: ["create proof key"]
+    env: { POLISPEC_PROOF_KEY: "{{scratch}}/randomkey" }
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/randomkey", "{{scratch}}/randomkey.pub"]
+  - name: the key without a name carries a random id and not the machine name
+    run: [sh, -c, 'grep -qE "polispec-proof@[0-9a-f]{8}$" "$1.pub" && ! grep -qF "@$(hostname -s)" "$1.pub" && echo neutral', sh, "{{scratch}}/randomkey"]
+    expect:
+      exit: 0
+      stdout_includes: [neutral]
+  - name: keygen with a name prints that producer id
+    run: ["{{polispec}}", proof, keygen, --name, primary]
+    tty: ["create proof key"]
+    env: { POLISPEC_PROOF_KEY: "{{scratch}}/namedkey" }
+    expect:
+      exit: 0
+      stdout_includes: [host-primary]
+  - name: keygen refuses to replace a key
+    run: ["{{polispec}}", proof, keygen, --name, primary]
+    tty: ["create proof key"]
+    env: { POLISPEC_PROOF_KEY: "{{scratch}}/namedkey" }
+    expect:
+      exit: 1
+      stdout_includes: [key_exists]
