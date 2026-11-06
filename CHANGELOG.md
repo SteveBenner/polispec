@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.56.6] - 2026-11-06
+
+### Fixed
+
+- The judge smoke scenario waits for the judge to write its log line instead of checking right after the launcher answers. The check could run first and fail a test deploy, as it did for 0.56.5. No verdict changes.
+
 ## [0.56.5] - 2026-11-06
 
 ### Fixed

@@ -41,7 +41,7 @@ steps:
     run: [test, -f, "{{scratch}}/state/judge.json"]
     expect: { exit: 0 }
   - name: a second launcher call is answered and the judge logs it
-    run: [sh, -c, 'printf "%s" "$2" | "$0" pretool --harness claude >/dev/null; test -s "$1/judge.log"', "{{tree}}/bin/polispec-guard", "{{scratch}}/state", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"judge-second\"}"]
+    run: [sh, -c, 'printf "%s" "$2" | "$0" pretool --harness claude >/dev/null; i=0; while [ "$i" -lt 50 ]; do if test -s "$1/judge.log"; then exit 0; fi; i=$((i+1)); sleep 0.1; done; exit 1', "{{tree}}/bin/polispec-guard", "{{scratch}}/state", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"judge-second\"}"]
     env: { POLISPEC_BIN: "{{files}}/polispec" }
     expect: { exit: 0 }
   - name: stop sends TERM to the judge pid

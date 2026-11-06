@@ -1,6 +1,6 @@
 schema_version: 1
 name: polispec
-version: 0.56.5
+version: 0.56.6
 shell_loops:
   summary: "Since 0.56.5 a for or select clause forgets any earlier value of its variable. A for list of literal words, up to 16 combinations across a line of at most 16 KiB, is parsed once per combination and the commands are merged, so each value is judged. A list holding a glob, a brace, or a substitution, and a line over those limits, leaves the variable unresolved. An assignment whose value cannot be read, and read, mapfile, readarray, or printf -v, also forget the earlier value."
 sweep_findings:
