@@ -844,17 +844,56 @@ steps:
       harness: claude
       event: pretool
       tool: Bash
-      input: { command: "t=stable; for t in $(cat branches); do git push origin main:$t; done" }
+      input: { command: "t=main; for t in $(cat branches); do git push origin main:$t; done" }
       cwd: "{{project.shop}}"
     expect:
-      decision: allow
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
   - name: an assignment from a substitution drops the earlier value
     hook:
       harness: claude
       event: pretool
       tool: Bash
-      input: { command: "t=stable; t=$(cat branch); git push origin main:$t" }
+      input: { command: "t=main; t=$(cat branch); git push origin main:$t" }
       cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: a push to a named branch does not ask
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin main" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: a push with an unresolved target asks in a live project
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin main:$TARGET" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: a dry run with an unresolved target does not ask
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push --dry-run origin main:$TARGET" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
+  - name: a push with an unresolved target does not ask outside a live project
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "git push origin main:$TARGET" }
+      cwd: "{{scratch}}"
     expect:
       decision: allow
   - name: a write target built from literal loop values is judged at its real paths

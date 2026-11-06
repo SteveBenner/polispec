@@ -311,7 +311,8 @@ module Polispec
           remote = pos.shift
           force = flags.any? { |f| f.start_with?("--force") || f.match?(/\A-[a-zA-Z]*f[a-zA-Z]*\z/) }
           delete = flags.include?("-d") || flags.include?("--delete")
-          push_specs(inv, pos, flags).flat_map { |spec| push_actions(inv, remote, spec, force, delete) }
+          unresolved = inv.args.any? { |arg| Support.dynamic?(arg) }
+          push_specs(inv, pos, flags).flat_map { |spec| push_actions(inv, remote, spec, force, delete, unresolved) }
         end
 
         def dry_run?(flags)
@@ -349,8 +350,9 @@ module Polispec
           [Support.act("policy.edit", inv.cmd.text, "path" => inv.path, "command" => "git config")]
         end
 
-        def push_actions(inv, remote, spec, force, delete)
+        def push_actions(inv, remote, spec, force, delete, unresolved = false)
           extra = { remote: remote }
+          extra[:unresolved_target] = true if unresolved
           extra[spec.tag ? :tag : :ref] = spec.name
           extra[:source] = spec.source if spec.source && !spec.tag && spec.source != spec.name
           classes = ["git.push"]

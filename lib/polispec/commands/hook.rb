@@ -315,7 +315,7 @@ module Polispec
         sourced = calls.flat_map { |tool, data| Classify.sourced_reads(tool, data, cwd) }
         governed = baseline || relevant?(ledger, cwd, actions + sourced) || @plane["status"] == "active" || option_applies
         guarded_paths = control_gate ? ProtectedState.paths(ledger) : []
-        unparsed = control_gate ? unparsed_actions(calls, cwd) : []
+        unparsed = control_gate ? unparsed_actions(calls, cwd) + unresolved_push_actions(actions, ledger, cwd) : []
         governed ||= !unparsed.empty? || actions.any? { |action| action.env_hint["settings_change"] == true || (action.raw.is_a?(Hash) && action.raw["remote_change"]) || HarnessControls::Evaluate.guard_hit?(action, guarded_paths) }
         opaque = control_gate && governed && calls.any? { |tool, data| Classify.opaque_shell?(tool, data, cwd) }
         if control_gate && actions.empty? && governed
@@ -760,6 +760,16 @@ module Polispec
         reasons = Classify.unparsed_reasons(tool, data, cwd)
         Action.new(class: "shell.exec", env_hint: { "path" => cwd }, raw: { "unparsed" => reasons }) unless reasons.empty?
       end
+    end
+
+    def unresolved_push_actions(actions, ledger, cwd)
+      live = actions.any? do |action|
+        next false unless action.action_class == "git.push" && action.env_hint["unresolved_target"] == true
+
+        owner = Engine::Envs.owner(action, ledger, cwd)
+        owner && owner.status == "live"
+      end
+      live ? [Action.new(class: "shell.exec", env_hint: { "path" => cwd }, raw: { "unparsed" => ["push target from a variable"] })] : []
     end
 
     def unknown_action(input, cwd, calls = [], opaque = false, shaped = opaque)

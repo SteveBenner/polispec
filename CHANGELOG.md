@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.56.8] - 2026-11-06
+
+### Fixed
+
+- A `git push` that a live project owns now asks when its remote, ref, or an option cannot be read, such as `git push origin main:$TARGET`. Before this, the production branch rules could not see where it went, and the push was allowed. A dry run and a push outside a live project do not ask.
+
+### Verdict changes
+
+- `R-DEV` or `NO-RULE` to `POLISPEC-SHELL-UNPARSED`, allow to ask: a push with an unresolved target in a live project. A stricter rule such as `G-PUBLIC-PUSH` still wins. None of 516 recorded agent lines containing a push on the release host had this shape.
+
 ## [0.56.7] - 2026-11-06
 
 ### Fixed
