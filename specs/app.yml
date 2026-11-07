@@ -54,6 +54,7 @@ vision:
     pipeline: "Environments, promotion hops, gates, freezes, soak periods, deploy receipts and release directories. Built."
     composition: "Modules within modules, project and global shelves, typed parameters, nested projects, packages and the per-host catalog. Built since 0.20.0; catalog since 0.45.0."
     library: "Versioned specs imported across repositories and organisations, with a lock on exactly what was imported. Idea."
+    intelligence: "Off-by-default, local, metadata-first telemetry of every registered spec's life and every governance decision, recorded by the tellem companion plugin through bridge extensions, packaged for export, with no analysis yet. Planned, not built; see ROADMAP.md."
     proof: "Every composed rule paired with evidence that it holds: negative controls, smoke coverage, deploy receipts and the chained judgment, change and session records. Partial: coverage is proven per spec node, not per composed rule; since 0.49.0 a product's features are proven per target before stable (proof)."
   principles:
     - "Agents never write their own rules: every layer is read from a trust ref, the shelf's committed ref, the release tree, operator-only host state or a sealed source, never from a working tree an agent edits. The one exception is unsealed and deliberate: POLISPEC_GLOBAL points the shelf at a plain directory for scratch runs and smoke, and it is ignored while the plane is sealed."

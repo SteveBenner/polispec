@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Documentation only, no code: a README `Intelligence` section with `The REAL "spec story"`, three diagrams under `assets/intelligence/`, and a `ROADMAP.md` plan for spec telemetry and the decision ledger, all marked planned.
+
 ## [0.57.2] - 2026-11-07
 
 ### Fixed

@@ -2,6 +2,19 @@
 
 Planned work, not yet built. Nothing here is a commitment to a release, except where an item says so.
 
+## Intelligence: spec telemetry and the decision ledger
+
+The data layer described in the README's [Intelligence](README.md#intelligence) section. Off by default, local only, and metadata first. Planned in this order:
+
+1. **tellem public release.** tellem, the telemetry companion, gets a public release mirror, an MIT license, and environment control.
+2. **Spec inventory.** `polispec inventory`: one per-spec list across rulebooks, the shelf and ledger, the catalog and packages, and code specs and behaviors, compared with what is on disk. No per-spec list exists today; `polispec changes` records an apply by plan id only. Needs no tellem.
+3. **Opt-in and bridge, polispec side.** The `polispec.intelligence.spec_telemetry` setting, the `spec_telemetry` port with a tellem extension, `polispec intelligence`, a one-time recommendation with a disk projection, and `tool_use_id` on judgment records.
+4. **Spec story, tellem side.** Lifecycle events, git delta scan, backfill marked `inferred`, the `metadata` and `deltas` depths, `tellem specs estimate`, and redacted export, with a polispec extension as the second bridge.
+5. **Decision ledger.** `tellem decisions`, joined from judgments, transcripts, and grants, plus a watch on harness permission settings for "always allow". Plain allows stay in the judgment records as daily counts.
+6. **Web app.** The recommendation banner and an Intelligence view of the inventory, timeline, and ledger.
+
+Analysis on top of this data is deliberately not part of this work.
+
 ## Independent review follow-up
 
 The qualification work from the independent review of 0.19.1. The two P0 items are committed: polispec claims no preventive enforcement until both are done. The rest is intended.

@@ -34,6 +34,8 @@
   - [Tactics you can use today](#tactics-you-can-use-today)
   - [Where it can go](#where-it-can-go)
   - [What it cannot do](#what-it-cannot-do)
+- [Intelligence](#intelligence)
+  - [The REAL "spec story"](#the-real-spec-story)
 - [Looking after polispec itself](#looking-after-polispec-itself)
 - [Install](#install)
 - [Quick start](#quick-start)
@@ -635,6 +637,104 @@ polispec is modular, composable, and extensible, so alignment practice can grow 
 - **It aligns actions, not intentions.** A directive is advice; only a hook is a control. An agent that ignores a directive is stopped only where a rule matches what it does.
 - **It sees what a call appears to be.** A renamed binary or an interpreter running inline code is judged by its surface. Unknown non-read calls ask once the catalog's `tools/unknown` is active, which narrows that gap without closing it.
 - **Unsealed, it is a guardrail.** Without the sealed plane, a process with your rights can change settings or bypass the hook, and `advise` blocks nothing. [Honest limits](#honest-limits) lists the rest.
+
+## Intelligence
+
+Intelligence begins with data collection. Before anything can tell you what your policies are doing, something has to have written down what happened to them. polispec's first intelligence features do only that: collect, aggregate, and package metadata over time, so patterns can be studied later. There is no model in it and no scoring.
+
+> **Status: planned, not built.** Everything in this section describes work designed but not yet shipped, and [`ROADMAP.md`](ROADMAP.md) tracks it. tellem, the companion plugin this section relies on, is not public yet; publishing it is the first step. polispec's existing guard, records, and commands work without any of this.
+
+### The REAL "spec story"
+
+SpecStory made a good idea popular: save what your coding agents said, so the conversation is not lost. tellem, polispec's telemetry companion, saves those transcripts too, for Claude Code and Codex. It does not replace SpecStory's cross-agent resume, its support for other agents, its skills, or its cloud sync.
+
+But a transcript is the story of a session. The story that shapes everything your agents do is a different one: **how your specifications have changed over time, and what patterns emerge from that.** That is the real spec story. polispec and tellem exist to tell it.
+
+<p align="center">
+  <img src="assets/intelligence/spec-life-story.webp" alt="A glowing document travels along a timeline over a glass city, through five stations: created, first written in one project; changed, a rule is tightened; promoted, it starts governing live work; moved, shared across every project; deleted, retired but never forgotten. At every step: when, where, who, and why." width="100%">
+</p>
+
+#### Every spec gets a life story
+
+Once you turn it on, tellem follows every spec registered with your polispec installation: project rulebooks, the global shelf and ledger entries, catalog specs and applied packages, and code specs and behavior policies.
+
+| It answers | How |
+|---|---|
+| What specs do I have, and does disk still agree? | `polispec inventory` compares each spec at its trusted branch with what is on disk. This part is plain polispec, always available, with no telemetry. |
+| When and where was this created? | Its scope, project, and path at first sight, kept under an identity that survives moves. |
+| What changed, and how much? | Git deltas: the commit, content digests, and lines added and removed. |
+| Where did it move? | Rename detection and matching content, across directories and across repositories. |
+| When did it take effect? | Promotion, activation, and deactivation events. |
+| Who did it, and under which plan? | The actor, plan id, and plan classification when polispec made the change. |
+| When was it deleted? | The last place it lived, and whether it ever came back. |
+
+That is policy telemetry over time, in four dimensions: what each spec says, where it lives, and how both change. Turning it on backfills what git remembers, so the story does not start empty. Reconstructed rows are marked `inferred`, because git knows what changed but not who decided or why.
+
+#### The decision ledger
+
+A policy's other half is what happened when it met real work. `tellem decisions` gathers every governance decision into one ledger, mostly by joining records that already exist rather than copying them:
+
+| Decision | Where it comes from |
+|---|---|
+| polispec's allow, warn, and deny on each call | polispec's chained judgment records. Plain allows stay there and appear in the ledger as daily counts. |
+| Your answer when asked: approved or rejected | The harness transcript, joined to the judgment that asked. |
+| "Always allow" | A new watch on the harness's permission settings, because that history is recorded nowhere today. |
+| Allow-once grants and exceptions | polispec's own records. |
+| Blocks by a harness's own classifier | The harness transcript. |
+
+Each row says how it was joined (`exact`, `approximate`, or `none`). When an answer cannot be established, the ledger says `unknown` rather than guessing.
+
+#### Two plugins, one story
+
+<p align="center">
+  <img src="assets/intelligence/two-plugins.webp" alt="Two glass towers joined by two bridges. polispec, the guard, decides and records verdicts. tellem, the recorder, tracks and packages history. The upper bridge is the tellem extension that ships with polispec; the lower bridge is the polispec extension that ships with tellem. Either bridge is enough, and with both, nothing is counted twice." width="100%">
+</p>
+
+polispec decides; tellem remembers. Each ships a bridge to the other as an rplugin extension, so the pair works whichever one you upgraded last:
+
+| On your system | What happens |
+|---|---|
+| polispec alone | The guard works as always. `polispec inventory` works. Spec telemetry stays off and tells you to install tellem. |
+| tellem alone | Agent telemetry works as always. There are no specs to follow. |
+| Both, with polispec's bridge | Each change is pushed to tellem as it happens. |
+| Both, with tellem's bridge | tellem pulls changes on its next scan, and also catches edits made outside polispec. |
+| Both, with both bridges | Immediate and complete. Events have content-derived ids, so nothing is counted twice. |
+
+Neither plugin reads the other's files, and telemetry can never change a verdict: it enters no rule, gate, or policy digest.
+
+<p align="center">
+  <img src="assets/intelligence/change-to-pattern.webp" alt="Four sources (spec files on disk, Git history, polispec plans and verdicts, and your allow and deny answers) flow into a glass vault labelled tellem, holding the spec story and the decision ledger. It flows out to an export bundle, redacted by default, and to patterns over time, later intelligence. Off by default, metadata first, stays on your machine." width="100%">
+</p>
+
+#### Off by default, and worth turning on
+
+Spec telemetry is off until you say yes. polispec will recommend it strongly, once, at install and in the web app, with a projection of what it would cost on your disk, because this is history that cannot be fully rebuilt later: git keeps what changed, but not who decided, under which plan, or what you answered at the prompt. If you say no, it drops to one quiet line in `polispec doctor` and never asks again.
+
+```sh
+polispec intelligence estimate   # the projection, from your own churn
+polispec intelligence on         # needs tellem and your yes
+tellem specs story <spec>        # one spec's whole life
+tellem decisions list --since 7d
+tellem specs export              # a redacted local bundle
+```
+
+Records come in two depths. `metadata` is the default: digests, line counts, and git references, with no spec text. `deltas` also keeps compressed patches, so a spec's history survives a rewritten or deleted repository.
+
+| Projected disk use (estimates) | `metadata` | `metadata` plus `deltas` |
+|---|---|---|
+| A small setup: 1 to 3 projects, about one change a week | about 1 MB a year | about 2 MB a year |
+| A very busy workstation: 13 projects plus a shared shelf and code spec pack | about 2 MB once, then about 19 MB a year | about 45 MB a year before compression |
+| The same workstation over five years | about 95 MB | about 220 MB before compression |
+
+These figures come from one workstation's measured 30-day churn, which included onboarding, and from assumed record sizes, so treat them as a rough upper guide. For scale, polispec's per-call judgment records on that workstation run about 3 GB a year. `polispec intelligence estimate` will replace all of this with your own numbers.
+
+#### What it will not do
+
+- **It sends nothing anywhere.** No listener, no upload, no remote destination. An export only writes a local file, redacted by default: paths are relative, project ids are hashed, and there is no hostname, patch text, or permission rule text unless you confirm `--full`.
+- **It does not analyze yet.** This is the data layer. What patterns emerge, and what intelligence to build on them, comes later and on top.
+- **It records no spec text at the default depth.** The event log holds only metadata. The ledger holds no raw commands from your calls; the one exception is the text of a permission rule you granted, such as a command pattern, and exports leave that out by default.
+- **It cannot see what never touched git or polispec.** A spec written and removed between scans leaves no trace, and an `inferred` row has no actor or reason.
+- **Claude Code comes first.** Codex's approval answers are unverified and will be reported that way until a real session proves them.
 
 ## Looking after polispec itself
 
