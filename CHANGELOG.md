@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.57.2] - 2026-11-07
+
+### Fixed
+
+- `polispec exposure scan` let a push to a public remote publish development telemetry. A force-added `.tellem/scope.json`, a `.specstory` history, or a `DECISIONS.md` passed whenever the configured audit command did not look at paths, so `match.push_unscanned` saw a clean record and the push went through. The scan now lists every path each commit of the range adds or changes, with `git log --no-renames --name-only --diff-filter=AMT`, before the audit command runs. It refuses, exit 1 and no record, when a path is named in `Predicates::DEV_HISTORY_NAMES` (`DECISIONS.md`, `TOKENS.jsonl`) or lies under a directory in `Predicates::DEV_HISTORY_DIRS` (`.rproject`, `.specstory`, `.tellem`). A path a later commit removes still counts. A range it cannot list, such as a remote tip that is not in the clone, now fails instead of passing. `--json` reports status `dev_history` with each path and reason. `smoke/scenarios/exposure-dev-history.yml` runs it against a bare remote: against 0.57.1 the four refusal steps exit 0, and against this release they exit 1.
+- `match.public_path` did not know `.tellem`. `BLUEPRINT_DIRS` and `BLUEPRINT_NAMES` are now built from the development-history lists, so a write under `.tellem` in a public repository that git does not ignore matches like `.specstory`.
+
+### Added
+
+- `specs/app.yml` lists the `exposure` command, which it had left out since 0.53.0.
+
 ## [0.57.1] - 2026-11-06
 
 ### Fixed

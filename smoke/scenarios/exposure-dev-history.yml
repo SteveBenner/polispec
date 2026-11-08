@@ -1,0 +1,53 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/exposure
+summary: an exposure scan refuses a range that adds development history to a public remote, in any commit of the range, before the audit command runs and without recording an attestation, and passes once the history is gone
+fixture:
+  global: example
+steps:
+  - name: a repository with a bare remote and one pushed commit is created
+    run: [sh, -c, 'git init -q --bare -b main "$2" && mkdir "$1" && cd "$1" && git init -q -b main && echo a > a && git add a && git -c user.email=a@b -c user.name=n commit -q -m one && git remote add origin "$2" && git push -q origin main', sh, "{{scratch}}/dev", "{{scratch}}/dev-remote.git"]
+    expect:
+      exit: 0
+  - name: the audit command is set to a command that exits clean
+    run: ["{{polispec}}", settings, set, polispec.exposure.audit_command, "true"]
+    expect:
+      exit: 0
+  - name: a commit force-adds a tellem scope despite the ignore
+    run: [sh, -c, 'cd "$1" && echo .tellem/ > .gitignore && mkdir .tellem && echo {} > .tellem/scope.json && git add .gitignore && git add -f .tellem/scope.json && git -c user.email=a@b -c user.name=n commit -q -m telemetry', sh, "{{scratch}}/dev"]
+    expect:
+      exit: 0
+  - name: the scan refuses the range, names the path, and records nothing
+    run: ["{{polispec}}", exposure, scan, "{{scratch}}/dev"]
+    expect:
+      exit: 1
+      stderr_includes: ["development history", ".tellem/scope.json: under .tellem, development telemetry", "nothing was recorded"]
+      files_absent: ["{{scratch}}/state/exposure.key"]
+  - name: a later commit removes the scope, but the range still carries it
+    run: [sh, -c, 'cd "$1" && git rm -q -r --cached .tellem && git -c user.email=a@b -c user.name=n commit -q -m untrack', sh, "{{scratch}}/dev"]
+    expect:
+      exit: 0
+  - name: the scan still refuses, because an intermediate commit would publish it
+    run: ["{{polispec}}", exposure, scan, "{{scratch}}/dev", --json]
+    expect:
+      exit: 1
+      stdout_includes: ["\"status\":\"dev_history\"", "\"path\":\".tellem/scope.json\""]
+  - name: the unpushed commits are replaced by one that carries no history
+    run: [sh, -c, 'cd "$1" && git reset -q --soft origin/main && git -c user.email=a@b -c user.name=n commit -q -m ignore', sh, "{{scratch}}/dev"]
+    expect:
+      exit: 0
+  - name: the scan passes and records an attestation
+    run: ["{{polispec}}", exposure, scan, "{{scratch}}/dev", --json]
+    expect:
+      exit: 0
+      stdout_includes: ["\"status\":\"clean\""]
+      files_exist: ["{{scratch}}/state/exposure.key"]
+  - name: a first push of a repository whose root commit holds a decision log is refused
+    run: [sh, -c, 'git init -q --bare -b main "$2" && mkdir "$1" && cd "$1" && git init -q -b main && echo d > DECISIONS.md && mkdir -p docs/.specstory && echo s > docs/.specstory/h.md && git add -A && git -c user.email=a@b -c user.name=n commit -q -m root && git remote add origin "$2" && "$3" exposure scan "$1"', sh, "{{scratch}}/fresh", "{{scratch}}/fresh-remote.git", "{{polispec}}"]
+    expect:
+      exit: 1
+      stderr_includes: ["DECISIONS.md: a development record (DECISIONS.md)", "docs/.specstory/h.md: under .specstory, development telemetry"]
+  - name: a remote tip missing from the clone fails the scan instead of skipping the check
+    run: [sh, -c, 'git clone -q "$2" "$3" && cd "$3" && echo z > z && git add z && git -c user.email=a@b -c user.name=n commit -q -m ahead && git push -q origin main && cd "$1" && "$4" exposure scan "$1"', sh, "{{scratch}}/dev", "{{scratch}}/dev-remote.git", "{{scratch}}/other", "{{polispec}}"]
+    expect:
+      exit: 1
+      stderr_includes: ["could not be listed", "nothing was recorded"]

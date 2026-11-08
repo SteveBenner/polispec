@@ -1,6 +1,6 @@
 schema_version: 1
 name: polispec
-version: 0.57.1
+version: 0.57.2
 unresolved_push:
   summary: "Since 0.56.8 a git push that a live project owns, with a remote, ref, or option the parser cannot read, asks with POLISPEC-SHELL-UNPARSED and the reason push target from a variable. A dry run and a push outside a live project do not ask."
 shell_loops:
@@ -298,6 +298,7 @@ commands:
   - { name: manifest, status: built, usage: "polispec manifest <id> [--json] [--write] | index [--json] [--publish|--unpublish] | badge <id>", note: "since 0.35.0; see the manifest section. --write commits polispec.manifest.json and .polispec/badge.svg on main; badge prints the SVG; index --publish needs a TTY." }
   - { name: register, status: built, usage: "polispec register <path> [--id ID] [--kind software|directory|system] [--description TEXT] [--dry-run] [--confirm PLAN_ID] [--json] | unregister <id> [--dry-run] [--confirm PLAN_ID] [--json]", note: "since 0.35.0; see the registration section. Plans and applies the ledger target." }
   - { name: changes, status: built, usage: "polispec changes list [--since 24h] [--json] | show <id> [--json] | await <id> [--timeout 600] [--active 1h] [--json] | verify [--json]", note: "since 0.35.0; see the effect section." }
+  - { name: exposure, status: built, usage: "polispec exposure scan [<repo-dir>] [--remote R] [--ref REF] [--source SRC] [--json]", note: "since 0.53.0; see the exposure line. Since 0.57.2 the scan first lists every path each commit of the range adds or changes and refuses, exit 1 with status dev_history and no record, when one is development history: Predicates::DEV_HISTORY_NAMES (DECISIONS.md, TOKENS.jsonl) or a directory in Predicates::DEV_HISTORY_DIRS (.rproject, .specstory, .tellem). A range it cannot list, such as a remote tip missing from the clone, fails without a record." }
   - { name: sessions, status: built, usage: "polispec sessions list [--active 1h] [--json]", note: "since 0.35.0; see the effect section." }
   - { name: editions, status: built, usage: "polispec editions [--check] [--json]", note: "since 0.35.0: prints specs/editions.yml for the running release; --check exits 1 when a feature gated by Editions.allowed? has no registry row or a row names code that does not exist." }
   - { name: author, status: built, usage: "polispec author draft <policy|module|package|environments|roster|global|spec|description> --intent TEXT [--for PROJECT] [--adapter ID] [--json] | adapters [--json]", note: "since 0.35.0; see the author section. Prints a validated draft and its plan; writes nothing." }

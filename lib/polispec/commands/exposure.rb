@@ -12,6 +12,7 @@ module Polispec
     AUDIT_TIMEOUT = 600
     KILL_GRACE = 5
     LS_REMOTE_TIMEOUT = 30
+    HISTORY_TIMEOUT = 60
     VALUE_FLAGS = %w[--remote --ref --source].freeze
 
     def self.run(args)
@@ -88,8 +89,39 @@ module Polispec
       tip = remote_tip(repo, url, ref)
       return fail_with("the remote #{remote_key} could not be read for #{ref}; a scan needs the remote tip and nothing was recorded", "error") if tip.nil?
 
+      found = dev_history(repo, tip, to)
+      return fail_with("the commits from #{tip.empty? ? 'the root' : tip[0, 12]} to #{to[0, 12]} could not be listed; fetch #{Visibility.remote_name(repo, options[:remote])} so the remote tip is in this clone, then scan again; nothing was recorded", "error") if found.nil?
+      return blocked(found) unless found.empty?
+
       from = tip.empty? ? Exposure.empty_tree(repo) : tip
       run_audit(repo, url, remote_key, ref, from, to, [resolved, *argv.drop(1)], tip)
+    end
+
+    def dev_history(repo, tip, to)
+      Thread.current[:polispec_deadline] = Predicates.monotonic + HISTORY_TIMEOUT + 1
+      range = tip.empty? ? to : "#{tip}..#{to}"
+      out, status, = Predicates.capture(GitSafe.argv(repo, "log", "--no-renames", "--name-only", "--diff-filter=AMT", "--format=", "-z", range, "--"), env: GitSafe.env, timeout: HISTORY_TIMEOUT)
+      return nil unless status.success?
+
+      out.split("\0").map { |path| path.delete_prefix("\n") }.reject(&:empty?).uniq.filter_map do |path|
+        reason = Predicates.dev_history_reason(path)
+        [path, reason] if reason
+      end
+    rescue Predicates::Expired
+      nil
+    ensure
+      Thread.current[:polispec_deadline] = nil
+    end
+
+    def blocked(found)
+      message = "the commits add development history, which never goes to a public remote; remove it from every unpushed commit and scan again; nothing was recorded"
+      if @json
+        puts JSON.generate("status" => "dev_history", "error" => message, "paths" => found.map { |path, reason| { "path" => path, "reason" => reason } })
+      else
+        warn "polispec: #{message}"
+        found.each { |path, reason| warn "  #{path}: #{reason}" }
+      end
+      1
     end
 
     def remote_tip(repo, url, ref)

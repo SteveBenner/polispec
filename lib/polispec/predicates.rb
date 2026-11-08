@@ -17,8 +17,10 @@ module Polispec
     SUPERVISOR_TIMEOUT = 1.0
     STALE_FETCH = 3600
     ZERO = /\A0+\z/.freeze
-    BLUEPRINT_NAMES = %w[*.impl.yml DECISIONS.md TOKENS.jsonl WIP.md NOTES.md].freeze
-    BLUEPRINT_DIRS = %w[.rproject .scratch .specstory].freeze
+    DEV_HISTORY_NAMES = %w[DECISIONS.md TOKENS.jsonl].freeze
+    DEV_HISTORY_DIRS = %w[.rproject .specstory .tellem].freeze
+    BLUEPRINT_NAMES = (%w[*.impl.yml] + DEV_HISTORY_NAMES + %w[WIP.md NOTES.md]).freeze
+    BLUEPRINT_DIRS = (DEV_HISTORY_DIRS + %w[.scratch]).freeze
 
     Result = Struct.new(:match, :note, :finding)
 
@@ -611,6 +613,14 @@ module Polispec
 
       dir = (segments[0...-1] & BLUEPRINT_DIRS).first
       dir ? "under #{dir}, a working directory" : nil
+    end
+
+    def dev_history_reason(relative)
+      segments = relative.split("/")
+      return "a development record (#{segments.last})" if DEV_HISTORY_NAMES.include?(segments.last)
+
+      dir = (segments[0...-1] & DEV_HISTORY_DIRS).first
+      dir ? "under #{dir}, development telemetry" : nil
     end
 
     def check_push_unscanned(action, _ctx)
