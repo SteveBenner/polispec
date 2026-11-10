@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Documentation only, no code: a README `Intelligence` section with `The REAL "spec story"`, three diagrams under `assets/intelligence/`, and a `ROADMAP.md` plan for spec telemetry and the decision ledger, all marked planned.
 
+## [0.58.0] - 2026-11-10
+
+### Added
+
+- A `kind: skill` surface in a `polispec.behavior/v2` document may carry an `invoke` block (`name`, `summary`, `intents`, and optional `excludes`, `triggers`, `scope`, `preloaded` and `trigger_sentence`) that states when the skill is loaded. Compile refuses `invoke` on any other kind, a repeated `name`, a `name` that is not the basename of the target's directory, an `excludes` that names an unknown skill or the skill itself, a condition outside `^(always|(task|event|path|tool|message|space|slice|harness):.+)$`, two skills with the same normalised intent, two intents of different skills whose token sets have a Jaccard similarity of 0.8 or more unless one skill excludes the other, and a generated description over 1024 characters. The checks live in `lib/polispec/skill_invoke.rb` and name the surface.
+- The `{{frontmatter}}` placeholder renders `---`, `name:`, `description:` and `---` for a skill surface with `invoke`, with the description built from the summary, the intents, the trigger sentence when `triggers` is not empty, and one "Not for" clause per exclude. A skill surface with `invoke` must start its template with `{{frontmatter}}`, use it once, and carry no `---` block of its own; `{{frontmatter}}` is refused on a surface without `invoke`.
+
+No verdict changes. A behavior document with no `invoke` block compiles to the same bytes as under 0.57.2.
+
 ## [0.57.2] - 2026-11-07
 
 ### Fixed

@@ -1,3 +1,5 @@
+require_relative "skill_invoke"
+
 module Polispec
   module Behavior
     MAX_BYTES = 2 * 1024 * 1024
@@ -112,6 +114,7 @@ module Polispec
           errors << Schema::Error.new("#{pointer}/refs/#{index}", "unknown directive or message #{ref}") unless known.key?(ref) || messages.key?(ref)
         end
       end
+      errors.concat(SkillInvoke.errors(data))
       seen = {}
       data.fetch("frames", []).each_with_index do |frame, index|
         errors << Schema::Error.new("/frames/#{index}/id", "duplicate id #{frame['id']}") if seen[frame["id"]]

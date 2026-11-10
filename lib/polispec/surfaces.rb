@@ -3,11 +3,12 @@
 
 require "digest"
 require_relative "agents_render"
+require_relative "skill_invoke"
 
 module Polispec
   module Surfaces
     PLACEHOLDER = /\{\{([^{}]*)\}\}/.freeze
-    PLAIN = %w[rows frames controls].freeze
+    PLAIN = %w[rows frames controls frontmatter].freeze
     PREFIXED = %w[row body message].freeze
     STUB_ALLOWED = %w[rows row message].freeze
     MIN_TOKENS = 8
@@ -57,6 +58,7 @@ module Polispec
       return locale(compiled, spec) if spec["kind"] == "locale"
 
       template = spec["template"] ? read(root, spec["template"], "template of #{surface_id}") : "{{rows}}\n"
+      SkillInvoke.check_template(surface_id, spec, template)
       pieces = template.scan(PLACEHOLDER).flatten.map { |inner| inner.strip.split(":", 2) }
       pieces.each { |name, argument| check_placeholder(surface_id, spec, entries, name, argument) }
       template.gsub(PLACEHOLDER) do
@@ -100,6 +102,7 @@ module Polispec
       when "rows" then rows(compiled, entries).join("\n")
       when "frames" then frames(compiled).join("\n")
       when "controls" then controls(compiled).join("\n")
+      when "frontmatter" then SkillInvoke.frontmatter(surface(compiled, surface_id).fetch("invoke"))
       when "row" then entries.find { |entry| entry_matches?(entry, "row", argument) }.fetch("row")
       when "message" then entries.find { |entry| entry_matches?(entry, "message", argument) }.fetch("text")
       else body(entries.find { |entry| entry_matches?(entry, "body", argument) }.fetch("directive"), root)
