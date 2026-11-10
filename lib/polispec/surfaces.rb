@@ -7,7 +7,7 @@ require_relative "skill_invoke"
 
 module Polispec
   module Surfaces
-    PLACEHOLDER = /\{\{([^{}]*)\}\}/.freeze
+    PLACEHOLDER = /\{\{(\s*[A-Za-z_][A-Za-z0-9_]*(?::[^\s{}]+)?\s*)\}\}/.freeze
     PLAIN = %w[rows frames controls frontmatter].freeze
     PREFIXED = %w[row body message].freeze
     STUB_ALLOWED = %w[rows row message].freeze
