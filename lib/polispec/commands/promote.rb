@@ -72,7 +72,11 @@ module Polispec
         result["gates"].each do |gate|
           puts "  gate #{gate['id']}: #{gate['result']} (#{gate['duration_ms']} ms)"
           puts "    passed on a second run; changed during the first: #{gate['rerun'].join('; ')}" if gate["rerun"]
-          Array(gate["findings"]).each { |finding| puts "    proof: #{Polispec::Proof::Gate.describe(finding)}" }
+          if gate["id"] == Polispec::Smoke::Current::GATE_ID
+            puts "    WARNING: no smoke entry for #{gate['count']} changed files since #{gate['since']}"
+          else
+            Array(gate["findings"]).each { |finding| puts "    proof: #{Polispec::Proof::Gate.describe(finding)}" }
+          end
         end
         if result["dry_run"] && result["proof_weakening"]
           puts "  proof changes that weaken the gate:"

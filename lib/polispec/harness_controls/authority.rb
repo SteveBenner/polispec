@@ -29,7 +29,7 @@ module Polispec
       MAX_PROC_BYTES = 65_536
       ALLOWED_ROOTS = %w[ledger.yml settings.json controls global code_specs catalog].freeze
       ASSET_IMAGE = %r{\Aassets/.+\.(?:png|jpe?g|gif|svg|webp|ico)\z}i
-      SMOKE_LEDGER = "smoke.yml"
+      SMOKE_LEDGERS = %w[smoke.yml SMOKE-TESTS.md].freeze
       IGNORED_ENV = %w[
         POLISPEC_ROOT POLISPEC_LEDGER POLISPEC_EDITION POLISPEC_RUNTIME POLISPEC_SOURCE
         RPLUGIN_HOME RUBYLIB RUBYOPT GEM_HOME GEM_PATH BUNDLE_GEMFILE BUNDLE_PATH
@@ -669,7 +669,7 @@ module Polispec
       private_class_method :bundle_path?
 
       def runtime_path?(path)
-        !path.match?(ASSET_IMAGE) && path != SMOKE_LEDGER && !path.start_with?("proofs/")
+        !path.match?(ASSET_IMAGE) && !SMOKE_LEDGERS.include?(path) && !path.start_with?("proofs/")
       end
       private_class_method :runtime_path?
 

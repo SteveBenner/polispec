@@ -1,0 +1,69 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/promote, deploy
+summary: promote to test adds a non-failing smoke_current warn result and prints a WARNING line when the range from the test tip has changed files and no smoke ledger entry or proof record, the polispec.smoke.promote_warn kill switch removes it, and a recorded smoke entry inside the range silences it
+fixture:
+  global: example
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+      files:
+        "lib/app.rb": "puts 1\n"
+        "VERSION": "0.1.0\n"
+steps:
+  - name: publish stable and bump main to 0.2.0
+    run: [sh, -c, 'sed -i "s/run: polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml/run: \"true\"/" specs/polispec/environments.yml && git add specs/polispec/environments.yml && git commit -q -m health -- specs/polispec/environments.yml && git push -q origin main main:stable && git fetch -q origin && git branch -f stable origin/stable && echo 0.2.0 > VERSION && git add VERSION && git commit -q -m bump -- VERSION && git push -q origin main && git rev-parse main stable']
+    cwd: "{{project.shop}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    parity: ignore
+    expect:
+      exit: 0
+  - name: a dry run warns that no smoke entry covers the range and still exits 0
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run]
+    expect:
+      exit: 0
+      stdout_includes: ["dry run: shop to test at ", "gate smoke_current: warn", "WARNING: no smoke entry for "]
+  - name: the json result carries smoke_current with the changed paths
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run, --json]
+    expect:
+      exit: 0
+      stdout_includes: ['"id":"smoke_current"', '"result":"warn"', '"kind":"unsmoked_file"', '"path":"VERSION"']
+  - name: the kill switch removes the gate result
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run]
+    env: { RPLUGIN_POLISPEC_POLISPEC_SMOKE_PROMOTE_WARN: "off" }
+    expect:
+      exit: 0
+      stdout_includes: ["dry run: shop to test at "]
+      stdout_excludes: ["smoke_current", "WARNING"]
+  - name: the promotion lands despite the warning
+    run: ["{{polispec}}", promote, shop, --to, test]
+    expect:
+      exit: 0
+      stdout_includes: ["promoted: shop to test at ", "gate smoke_current: warn", "WARNING: no smoke entry for "]
+  - name: a change lands on main with a version bump
+    run: [sh, -c, 'echo "puts 2" > lib/app.rb && echo 0.2.1 > VERSION && git add lib/app.rb VERSION && git commit -q -m change -- lib/app.rb VERSION && git push -q origin main && git rev-parse HEAD']
+    cwd: "{{project.shop}}"
+    parity: ignore
+    expect:
+      exit: 0
+  - name: the range from the test tip names exactly the two changed files
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run]
+    expect:
+      exit: 0
+      stdout_includes: ["WARNING: no smoke entry for 2 changed files since "]
+  - name: a smoke entry for the change is recorded and committed
+    run: [sh, -c, '"$0" smoke record --feature shop-change --verdict pass --summary "app change runs" --runner human >/dev/null && git add SMOKE-TESTS.md && git commit -q -m smoke -- SMOKE-TESTS.md && git push -q origin main && echo recorded', "{{polispec}}"]
+    cwd: "{{project.shop}}"
+    env: { POLISPEC_SMOKE: "" }
+    parity: ignore
+    expect:
+      exit: 0
+      stdout_includes: ["recorded"]
+  - name: the entry inside the range silences the warning
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run]
+    expect:
+      exit: 0
+      stdout_includes: ["dry run: shop to test at "]
+      stdout_excludes: ["smoke_current", "WARNING"]

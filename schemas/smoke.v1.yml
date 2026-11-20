@@ -13,9 +13,30 @@ $defs:
   sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
   nullable_string:
     type: [string, "null"]
+  proves_spec:
+    type: object
+    additionalProperties: false
+    required: [spec, at, spec_digest, at_digest]
+    properties:
+      spec: { type: string, minLength: 1 }
+      at: { type: string }
+      spec_digest: { $ref: "#/$defs/sha256" }
+      at_digest: { $ref: "#/$defs/sha256" }
+  proves_feature:
+    type: object
+    additionalProperties: false
+    required: [feature]
+    properties:
+      feature: { type: string, pattern: "^[a-z0-9][a-z0-9._-]*$" }
   entry:
     type: object
     additionalProperties: false
+    anyOf:
+      - properties:
+          verdict: { enum: [pass, fail, partial, blocked, inconclusive] }
+      - required: [reason]
+        properties:
+          verdict: { const: unsmokable }
     required: [id, recorded_at, proves, verdict, summary, steps, evidence, runner, runtime, target, prev, digest]
     properties:
       id: { type: string, pattern: "^smk_[0-9a-f]{12}$" }
@@ -23,15 +44,11 @@ $defs:
       started_at: { type: string, minLength: 1 }
       finished_at: { type: string, minLength: 1 }
       proves:
-        type: object
-        additionalProperties: false
-        required: [spec, at, spec_digest, at_digest]
-        properties:
-          spec: { type: string, minLength: 1 }
-          at: { type: string }
-          spec_digest: { $ref: "#/$defs/sha256" }
-          at_digest: { $ref: "#/$defs/sha256" }
-      verdict: { enum: [pass, fail, partial, blocked, inconclusive] }
+        oneOf:
+          - { $ref: "#/$defs/proves_spec" }
+          - { $ref: "#/$defs/proves_feature" }
+      verdict: { enum: [pass, fail, partial, blocked, inconclusive, unsmokable] }
+      reason: { type: string, minLength: 1 }
       summary: { type: string, minLength: 1 }
       steps:
         type: array

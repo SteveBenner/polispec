@@ -1,0 +1,109 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/smoke migrate
+summary: smoke migrate moves a chained smoke.yml into SMOKE-TESTS.md with every digest unchanged, previews with --dry-run, removes smoke.yml after a clean verify unless --keep, and refuses a target that already holds entries or a source that does not verify
+fixture:
+  projects:
+    - id: demo
+      variant: service
+      serves: none
+      files:
+        "specs/demo.yml": "items:\n  - name: alpha\n    note: first\n  - name: beta\n    note: second\n"
+steps:
+  - name: record alpha into a legacy smoke.yml
+    run: ["{{polispec}}", smoke, record, --spec, specs/demo.yml, --at, items/alpha, --verdict, pass, --summary, "alpha works", --runner, human]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "{{project.demo}}/smoke.yml" }
+    parity: ignore
+    expect:
+      exit: 0
+      files_exist: ["{{project.demo}}/smoke.yml"]
+  - name: record beta into the same chain
+    run: ["{{polispec}}", smoke, record, --spec, specs/demo.yml, --at, items/beta, --verdict, fail, --summary, "beta broke", --runner, human]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "{{project.demo}}/smoke.yml" }
+    parity: ignore
+    expect:
+      exit: 0
+  - name: keep the digests and a copy of the legacy file
+    run: [sh, -c, 'grep "^  digest:" smoke.yml > "$1/before.txt" && cp smoke.yml "$1/legacy.yml" && wc -l < "$1/before.txt"', sh, "{{scratch}}"]
+    cwd: "{{project.demo}}"
+    expect:
+      exit: 0
+      stdout_includes: ["2"]
+  - name: a dry run reports the move and writes nothing
+    run: ["{{polispec}}", smoke, migrate, --dry-run]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    expect:
+      exit: 0
+      stdout_includes: ["smoke: would move 2 entries from smoke.yml to SMOKE-TESTS.md"]
+      files_absent: ["{{project.demo}}/SMOKE-TESTS.md"]
+      files_exist: ["{{project.demo}}/smoke.yml"]
+  - name: the migration moves both entries and removes smoke.yml
+    run: ["{{polispec}}", smoke, migrate, --json]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    expect:
+      exit: 0
+      json: { from: smoke.yml, to: SMOKE-TESTS.md, entries: 2, dry_run: false, removed: true }
+      files_exist: ["{{project.demo}}/SMOKE-TESTS.md"]
+      files_absent: ["{{project.demo}}/smoke.yml"]
+  - name: every digest is unchanged
+    run: [sh, -c, 'grep "^  digest:" SMOKE-TESTS.md | cmp - "$1/before.txt" && echo digests-identical', sh, "{{scratch}}"]
+    cwd: "{{project.demo}}"
+    expect:
+      exit: 0
+      stdout_includes: ["digests-identical"]
+  - name: verify passes on the migrated ledger
+    run: ["{{polispec}}", smoke, verify, --json]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    expect:
+      exit: 0
+      json: { ledger: SMOKE-TESTS.md, entries: 2, findings: [] }
+  - name: migrating again finds no smoke.yml
+    run: ["{{polispec}}", smoke, migrate]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    expect:
+      exit: 1
+      stderr_includes: ["smoke.yml does not exist"]
+  - name: a target that already holds entries is refused and smoke.yml stays
+    run: [cp, "{{scratch}}/legacy.yml", "{{project.demo}}/smoke.yml"]
+    expect:
+      exit: 0
+  - name: the refusal names the target
+    run: ["{{polispec}}", smoke, migrate]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    expect:
+      exit: 1
+      stderr_includes: ["SMOKE-TESTS.md already holds entries; nothing written"]
+      files_exist: ["{{project.demo}}/smoke.yml"]
+  - name: a source that was edited by hand is refused and nothing is written
+    run: [sh, -c, 'rm -f SMOKE-TESTS.md && sed -i "s/alpha works/alpha was edited/" smoke.yml']
+    cwd: "{{project.demo}}"
+    expect:
+      exit: 0
+      files_absent: ["{{project.demo}}/SMOKE-TESTS.md"]
+  - name: the migration refuses the tampered source
+    run: ["{{polispec}}", smoke, migrate]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    expect:
+      exit: 1
+      stderr_includes: ["smoke.yml does not verify (digest_mismatch); nothing written"]
+      files_absent: ["{{project.demo}}/SMOKE-TESTS.md"]
+      files_exist: ["{{project.demo}}/smoke.yml"]
+  - name: restore the legacy file
+    run: [cp, "{{scratch}}/legacy.yml", "{{project.demo}}/smoke.yml"]
+    expect:
+      exit: 0
+  - name: with --keep the legacy file stays beside the new one
+    run: ["{{polispec}}", smoke, migrate, --keep, --json]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    expect:
+      exit: 0
+      json: { entries: 2, removed: false }
+      files_exist: ["{{project.demo}}/SMOKE-TESTS.md", "{{project.demo}}/smoke.yml"]

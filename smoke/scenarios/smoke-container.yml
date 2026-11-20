@@ -1,0 +1,135 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/smoke
+summary: smoke record writes SMOKE-TESTS.md by default with a summary table and one fenced yaml ledger and reads it back, a feature subject and a spec subject share the ledger, unsmokable needs a reason, a missing file reads as empty, a markdown file without a ledger block is an error, and a hand edit fails verify
+fixture:
+  projects:
+    - id: demo
+      variant: service
+      serves: none
+      files:
+        "specs/demo.yml": "items:\n  - name: alpha\n    note: first\n"
+steps:
+  - name: a feature pass is recorded into SMOKE-TESTS.md at the repository root
+    run: ["{{polispec}}", smoke, record, --feature, demo, --verdict, pass, --summary, "demo works", --runner, human, --json]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    parity: ignore
+    expect:
+      exit: 0
+      json: { verdict: pass, proves: { feature: demo }, prev: null }
+      files_exist: ["{{project.demo}}/SMOKE-TESTS.md"]
+      files_absent: ["{{project.demo}}/smoke.yml"]
+  - name: the file carries the summary table and the ledger heading
+    run: [sh, -c, 'grep -q "^# Smoke tests$" SMOKE-TESTS.md && grep -q "^| demo | pass | " SMOKE-TESTS.md && grep -q "^## Ledger$" SMOKE-TESTS.md && grep -q "^schema: polispec.smoke/v1$" SMOKE-TESTS.md && echo layout-ok']
+    cwd: "{{project.demo}}"
+    expect:
+      exit: 0
+      stdout_includes: ["layout-ok"]
+  - name: unsmokable without a reason is refused and writes nothing
+    run: ["{{polispec}}", smoke, record, --feature, demo, --verdict, unsmokable, --summary, "prose only"]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    expect:
+      exit: 1
+      stderr_includes: ["unsmokable needs --reason TEXT"]
+  - name: a reason on a verdict that is not unsmokable is refused
+    run: ["{{polispec}}", smoke, record, --feature, demo, --verdict, pass, --reason, why, --summary, "demo works"]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    expect:
+      exit: 1
+      stderr_includes: ["--reason applies only to the unsmokable verdict"]
+  - name: a feature slug outside the pattern is refused
+    run: ["{{polispec}}", smoke, record, --feature, "Bad Slug", --verdict, pass, --summary, "x"]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    expect:
+      exit: 1
+      stderr_includes: ["feature must match"]
+  - name: a record needs exactly one of spec and feature
+    run: ["{{polispec}}", smoke, record, --feature, demo, --spec, specs/demo.yml, --verdict, pass, --summary, "x"]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    expect:
+      exit: 2
+      stderr_includes: ["usage: polispec smoke record"]
+  - name: unsmokable with a reason is written
+    run: ["{{polispec}}", smoke, record, --feature, demo, --verdict, unsmokable, --reason, "only a third party observes it", --summary, "prose only", --runner, human, --json]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    parity: ignore
+    expect:
+      exit: 0
+      json: { verdict: unsmokable, reason: "only a third party observes it", proves: { feature: demo } }
+  - name: the table keeps one row per subject with the latest verdict
+    run: [sh, -c, 'test "$(grep -c "^| demo | " SMOKE-TESTS.md)" = 1 && grep -q "^| demo | unsmokable | " SMOKE-TESTS.md && echo latest-ok']
+    cwd: "{{project.demo}}"
+    expect:
+      exit: 0
+      stdout_includes: ["latest-ok"]
+  - name: a spec subject is recorded into the same file
+    run: ["{{polispec}}", smoke, record, --spec, specs/demo.yml, --at, items/alpha, --verdict, pass, --summary, "alpha works", --runner, human]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    parity: ignore
+    expect:
+      exit: 0
+  - name: verify reads the markdown ledger and finds three chained entries
+    run: ["{{polispec}}", smoke, verify, --json]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    expect:
+      exit: 0
+      json: { ledger: SMOKE-TESTS.md, entries: 3, findings: [] }
+  - name: list filters by feature
+    run: ["{{polispec}}", smoke, list, --feature, demo]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    expect:
+      exit: 0
+      stdout_includes: ["pass demo ", "unsmokable demo ", "prose only"]
+      stdout_excludes: ["specs/demo.yml"]
+  - name: feature coverage reports the unsmokable status, neither proven nor failing
+    run: ["{{polispec}}", smoke, coverage, --feature, --json]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    expect:
+      exit: 0
+      json: { proven: 0, total: 1, features: [{ unit: demo, status: unsmokable }] }
+  - name: spec coverage still proves the spec unit
+    run: ["{{polispec}}", smoke, coverage, --spec, specs/demo.yml, --at, "items/*", --json]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    expect:
+      exit: 0
+      json: { proven: 1, total: 1, units: [{ unit: items/alpha, status: proven }] }
+  - name: a missing ledger file reads as empty
+    run: ["{{polispec}}", smoke, verify, --json]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "{{scratch}}/none/SMOKE-TESTS.md" }
+    expect:
+      exit: 0
+      json: { entries: 0, findings: [] }
+  - name: a markdown file without a ledger block is an error naming the file
+    run: [sh, -c, 'printf "# Smoke tests\n\nnothing here\n" > "$1"', sh, "{{scratch}}/bare.md"]
+    expect:
+      exit: 0
+      files_exist: ["{{scratch}}/bare.md"]
+  - name: verify on the bare file fails
+    run: ["{{polispec}}", smoke, verify]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "{{scratch}}/bare.md" }
+    expect:
+      exit: 1
+      stderr_includes: ["bare.md: no yaml block under ## Ledger"]
+  - name: hand edit one summary in the ledger block
+    run: [sed, -i, "s/alpha works/alpha was edited/", "{{project.demo}}/SMOKE-TESTS.md"]
+    expect:
+      exit: 0
+  - name: verify now fails on the digest
+    run: ["{{polispec}}", smoke, verify]
+    cwd: "{{project.demo}}"
+    env: { POLISPEC_SMOKE: "" }
+    expect:
+      exit: 1
+      stdout_includes: ["digest_mismatch"]

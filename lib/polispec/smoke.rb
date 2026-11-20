@@ -6,11 +6,18 @@ require "pathname"
 module Polispec
   module Smoke
     SCHEMA = "polispec.smoke/v1"
-    VERDICTS = %w[pass fail partial blocked inconclusive].freeze
+    VERDICTS = %w[pass fail partial blocked inconclusive unsmokable].freeze
+    FEATURE_SLUG = /\A[a-z0-9][a-z0-9._-]*\z/
+    MARKDOWN_NAME = "SMOKE-TESTS.md"
+    LEGACY_NAME = "smoke.yml"
+    LEDGER_HEADING = "## Ledger"
+    SUMMARY_WIDTH = 120
+    PROMOTE_WARN_KEY = "polispec.smoke.promote_warn"
     BLOCKING = %w[schema digest_mismatch chain_broken duplicate_id truncated].freeze
     DEFAULT_SPEC = "specs/app.yml"
     DEFAULT_UNITS = ["commands/*"].freeze
     COMMAND_TIMEOUT = 2
+    STATUSES = { "fail" => "failing", "blocked" => "blocked", "partial" => "partial", "unsmokable" => "unsmokable" }.freeze
 
     module_function
 
@@ -73,7 +80,21 @@ module Polispec
 
       raise Polispec::Error, "not in a git repository; set POLISPEC_SMOKE" unless top
 
-      File.join(top, "smoke.yml")
+      markdown = File.join(top, MARKDOWN_NAME)
+      legacy = File.join(top, LEGACY_NAME)
+      return markdown if File.exist?(markdown)
+
+      File.exist?(legacy) ? legacy : markdown
+    end
+
+    def markdown?(path)
+      path.to_s.end_with?(".md")
+    end
+
+    def promote_warn?
+      Engine::Settings.text(PROMOTE_WARN_KEY, "on").to_s.strip.downcase != "off"
+    rescue StandardError
+      true
     end
 
     def display_path(path, top)
@@ -179,8 +200,62 @@ module Polispec
     def read(path)
       return { "schema" => SCHEMA, "entries" => [] } unless File.file?(path)
 
-      data = Schema::Document.parse(File.read(path), path)
+      parse_document(File.read(path), path)
+    end
+
+    def parse_document(text, path)
+      body = markdown?(path) ? ledger_block(text, path) : text
+      data = Schema::Document.parse(body, path)
       data.is_a?(Hash) ? data : raise(Polispec::Error, "#{path}: smoke ledger must be a mapping")
+    end
+
+    def ledger_block(text, path)
+      lines = text.lines.map(&:chomp)
+      heading = lines.index { |line| line.strip == LEDGER_HEADING }
+      opening = heading && lines[(heading + 1)..].index { |line| line.strip == "```yaml" }
+      raise Polispec::Error, "#{File.basename(path)}: no yaml block under #{LEDGER_HEADING}" unless opening
+
+      first = heading + 1 + opening + 1
+      closing = lines[first..].index { |line| line.rstrip == "```" }
+      raise Polispec::Error, "#{File.basename(path)}: the yaml block under #{LEDGER_HEADING} is not closed" unless closing
+
+      lines[first, closing].join("\n")
+    end
+
+    def subject_of(entry)
+      proves = entry["proves"].is_a?(Hash) ? entry["proves"] : {}
+      proves["feature"] ? proves["feature"].to_s : "#{proves['spec']}##{proves['at']}"
+    end
+
+    def cell(text)
+      text.to_s.gsub(/\s+/, " ").strip.gsub("|", "\\|")
+    end
+
+    def clip(text)
+      flat = text.to_s.gsub(/\s+/, " ").strip
+      flat.length > SUMMARY_WIDTH ? "#{flat[0, SUMMARY_WIDTH - 3]}..." : flat
+    end
+
+    def latest_per_subject(entries)
+      latest = {}
+      entries.each_with_index do |entry, index|
+        key = subject_of(entry)
+        current = latest[key]
+        latest[key] = [entry, index] if current.nil? || ([entry["recorded_at"].to_s, index] <=> [current[0]["recorded_at"].to_s, current[1]]) >= 0
+      end
+      latest.map { |key, pair| [key, pair[0]] }
+    end
+
+    def render_markdown(document)
+      rows = latest_per_subject(entries_of(document)).map do |subject, entry|
+        "| #{cell(subject)} | #{cell(entry['verdict'])} | #{cell(entry['recorded_at'])} | #{cell(entry['id'])} | #{cell(clip(entry['summary']))} |"
+      end
+      table = rows.empty? ? ["_No smoke tests recorded yet._"] : ["| Subject | Verdict | Recorded | ID | Summary |", "| --- | --- | --- | --- | --- |", *rows]
+      ["# Smoke tests", "", "`polispec smoke record` writes this file; edit nothing by hand.", "", *table, "", LEDGER_HEADING, "", "```yaml", YAML.dump(document).sub(/\A---\n/, "").chomp, "```", ""].join("\n")
+    end
+
+    def render(path, document)
+      markdown?(path) ? render_markdown(document) : YAML.dump(document)
     end
 
     def entries_of(data)
@@ -198,7 +273,7 @@ module Polispec
       withid.merge("digest" => sha256(canonical_json(withid)))
     end
 
-    def append(path, top, build)
+    def locked(path, top)
       parent = File.dirname(path)
       unless File.directory?(parent)
         raise Polispec::Error, "#{display_path(parent, top)} does not exist" unless top && File.expand_path(parent) == File.expand_path(top)
@@ -208,6 +283,21 @@ module Polispec
       lock = File.open(lock_path(path, parent), File::RDWR | File::CREAT, 0o600)
       begin
         lock.flock(File::LOCK_EX)
+        yield
+      ensure
+        lock.flock(File::LOCK_UN)
+        lock.close
+      end
+    end
+
+    def store(path, document)
+      tmp = "#{path}.tmp.#{Process.pid}"
+      File.write(tmp, render(path, document))
+      File.rename(tmp, path)
+    end
+
+    def append(path, top, build)
+      locked(path, top) do
         data = read(path)
         existing = data["entries"]
         raise Polispec::Error, "#{display_path(path, top)}: entries must be a list" unless existing.is_a?(Array)
@@ -217,14 +307,9 @@ module Polispec
         errors = Schema.validate("smoke", { "schema" => SCHEMA, "entries" => [entry] })
         raise Polispec::Error, "entry is invalid: #{errors.map { |item| "#{item.pointer} #{item.message}" }.join('; ')}" unless errors.empty?
 
-        tmp = "#{path}.tmp.#{Process.pid}"
-        File.write(tmp, YAML.dump({ "schema" => SCHEMA, "entries" => existing + [entry] }))
-        File.rename(tmp, path)
+        store(path, { "schema" => SCHEMA, "entries" => existing + [entry] })
         anchor(path, entry, existing.length + 1)
         entry
-      ensure
-        lock.flock(File::LOCK_UN)
-        lock.close
       end
     end
 
@@ -397,34 +482,53 @@ module Polispec
       !top.nil? && File.file?(File.join(top, "specs", "features.yml"))
     end
 
-    def record(top:, path:, spec:, at:, verdict:, summary:, steps:, evidence:, runner:, started: nil, finished: nil)
-      raise Polispec::Error, "ledger_frozen: smoke.yml is frozen; record with polispec proof run" if ledger_frozen?(top)
+    def frozen_notice(path)
+      "#{File.basename(path)} is frozen; record with polispec proof run"
+    end
 
-      clean, full = relative_spec(spec, top)
-      bytes, data = load_spec(clean, full)
-      node = resolve_node(data, clean, at.to_s)
-      raise Polispec::Error, "#{clean}##{at} resolves to an empty node" if node.nil?
+    def record(top:, path:, verdict:, summary:, steps:, evidence:, runner:, spec: nil, at: nil, feature: nil, reason: nil, started: nil, finished: nil)
+      raise Polispec::Error, "ledger_frozen: #{frozen_notice(path)}" if ledger_frozen?(top)
+      raise Polispec::Error, "unsmokable needs --reason TEXT" if verdict == "unsmokable" && reason.to_s.strip.empty?
+      raise Polispec::Error, "--reason applies only to the unsmokable verdict" if verdict != "unsmokable" && !reason.nil?
 
+      proves = feature ? feature_proves(feature) : spec_proves(top, spec, at)
       captured = self.runtime
       subject = self.target(top, path)
-      proves = { "spec" => clean, "at" => at.to_s, "spec_digest" => sha256(bytes), "at_digest" => node_digest(node) }
       recorded = Time.now.utc.iso8601
       entry = append(path, top, lambda { |prev|
         base = { "recorded_at" => recorded }
         base["started_at"] = started if started
         base["finished_at"] = finished if finished
-        base.merge(
-          "proves" => proves, "verdict" => verdict, "summary" => scrub(summary, top),
+        base.merge("proves" => proves, "verdict" => verdict).merge(reason.nil? ? {} : { "reason" => scrub(reason, top) }).merge(
+          "summary" => scrub(summary, top),
           "steps" => steps, "evidence" => evidence, "runner" => runner, "runtime" => captured,
           "target" => subject, "prev" => prev
         )
       })
-      Events.emit("polispec.smoke", project: subject["project"], id: entry["id"], spec: clean, at: at.to_s, verdict: verdict)
+      Events.emit("polispec.smoke", project: subject["project"], id: entry["id"], spec: proves["spec"], at: proves["at"], verdict: verdict)
       entry
     end
 
+    def feature_proves(feature)
+      raise Polispec::Error, "feature must match #{FEATURE_SLUG.source}" unless feature.to_s.match?(FEATURE_SLUG)
+
+      { "feature" => feature.to_s }
+    end
+
+    def spec_proves(top, spec, at)
+      clean, full = relative_spec(spec, top)
+      bytes, data = load_spec(clean, full)
+      node = resolve_node(data, clean, at.to_s)
+      raise Polispec::Error, "#{clean}##{at} resolves to an empty node" if node.nil?
+
+      { "spec" => clean, "at" => at.to_s, "spec_digest" => sha256(bytes), "at_digest" => node_digest(node) }
+    end
+
     def verify(path, top)
-      data = read(path)
+      verify_document(read(path), path, top)
+    end
+
+    def verify_document(data, path, top)
       findings = Schema.validate("smoke", data).map { |error| { "kind" => "schema", "id" => nil, "detail" => "#{error.pointer.empty? ? '/' : error.pointer} #{error.message}" } }
       entries = entries_of(data)
       findings.concat(truncation(path, entries))
@@ -441,6 +545,40 @@ module Polispec
         findings.concat(proof_findings(entry, top, specs)) if top
       end
       findings
+    end
+
+    def migrate(from:, to:, top:, keep: false, dry_run: false)
+      raise Polispec::Error, "--to must end in .md" unless markdown?(to)
+      raise Polispec::Error, "--from and --to name the same file" if File.expand_path(from) == File.expand_path(to)
+      raise Polispec::Error, "#{display_path(from, top)} does not exist" unless File.file?(from)
+
+      source = read(from)
+      entries = entries_of(source)
+      document = { "schema" => SCHEMA, "entries" => entries }
+      rendered = parse_document(render(to, document), to)
+      raise Polispec::Error, "migration would change an entry; nothing written" unless entries_of(rendered) == entries
+
+      findings = verify_document(rendered, to, top)
+      blocking = findings.select { |finding| BLOCKING.include?(finding["kind"]) }
+      raise Polispec::Error, "#{display_path(from, top)} does not verify (#{blocking.map { |item| item['kind'] }.uniq.join(', ')}); nothing written" unless blocking.empty?
+
+      result = { "from" => display_path(from, top), "to" => display_path(to, top), "entries" => entries.length, "findings" => findings, "dry_run" => dry_run, "removed" => false }
+      return result if dry_run
+
+      locked(to, top) do
+        raise Polispec::Error, "#{display_path(to, top)} already holds entries; nothing written" unless entries_of(read(to)).empty?
+
+        store(to, document)
+        anchor(to, entries.last, entries.length) unless entries.empty?
+      end
+      after = verify(to, top).select { |finding| BLOCKING.include?(finding["kind"]) }
+      raise Polispec::Error, "#{display_path(to, top)} does not verify after the write (#{after.map { |item| item['kind'] }.uniq.join(', ')}); #{display_path(from, top)} is untouched" unless after.empty?
+
+      unless keep
+        File.delete(from)
+        result["removed"] = true
+      end
+      result
     end
 
     def proof_findings(entry, top, specs)
@@ -477,11 +615,18 @@ module Polispec
         latest = matching.max_by { |entry, index| [entry["recorded_at"].to_s, index] }&.first
         status = if latest.nil? then "none"
                  elsif latest["verdict"] == "pass" then current && latest.dig("proves", "at_digest") == current ? "proven" : "stale"
-                 else { "fail" => "failing", "blocked" => "blocked", "partial" => "partial" }.fetch(latest["verdict"], "none")
+                 else STATUSES.fetch(latest["verdict"], "none")
                  end
         { "unit" => unit, "status" => status, "current_digest" => current, "latest" => latest && latest["id"] }
       end
       { "spec" => spec, "units" => rows, "proven" => rows.count { |row| row["status"] == "proven" }, "total" => rows.length }
+    end
+
+    def feature_coverage(entries)
+      rows = latest_per_subject(entries.select { |entry| entry.dig("proves", "feature") && entry["verdict"] != "inconclusive" }).map do |subject, entry|
+        { "unit" => subject, "status" => entry["verdict"] == "pass" ? "proven" : STATUSES.fetch(entry["verdict"], "none"), "latest" => entry["id"] }
+      end
+      { "features" => rows, "proven" => rows.count { |row| row["status"] == "proven" }, "total" => rows.length }
     end
   end
 end

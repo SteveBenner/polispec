@@ -4,6 +4,7 @@
 require_relative "git"
 require_relative "gates"
 require_relative "../delegate"
+require_relative "../smoke/current"
 
 module Polispec
   module Operator
@@ -58,6 +59,8 @@ module Polispec
         trace_plan(plan)
         plan.started = started
         plan.gates = Polispec::Trace.step("gates") { Gates.run_all(Gates.effective_gates(project, "test"), context(plan)) }
+        smoke = Polispec::Trace.step("smoke check") { Polispec::Smoke::Current.gate(git, plan.from_sha, plan.to_sha) }
+        plan.gates += [smoke] if smoke
         return preview(plan) if dry_run
 
         publish(plan)
