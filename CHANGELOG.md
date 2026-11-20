@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Documentation only, no code: a README `Intelligence` section with `The REAL "spec story"`, three diagrams under `assets/intelligence/`, and a `ROADMAP.md` plan for spec telemetry and the decision ledger, all marked planned.
 
+## [0.59.0] - 2026-11-19
+
+### Added
+
+- The smoke ledger has a markdown container. A ledger path ending in `.md` holds `# Smoke tests`, a summary table of the latest verdict per subject, `## Ledger` and one fenced yaml block with the `polispec.smoke/v1` document; `smoke record` renders the whole file under the same lock, atomic replace and head anchor, a missing file reads as empty, and a `.md` without the block is an error naming the file.
+- `smoke record --feature SLUG` proves a feature instead of a spec node (`proves` is `{feature}`); `smoke list --feature SLUG` filters by it and `smoke coverage --feature` lists the feature subjects.
+- The verdict `unsmokable`: `smoke record` refuses it without `--reason TEXT` and refuses `--reason` on any other verdict, the entry stores `reason`, and `smoke coverage` reports the status `unsmokable`.
+- `polispec smoke migrate [--from PATH] [--to PATH] [--keep] [--dry-run] [--json]` moves a `smoke.yml` into `SMOKE-TESTS.md` with every entry and digest unchanged, verifies the result, re-anchors the head and removes `smoke.yml` unless `--keep`; it refuses a target that already holds entries and a source that does not verify.
+- `promote --to test` adds a non-failing `smoke_current` gate result (result `warn`, `since`, `count`, up to 50 `unsmoked_file` findings) and prints `WARNING: no smoke entry for N changed files since <short sha>` when the range from the test tip has changed files and no smoke ledger entry or `proofs/` record inside it. The `polispec.promote` event carries it in `gates`. The setting `polispec.smoke.promote_warn` (`on`, `off`; default `on`) removes it.
+- Smoke scenarios `smoke-container`, `smoke-migrate` and `promote-smoke-warning`.
+
+### Changed
+
+- The default ledger path is `SMOKE-TESTS.md` at the git toplevel when it exists, then `smoke.yml` when it exists, else `SMOKE-TESTS.md` (was `smoke.yml`). `schemas/smoke.v1.yml` accepts `proves` as `{spec, at, spec_digest, at_digest}` or `{feature}`, the verdict `unsmokable` and the field `reason`. The frozen-ledger refusal and notice name the file that applies. `smoke list` prints `spec#at` for a spec entry and the slug for a feature entry. A promote to test whose range has changed files and no smoke entry now lists a `smoke_current` gate in its text, JSON and event output. The sealed runtime manifest leaves `SMOKE-TESTS.md` out beside `smoke.yml`.
+
 ## [0.58.0] - 2026-11-10
 
 ### Added

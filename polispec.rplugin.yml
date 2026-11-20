@@ -1,7 +1,7 @@
 schema: rplugin/v1
 id: polispec
 name: Polispec
-version: 0.58.0
+version: 0.59.0
 rplugin: ">= 1.17.0"
 native: true
 description: "Spec-based policy guardrails for agentic development and operations: committed environment policies and deterministic harness controls, with explicit backend capabilities and enforcement limits."
@@ -27,7 +27,8 @@ settings:
   - { key: polispec.code.check_at, type: enum, options: [pre_write, post_write], default: pre_write, scopes: [machine], harnesses: [claude-code, codex, hermes], description: "pre_write checks the edited text and denies before anything lands; post_write lets the write land and blocks with the findings. SHOULD findings are always reported after the write." }
   - { key: polispec.code.inject, type: enum, options: [once, every_write], default: once, scopes: [machine], harnesses: [claude-code, codex, hermes], description: "once injects a language's spec chain before the first write per session and chain digest, and again after compaction; every_write injects before every write." }
   - { key: polispec.ledger, type: path, default: "~/.config/polispec/ledger.yml", scopes: [machine], description: "Path of the host's ledger of governed projects. POLISPEC_LEDGER overrides it only while unsealed." }
-  - { key: polispec.smoke.path, type: string, default: "", scopes: [machine], description: "Path of the smoke ledger. POLISPEC_SMOKE overrides it. Empty means smoke.yml at the git toplevel of the working directory." }
+  - { key: polispec.smoke.path, type: string, default: "", scopes: [machine], description: "Path of the smoke ledger. POLISPEC_SMOKE overrides it. Empty means SMOKE-TESTS.md at the git toplevel of the working directory, or smoke.yml there when only that exists." }
+  - { key: polispec.smoke.promote_warn, type: enum, options: ["on", "off"], default: "on", scopes: [machine], description: "Kill switch for the promote --to test warning. off adds no smoke_current gate result when a promotion range has no smoke entry. Never blocks a promotion either way." }
   - { key: polispec.smoke.live, type: enum, options: ["on", "off"], default: "on", scopes: [machine], description: "Kill switch for the live smoke layer. off blocks every live step with live_disabled and launches no harness. POLISPEC_SMOKE_LIVE=off overrides it." }
   - { key: polispec.global.repo, type: string, default: "", scopes: [machine], description: "Path of the git repository that holds the global layer. Unset means no global layer. POLISPEC_GLOBAL, a plain directory, overrides it for scratch runs." }
   - { key: polispec.global.ref, type: string, default: main, scopes: [machine], description: "Ref of polispec.global.repo that the global layer is read from, never its working tree." }

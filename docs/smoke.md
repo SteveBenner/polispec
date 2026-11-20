@@ -4,9 +4,27 @@ A smoke test is a short run, against a real installation, that shows one spec or
 
 ## The file
 
-`smoke.yml` (`polispec.smoke/v1`, `schemas/smoke.v1.yml`) sits at the root of the repository whose spec it proves. `POLISPEC_SMOKE`, then the `polispec.smoke.path` setting, override the location. Commit it with the code: an entry is evidence about a commit of that repository.
+`SMOKE-TESTS.md` (`polispec.smoke/v1`, `schemas/smoke.v1.yml`) sits at the root of the repository whose spec or features it proves. The location is `POLISPEC_SMOKE`, then the `polispec.smoke.path` setting, then `SMOKE-TESTS.md` at the git toplevel if it exists, then the legacy `smoke.yml` there if it exists, else `SMOKE-TESTS.md`. Commit it with the code: an entry is evidence about a commit of that repository.
 
-The file is append-only, and is written only by `polispec smoke record`. A hand edit is detected by `polispec smoke verify`.
+A path ending in `.md` is a markdown container, rendered whole on every write:
+
+- `# Smoke tests` and one sentence saying `polispec smoke record` writes the file;
+- a summary table with one row per subject (a feature slug, or `spec#at`) holding its latest verdict, `recorded_at`, entry id and summary cut to 120 characters;
+- `## Ledger` and one fenced `yaml` block holding the whole `polispec.smoke/v1` document.
+
+Reading takes the first `yaml` fence after the `## Ledger` line. A missing file reads as an empty ledger, and a `.md` file without that block is an error naming the file. A path that does not end in `.md` is read and written as plain YAML, as before. An entry's id and digest cover the entry body only, so the same entries chain identically in either container.
+
+The file is append-only, and is written only by `polispec smoke record` and `polispec smoke migrate`. A hand edit is detected by `polispec smoke verify`.
+
+### Moving a smoke.yml
+
+```sh
+polispec smoke migrate --dry-run
+polispec smoke migrate
+polispec smoke migrate --from old/smoke.yml --to SMOKE-TESTS.md --keep
+```
+
+`migrate` moves every entry of `smoke.yml` (default `<toplevel>/smoke.yml`) unchanged into `SMOKE-TESTS.md` (default `<toplevel>/SMOKE-TESTS.md`), checks that the entries survive the round trip and verify cleanly, writes the file, verifies it again, re-anchors the head in `smoke-heads.json` for the new path, and removes `smoke.yml` unless `--keep` is given. It refuses and writes nothing when the target already holds entries, when `--to` does not end in `.md`, or when the source has a blocking finding. `--dry-run` reports the move without writing, and `--json` prints the result.
 
 ## Recording a test
 
@@ -20,15 +38,16 @@ polispec smoke record \
   --runner agent --harness claude-code --model claude-haiku-5-5
 ```
 
+- `--feature SLUG` (matching `^[a-z0-9][a-z0-9._-]*$`) replaces `--spec` and `--at` when the entry proves a feature rather than a spec node, for example `polispec smoke record --feature export-csv --verdict pass --summary "the export downloaded and opened"`. Exactly one of `--spec` and `--feature` is required. A feature entry has no digest to go stale; `list --feature SLUG` filters by it and `coverage --feature` lists the feature subjects with their latest status.
 - `--spec` is a YAML file inside the repository that parses to a mapping or a list, and `--at` a slash path into it. A segment is a mapping key, or a list item whose `name` or `id` equals it; write `~1` for `/` and `~0` for `~`. Without `--at` the entry proves the whole file. A reference that does not resolve, or resolves to an empty node, is refused.
-- `--verdict` is `pass`, `fail`, `partial` (some of the sub-spec was shown) `blocked` (the test could not run, for example because the feature needs an activation that has not happened) or `inconclusive` (a live session never attempted the forbidden action, so the guard was not exercised; `coverage` ignores it and it neither proves nor revokes a unit).
+- `--verdict` is `pass`, `fail`, `partial` (some of the sub-spec was shown) `blocked` (the test could not run, for example because the feature needs an activation that has not happened) or `inconclusive` (a live session never attempted the forbidden action, so the guard was not exercised; `coverage` ignores it and it neither proves nor revokes a unit) or `unsmokable` (no real run can observe the change). `unsmokable` needs `--reason TEXT`, stored as the entry field `reason`, and `--reason` is refused on any other verdict. `coverage` reports it as `unsmokable`: neither proven nor failing.
 - `--step-file` is YAML or JSON: a list of `{run, exit, expect, observed}`.
 - `--evidence PATH[:KIND]` records the file's sha256 and size, not its content. Keep the files where your evidence lives; the ledger proves which bytes you looked at.
 - `--runner`, `--harness`, `--model` and `--effort` name who ran the test. Inside Claude Code or Codex the runner defaults to `agent` and the harness is detected.
 
 ## What an entry carries
 
-Each entry stores what it proves (`spec`, `at`, the file's digest and `at_digest`, the digest of the node it proves), the verdict, summary, steps and evidence, the runner, and two captured blocks:
+Each entry stores what it proves (`spec`, `at`, the file's digest and `at_digest`, the digest of the node it proves, or a `feature` slug), the verdict, the `reason` of an unsmokable entry, summary, steps and evidence, the runner, and two captured blocks:
 
 - `runtime`: OS id, name and version, kernel release, architecture, container and WSL flags, time zone, locale, Ruby, the polispec version, edition, commit, dirty flag and install kind, the rplugin version, and the enforce mode.
 - `target`: the repository's commit, branch and dirty flag (the ledger file itself is ignored), and, when the repository is governed, its project id, environment and policy digest.
@@ -60,6 +79,10 @@ polispec smoke coverage --spec specs/polispec/policy.yml --at 'rules/*'
 - Use scratch projects, an isolated ledger, global shelf and state home (`POLISPEC_LEDGER`, `POLISPEC_GLOBAL`, `POLISPEC_HOME`, `POLISPEC_STATE_HOME`) so a test never touches a real project or the live guard's state. Do not redirect `XDG_STATE_HOME` or `XDG_CONFIG_HOME`: they also hold rplugin's settings, so redirecting them silently drops `polispec.enforce` and every other setting.
 - Make every dangerous step harmless if the guard wrongly allows it.
 - Record failures and blocked tests too. A ledger of passes only says nothing about what was tried.
+
+## The promote warning
+
+`polispec promote <project> --to test` looks at the commits from the test tip to the candidate. When files changed in that range and no smoke ledger entry (`SMOKE-TESTS.md` or `smoke.yml` at the candidate) and no `proofs/` record has a `target.commit` or `commit` inside it, the gates gain a result `smoke_current` with result `warn`, `since`, `count` and up to 50 `unsmoked_file` findings, the text output prints `WARNING: no smoke entry for N changed files since <short sha>`, and the `polispec.promote` event carries it in `gates`. The warning never fails a promotion. With no test branch yet the range is every commit. `polispec.smoke.promote_warn off` (or `RPLUGIN_POLISPEC_POLISPEC_SMOKE_PROMOTE_WARN=off`) removes it; the default is `on`.
 
 ## The bundled suite
 
