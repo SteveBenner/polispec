@@ -174,10 +174,7 @@ module Polispec
 
       def polispec_home
         require_relative "../harness_controls/plane"
-        if defined?(Polispec::HarnessControls::Plane) && Polispec::HarnessControls::Plane.respond_to?(:path)
-          protected_path = Polispec::HarnessControls::Plane.path("home")
-          return File.expand_path(protected_path) if protected_path
-        end
+        return File.expand_path("~/.polispec") if sealed?
         base = ENV["POLISPEC_HOME"].to_s
         File.expand_path(base.empty? ? "~/.polispec" : base)
       end
@@ -322,12 +319,14 @@ module Polispec
         text.to_s.gsub(/\{(sha|VERSION|project|tag|stable_tag)\}/) { vars[Regexp.last_match(1)].to_s }
       end
 
-      def envs_root(ledger)
+      def sealed?
         require_relative "../harness_controls/plane"
-        if defined?(Polispec::HarnessControls::Plane) && Polispec::HarnessControls::Plane.respond_to?(:path)
-          protected_path = Polispec::HarnessControls::Plane.path("envs_root")
-          return File.expand_path(protected_path) if protected_path
-        end
+        defined?(Polispec::HarnessControls::Plane) && Polispec::HarnessControls::Plane.respond_to?(:path) &&
+          !Polispec::HarnessControls::Plane.path("ledger").nil?
+      end
+
+      def envs_root(ledger)
+        return ledger.envs_root if sealed?
         override = ENV["POLISPEC_ENVS_ROOT"]
         override && !override.empty? ? File.expand_path(override) : ledger.envs_root
       end

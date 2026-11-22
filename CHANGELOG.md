@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Documentation only, no code: a README `Intelligence` section with `The REAL "spec story"`, three diagrams under `assets/intelligence/`, and a `ROADMAP.md` plan for spec telemetry and the decision ledger, all marked planned.
 
+## [0.59.1] - 2026-11-22
+
+### Fixed
+
+- Under an active sealed plane, `polispec deploy` and the deploy after step of `promote` failed with `Errno::EACCES` on `/etc/polispec/generations/<id>/envs/<project>`. `Operator::Gates.envs_root` (`lib/polispec/operator/gates.rb`) took the generation's root-owned, always-empty `envs` folder, and `Gates.polispec_home` took its `home` folder for hermetic gate scratch, so no operator verb reached the checkouts that services run from. While sealed, `envs_root` is now the sealed ledger's `envs_root` (`~/.polispec/envs` for the ledger the seal carries), and gate scratch is `~/.polispec/scratch`. `POLISPEC_ENVS_ROOT` and `POLISPEC_HOME` are still ignored while sealed. The guard's own environment classification already read the sealed ledger and is unchanged. The generation record format is unchanged, but the sealed runtime is part of each generation, so the fix takes effect only after a new seal on 0.59.1.
+
 ## [0.59.0] - 2026-11-19
 
 ### Added
