@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Documentation only, no code: a README `Intelligence` section with `The REAL "spec story"`, three diagrams under `assets/intelligence/`, and a `ROADMAP.md` plan for spec telemetry and the decision ledger, all marked planned.
 
+## [0.59.2] - 2026-11-22
+
+### Fixed
+
+- Under an active sealed plane every write went without code-spec checks: the hook said `POLISPEC code specs are unavailable (specs repository /etc/polispec/generations/<id>/source/code_specs is not readable)`. The plane hands the hook the generation's `source/code_specs`, a plain copy with no `.git`, but `Code::Pack.load` (`lib/polispec/code/pack.rb`) opened it with `GitSource` at the default ref. It now loads the sealed copy with `DirSource` when the plane supplies it (`Code::Paths.sealed_specs_repo`, `lib/polispec/code/paths.rb`); an explicit `repo:` and the unsealed path are unchanged.
+- With the specs loading, the sealed hook then failed with `Errno::EACCES` on the generation's root-owned `code_state` folder. `Code::Paths.state_dir` now uses `State.home` while sealed, so session records, baselines and controls state are written where the guard user can write, as they are unsealed; `POLISPEC_CODE_STATE` stays ignored while sealed. The generation record is unchanged; the fix takes effect after a seal on 0.59.2.
+
 ## [0.59.1] - 2026-11-22
 
 ### Fixed

@@ -23,12 +23,18 @@ module Polispec
         File.join(home, "specs")
       end
 
-      def specs_repo
+      def sealed_specs_repo
         require_relative "../harness_controls/plane"
-        if defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:path)
-          protected_path = HarnessControls::Plane.path("code_specs_repo")
-          return File.expand_path(protected_path) if protected_path
-        end
+        return nil unless defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:path)
+
+        protected_path = HarnessControls::Plane.path("code_specs_repo")
+        protected_path ? File.expand_path(protected_path) : nil
+      end
+
+      def specs_repo
+        sealed = sealed_specs_repo
+        return sealed if sealed
+
         forced = ENV["POLISPEC_SPECS_REPO"].to_s
         return File.expand_path(forced) unless forced.empty?
 
@@ -40,10 +46,9 @@ module Polispec
 
       def state_dir
         require_relative "../harness_controls/plane"
-        if defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:path)
-          protected_path = HarnessControls::Plane.path("code_state")
-          return File.expand_path(protected_path) if protected_path
-        end
+        sealed = defined?(HarnessControls::Plane) && HarnessControls::Plane.respond_to?(:path) && HarnessControls::Plane.path("code_state")
+        return State.home if sealed
+
         forced = ENV["POLISPEC_CODE_STATE"].to_s
         forced.empty? ? State.home : File.expand_path(forced)
       end

@@ -194,9 +194,10 @@ module Polispec
       attr_reader :source, :specs, :nodes, :duplicates, :load_errors, :repo
 
       def self.load(ref: nil, repo: nil)
+        sealed = repo.nil? ? Paths.sealed_specs_repo : nil
         repo ||= Paths.specs_repo
         ref = ref.to_s.empty? ? DEFAULT_REF : ref.to_s
-        source = ref == "worktree" ? DirSource.new(repo) : GitSource.new(repo, ref)
+        source = ref == "worktree" || sealed ? DirSource.new(repo) : GitSource.new(repo, ref)
         new(source, repo)
       end
 
