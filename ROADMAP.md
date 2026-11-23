@@ -15,6 +15,10 @@ The data layer described in the README's [Intelligence](README.md#intelligence) 
 
 Analysis on top of this data is deliberately not part of this work.
 
+## Staged paths as an action
+
+`git add` of named paths produces no action today, so no rule can warn when an agent stages a path that must not reach a public remote, such as a tellem `.tellem/` scope or a SpecStory `.specstory/history/` copy. Only `bulk_stage` is classified, as a shape. Planned: a `git.stage` action class carrying each staged path, so a rule can combine `match.path` with `match.public_remote` and warn at staging. Until then, `match.push_unscanned` and the exposure scan catch such a path at the push.
+
 ## Independent review follow-up
 
 The qualification work from the independent review of 0.19.1. The two P0 items are committed: polispec claims no preventive enforcement until both are done. The rest is intended.
