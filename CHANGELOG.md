@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.60.1] - 2026-11-23
+
+### Fixed
+
+- `polispec proof run` signed a record `pass` when every scenario of the feature's smoke unit was blocked: on 0818af7 the `commands.promote-deploy` run printed `suite: 0/3 scenarios passed, 0 failed, 3 blocked`, exited 0, and the local runner mapped exit 0 to `pass`. The app spec said a proof command passes `--strict` so this cannot happen, but none of the 68 commands in `specs/features.yml` did. The local runner (`lib/polispec/proof/adapters/local.rb`) now adds `--strict` to any `smoke run` argv that lacks it, and records exit 3 as `blocked`. The manifest is unchanged, so no feature digest moves and existing proofs stay current.
+- `smoke run --strict` exits 3 (`Smoke::UNPROVEN_EXIT`, `lib/polispec/smoke.rb`) instead of 1 when scenarios matched, none failed and no diff stops the run, but at least one was blocked or inconclusive (`Smoke::Run#unproven?`, `lib/polispec/smoke/run.rb`). A real failure, a record error, an unaccepted diff and an empty match still exit 1; runs without `--strict` are unchanged. `smoke/scenarios/smoke-suite.yml` now expects 3 for the strict inconclusive run and adds a strict blocked run.
+
 ## [0.60.0] - 2026-11-23
 
 ### Added

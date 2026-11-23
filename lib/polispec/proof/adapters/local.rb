@@ -73,15 +73,23 @@ module Polispec
           log = File.join(out_dir, "#{feature['id']}.#{target['id']}.log")
           started = Time.now.utc
           began = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          code, timed_out = launch(Array(smoke["run"]).map(&:to_s), root, log, smoke["timeout_s"].to_i)
+          code, timed_out = launch(strict_argv(Array(smoke["run"]).map(&:to_s)), root, log, smoke["timeout_s"].to_i)
           ended = Time.now.utc
           elapsed = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - began) * 1000).round
-          verdict = timed_out ? "blocked" : (code == 0 ? "pass" : "fail")
+          verdict = if timed_out || code == Smoke::UNPROVEN_EXIT then "blocked"
+                    elsif code == 0 then "pass"
+                    else "fail"
+                    end
           Signer.sign_record(
             "feature" => feature["id"], "target" => target["id"], "digest" => digest, "commit" => commit,
             "rung" => smoke["rung"], "verdict" => verdict, "started_at" => started.iso8601, "finished_at" => ended.iso8601,
             "duration_ms" => elapsed, "exit" => timed_out ? nil : code, "evidence" => [evidence(log)], "runtime" => Smoke.runtime
           )
+        end
+
+        def strict_argv(argv)
+          smoke_run = argv.each_cons(2).any? { |pair| pair == %w[smoke run] }
+          smoke_run && !argv.include?("--strict") ? argv + ["--strict"] : argv
         end
 
         def evidence(log)

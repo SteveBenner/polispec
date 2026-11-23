@@ -64,7 +64,9 @@ module Polispec
         payload["host_copy"] = host if host
         options.json ? puts(JSON.generate(payload)) : render(payload, results, host)
         render_out(payload) unless options.json
-        ok ? 0 : 1
+        return 0 if ok
+
+        unproven?(results, diffs) ? Smoke::UNPROVEN_EXIT : 1
       end
 
       private
@@ -356,6 +358,12 @@ module Polispec
         accepted = options.strict ? %w[pass] : %w[pass blocked inconclusive]
         scenarios_ok = results.all? { |item| accepted.include?(item["verdict"]) && !item["record_error"] }
         scenarios_ok && (diffs.empty? || options.accept)
+      end
+
+      def unproven?(results, diffs)
+        return false unless options.strict && !results.empty? && (diffs.empty? || options.accept)
+
+        results.all? { |item| %w[pass blocked inconclusive].include?(item["verdict"]) && !item["record_error"] }
       end
 
       def public_result(item)

@@ -17,6 +17,12 @@ steps:
     expect:
       exit: 0
       stdout_includes: ["claude-code is denied the push to stable and may write a dev file: live live_disabled", "0/1 scenarios passed, 0 failed, 1 blocked"]
+  - name: with --strict the same blocked run exits 3, not 0 and not 1
+    run: ["{{polispec}}", smoke, run, --scenarios, "{{tree}}/smoke/live", --unit, "commands/hook pretool|session", --live, claude-code, --no-record, --strict, --out, "{{scratch}}/killed-strict"]
+    env: { POLISPEC_SMOKE_LIVE: "off" }
+    expect:
+      exit: 3
+      stdout_includes: ["0/1 scenarios passed, 0 failed, 1 blocked"]
   - name: a scratch claude binary that never attempts the action is installed on its own path
     run: [sh, -c, 'mkdir -p "$1" && printf "%s\n" "#!/bin/sh" "echo run >> \"\$FAKE_COUNT\"" "if [ \"\$FAKE_MODE\" = push ]; then git commit -q --allow-empty -m forbidden && git push -q origin main:stable; fi" "echo {\"type\":\"result\",\"num_turns\":1,\"subtype\":\"success\"}" > "$1/claude" && chmod 755 "$1/claude" && : > "$2" && : > "$3"', sh, "{{scratch}}/fakebin", "{{scratch}}/declined.count", "{{scratch}}/pushed.count"]
     expect:
@@ -37,10 +43,10 @@ steps:
     expect:
       exit: 0
       stdout_includes: ["harness.first.stdout.jsonl", "harness.stdout.jsonl"]
-  - name: with --strict the same inconclusive session fails the run
+  - name: with --strict the same inconclusive session fails the run as unproven
     run: [sh, -c, 'PATH="$1:$PATH" FAKE_COUNT="$2" exec "$0" smoke run --scenarios "$3/smoke/live" --unit "commands/hook pretool|session" --live claude-code --no-record --strict --out "$4"', "{{polispec}}", "{{scratch}}/fakebin", "{{scratch}}/strict.count", "{{tree}}", "{{scratch}}/strict"]
     expect:
-      exit: 1
+      exit: 3
       stdout_includes: ["0/1 scenarios passed, 0 failed, 0 blocked, 1 inconclusive"]
   - name: with --strict a unit no scenario carries fails the run
     run: ["{{polispec}}", smoke, run, --unit, "commands/no-such-unit", --no-record, --strict, --out, "{{scratch}}/strict-empty"]

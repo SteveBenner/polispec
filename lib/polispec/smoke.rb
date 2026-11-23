@@ -6,6 +6,7 @@ require "pathname"
 module Polispec
   module Smoke
     SCHEMA = "polispec.smoke/v1"
+    UNPROVEN_EXIT = 3
     VERDICTS = %w[pass fail partial blocked inconclusive unsmokable].freeze
     FEATURE_SLUG = /\A[a-z0-9][a-z0-9._-]*\z/
     MARKDOWN_NAME = "SMOKE-TESTS.md"
