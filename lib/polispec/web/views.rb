@@ -669,7 +669,7 @@ module Polispec
         when "not_frozen" then Freeze.active(policy, "promote.#{transition}", project: project).empty?
         when "requires_live" then project.status == "live"
         when "health_required" then Operator::Gates.health_required_errors(policy).empty?
-        when "clean_tree" then !Operator::Git.new(File.expand_path(project.repo)).dirty?
+        when "clean_tree" then !Operator::Git.new(File.expand_path(project.repo)).dirty?(Operator::Gates.clean_tree_exclude(gate))
         end
       rescue StandardError
         nil

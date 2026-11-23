@@ -594,16 +594,28 @@ module Polispec
       def builtin(gate, context)
         name = gate["builtin"]
         raise Failure.new("gate_failed", "unknown builtin #{name}", "gate_id" => gate["id"]) unless BUILTINS.include?(name)
+        raise Failure.new("gate_failed", "gate #{gate['id']}: exclude applies only to clean_tree", "gate_id" => gate["id"]) if gate.key?("exclude") && name != "clean_tree"
 
         send("gate_#{name}", gate, context)
       end
 
+      def clean_tree_exclude(gate)
+        paths = gate.fetch("exclude", [])
+        valid = paths.is_a?(Array) && paths.all? do |path|
+          path.is_a?(String) && !path.empty? && !path.start_with?("/", ":") && path.split("/").none? { |part| part.empty? || part == "." || part == ".." }
+        end
+        raise Failure.new("gate_failed", "gate #{gate['id']}: exclude must list relative paths inside the repository", "gate_id" => gate["id"]) unless valid
+
+        paths
+      end
+
       def gate_clean_tree(gate, context)
-        dirty = context.git.dirty?
-        Polispec::Trace.info("working tree", dirty: dirty ? "yes" : "no", sha: context.sha[0, 12]) if Polispec::Trace.on?
+        exclude = clean_tree_exclude(gate)
+        dirty = context.git.dirty?(exclude)
+        Polispec::Trace.info("working tree", dirty: dirty ? "yes" : "no", sha: context.sha[0, 12], excluded: exclude.join(",")) if Polispec::Trace.on?
         return unless dirty
 
-        status = context.git.run!("status", "--short").out
+        status = context.git.run!("status", "--short", *context.git.status_scope(exclude)).out
         raise Failure.new("gate_failed", "gate #{gate['id']}: the working tree has uncommitted changes", "gate_id" => gate["id"], "output_tail" => Git.tail(status))
       end
 

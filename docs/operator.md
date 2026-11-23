@@ -63,7 +63,7 @@ Each gate is `{id, run}` or `{id, builtin}`. A `run` command is split with Shell
 
 | Builtin | Passes when |
 | --- | --- |
-| `clean_tree` | the project repo has no uncommitted changes to tracked files and no untracked files that are not ignored |
+| `clean_tree` | the project repo has no uncommitted changes to tracked files and no untracked files that are not ignored, outside the paths its optional `exclude` list names |
 | `version_homes_agree` | `VERSION`, every top-level `*.rplugin.yml`, `.codex-plugin/plugin.json` and `.claude-plugin/plugin.json` at the promoted sha carry the same version |
 | `sha_ran_on_test` | `deploys.jsonl` holds a `test` deploy of that project and sha with `health: ok` (a `url` or `run` health check passed) |
 | `not_frozen` | `Polispec::Freeze.active(policy, "promote.to_<target>")` is empty |

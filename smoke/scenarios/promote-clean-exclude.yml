@@ -1,0 +1,57 @@
+schema: polispec.smoke-scenario/v1
+unit: commands/promote, deploy
+summary: the clean_tree gate fails on changed session-record paths until the policy on stable lists them under exclude, then passes with only those paths changed and still fails on any other change, naming only that path
+fixture:
+  global: example
+  enforce: enforce
+  projects:
+    - id: shop
+      variant: service
+      status: live
+      checkouts: true
+      files:
+        "lib/app.rb": "puts 1\n"
+        "VERSION": "0.1.0\n"
+        ".tellem/sessions/s1.jsonl": "{}\n"
+        "DECISIONS.md": "# Decisions\n"
+steps:
+  - name: stable is published, main is bumped, and the session-record paths change
+    run: [sh, -c, 'sed -i "s/run: polispec-placeholder-health-check-replace-it-in-specs-polispec-environments-yml/run: \"true\"/" specs/polispec/environments.yml && git add specs/polispec/environments.yml && git commit -q -m health -- specs/polispec/environments.yml && git push -q origin main main:stable && git fetch -q origin && git branch -f stable origin/stable && echo 0.2.0 > VERSION && git add VERSION && git commit -q -m bump -- VERSION && git push -q origin main && echo "{}" >> .tellem/sessions/s1.jsonl && echo "{}" > .tellem/sessions/s2.jsonl && echo row >> DECISIONS.md && git status --porcelain']
+    cwd: "{{project.shop}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    parity: ignore
+    expect:
+      exit: 0
+      stdout_includes: [" M .tellem/sessions/s1.jsonl", " M DECISIONS.md"]
+  - name: without exclude the gate fails on the session records
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run, --json]
+    expect:
+      exit: 1
+      json: { ok: false, error: { code: gate_failed, payload: { gate_id: G-CLEAN } } }
+      stdout_includes: [".tellem/", "DECISIONS.md"]
+  - name: the policy on stable lists the session-record paths under exclude
+    run: [sh, -c, 'sed -i "s|{ id: G-CLEAN, builtin: clean_tree }|{ id: G-CLEAN, builtin: clean_tree, exclude: [.tellem, DECISIONS.md] }|" specs/polispec/policy.yml && grep -c "exclude: \[.tellem, DECISIONS.md\]" specs/polispec/policy.yml && git add specs/polispec/policy.yml && git commit -q -m exclude -- specs/polispec/policy.yml && git push -q origin main main:stable && git fetch -q origin && git branch -f stable origin/stable']
+    cwd: "{{project.shop}}"
+    env: { POLISPEC_OPERATOR: "1" }
+    parity: ignore
+    expect:
+      exit: 0
+      stdout_includes: ["1"]
+  - name: with only excluded paths changed the gate passes
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run]
+    expect:
+      exit: 0
+      stdout_includes: ["dry run: shop to test at ", "gate G-CLEAN: pass"]
+  - name: a product change outside the excluded paths is made
+    run: [sh, -c, 'echo "puts 2" >> lib/app.rb']
+    cwd: "{{project.shop}}"
+    parity: ignore
+    expect:
+      exit: 0
+  - name: the gate fails again and names only the product change
+    run: ["{{polispec}}", promote, shop, --to, test, --dry-run, --json]
+    expect:
+      exit: 1
+      json: { ok: false, error: { code: gate_failed, payload: { gate_id: G-CLEAN } } }
+      stdout_includes: ["lib/app.rb"]
+      stdout_excludes: [".tellem/", "DECISIONS.md"]

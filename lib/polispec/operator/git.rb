@@ -171,8 +171,14 @@ module Polispec
         end
       end
 
-      def dirty?
-        !run!("status", "--porcelain").out.strip.empty?
+      def dirty?(exclude = [])
+        !run!("status", "--porcelain", *status_scope(exclude)).out.strip.empty?
+      end
+
+      def status_scope(exclude)
+        return [] if exclude.nil? || exclude.empty?
+
+        ["--", "."] + exclude.map { |path| ":(exclude,literal)#{path}" }
       end
 
       def current_branch

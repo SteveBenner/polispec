@@ -5,10 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.60.0] - 2026-11-23
 
 ### Added
 
+- The `clean_tree` gate takes an optional `exclude` list of repository-relative paths that may change, tracked or untracked, without failing it (`Operator::Gates.clean_tree_exclude` and `gate_clean_tree` in `lib/polispec/operator/gates.rb`, `Operator::Git#dirty?` and `#status_scope` in `lib/polispec/operator/git.rb`). Each path is passed to `git status` as an `:(exclude,literal)` pathspec, so it names a file or directory and is never a glob. A project that tracks files written during a live session (`.tellem`, `.specstory/history`, `DECISIONS.md`) can now promote from that session without a hand-written `run:` gate. Without `exclude` the gate is unchanged. A path that is absolute, starts with `:`, or has an empty, `.` or `..` segment fails the gate, and so does `exclude` on any other builtin. The schema (`schemas/policy.v1.yml`) accepts `exclude` on a gate and rejects `.` and `..` segments; the web console's gate status (`lib/polispec/web/views.rb`) applies the same list.
 - Documentation only, no code: a README `Intelligence` section with `The REAL "spec story"`, three diagrams under `assets/intelligence/`, and a `ROADMAP.md` plan for spec telemetry and the decision ledger, all marked planned.
 
 ## [0.59.2] - 2026-11-22
