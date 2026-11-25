@@ -208,9 +208,9 @@ steps:
     run: [sh, -c, 'mkdir -p "$2" && cp -R "$1/." "$2/" && chmod +x "$2/enforcers/slow-count.sh" && cd "$2" && git init -q -b main . && git add specs controls enforcers && git commit -q -m pack && git branch stable && mkdir -p "$4/.polispec" && ln -sfn "$2/specs" "$4/.polispec/specs" && cd "$3" && mkdir -p lib && git init -q -b main . && git add README.md lib && git commit -q -m work', sh, "{{files}}/pack", "{{scratch}}/specs-repo", "{{files}}/work", "{{home}}"]
     stop: true
     expect: { exit: 0 }
-  - name: a launcher call starts a four worker judge under a supervisor
+  - name: a launcher call from a session that inherited INVOCATION_ID starts a four worker judge
     run: [bash, -c, 'rm -f "$1/state/judge.spawn"; printf "%s" "$3" | "$2" pretool --harness claude', bash, "{{scratch}}", "{{tree}}/bin/polispec-guard", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"workers-start\"}"]
-    env: { POLISPEC_BIN: "{{files}}/polispec", POLISPEC_JUDGE_WORKERS: "4", POLISPEC_JUDGE_IDLE: "0", INVOCATION_ID: "smoke" }
+    env: { POLISPEC_BIN: "{{files}}/polispec", POLISPEC_JUDGE_WORKERS: "4", POLISPEC_JUDGE_IDLE: "0", INVOCATION_ID: "smoke", SYSTEMD_EXEC_PID: "1" }
     expect: { exit: 0 }
   - name: the master and four workers come up
     run: [bash, -c, 'st="$1/state"; i=0; while [ "$i" -lt 150 ]; do pid="$(sed -n "s/.*\"pid\":\([0-9]*\).*/\1/p" "$st/judge.json" 2>/dev/null)"; if [ -n "$pid" ] && [ "$(pgrep -P "$pid" | wc -l)" -eq 4 ]; then echo "master $pid has 4 workers"; exit 0; fi; i=$((i+1)); sleep 0.1; done; exit 1', bash, "{{scratch}}"]
@@ -223,9 +223,11 @@ steps:
     expect:
       exit: 0
       stdout_includes: ["workers: 4", "listening: yes"]
-  - name: under a supervisor the judge records its pid in judge.supervised
-    run: [bash, -c, 'st="$1/state"; pid="$(sed -n "s/.*\"pid\":\([0-9]*\).*/\1/p" "$st/judge.json")"; [ "$pid" = "$(cat "$st/judge.supervised")" ]', bash, "{{scratch}}"]
-    expect: { exit: 0 }
+  - name: a launcher-started judge with an inherited INVOCATION_ID writes no judge.supervised
+    run: [bash, -c, 'st="$1/state"; [ -e "$st/judge.json" ] && [ ! -e "$st/judge.supervised" ] && echo "not supervised"', bash, "{{scratch}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["not supervised"]
   - name: the launcher answers a denied pretool exactly as the cold hook does
     run: [bash, -c, 'log="$4/state/judge.log"; before="$(grep -c "\"mode\":\"pretool\"" "$log")"; cold="$(printf "%s" "$3" | "$2" hook pretool --harness claude 2>/dev/null)"; cr=$?; warm="$(printf "%s" "$3" | "$1" pretool --harness claude 2>/dev/null)"; wr=$?; i=0; while [ "$i" -lt 40 ]; do after="$(grep -c "\"mode\":\"pretool\"" "$log")"; [ "$((after - before))" -ge 1 ] && break; i=$((i+1)); sleep 0.05; done; if [ "$cold" = "$warm" ] && [ "$cr" = "$wr" ] && [ -n "$warm" ] && [ "$((after - before))" = 1 ]; then echo "identical exit=$wr judged=1"; exit 0; fi; echo "cold=$cr:$cold"; echo "warm=$wr:$warm judged=$((after - before))"; exit 1', bash, "{{tree}}/bin/polispec-guard", "{{files}}/polispec", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push origin main:stable\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"parity-deny\"}", "{{scratch}}"]
     env: { POLISPEC_BIN: "{{files}}/polispec" }
@@ -347,6 +349,13 @@ steps:
     expect:
       exit: 0
       stdout_includes: ["idle exit after about"]
+  - name: a judge systemd started (SYSTEMD_EXEC_PID is its own pid) records its pid in judge.supervised and removes it on stop
+    run: [bash, -c, 'st="$1/state"; rm -f "$st/judge.json" "$st/judge.spawn" "$st/judge.supervised"; sh -c "export SYSTEMD_EXEC_PID=\$\$; exec \"\$0\" judge serve </dev/null >/dev/null 2>&1" "$2" & i=0; while [ "$i" -lt 150 ] && [ ! -e "$st/judge.supervised" ]; do i=$((i+1)); sleep 0.1; done; pid="$(sed -n "s/.*\"pid\":\([0-9]*\).*/\1/p" "$st/judge.json" 2>/dev/null)"; sup="$(cat "$st/judge.supervised" 2>/dev/null)"; [ -n "$pid" ] && [ "$pid" = "$sup" ] && echo "supervised $pid"; "$2" judge stop >/dev/null; i=0; while [ "$i" -lt 100 ]; do if [ ! -e "$st/judge.supervised" ] && [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null && [ -z "$(pgrep -P "$pid")" ]; then echo "marker removed on stop"; exit 0; fi; i=$((i+1)); sleep 0.1; done; exit 1', bash, "{{scratch}}", "{{polispec}}"]
+    env: { POLISPEC_JUDGE_WORKERS: "2", POLISPEC_JUDGE_IDLE: "0", INVOCATION_ID: "smoke" }
+    timeout: 60
+    expect:
+      exit: 0
+      stdout_includes: ["supervised ", "marker removed on stop"]
   - name: judge unit prints a generic systemd user unit
     run: ["{{polispec}}", judge, unit]
     expect:

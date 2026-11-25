@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.61.1] - 2026-11-25
+
+### Fixed
+
+- A judge started by `bin/polispec-guard` no longer claims to be supervised. 0.61.0 counted any judge with `INVOCATION_ID` set as running under systemd. A terminal or tmux session started from a systemd unit hands that variable down to every process in it, so a launcher-started judge wrote `judge.supervised`, `polispec judge stats` reported `supervised: yes` with no unit installed, and the launcher stopped restarting the judge after it exited. Checking the parent instead does not work: `setsid -f` re-parents the judge to the user manager either way. The master now writes `judge.supervised` only when `INVOCATION_ID` is set and `SYSTEMD_EXEC_PID` equals its own pid, which holds only for the process systemd started. On the host on 2026-11-25 the stray judge had `SYSTEMD_EXEC_PID=9868` and pid 1103916. No verdict changes.
+
 ## [0.61.0] - 2026-11-25
 
 The guard stayed fail-closed but became unavailable under host load. On 2026-11-25, at load 34 to 40 on 32 cores, the judge took a median of 0.6 to 2 seconds per call (p99 4 to 9 s, max 14 s), and the launcher denied 379 calls as `guard unavailable` in one day, against 0 to 2 on earlier days. Three causes were measured: the freshness key re-read and re-hashed every input on every call, including 4 to 5 sealed-plane verifications at about 84 ms each; the judge's eight threads shared one Ruby GVL, so all agents shared one core of judging; and the judge ran at the same CPU weight as everything else in the session. No verdict changes in this release.

@@ -119,7 +119,8 @@ module Polispec
     end
 
     def supervised?
-      !ENV["INVOCATION_ID"].to_s.strip.empty?
+      return false if ENV["INVOCATION_ID"].to_s.strip.empty?
+      ENV["SYSTEMD_EXEC_PID"].to_s.strip == Process.pid.to_s
     end
 
     def preload
