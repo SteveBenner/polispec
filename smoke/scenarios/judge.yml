@@ -20,19 +20,19 @@ fixture:
         id: code.root
         title: Smoke root
         subpolicies:
-          - id: code.no-aws-key
-            title: No AWS access key literals
-            statement: Never commit an AWS access key id.
+          - id: code.no-debug-marker
+            title: No debug markers
+            statement: Never commit a debug marker.
             level: MUST_NOT
             severity: critical
             lifecycle: active
             execution:
               class: harness
               phases: [pre_write]
-              enforcer: { kind: grep, pattern: "AKIA[0-9A-Z]{16}", decides: all }
+              enforcer: { kind: grep, pattern: "DEBUG_MARKER_[0-9]{4}", decides: all }
             control:
-              fixture: no-aws-key.bad.txt
-              compliant: no-aws-key.good.txt
+              fixture: no-debug-marker.bad.txt
+              compliant: no-debug-marker.good.txt
               expect: { verdict: violation, line: 1 }
             origin: { date: "2026-10-14", cause: smoke fixture }
     "pack/specs/code/ruby/spec.yml": |
@@ -81,9 +81,9 @@ fixture:
               compliant: prefer-logger.good.rb
               expect: { verdict: violation, line: 1 }
             origin: { date: "2026-10-14", cause: smoke fixture }
-    "pack/controls/code/no-aws-key.bad.txt": |
-      key = AKIAABCDEFGHIJKLMNOP
-    "pack/controls/code/no-aws-key.good.txt": |
+    "pack/controls/code/no-debug-marker.bad.txt": |
+      key = DEBUG_MARKER_1234
+    "pack/controls/code/no-debug-marker.good.txt": |
       key = ENV["KEY"]
     "pack/controls/code/ruby/no-binding-pry.bad.rb": |
       binding.pry
