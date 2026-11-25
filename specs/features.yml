@@ -843,6 +843,7 @@ features:
   paths:
   - lib/polispec/commands/judge.rb
   - lib/polispec/judge.rb
+  - lib/polispec/judge/**/*
   - smoke/scenarios/judge.yml
   spec:
     file: specs/app.yml

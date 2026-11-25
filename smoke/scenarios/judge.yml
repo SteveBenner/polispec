@@ -1,6 +1,6 @@
 schema: polispec.smoke-scenario/v1
 unit: commands/judge
-summary: judge status with no judge exits 1 naming the missing state file, stop with none is a no-op, a launcher call through bin/polispec-guard starts the resident judge in the scratch state home, status then shows its port, token, pid, runtime, version and that it is listening, a later launcher call is answered by it and logged, stop sends TERM and status then shows none, and an unknown verb or extra argument prints usage with exit 2
+summary: judge status with no judge exits 1 naming the missing state file, stop with none is a no-op, a launcher call through bin/polispec-guard starts the resident judge in the scratch state home, status then shows its port, token, pid, runtime, version and that it is listening, a later launcher call is answered by it and logged, stop sends TERM and status then shows none, an unknown verb or extra argument prints usage with exit 2, a four worker prefork judge comes up under a supervisor id with judge.supervised and status showing its workers, the launcher answers allowed and denied pretool calls exactly as the cold hook does, thirty two concurrent calls are all answered by several workers with no denial, a worker killed with SIGKILL is replaced within one second, code-pre code-post code-session and code-stop through the judge match the cold code-hook byte for byte and still work cold with the judge absent, a stale runtime header retires the master and its workers, judge.supervised naming a live pid stops the launcher spawning and a dead pid does not, POLISPEC_JUDGE_IDLE=0 never idles out while a short limit does, judge unit prints a generic systemd user unit, and every judge.log record carries fresh_ms, judge_ms and worker
 requires: [harness_controls]
 fixture:
   enforce: enforce
@@ -8,6 +8,132 @@ fixture:
     - id: shop
       variant: service
       status: live
+  files:
+    "pack/specs/code/spec.yml": |
+      schema: polispec.spec/v1
+      spec: code
+      version: 1.0.0
+      summary: Smoke pack root.
+      activation:
+        languages: ["*"]
+      policy:
+        id: code.root
+        title: Smoke root
+        subpolicies:
+          - id: code.no-aws-key
+            title: No AWS access key literals
+            statement: Never commit an AWS access key id.
+            level: MUST_NOT
+            severity: critical
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [pre_write]
+              enforcer: { kind: grep, pattern: "AKIA[0-9A-Z]{16}", decides: all }
+            control:
+              fixture: no-aws-key.bad.txt
+              compliant: no-aws-key.good.txt
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+    "pack/specs/code/ruby/spec.yml": |
+      schema: polispec.spec/v1
+      spec: code/ruby
+      parent: code
+      version: 1.0.0
+      summary: Smoke ruby pack.
+      activation:
+        languages: [ruby]
+      detection:
+        extensions: [".rb"]
+        filenames: ["Rakefile"]
+        shebangs: ["ruby"]
+      policy:
+        id: code.ruby.smoke
+        title: Smoke ruby
+        subpolicies:
+          - id: code.ruby.no-binding-pry
+            title: No debugger calls
+            statement: Do not leave binding.pry in committed code.
+            level: MUST_NOT
+            severity: high
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [pre_write]
+              enforcer: { kind: grep, pattern: "binding\\.pry", decides: all }
+            control:
+              fixture: no-binding-pry.bad.rb
+              compliant: no-binding-pry.good.rb
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+          - id: code.ruby.prefer-logger
+            title: Prefer the logger
+            statement: Use the logger instead of printing debug output.
+            level: SHOULD
+            severity: low
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [post_write]
+              enforcer: { kind: grep, pattern: "^\\s*pp\\s", decides: all }
+            control:
+              fixture: prefer-logger.bad.rb
+              compliant: prefer-logger.good.rb
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-10-14", cause: smoke fixture }
+    "pack/controls/code/no-aws-key.bad.txt": |
+      key = AKIAABCDEFGHIJKLMNOP
+    "pack/controls/code/no-aws-key.good.txt": |
+      key = ENV["KEY"]
+    "pack/controls/code/ruby/no-binding-pry.bad.rb": |
+      binding.pry
+    "pack/controls/code/ruby/no-binding-pry.good.rb": |
+      puts 1
+    "pack/controls/code/ruby/prefer-logger.bad.rb": |
+      pp value
+    "pack/controls/code/ruby/prefer-logger.good.rb": |
+      logger.info value
+    "work/README.md": |
+      work repository
+    "work/lib/existing.rb": |
+      puts 1
+    "pack/specs/code/slow/spec.yml": |
+      schema: polispec.spec/v1
+      spec: code/slow
+      parent: code
+      version: 1.0.0
+      summary: Smoke slow pack.
+      activation:
+        languages: [slow]
+      detection:
+        extensions: [".slow"]
+      policy:
+        id: code.slow.smoke
+        title: Smoke slow
+        subpolicies:
+          - id: code.slow.counted
+            title: Counted slow check
+            statement: A script enforcer that counts its runs and then sleeps.
+            level: SHOULD
+            severity: low
+            lifecycle: active
+            execution:
+              class: harness
+              phases: [pre_write]
+              enforcer: { kind: script, ref: enforcers/slow-count.sh, budget_ms: 20000 }
+            control:
+              fixture: counted.bad.slow
+              compliant: counted.good.slow
+              expect: { verdict: violation, line: 1 }
+            origin: { date: "2026-11-25", cause: smoke fixture }
+    "pack/controls/code/slow/counted.bad.slow": |
+      slow
+    "pack/controls/code/slow/counted.good.slow": |
+      fast
+    "pack/enforcers/slow-count.sh": |
+      #!/bin/sh
+      printf 'run\n' >> "$POLISPEC_STATE_HOME/enforcer-runs"
+      sleep 5
 steps:
   - name: link the candidate binary outside the shim directory
     run: [sh, -c, 'mkdir -p "$1" && ln -sfn "$2" "$1/polispec"', sh, "{{files}}", "{{polispec}}"]
@@ -78,3 +204,157 @@ steps:
     expect:
       exit: 2
       stderr_includes: ["usage: polispec judge serve | status | stop"]
+  - name: build the code specs repository and the work repository
+    run: [sh, -c, 'mkdir -p "$2" && cp -R "$1/." "$2/" && chmod +x "$2/enforcers/slow-count.sh" && cd "$2" && git init -q -b main . && git add specs controls enforcers && git commit -q -m pack && git branch stable && mkdir -p "$4/.polispec" && ln -sfn "$2/specs" "$4/.polispec/specs" && cd "$3" && mkdir -p lib && git init -q -b main . && git add README.md lib && git commit -q -m work', sh, "{{files}}/pack", "{{scratch}}/specs-repo", "{{files}}/work", "{{home}}"]
+    stop: true
+    expect: { exit: 0 }
+  - name: a launcher call starts a four worker judge under a supervisor
+    run: [bash, -c, 'rm -f "$1/state/judge.spawn"; printf "%s" "$3" | "$2" pretool --harness claude', bash, "{{scratch}}", "{{tree}}/bin/polispec-guard", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"workers-start\"}"]
+    env: { POLISPEC_BIN: "{{files}}/polispec", POLISPEC_JUDGE_WORKERS: "4", POLISPEC_JUDGE_IDLE: "0", INVOCATION_ID: "smoke" }
+    expect: { exit: 0 }
+  - name: the master and four workers come up
+    run: [bash, -c, 'st="$1/state"; i=0; while [ "$i" -lt 150 ]; do pid="$(sed -n "s/.*\"pid\":\([0-9]*\).*/\1/p" "$st/judge.json" 2>/dev/null)"; if [ -n "$pid" ] && [ "$(pgrep -P "$pid" | wc -l)" -eq 4 ]; then echo "master $pid has 4 workers"; exit 0; fi; i=$((i+1)); sleep 0.1; done; exit 1', bash, "{{scratch}}"]
+    timeout: 40
+    expect:
+      exit: 0
+      stdout_includes: ["has 4 workers"]
+  - name: status shows the worker count
+    run: ["{{polispec}}", judge, status]
+    expect:
+      exit: 0
+      stdout_includes: ["workers: 4", "listening: yes"]
+  - name: under a supervisor the judge records its pid in judge.supervised
+    run: [bash, -c, 'st="$1/state"; pid="$(sed -n "s/.*\"pid\":\([0-9]*\).*/\1/p" "$st/judge.json")"; [ "$pid" = "$(cat "$st/judge.supervised")" ]', bash, "{{scratch}}"]
+    expect: { exit: 0 }
+  - name: the launcher answers a denied pretool exactly as the cold hook does
+    run: [bash, -c, 'log="$4/state/judge.log"; before="$(grep -c "\"mode\":\"pretool\"" "$log")"; cold="$(printf "%s" "$3" | "$2" hook pretool --harness claude 2>/dev/null)"; cr=$?; warm="$(printf "%s" "$3" | "$1" pretool --harness claude 2>/dev/null)"; wr=$?; i=0; while [ "$i" -lt 40 ]; do after="$(grep -c "\"mode\":\"pretool\"" "$log")"; [ "$((after - before))" -ge 1 ] && break; i=$((i+1)); sleep 0.05; done; if [ "$cold" = "$warm" ] && [ "$cr" = "$wr" ] && [ -n "$warm" ] && [ "$((after - before))" = 1 ]; then echo "identical exit=$wr judged=1"; exit 0; fi; echo "cold=$cr:$cold"; echo "warm=$wr:$warm judged=$((after - before))"; exit 1', bash, "{{tree}}/bin/polispec-guard", "{{files}}/polispec", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push origin main:stable\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"parity-deny\"}", "{{scratch}}"]
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    expect:
+      exit: 0
+      stdout_includes: ["identical exit=0 judged=1"]
+  - name: the launcher answers an allowed pretool exactly as the cold hook does
+    run: [bash, -c, 'log="$4/state/judge.log"; before="$(grep -c "\"mode\":\"pretool\"" "$log")"; cold="$(printf "%s" "$3" | "$2" hook pretool --harness claude 2>/dev/null)"; cr=$?; warm="$(printf "%s" "$3" | "$1" pretool --harness claude 2>/dev/null)"; wr=$?; i=0; while [ "$i" -lt 40 ]; do after="$(grep -c "\"mode\":\"pretool\"" "$log")"; [ "$((after - before))" -ge 1 ] && break; i=$((i+1)); sleep 0.05; done; if [ "$cold" = "$warm" ] && [ "$cr" = "$wr" ] && [ -z "$warm" ] && [ "$((after - before))" = 1 ]; then echo "identical exit=$wr judged=1"; exit 0; fi; echo "cold=$cr:$cold"; echo "warm=$wr:$warm judged=$((after - before))"; exit 1', bash, "{{tree}}/bin/polispec-guard", "{{files}}/polispec", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"parity-allow\"}", "{{scratch}}"]
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    expect:
+      exit: 0
+      stdout_includes: ["identical exit=0 judged=1"]
+  - name: thirty two concurrent launcher calls are all answered by several workers
+    run: [bash, -c, 'g="$1"; st="$2/state"; d="$2/burst"; mkdir -p "$d"; before="$(grep -c "\"mode\":\"pretool\"" "$st/judge.log")"; for i in $(seq 1 32); do ( printf "%s" "${3/SESSION/burst$i}" | "$g" pretool --harness claude >"$d/out.$i" 2>&1; echo $? >"$d/rc.$i" ) & done; wait; sleep 0.5; bad=0; for i in $(seq 1 32); do [ "$(cat "$d/rc.$i")" = 0 ] || bad=$((bad+1)); [ ! -s "$d/out.$i" ] || bad=$((bad+1)); done; after="$(grep -c "\"mode\":\"pretool\"" "$st/judge.log")"; workers="$(tail -n 32 "$st/judge.log" | grep -o "\"worker\":[0-9]*" | sort -u | wc -l)"; denied="$(grep -c "unavailable\|\"decision\":\"deny\"" "$st/launcher.jsonl" 2>/dev/null || true)"; echo "bad=$bad served=$((after-before)) workers=$workers denied=${denied:-0}"; [ "$bad" = 0 ] && [ $((after-before)) -ge 32 ] && [ "$workers" -ge 2 ] && [ "${denied:-0}" = 0 ]', bash, "{{tree}}/bin/polispec-guard", "{{scratch}}", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"SESSION\"}"]
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    timeout: 60
+    expect:
+      exit: 0
+      stdout_includes: ["bad=0", "denied=0"]
+  - name: killing a worker with SIGKILL brings a replacement within one second
+    run: [bash, -c, 'st="$1/state"; pid="$(sed -n "s/.*\"pid\":\([0-9]*\).*/\1/p" "$st/judge.json")"; victim="$(pgrep -P "$pid" | head -n 1)"; kill -9 "$victim"; i=0; while [ "$i" -lt 20 ]; do if [ "$(pgrep -P "$pid" | grep -vx "$victim" | wc -l)" -eq 4 ]; then echo "replaced after about $((i * 50)) ms"; exit 0; fi; i=$((i+1)); sleep 0.05; done; exit 1', bash, "{{scratch}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["replaced after about"]
+  - name: calls are still answered by the judge after the worker died
+    run: [bash, -c, 'st="$1/state"; before="$(grep -c "\"mode\":\"pretool\"" "$st/judge.log")"; out="$(printf "%s" "$3" | "$2" pretool --harness claude 2>&1)"; rc=$?; i=0; while [ "$i" -lt 40 ]; do after="$(grep -c "\"mode\":\"pretool\"" "$st/judge.log")"; [ "$((after - before))" -ge 1 ] && break; i=$((i+1)); sleep 0.05; done; echo "rc=$rc out=[$out] judged=$((after-before))"; [ "$rc" = 0 ] && [ -z "$out" ] && [ $((after-before)) -eq 1 ]', bash, "{{scratch}}", "{{tree}}/bin/polispec-guard", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"after-kill\"}"]
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    expect:
+      exit: 0
+      stdout_includes: ["judged=1"]
+  - name: code-pre through the launcher gives the cold code-hook output and exit
+    run: [bash, -c, 'envu="env -u POLISPEC_HOME -u POLISPEC_SPECS_REPO -u POLISPEC_CODE_DECIDE"; d="$2/codecmp"; mkdir -p "$d"; printf "%s" "${3/SESSION/cold}" | $envu "$4" code-hook pre --harness claude >"$d/cold.out" 2>/dev/null; echo $? >"$d/cold.rc"; printf "%s" "${3/SESSION/warm}" | $envu "$1" code-pre --harness claude >"$d/warm.out" 2>/dev/null; echo $? >"$d/warm.rc"; cmp "$d/cold.out" "$d/warm.out" && cmp "$d/cold.rc" "$d/warm.rc" && [ -s "$d/warm.out" ] && sleep 0.3 && grep -q "\"mode\":\"code-pre\"" "$2/state/judge.log" && echo "identical $(wc -c <"$d/warm.out") bytes exit $(cat "$d/warm.rc")"', bash, "{{tree}}/bin/polispec-guard", "{{scratch}}", "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"SESSION\",\"cwd\":\"{{files}}/work\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"{{files}}/work/lib/a.rb\",\"content\":\"binding.pry\\n\"}}", "{{files}}/polispec"]
+    cwd: "{{files}}/work"
+    home: true
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    expect:
+      exit: 0
+      stdout_includes: ["identical ", "exit 0"]
+  - name: code-post code-session and code-stop through the launcher match the cold code-hook
+    run: [bash, -c, 'envu="env -u POLISPEC_HOME -u POLISPEC_SPECS_REPO -u POLISPEC_CODE_DECIDE"; d="$2/codecmp"; mkdir -p "$d"; for phase in post session stop; do case "$phase" in post) body="{\"hook_event_name\":\"PostToolUse\",\"session_id\":\"p-$phase\",\"cwd\":\"$3\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$3/lib/existing.rb\",\"content\":\"puts 1\\n\"}}" ;; session) body="{\"hook_event_name\":\"SessionStart\",\"session_id\":\"p-$phase\",\"cwd\":\"$3\",\"source\":\"clear\"}" ;; stop) body="{\"hook_event_name\":\"Stop\",\"session_id\":\"p-$phase\",\"cwd\":\"$3\",\"stop_hook_active\":false}" ;; esac; printf "%s" "$body" | $envu "$4" code-hook "$phase" --harness claude >"$d/cold.$phase" 2>/dev/null; echo $? >"$d/cold.$phase.rc"; printf "%s" "$body" | $envu "$1" "code-$phase" --harness claude >"$d/warm.$phase" 2>/dev/null; echo $? >"$d/warm.$phase.rc"; cmp "$d/cold.$phase" "$d/warm.$phase" && cmp "$d/cold.$phase.rc" "$d/warm.$phase.rc" || exit 1; sleep 0.3; grep -q "\"mode\":\"code-$phase\"" "$2/state/judge.log" || { echo "code-$phase was not served by the judge"; exit 1; }; echo "$phase identical exit $(cat "$d/warm.$phase.rc")"; done', bash, "{{tree}}/bin/polispec-guard", "{{scratch}}", "{{files}}/work", "{{files}}/polispec"]
+    cwd: "{{files}}/work"
+    home: true
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    expect:
+      exit: 0
+      stdout_includes: ["post identical exit 0", "session identical exit 0", "stop identical exit 0"]
+  - name: a POLISPEC_CODE variable in the launcher environment sends code-pre cold
+    run: [bash, -c, 'st="$2/state"; before="$(grep -c "\"mode\":\"code-pre\"" "$st/judge.log" || true)"; out="$(printf "%s" "${3/SESSION/env-cold}" | "$1" code-pre --harness claude 2>/dev/null)"; rc=$?; sleep 0.5; after="$(grep -c "\"mode\":\"code-pre\"" "$st/judge.log" || true)"; noted="$(grep -c "\"mode\":\"code-pre\",\"cause\":\"code_cold_env\"" "$st/launcher.jsonl" || true)"; echo "rc=$rc judged=$((after - before)) noted=$noted"; [ "$rc" = 0 ] && [ "$after" = "$before" ] && [ "${noted:-0}" -ge 1 ]', bash, "{{tree}}/bin/polispec-guard", "{{scratch}}", "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"SESSION\",\"cwd\":\"{{files}}/work\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"{{files}}/work/lib/a.rb\",\"content\":\"puts 1\\n\"}}"]
+    cwd: "{{files}}/work"
+    home: true
+    env: { POLISPEC_BIN: "{{files}}/polispec", POLISPEC_CODE_STATE: "{{scratch}}/code-state" }
+    expect:
+      exit: 0
+      stdout_includes: ["judged=0"]
+  - name: a code-pre payload without a cwd field goes cold and is noted
+    run: [bash, -c, 'envu="env -u POLISPEC_HOME -u POLISPEC_SPECS_REPO -u POLISPEC_CODE_DECIDE"; st="$2/state"; before="$(grep -c "\"mode\":\"code-pre\"" "$st/judge.log" || true)"; out="$(printf "%s" "${3/SESSION/cwd-cold}" | $envu "$1" code-pre --harness claude 2>/dev/null)"; rc=$?; sleep 0.5; after="$(grep -c "\"mode\":\"code-pre\"" "$st/judge.log" || true)"; noted="$(grep -c "\"mode\":\"code-pre\",\"cause\":\"code_cold_cwd\"" "$st/launcher.jsonl" || true)"; echo "rc=$rc judged=$((after - before)) noted=$noted"; [ "$rc" = 0 ] && [ "$after" = "$before" ] && [ "${noted:-0}" -ge 1 ]', bash, "{{tree}}/bin/polispec-guard", "{{scratch}}", "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"SESSION\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"{{files}}/work/lib/a.rb\",\"content\":\"puts 1\\n\"}}"]
+    cwd: "{{files}}/work"
+    home: true
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    expect:
+      exit: 0
+      stdout_includes: ["judged=0"]
+  - name: the worker answers error without running the hook when the cwd is missing or not a directory
+    run: [bash, -c, 'st="$1/state"; port="$(sed -n "s/.*\"port\":\([0-9]*\).*/\1/p" "$st/judge.json")"; tok="$(sed -n "s/.*\"token\":\"\([0-9a-f]*\)\".*/\1/p" "$st/judge.json")"; rt="$(sed -n "s/.*\"runtime\":\"\([^\"]*\)\".*/\1/p" "$st/judge.json")"; for body in "{\"cwd\":\"/nonexistent-dir\"}" "{\"x\":1}" "{\"cwd\":\"\"}"; do exec 3<>"/dev/tcp/127.0.0.1/$port"; printf "POLISPEC/1 %s code-pre claude %s caller=1 %s\n%s" "$tok" "$rt" "${#body}" "$body" >&3; IFS= read -r -t 5 reply <&3; exec 3>&-; echo "reply=$reply"; done', bash, "{{scratch}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["reply=POLISPEC/1 error 0"]
+  - name: a code hook that outlasts the launcher wait exits 0 with no output and runs exactly once
+    run: [bash, -c, 'envu="env -u POLISPEC_HOME -u POLISPEC_SPECS_REPO -u POLISPEC_CODE_DECIDE"; st="$2/state"; rm -f "$st/enforcer-runs"; start=$EPOCHSECONDS; out="$(printf "%s" "$3" | $envu "$1" code-pre --harness claude 2>/dev/null)"; rc=$?; waited=$((EPOCHSECONDS - start)); i=0; while [ "$i" -lt 100 ] && [ ! -s "$st/enforcer-runs" ]; do i=$((i+1)); sleep 0.1; done; sleep 9; runs="$(wc -l <"$st/enforcer-runs")"; noted="$(grep -c "\"mode\":\"code-pre\",\"cause\":\"code_judge_timeout\"" "$st/launcher.jsonl" || true)"; echo "rc=$rc out=[$out] waited=$waited runs=$runs noted=$noted"; [ "$rc" = 0 ] && [ -z "$out" ] && [ "$waited" -le 4 ] && [ "$runs" = 1 ] && [ "${noted:-0}" -ge 1 ]', bash, "{{tree}}/bin/polispec-guard", "{{scratch}}", "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"slow-once\",\"cwd\":\"{{files}}/work\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"{{files}}/work/lib/a.slow\",\"content\":\"slow\\n\"}}"]
+    cwd: "{{files}}/work"
+    home: true
+    env: { POLISPEC_BIN: "{{files}}/polispec", POLISPEC_JUDGE_CODE_WAIT: "2" }
+    timeout: 60
+    expect:
+      exit: 0
+      stdout_includes: ["rc=0 out=[]", "runs=1", "noted=1"]
+  - name: a stale runtime header makes the master retire and remove judge.json
+    run: [bash, -c, 'st="$1/state"; pid="$(sed -n "s/.*\"pid\":\([0-9]*\).*/\1/p" "$st/judge.json")"; port="$(sed -n "s/.*\"port\":\([0-9]*\).*/\1/p" "$st/judge.json")"; tok="$(sed -n "s/.*\"token\":\"\([0-9a-f]*\)\".*/\1/p" "$st/judge.json")"; exec 3<>"/dev/tcp/127.0.0.1/$port"; printf "POLISPEC/1 %s pretool claude /nonexistent/runtime caller=1 2\n{}" "$tok" >&3; IFS= read -r -t 5 reply <&3; echo "reply=$reply"; i=0; while [ "$i" -lt 100 ]; do if [ ! -e "$st/judge.json" ] && ! kill -0 "$pid" 2>/dev/null && [ -z "$(pgrep -f "[j]udge serve")" ]; then echo "retired master and workers"; [ ! -e "$st/judge.supervised" ] && echo "supervised marker removed"; exit 0; fi; i=$((i+1)); sleep 0.1; done; exit 1', bash, "{{scratch}}"]
+    timeout: 40
+    expect:
+      exit: 0
+      stdout_includes: ["reply=POLISPEC/1 stale 0", "retired master and workers", "supervised marker removed"]
+  - name: with the judge absent code-pre still works cold and matches the cold code-hook
+    run: [bash, -c, 'envu="env -u POLISPEC_HOME -u POLISPEC_SPECS_REPO -u POLISPEC_CODE_DECIDE"; d="$2/codecmp"; mkdir -p "$d"; printf "%s\n" "$EPOCHSECONDS" >"$2/state/judge.spawn"; printf "%s" "${3/SESSION/cold-b}" | $envu "$4" code-hook pre --harness claude >"$d/cold-b.out" 2>/dev/null; echo $? >"$d/cold-b.rc"; printf "%s" "${3/SESSION/warm-b}" | $envu "$1" code-pre --harness claude >"$d/warm-b.out" 2>/dev/null; echo $? >"$d/warm-b.rc"; cmp "$d/cold-b.out" "$d/warm-b.out" && cmp "$d/cold-b.rc" "$d/warm-b.rc" && [ -s "$d/warm-b.out" ] && [ ! -e "$2/state/judge.json" ] && echo "cold identical exit $(cat "$d/warm-b.rc")"', bash, "{{tree}}/bin/polispec-guard", "{{scratch}}", "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"SESSION\",\"cwd\":\"{{files}}/work\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"{{files}}/work/lib/a.rb\",\"content\":\"binding.pry\\n\"}}", "{{files}}/polispec"]
+    cwd: "{{files}}/work"
+    home: true
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    expect:
+      exit: 0
+      stdout_includes: ["cold identical exit 0"]
+  - name: judge.supervised naming a live pid keeps the launcher from spawning a judge
+    run: [bash, -c, 'st="$1/state"; rm -f "$st/judge.json" "$st/judge.spawn"; printf "%s\n" "$$" >"$st/judge.supervised"; printf "%s" "$3" | "$2" pretool --harness claude; sleep 2; if [ -e "$st/judge.json" ]; then echo "spawned a judge"; exit 1; fi; echo "no judge spawned"', bash, "{{scratch}}", "{{tree}}/bin/polispec-guard", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"supervised-live\"}"]
+    env: { POLISPEC_BIN: "{{files}}/polispec" }
+    expect:
+      exit: 0
+      stdout_includes: ["no judge spawned"]
+  - name: judge.supervised naming a dead pid lets the launcher spawn a two worker judge that never idles out
+    run: [bash, -c, 'st="$1/state"; true & dead=$!; wait "$dead"; printf "%s\n" "$dead" >"$st/judge.supervised"; rm -f "$st/judge.json" "$st/judge.spawn"; printf "%s" "$3" | "$2" pretool --harness claude; i=0; while [ "$i" -lt 150 ]; do if [ -e "$st/judge.json" ]; then echo "spawned a judge"; exit 0; fi; i=$((i+1)); sleep 0.1; done; exit 1', bash, "{{scratch}}", "{{tree}}/bin/polispec-guard", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"supervised-dead\"}"]
+    env: { POLISPEC_BIN: "{{files}}/polispec", POLISPEC_JUDGE_WORKERS: "2", POLISPEC_JUDGE_IDLE: "0" }
+    timeout: 40
+    expect:
+      exit: 0
+      stdout_includes: ["spawned a judge"]
+  - name: a judge started with POLISPEC_JUDGE_IDLE=0 is still listening after sitting idle
+    run: [bash, -c, 'sleep 4; "$1" judge status', bash, "{{polispec}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["workers: 2", "listening: yes"]
+  - name: stop retires the master and every worker and removes judge.json
+    run: [bash, -c, '"$1" judge stop; i=0; while [ "$i" -lt 100 ]; do if [ ! -e "$2/state/judge.json" ] && [ -z "$(pgrep -f "[j]udge serve")" ]; then echo "all gone"; exit 0; fi; i=$((i+1)); sleep 0.1; done; exit 1', bash, "{{polispec}}", "{{scratch}}"]
+    timeout: 40
+    expect:
+      exit: 0
+      stdout_includes: ["all gone"]
+  - name: a judge with a short idle limit exits by itself when no request arrives
+    run: [bash, -c, 'st="$1/state"; rm -f "$st/judge.json" "$st/judge.spawn" "$st/judge.supervised"; printf "%s" "$3" | "$2" pretool --harness claude; i=0; while [ "$i" -lt 100 ] && [ ! -e "$st/judge.json" ]; do i=$((i+1)); sleep 0.1; done; [ -e "$st/judge.json" ] || { echo "judge did not start"; exit 1; }; i=0; while [ "$i" -lt 200 ]; do if [ ! -e "$st/judge.json" ] && [ -z "$(pgrep -f "[j]udge serve")" ]; then echo "idle exit after about $((i / 10)) s"; exit 0; fi; i=$((i+1)); sleep 0.1; done; exit 1', bash, "{{scratch}}", "{{tree}}/bin/polispec-guard", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"idle-short\"}"]
+    env: { POLISPEC_BIN: "{{files}}/polispec", POLISPEC_JUDGE_WORKERS: "2", POLISPEC_JUDGE_IDLE: "3" }
+    timeout: 60
+    expect:
+      exit: 0
+      stdout_includes: ["idle exit after about"]
+  - name: judge unit prints a generic systemd user unit
+    run: ["{{polispec}}", judge, unit]
+    expect:
+      exit: 0
+      stdout_includes: ["[Unit]", "[Service]", "Type=simple", "ExecStart=%h/.local/bin/polispec judge serve", "Environment=POLISPEC_JUDGE_IDLE=0", "Restart=always", "RestartSec=1", "Slice=polispec-guard.slice", "WantedBy=default.target"]
+      stdout_excludes: ["/home/", "/usr/"]
+  - name: every judge.log record carries fresh_ms, judge_ms and worker
+    run: [bash, -c, 'log="$1/state/judge.log"; total="$(wc -l <"$log")"; missing="$(grep -vc "\"fresh_ms\":.*\"judge_ms\":.*\"worker\":[0-9]" "$log" || true)"; echo "records=$total missing=${missing:-0}"; [ "$total" -gt 0 ] && [ "${missing:-0}" = 0 ]', bash, "{{scratch}}"]
+    expect:
+      exit: 0
+      stdout_includes: ["missing=0"]

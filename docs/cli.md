@@ -73,7 +73,7 @@ Plan targets: a package (`environment-control` and others), `project:ID`, `globa
 | `manifest index --publish\|--unpublish` | Share the host index | operator | writes |
 | `specs link\|status\|promote` | The `~/.polispec/specs` link | agent; repointing an existing link needs the operator's typed phrase | writes a link |
 | `smoke record\|list\|show\|verify\|coverage\|run` | The smoke ledger and bundled suite | agent | `record` and `run` write the ledger unless `--no-record` |
-| `judge status\|stop` | The resident judge | agent | `stop` ends the process |
+| `judge status\|stop\|stats\|unit` | The resident judge; `stats` reports its latency and the launcher's fallbacks and denials, `unit` prints a systemd user unit | agent | `stop` ends the process |
 | `judge serve`, `hook`, `code-hook` | Launcher and harness entry points | internal | |
 | `web`, `web url` | Local web app for the person | operator; never driven by an agent | opens a server |
 

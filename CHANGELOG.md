@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.61.0] - 2026-11-25
+
+The guard stayed fail-closed but became unavailable under host load. On 2026-11-25, at load 34 to 40 on 32 cores, the judge took a median of 0.6 to 2 seconds per call (p99 4 to 9 s, max 14 s), and the launcher denied 379 calls as `guard unavailable` in one day, against 0 to 2 on earlier days. Three causes were measured: the freshness key re-read and re-hashed every input on every call, including 4 to 5 sealed-plane verifications at about 84 ms each; the judge's eight threads shared one Ruby GVL, so all agents shared one core of judging; and the judge ran at the same CPU weight as everything else in the session. No verdict changes in this release.
+
+### Changed
+
+- The resident judge is a prefork master with worker processes (`lib/polispec/judge/server.rb`, `lib/polispec/judge/worker.rb`, `lib/polispec/judge.rb`). The master binds the loopback port (backlog 256), loads the runtime once, publishes `judge.json` plus `workers`, and forks `POLISPEC_JUDGE_WORKERS` workers (1 to 32, default nproc/4 within 4 to 16; `POLISPEC_JUDGE_THREADS` is read as an alias for this release). Each worker judges one call at a time with its own memo and key. A dead worker is replaced within 0.2 s, with a 5 s back-off after three early deaths; a worker is recycled after 5000 calls or past 512 MB RSS. `busy` and the 64-connection limit are gone, and a full queue is a refused connect that takes the cold path. A sandboxed burst of 200 launcher calls at concurrency 32 under load 43 to 53 took 89 ms median and 240 ms p99 end to end with 8 workers, against 906 ms and 1223 ms with one.
+- The freshness key checks file stats before content (`lib/polispec/judge/freshness.rb`, `lib/polispec/judge/stat_cache.rb`). `POLISPEC_JUDGE_FRESHNESS=stat`, the default, re-reads a file only when its device, inode, size, mtime or ctime changed, or while its ctime is within 2 s of the read (git's racy-timestamp rule), and caches trust refs on the stat of every ref file it read. `content` keeps the previous full re-read. The key is identical in both modes and is computed in its own memo slot, so it verifies the plane once. Per key: 461 ms in content mode, 85 ms in stat mode, 4 ms with the plane cache.
+- `Plane.resolve` caches a clean, active, non-development result per process (`lib/polispec/harness_controls/plane_cache.rb`). The cache stores the lstat tuple of every path the resolve read, stat'd, realpath'd or walked, recorded at the new `Authority.io_*` helpers (`lib/polispec/harness_controls/authority.rb`, `plane.rb`) and every ancestor directory. It is reused only while every tuple is unchanged and none changed within 2 s. A result with findings is never cached. `POLISPEC_JUDGE_PLANE_CACHE=off` verifies fully on every call. A cache hit takes about 3 ms and opens no file, against 79 ms for a full resolve.
+- `bin/polispec-guard` starts no judge while `judge.supervised` names a live pid, so a systemd-run judge alone owns the lifecycle.
+
+### Added
+
+- `polispec judge stats [--since DURATION] [--json]` reports request counts, `duration_ms` and `judge_ms` percentiles, launcher causes and denials, workers and supervision, from `judge.log`, `judge.log.1` and `launcher.jsonl` (`lib/polispec/judge/stats.rb`). It never reads the token.
+- `polispec judge unit` prints a generic systemd user unit (`Restart=always`, `POLISPEC_JUDGE_IDLE=0`, `Slice=polispec-guard.slice`), and `POLISPEC_JUDGE_IDLE=0` keeps the judge up. Under systemd the master writes `judge.supervised`.
+- `judge.log` records carry `fresh_ms`, `judge_ms` and `worker`, appended line-atomically, with rotation under a flock.
+- The judge serves `code-pre`, `code-post`, `code-session` and `code-stop`, and `bin/polispec-guard` accepts them. A host that points its code-hook wiring at the launcher no longer boots Ruby twice per tool call. The worker runs the code hook in the caller's cwd. The launcher goes cold when its environment sets `POLISPEC_CODE_*`, `RPLUGIN_POLISPEC_POLISPEC_CODE_*`, `POLISPEC_SPECS_*` or `POLISPEC_HOME`, or the input has no cwd (`code_cold_env`, `code_cold_cwd`). It never reruns a hook the judge has started: after `POLISPEC_JUDGE_CODE_WAIT` (default 55 s) it exits 0 with no output and logs `code_judge_timeout`, code-hook's documented fail-open. Enforcer subprocesses inherit the judge's PATH and HOME, not the caller's, and the hook's stderr is dropped on the judge path.
+- `smoke/scenarios/judge.yml` proves the workers, respawn, stale retirement, supervision, idle, `unit`, the log fields, and the code modes (byte-identical to cold, the cold routing rules, and a single run past the code wait).
+
 ## [0.60.5] - 2026-11-25
 
 ### Fixed

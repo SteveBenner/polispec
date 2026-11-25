@@ -12,6 +12,7 @@ require "shellwords"
 require "find"
 require_relative "../runtime"
 require_relative "../catalog"
+require_relative "plane_cache"
 
 module Polispec
   module HarnessControls
@@ -425,10 +426,10 @@ module Polispec
       end
 
       def protection_findings(path, domain)
-        return [finding("#{domain}_missing", "#{path} does not exist.", true)] unless path && File.exist?(path)
+        return [finding("#{domain}_missing", "#{path} does not exist.", true)] unless path && io_exist?(path)
         findings = []
         ancestry(path).each do |entry|
-          stat = File.lstat(entry)
+          stat = io_lstat(entry)
           findings << finding("#{domain}_symlink", "#{entry} is a symlink.", true) if stat.symlink?
           findings << finding("#{domain}_owner", "#{entry} is owned by uid #{stat.uid}, not uid 0.", true) unless stat.uid.zero?
           findings << finding("#{domain}_writable", "#{entry} is group- or world-writable.", true) unless (stat.mode & 0o022).zero?
@@ -443,10 +444,10 @@ module Polispec
       end
 
       def consumer_read_findings(path, domain)
-        return [finding("#{domain}_missing", "#{path} does not exist.", true)] unless path && File.exist?(path)
+        return [finding("#{domain}_missing", "#{path} does not exist.", true)] unless path && io_exist?(path)
         findings = []
         ancestry(path).each do |entry|
-          stat = File.stat(entry)
+          stat = io_stat(entry)
           if stat.directory?
             findings << finding("#{domain}_untraversable", "#{entry} is not traversable by the guard user.", true) if (stat.mode & 0o001).zero?
           elsif entry == path
@@ -462,19 +463,19 @@ module Polispec
         findings = []
         expected = Array(manifest["files"])
         expected_paths = expected.map { |entry| entry["path"] }.sort
-        actual_paths = Dir.glob(File.join(root, "**", "*"), File::FNM_DOTMATCH).sort.each_with_object([]) do |path, rows|
-          next if [".", ".."].include?(File.basename(path)) || File.directory?(path)
+        actual_paths = io_glob(File.join(root, "**", "*"), File::FNM_DOTMATCH, root: root).sort.each_with_object([]) do |path, rows|
+          next if [".", ".."].include?(File.basename(path)) || io_directory?(path)
           rows << path.delete_prefix("#{root}/")
         end.sort
         findings << finding("source_file_set_mismatch", "Materialized source file set differs from its canonical manifest.", true) unless actual_paths == expected_paths
         expected.each do |entry|
           path = File.join(root, entry["path"])
-          unless File.file?(path) && !File.symlink?(path)
+          unless io_file?(path) && !io_symlink?(path)
             findings << finding("source_file_missing", "Materialized source #{entry['path']} is missing or unsafe.", true)
             next
           end
-          findings << finding("source_file_digest", "Materialized source #{entry['path']} differs from planned bytes.", true) unless Digest::SHA256.file(path).hexdigest == entry["digest"]
-          mode = File.stat(path).mode & 0o777
+          findings << finding("source_file_digest", "Materialized source #{entry['path']} differs from planned bytes.", true) unless io_digest(path) == entry["digest"]
+          mode = io_stat(path).mode & 0o777
           findings << finding("source_file_mode", "Materialized source #{entry['path']} differs from planned mode.", true) unless mode == (entry["mode"] & 0o777)
         end
         findings
@@ -966,13 +967,13 @@ module Polispec
       private_class_method :verify_release
 
       def metadata(path)
-        return { "path" => path, "present" => false } unless path && File.exist?(path)
-        stat = File.stat(path)
-        result = { "path" => path, "realpath" => File.realpath(path), "uid" => stat.uid, "mode" => stat.mode & 0o7777, "present" => true }
-        result["digest"] = stat.file? ? Digest::SHA256.file(path).hexdigest : tree_digest(path)
+        return { "path" => path, "present" => false } unless path && io_exist?(path)
+        stat = io_stat(path)
+        result = { "path" => path, "realpath" => io_realpath(path), "uid" => stat.uid, "mode" => stat.mode & 0o7777, "present" => true }
+        result["digest"] = stat.file? ? io_digest(path) : tree_digest(path)
         result
       rescue Failure => error
-        { "path" => path, "realpath" => realpath_or_nil(path), "present" => File.exist?(path), "error" => error.message, "verified" => false }
+        { "path" => path, "realpath" => realpath_or_nil(path), "present" => io_exist?(path), "error" => error.message, "verified" => false }
       rescue SystemCallError => error
         { "path" => path, "present" => false, "error" => error.message }
       end
@@ -982,8 +983,8 @@ module Polispec
         rows = bounded_tree(root).map do |entry|
           path = File.join(root, entry["path"])
           row = entry.slice("path", "mode", "type")
-          row["digest"] = Digest::SHA256.file(path).hexdigest if entry["type"] == "file"
-          row["digest"] = Digest::SHA256.hexdigest(File.readlink(path)) if entry["type"] == "link"
+          row["digest"] = io_digest(path) if entry["type"] == "file"
+          row["digest"] = Digest::SHA256.hexdigest(io_readlink(path)) if entry["type"] == "link"
           row
         end
         Digest::SHA256.hexdigest(canonical_json(rows))
@@ -993,19 +994,84 @@ module Polispec
       def bounded_tree(root)
         rows = []
         total = 0
-        Find.find(root) do |path|
+        io_walk(root) do |path|
           next if path == root
-          stat = File.lstat(path)
+          stat = io_lstat(path)
           relative = path.delete_prefix("#{root}/")
           rows << { "path" => relative, "mode" => stat.mode & 0o7777, "type" => stat.ftype }
           raise Failure.new("runtime_tree_too_large", "protected tree #{root} exceeds #{MAX_FILES} entries") if rows.length > MAX_FILES
-          total += stat.file? ? stat.size : (stat.symlink? ? File.readlink(path).bytesize : 0)
+          total += stat.file? ? stat.size : (stat.symlink? ? io_readlink(path).bytesize : 0)
           raise Failure.new("runtime_tree_too_large", "protected tree #{root} exceeds #{MAX_RUNTIME_BYTES} bytes") if total > MAX_RUNTIME_BYTES
           Find.prune if stat.symlink?
         end
         rows.sort_by { |row| row["path"] }
       end
       private_class_method :bounded_tree
+
+      def io_note(path)
+        recorder = PlaneCache.current
+        recorder.read(path) if recorder
+        path
+      end
+
+      def io_exist?(path)
+        File.exist?(io_note(path))
+      end
+
+      def io_file?(path)
+        File.file?(io_note(path))
+      end
+
+      def io_directory?(path)
+        File.directory?(io_note(path))
+      end
+
+      def io_symlink?(path)
+        File.symlink?(io_note(path))
+      end
+
+      def io_lstat(path)
+        File.lstat(io_note(path))
+      end
+
+      def io_stat(path)
+        File.stat(io_note(path))
+      end
+
+      def io_readlink(path)
+        File.readlink(io_note(path))
+      end
+
+      def io_realpath(path)
+        resolved = File.realpath(io_note(path))
+        io_note(resolved)
+        resolved
+      end
+
+      def io_read(path)
+        File.read(io_note(path))
+      end
+
+      def io_binread(path)
+        File.binread(io_note(path))
+      end
+
+      def io_digest(path)
+        Digest::SHA256.file(io_note(path)).hexdigest
+      end
+
+      def io_glob(pattern, flags = 0, root:)
+        io_note(root)
+        Dir.glob(pattern, flags).each { |path| io_note(path) }
+      end
+
+      def io_walk(root, &block)
+        io_note(root)
+        Find.find(root) do |path|
+          io_note(path)
+          block.call(path)
+        end
+      end
 
       def ancestry(path)
         expanded = File.expand_path(path)
@@ -1021,7 +1087,7 @@ module Polispec
       private_class_method :ancestry
 
       def realpath_or_nil(path)
-        File.realpath(path)
+        io_realpath(path)
       rescue SystemCallError
         nil
       end

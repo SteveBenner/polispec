@@ -3,6 +3,7 @@
 
 require_relative "../hook_memo"
 require_relative "authority"
+require_relative "plane_cache"
 require_relative "../operator/tty"
 require_relative "../operator/gates"
 require_relative "../editions"
@@ -20,8 +21,21 @@ module Polispec
       module_function
 
       def resolve
-        HookMemo.copy(:plane_resolve) { resolve_root(Authority::ROOT_PATH, require_protected: true, development: false) }
+        HookMemo.copy(:plane_resolve) { cached_fixed_root_resolve }
       end
+
+      def cached_fixed_root_resolve
+        return fixed_root_resolve unless PlaneCache.enabled?
+
+        identity = [Authority::ROOT_PATH, true, false, ignored_overrides]
+        PlaneCache::SHARED.fetch(identity: identity) { fixed_root_resolve }
+      end
+      private_class_method :cached_fixed_root_resolve
+
+      def fixed_root_resolve
+        resolve_root(Authority::ROOT_PATH, require_protected: true, development: false)
+      end
+      private_class_method :fixed_root_resolve
 
       def development_resolve(root)
         resolve_root(File.expand_path(root.to_s), require_protected: false, development: true)
@@ -30,7 +44,7 @@ module Polispec
       def resolve_root(root, require_protected:, development:)
         active_path = File.join(root, "active.json")
         ignored = ignored_overrides
-        return base_result("unsealed", [], [], development) unless File.exist?(active_path) || File.symlink?(active_path)
+        return base_result("unsealed", [], [], development) unless Authority.io_exist?(active_path) || Authority.io_symlink?(active_path)
 
         findings = []
         active = read_regular_json(active_path, "active sentinel", findings)
@@ -43,7 +57,7 @@ module Polispec
         findings.concat(Authority.consumer_read_findings(active_path, "active_sentinel")) if require_protected
         generation = active["generation"]
         generation_root = File.join(root, "generations", generation)
-        unless File.directory?(generation_root) && !File.symlink?(generation_root)
+        unless Authority.io_directory?(generation_root) && !Authority.io_symlink?(generation_root)
           findings << finding("generation_missing", "Active generation #{generation} is missing or unsafe.")
           return base_result("broken", findings, ignored, development)
         end
@@ -52,7 +66,7 @@ module Polispec
         plane_path = File.join(generation_root, "plane.json")
         record = read_regular_json(plane_path, "generation record", findings)
         return base_result("broken", findings, ignored, development) unless record
-        findings << finding("generation_record_digest", "Generation record does not match the active sentinel digest.") unless Digest::SHA256.file(plane_path).hexdigest == active["plane_digest"]
+        findings << finding("generation_record_digest", "Generation record does not match the active sentinel digest.") unless Authority.io_digest(plane_path) == active["plane_digest"]
         unless record["schema"] == PLANE_SCHEMA && record["generation"] == generation && EDITIONS.include?(record["edition"])
           findings << finding("generation_record_invalid", "Generation record does not match the active generation.")
           return base_result("broken", findings, ignored, development)
@@ -400,13 +414,13 @@ module Polispec
       private_class_method :ignored_overrides
 
       def read_regular_json(path, label, findings)
-        stat = File.lstat(path)
+        stat = Authority.io_lstat(path)
         unless stat.file? && !stat.symlink?
           findings << finding("#{label.tr(' ', '_')}_unsafe", "#{label} is not a regular non-symlink file.")
           return nil
         end
         raise Authority::Failure.new("oversized_record", "#{label} exceeds #{Authority::MAX_FILE} bytes") if stat.size > Authority::MAX_FILE
-        data = JSON.parse(File.binread(path))
+        data = JSON.parse(Authority.io_binread(path))
         unless data.is_a?(Hash)
           findings << finding("#{label.tr(' ', '_')}_invalid", "#{label} must contain an object.")
           return nil
@@ -425,11 +439,11 @@ module Polispec
         files = stringify_hash(record["files"])
         files.each do |relative, expected|
           path = safe_generation_path(root, relative)
-          unless File.file?(path) && !File.symlink?(path)
+          unless Authority.io_file?(path) && !Authority.io_symlink?(path)
             findings << finding("authority_file_missing", "Generation file #{relative} is missing or unsafe.")
             next
           end
-          actual = Digest::SHA256.file(path).hexdigest
+          actual = Authority.io_digest(path)
           findings << finding("authority_digest_mismatch", "Generation file #{relative} failed its digest.") unless actual == expected
           if require_protected
             findings.concat(Authority.protection_findings(path, "authority_file").map { |item| finding(item["code"], item["detail"]) })
@@ -437,11 +451,11 @@ module Polispec
           end
         end
         findings << finding("authority_manifest_empty", "Generation record contains no authority file digests.") if files.empty?
-        source_manifest = JSON.parse(File.read(safe_generation_path(root, "source-manifest.json")))
+        source_manifest = JSON.parse(Authority.io_read(safe_generation_path(root, "source-manifest.json")))
         source_digest = Digest::SHA256.hexdigest(Authority.canonical_json(source_manifest))
         findings << finding("source_manifest_digest", "Source manifest does not match recorded source provenance.") unless source_digest == record.dig("source", "digest")
         findings.concat(Authority.verify_materialized_source(File.join(root, "source"), source_manifest).map { |item| finding(item["code"], item["detail"]) })
-        runtime_manifest = JSON.parse(File.read(safe_generation_path(root, "runtime-manifest.json")))
+        runtime_manifest = JSON.parse(Authority.io_read(safe_generation_path(root, "runtime-manifest.json")))
         findings << finding("runtime_manifest_digest", "Runtime manifest does not match recorded runtime provenance.") unless runtime_manifest["digest"] == record.dig("runtime", "digest")
       rescue JSON::ParserError => error
         findings << finding("authority_manifest_invalid", "Generation manifest is malformed: #{error.message}")

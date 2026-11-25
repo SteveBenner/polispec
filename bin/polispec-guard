@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
 set -u
+CODE_WAIT=55
+CODE_WAIT_MIN=1
+CODE_WAIT_MAX=60
 read_tools=(read notebookread read_file view grep search_file_content read_many_files view_image)
 if [ "${1:-}" = "--read-tools" ]; then printf '%s\n' "${read_tools[@]}"; exit 0; fi
 mode="${1:-pretool}"
@@ -120,8 +123,12 @@ deny_unavailable() {
   exit 2
 }
 if [ -z "$bin" ]; then deny_unavailable no_binary; fi
+code_phase=""
+code_env_re=$'(^|\n)(POLISPEC_CODE_[^\n]*|RPLUGIN_POLISPEC_POLISPEC_CODE_[^\n]*|POLISPEC_SPECS_[^\n]*|POLISPEC_HOME)(\n|$)'
+code_cwd_re='"cwd"[[:space:]]*:[[:space:]]*"[^"]+"'
 case "$mode" in
   pretool | session) ;;
+  code-pre | code-post | code-session | code-stop) code_phase="${mode#code-}" ;;
   *) exit 0 ;;
 esac
 launcher_note() {
@@ -133,7 +140,17 @@ launcher_note() {
   umask 077
   TZ=UTC printf '{"ts":"%(%Y-%m-%dT%H:%M:%SZ)T","tool":"%s","session":"%s","harness":"%s","mode":"%s","cause":"%s","decision":"pass"}\n' -1 "$safe_tool" "$safe_session" "$safe_harness" "$mode" "$1" >> "$state/launcher.jsonl" 2>/dev/null
 }
+code_env_set() {
+  exported="$(compgen -e)"
+  [[ $exported =~ $code_env_re ]]
+}
 judge_spawn() {
+  supervised="$state/judge.supervised"
+  if [ -f "$supervised" ]; then
+    sup_pid=""
+    { IFS= read -r sup_pid || true; } < "$supervised"
+    if [[ $sup_pid =~ ^[0-9]+$ ]] && kill -0 "$sup_pid" 2>/dev/null; then return 0; fi
+  fi
   stamp="$state/judge.spawn"
   last=0
   if [ -f "$stamp" ]; then { IFS= read -r last || true; } < "$stamp"; fi
@@ -157,6 +174,7 @@ judge_left() {
 }
 judge_extend() {
   [ "$judge_extended" = 0 ] || return 1
+  [ -z "$code_phase" ] || return 1
   extend_us=$(( judge_start + judge_wait * 1000000 ))
   [ "$extend_us" -gt "$judge_deadline" ] || return 1
   judge_deadline="$extend_us"
@@ -169,12 +187,18 @@ judge_attempt() {
   { IFS= read -r -d '' jtext || true; } < "$jfile"
   if [[ $jtext =~ \"port\":([0-9]+) ]]; then jport="${BASH_REMATCH[1]}"; else judge_cause=judge_malformed; return 1; fi
   if [[ $jtext =~ \"token\":\"([0-9a-f]{32})\" ]]; then jtoken="${BASH_REMATCH[1]}"; else judge_cause=judge_malformed; return 1; fi
-  budget="${POLISPEC_JUDGE_BUDGET:-0.5}"
-  if [[ $budget =~ ^([0-9]+)(\.([0-9]{1,6}))?$ ]]; then
-    frac="${BASH_REMATCH[3]}000000"
-    budget_us=$(( 10#${BASH_REMATCH[1]} * 1000000 + 10#${frac:0:6} ))
+  if [ -n "$code_phase" ]; then
+    code_wait="${POLISPEC_JUDGE_CODE_WAIT:-$CODE_WAIT}"
+    if ! [[ $code_wait =~ ^[0-9]+$ ]] || [ "$(( 10#$code_wait ))" -lt "$CODE_WAIT_MIN" ] || [ "$(( 10#$code_wait ))" -gt "$CODE_WAIT_MAX" ]; then code_wait="$CODE_WAIT"; fi
+    budget_us=$(( 10#$code_wait * 1000000 ))
   else
-    budget_us=500000
+    budget="${POLISPEC_JUDGE_BUDGET:-0.5}"
+    if [[ $budget =~ ^([0-9]+)(\.([0-9]{1,6}))?$ ]]; then
+      frac="${BASH_REMATCH[3]}000000"
+      budget_us=$(( 10#${BASH_REMATCH[1]} * 1000000 + 10#${frac:0:6} ))
+    else
+      budget_us=500000
+    fi
   fi
   [ "$budget_us" -gt 0 ] || { judge_cause=judge_budget; return 1; }
   judge_start="${EPOCHREALTIME//[!0-9]/}"
@@ -186,6 +210,7 @@ judge_attempt() {
   if ! { exec 3<>"/dev/tcp/127.0.0.1/$jport"; } 2>/dev/null; then judge_cause=judge_refused; return 1; fi
   payload_bytes="${#input}"
   if ! printf '%s\n%s' "POLISPEC/1 $jtoken $mode $harness $bindir caller=$$ $payload_bytes" "$input" >&3 2>/dev/null; then exec 3>&-; judge_cause=judge_refused; return 1; fi
+  judge_written=1
   jhead=""
   if ! judge_left; then exec 3>&-; judge_cause=judge_timeout; return 1; fi
   IFS= read -t "$rem" -r -u 3 jhead
@@ -206,12 +231,23 @@ judge_attempt() {
   jlen="${BASH_REMATCH[2]}"
   jbody=""
   if [ "$jlen" -gt 0 ] && [ "$jstatus" != stale ] && [ "$jstatus" != busy ] && [ "$jstatus" != error ]; then
-    if ! judge_left || ! read -t "$rem" -r -N "$jlen" -u 3 jbody; then exec 3>&-; judge_cause=judge_timeout; return 1; fi
+    if [ -n "$code_phase" ]; then
+      if ! judge_left || ! IFS= read -t "$rem" -r -N "$jlen" -u 3 jbody; then exec 3>&-; judge_cause=judge_timeout; return 1; fi
+    elif ! judge_left || ! read -t "$rem" -r -N "$jlen" -u 3 jbody; then exec 3>&-; judge_cause=judge_timeout; return 1; fi
   fi
   exec 3>&-
   case "$jstatus" in
     stale | busy | error) judge_cause="judge_$jstatus"; return 1 ;;
   esac
+  if [ -n "$code_phase" ]; then
+    case "$jstatus" in
+      0 | 1) ;;
+      *) judge_cause="judge_exit_$jstatus"; return 1 ;;
+    esac
+    if [ "$judge_extended" = 1 ]; then launcher_note judge_slow; fi
+    printf '%s' "$jbody"
+    exit "$jstatus"
+  fi
   jbody="${jbody%"${jbody##*[!$'\n']}"}"
   if [ "$jstatus" = 0 ]; then
     if [ "$judge_extended" = 1 ]; then launcher_note judge_slow; fi
@@ -226,7 +262,16 @@ judge_attempt() {
   judge_cause="judge_exit_$jstatus"
   return 1
 }
-if [ "${POLISPEC_JUDGE:-on}" != off ]; then
+code_cold=""
+if [ -n "$code_phase" ]; then
+  if code_env_set; then
+    code_cold=code_cold_env
+  elif ! [[ $input =~ $code_cwd_re ]]; then
+    code_cold=code_cold_cwd
+  fi
+  if [ -n "$code_cold" ]; then launcher_note "$code_cold"; fi
+fi
+if [ -z "$code_cold" ] && [ "${POLISPEC_JUDGE:-on}" != off ]; then
   resolved="$(readlink -f -- "$bin" 2>/dev/null)" || resolved=""
   [ -n "$resolved" ] || resolved="$bin"
   bindir="$(cd "$(dirname "$resolved")" 2>/dev/null && pwd -P)"
@@ -236,6 +281,7 @@ if [ "${POLISPEC_JUDGE:-on}" != off ]; then
   judge_cause=""
   judge_extended=0
   judge_start=0
+  judge_written=0
   if ! judge_attempt; then
     if [ "$judge_extended" = 1 ]; then
       deadline=$(( deadline - ( ${EPOCHREALTIME//[!0-9]/} - judge_start + 999999 ) / 1000000 ))
@@ -243,10 +289,19 @@ if [ "${POLISPEC_JUDGE:-on}" != off ]; then
     fi
     if [ -n "$saved_lc_set" ]; then LC_ALL="$saved_lc"; else unset LC_ALL; fi
     trap - PIPE
+    if [ -n "$code_phase" ] && [ "$judge_written" = 1 ]; then
+      case "$judge_cause" in
+        judge_timeout) launcher_note code_judge_timeout; exit 0 ;;
+        judge_malformed) launcher_note code_judge_malformed; exit 0 ;;
+      esac
+    fi
     launcher_note "$judge_cause"
     case "$judge_cause" in judge_absent | judge_refused | judge_stale) judge_spawn ;; esac
-    if [ "$judge_cause" = judge_timeout ] && [ "$judge_extended" = 1 ] && [ "$deadline" -lt 2 ]; then deny_unavailable judge_timeout; fi
+    if [ -z "$code_phase" ] && [ "$judge_cause" = judge_timeout ] && [ "$judge_extended" = 1 ] && [ "$deadline" -lt 2 ]; then deny_unavailable judge_timeout; fi
   fi
+fi
+if [ -n "$code_phase" ]; then
+  exec "$bin" code-hook "$code_phase" --harness "$harness" < <(printf '%s' "$input")
 fi
 if command -v timeout >/dev/null 2>&1; then
   out="$(printf '%s' "$input" | timeout -k 1 "$deadline" "$bin" hook "$mode" --harness "$harness" 2>/dev/null)"
