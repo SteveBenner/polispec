@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.60.2] - 2026-11-24
+
+### Fixed
+
+- Under concurrent agent sessions the resident judge denied calls with `[POLISPEC internal] guard unavailable; call denied`: on 2026-11-24 between 23:00 and 23:32 PT, `launcher.jsonl` holds 48 `judge_timeout` denials and 1,081 `judge_slow` passes across many sessions, and `judge.log` shows 1 to 7.3 s per pretool judgment. `Judge::Server#enter` (`lib/polispec/judge.rb`) computed `Freshness#key` inside the worker gate for every request, and on this host one key costs about 600 ms (the shelf digest, the catalog digest, and the trust refs of 12 live projects), so requests queued behind each other's key in a single file and the back of a burst passed the 7 s wait. The key is now computed outside the gate by `Server#fresh_key`, one computation at a time; a request uses the key of the first computation that started after it arrived, so freshness is unchanged and a burst of N requests costs at most two key computations. Measured in process with the real key and 50 ms of simulated judging: 24 concurrent requests waited up to 15.46 s with 13 past 7 s on 0.60.1, and up to 1.48 s with none past 7 s on 0.60.2; 8 requests waited up to 5.15 s against 1.37 s. A key computation that raises still fails only its own request, and the requests waiting on it start their own.
+
 ## [0.60.1] - 2026-11-23
 
 ### Fixed

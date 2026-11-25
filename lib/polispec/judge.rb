@@ -253,6 +253,12 @@ module Polispec
         @workers = []
         @log_lock = Mutex.new
         @pool = Judge.pool_size
+        @fresh_lock = Mutex.new
+        @fresh_done = ConditionVariable.new
+        @fresh_started = 0
+        @fresh_finished = 0
+        @fresh_running = false
+        @fresh_key = nil
       end
 
       def run
@@ -452,12 +458,46 @@ module Polispec
         end
       end
 
+      def fresh_key
+        @fresh_lock.synchronize do
+          wanted = @fresh_started + 1
+          loop do
+            return @fresh_key if @fresh_finished >= wanted
+
+            unless @fresh_running
+              @fresh_running = true
+              @fresh_started += 1
+              round = @fresh_started
+              key = nil
+              begin
+                @fresh_lock.unlock
+                begin
+                  Thread.current[HookMemo::SLOT] = nil
+                  key = @freshness.key
+                ensure
+                  @fresh_lock.lock
+                end
+              ensure
+                @fresh_running = false
+                if key
+                  @fresh_key = key
+                  @fresh_finished = round
+                end
+                @fresh_done.broadcast
+              end
+              return key
+            end
+            @fresh_done.wait(@fresh_lock)
+          end
+        end
+      end
+
       def enter
         changed = false
+        key = fresh_key
         @gate.synchronize do
           @drained.wait(@gate) while @active >= @pool
           Thread.current[HookMemo::SLOT] = nil
-          key = @freshness.key
           @drained.wait(@gate) while key != @key && @active.positive?
           if key != @key
             changed = !@key.nil?
