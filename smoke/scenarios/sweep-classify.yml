@@ -495,6 +495,55 @@ steps:
       cwd: "{{project.shop}}"
     expect:
       decision: allow
+  - name: bwrap runs a stable push
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "bwrap --dev-bind / / -- git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: a stable push after a bwrap chdir keeps its own directory
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "bwrap --ro-bind / / --chdir /tmp -- true; git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: deny
+      rule: R-PROD-GIT
+  - name: bwrap mounting a path elsewhere asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "bwrap --dev-bind / / --bind /srv /tmp/other -- ls /tmp/other" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: polispec inside a bwrap sandbox asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "bwrap --dev-bind / / --tmpfs /etc/polispec -- polispec version" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: a plain read inside a read-only bwrap sandbox stays allowed
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "bwrap --ro-bind / / --dev /dev --proc /proc --unshare-net -- ls /usr" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
   - name: dbus-send StopUnit is a service stop
     run: ["{{polispec}}", classify, --cwd, "{{project.shop}}"]
     stdin: '{"tool_name": "Bash", "tool_input": {"command": "dbus-send --system --dest=org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager.StopUnit string:shop.service string:replace"}}'

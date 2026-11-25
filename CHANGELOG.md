@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.60.3] - 2026-11-25
+
+### Fixed
+
+- The guard did not look inside `bwrap`: `bwrap --dev-bind / / -- git push origin main:stable` was judged as an ordinary write in the working directory and allowed in a live project, where the plain push is denied by `R-PROD-GIT`; a `polispec` command run the same way was not judged either, including one with `/etc/polispec` hidden. `Classify::Shell` (`lib/polispec/classify/shell.rb`) now treats `bwrap` as a wrapper and judges the command it runs, and `Classify.benign?` no longer fast-paths a line that holds it. `--setenv` reaches the wrapped command and `--chdir` applies to it only. New asks (`POLISPEC-SHELL-UNPARSED`): a bind or link to a different path, `--file`, `--bind-data`, `--ro-bind-data`, `--chmod`, `--args`, descriptor and overlay mounts, an unknown option, a redirect on a line that uses `--chdir`, and `polispec` run inside the sandbox. `smoke/scenarios/sweep-classify.yml` gains five steps.
+
 ## [0.60.2] - 2026-11-24
 
 ### Fixed

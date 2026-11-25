@@ -575,6 +575,22 @@ module Polispec
           @cwd = resolve(dir) || @cwd
         end
 
+        def same_path?(source, dest)
+          return false if [source, dest].any? { |word| word.nil? || dynamic_word?(word) }
+
+          from = resolve(source)
+          !from.nil? && from == resolve(dest)
+        end
+
+        def host_link?(target, link)
+          return false if [target, link].any? { |word| word.nil? || dynamic_word?(word) }
+
+          path = resolve(link)
+          !path.nil? && File.symlink?(path) && File.readlink(path) == target.to_s
+        rescue SystemCallError
+          false
+        end
+
         private
 
         def halt_following
@@ -1418,6 +1434,7 @@ module Polispec
           sudo = false
           xargs = false
           reads = []
+          outer = nil
           loop do
             return keep_redirects(redirects, env, text, sudo) if words.empty?
             break if syntax_invocation(words, env)
@@ -1428,10 +1445,14 @@ module Polispec
             sudo ||= %w[sudo doas].include?(File.basename(words.first))
             xargs ||= File.basename(words.first) == "xargs"
             reads.concat(Wrappers.xargs_files(words)) if File.basename(words.first) == "xargs"
+            outer ||= @cwd if handler == :bwrap
             words = Wrappers.public_send(handler, words, self, env)
+            mark_unparsed!("redirect around a bwrap --chdir") if outer && outer != @cwd && !redirects.empty?
             return keep_redirects(redirects, env, text, sudo) if words.nil?
           end
           finalize(words, redirects, env, text, sudo, xargs, reads)
+        ensure
+          @cwd = outer if outer
         end
 
         def finalize(words, redirects, env, text, sudo, xargs = false, reads = [])
@@ -2000,8 +2021,15 @@ module Polispec
           "command" => :command, "builtin" => :plain, "exec" => :exec, "busybox" => :plain, "toybox" => :plain, "script" => :script, "nice" => :nice, "ionice" => :nice,
           "timeout" => :timeout, "stdbuf" => :stdbuf, "setsid" => :plain, "unbuffer" => :plain,
           "xargs" => :xargs, "flock" => :flock, "eval" => :eval_command,
-          "chrt" => :pinned, "taskset" => :pinned, "unshare" => :unshare, "chroot" => :chroot, "watch" => :watch, "xvfb-run" => :xvfb_run
+          "chrt" => :pinned, "taskset" => :pinned, "unshare" => :unshare, "chroot" => :chroot, "watch" => :watch, "xvfb-run" => :xvfb_run,
+          "bwrap" => :bwrap
         }.freeze
+        BWRAP_FLAGS = %w[--help --version --level-prefix --unshare-all --share-net --unshare-user --unshare-user-try --unshare-ipc --unshare-pid --unshare-net --unshare-uts --unshare-cgroup --unshare-cgroup-try --disable-userns --assert-userns-disabled --clearenv --new-session --die-with-parent --as-pid-1].freeze
+        BWRAP_ONE = %w[--args --argv0 --userns --userns2 --pidns --uid --gid --hostname --chdir --unsetenv --lock-file --sync-fd --overlay-src --tmp-overlay --ro-overlay --exec-label --file-label --proc --dev --tmpfs --mqueue --dir --remount-ro --seccomp --add-seccomp-fd --block-fd --userns-block-fd --info-fd --json-status-fd --cap-add --cap-drop --perms --size].freeze
+        BWRAP_TWO = %w[--setenv --bind --bind-try --dev-bind --dev-bind-try --ro-bind --ro-bind-try --bind-fd --ro-bind-fd --file --bind-data --ro-bind-data --symlink --chmod].freeze
+        BWRAP_BINDS = %w[--bind --bind-try --dev-bind --dev-bind-try --ro-bind --ro-bind-try].freeze
+        BWRAP_UNREADABLE = %w[--args --bind-fd --ro-bind-fd --overlay --overlay-src --tmp-overlay --ro-overlay --file --bind-data --ro-bind-data --chmod].freeze
+        BWRAP_POLISPEC = %r{(?:\A|[\s;&|(/])bin/polispec(?:-guard)?(?:[\s;&|)]|\z)|(?:\A|[\s;&|(])polispec(?:-guard)?[\s]}.freeze
         SUDO_LONG_VALUE = %w[--user --group --host --prompt --close-from --chroot --role --type --command-timeout --other-user --login-class --chdir].freeze
         UNSHARE_VALUE = %w[-R --root -w --wd -S -G --propagation --setgroups --map-user --map-group --map-users --map-groups].freeze
         XVFB_VALUE = %w[-e -f -n -p -s -w --error-file --auth-file --server-num --xauth-protocol --server-args --wait].freeze
@@ -2167,6 +2195,47 @@ module Polispec
 
         def chroot(words, _parser, _env)
           skip_options(words.drop(1), %w[--userspec --groups]).drop(1)
+        end
+
+        def bwrap(words, parser, env)
+          args = words.drop(1)
+          while args.first.to_s.start_with?("-") && args.first.to_s != "--"
+            option = args.shift.to_s
+            arity = bwrap_arity(option)
+            return parser.mark_unparsed!("bwrap option #{option} is unknown") unless arity
+
+            values = args.shift(arity)
+            bwrap_option(option, values, parser, env)
+          end
+          args.shift if args.first.to_s == "--"
+          parser.mark_unparsed!("runs polispec inside a bwrap sandbox") if bwrap_runs_polispec?(args)
+          args.empty? ? ["true"] : args
+        end
+
+        def bwrap_arity(option)
+          return 0 if BWRAP_FLAGS.include?(option)
+          return 1 if BWRAP_ONE.include?(option)
+          return 2 if BWRAP_TWO.include?(option)
+
+          option == "--overlay" ? 3 : nil
+        end
+
+        def bwrap_option(option, values, parser, env)
+          parser.mark_unparsed!("bwrap #{option} changes what the command sees") if BWRAP_UNREADABLE.include?(option)
+          case option
+          when "--chdir" then parser.set_cwd(values.first)
+          when "--setenv" then env[values.first.to_s] = values.last.to_s
+          when "--symlink"
+            parser.mark_unparsed!("bwrap links a path to another") unless parser.host_link?(values.first, values.last)
+          when *BWRAP_BINDS
+            parser.mark_unparsed!("bwrap mounts a path at another location") unless parser.same_path?(values.first, values.last)
+          end
+        end
+
+        def bwrap_runs_polispec?(args)
+          return true if %w[polispec polispec-guard].include?(File.basename(args.first.to_s))
+
+          args.any? { |arg| arg.to_s.match?(BWRAP_POLISPEC) }
         end
 
         def watch(words, parser, _env)
