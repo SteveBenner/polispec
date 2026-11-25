@@ -84,6 +84,18 @@ polispec smoke coverage --spec specs/polispec/policy.yml --at 'rules/*'
 
 `polispec promote <project> --to test` looks at the commits from the test tip to the candidate. When files changed in that range and no smoke ledger entry (`SMOKE-TESTS.md` or `smoke.yml` at the candidate) and no `proofs/` record has a `target.commit` or `commit` inside it, the gates gain a result `smoke_current` with result `warn`, `since`, `count` and up to 50 `unsmoked_file` findings, the text output prints `WARNING: no smoke entry for N changed files since <short sha>`, and the `polispec.promote` event carries it in `gates`. The warning never fails a promotion. With no test branch yet the range is every commit. `polispec.smoke.promote_warn off` (or `RPLUGIN_POLISPEC_POLISPEC_SMOKE_PROMOTE_WARN=off`) removes it; the default is `on`.
 
+## Under a sealed plane
+
+A sealed plane makes polispec ignore the variables that point a fixture at its scratch ledger and state, so scenarios cannot be set up against the host. Since 0.60.5 `polispec smoke run` then starts itself again inside bubblewrap, where the seal is not visible:
+
+- The filesystem is read-only and only the run directory is writable. `/tmp`, `/run` and `/etc/polispec` are empty, and there is no network.
+- `--out` must name a directory that does not exist yet.
+- Recording is refused (`smoke_record_sealed`); pass `--no-record`. `polispec proof run` already does.
+- `--live` and `--host-copy` need the real host, so they run outside the sandbox and behave as before.
+- When bubblewrap cannot start, the run warns and continues outside it, and fixtures that need a scratch ledger are blocked.
+
+Only the smoke run is affected. The guard and every other command keep honoring the seal.
+
 ## The bundled suite
 
 `polispec smoke run` runs the scenarios shipped in `smoke/scenarios/` against the polispec tree it runs from. Run it from a candidate worktree before tagging a release.

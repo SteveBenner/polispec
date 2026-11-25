@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.60.5] - 2026-11-25
+
+### Fixed
+
+- `polispec smoke run` could not set up its fixtures on a host with an active sealed plane (9 of 77 scenarios passed and 54 blocked at fixture setup at 0.60.0), so a test deploy whose health check is the suite always failed and no release could reach stable from such a host. The run now starts itself again inside a bubblewrap sandbox (`lib/polispec/smoke/sandbox.rb`, `lib/polispec/commands/smoke.rb`): read-only filesystem, empty `/tmp`, `/run` and `/etc/polispec`, no network, and only a new run directory writable. Recording is refused there and `--out` must be new. `--live` and `--host-copy` are unchanged, and the guard and every other command still honor the seal.
+
 ## [0.60.4] - 2026-11-25
 
 ### Fixed

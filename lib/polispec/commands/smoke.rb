@@ -277,6 +277,13 @@ module Polispec
           live: live.uniq, out: one(opts, "--out"), record: record, accept: opts[:flags].include?("--accept-changes"), json: opts[:json],
           strict: opts[:flags].include?("--strict")
         )
+        require_relative "../smoke/sandbox"
+        if Smoke::Sandbox.needed?(live: options.live, host_copy: options.host_copy)
+          reason = Smoke::Sandbox.unavailable
+          return Smoke::Sandbox.run(options) if reason.nil?
+
+          warn "smoke: a sealed plane is active and the sandbox cannot start (#{reason}); fixtures that need a scratch ledger will be blocked"
+        end
         Smoke::Run.new(options).call
       end
 
