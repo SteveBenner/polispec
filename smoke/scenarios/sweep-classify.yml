@@ -544,6 +544,45 @@ steps:
       cwd: "{{project.shop}}"
     expect:
       decision: allow
+  - name: a stable push handed to setpriv asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "setpriv --nnp git push origin main:stable" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: a stable push handed to strace through a shell asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "strace -f sh -c 'git push origin main:stable'" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: a stable push handed to runuser -c asks
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "runuser nobody -c 'git push origin main:stable'" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: ask
+      rule: POLISPEC-SHELL-UNPARSED
+  - name: an unrecognized program handed git status stays allowed
+    hook:
+      harness: claude
+      event: pretool
+      tool: Bash
+      input: { command: "strace -f git status" }
+      cwd: "{{project.shop}}"
+    expect:
+      decision: allow
   - name: dbus-send StopUnit is a service stop
     run: ["{{polispec}}", classify, --cwd, "{{project.shop}}"]
     stdin: '{"tool_name": "Bash", "tool_input": {"command": "dbus-send --system --dest=org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager.StopUnit string:shop.service string:replace"}}'

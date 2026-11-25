@@ -1,6 +1,8 @@
 schema_version: 1
 name: polispec
-version: 0.60.3
+version: 0.60.4
+handed_command:
+  summary: "Since 0.60.4 a program no classifier family recognizes asks with POLISPEC-SHELL-UNPARSED and the reason an unrecognized program is handed a command to run when its arguments hold git, gh, systemctl, service, polispec, rm, rmdir, shred or a shell, or a multi-word string after -c or --command, that classifies as git.push, git.tag, git.rewrite, release.publish, promote, deploy, fs.delete, service.control or service.config. This covers wrappers the parser does not know, such as setpriv, prlimit, runuser, nsenter, firejail, numactl, strace and ltrace. It asks and never denies, up to 16 candidates per command. docker and podman are left to the runs-elsewhere check, so docker rm does not ask."
 sandbox_wrapper:
   summary: "Since 0.60.3 the shell parser judges the command bwrap (bubblewrap) runs, like the other wrappers: a stable push or promote inside it gets the same verdict as outside. --setenv reaches the command, and --chdir moves its working directory for that command only. The line asks with POLISPEC-SHELL-UNPARSED when bwrap mounts or links a path to another location, writes sandbox content with --file, --bind-data, --ro-bind-data or --chmod, reads options or mounts from a descriptor or an overlay, carries an unknown option, redirects around a --chdir, or runs polispec, since a sandbox can hide the sealed plane or the ledger."
 unresolved_push:

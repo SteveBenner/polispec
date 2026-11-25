@@ -1473,6 +1473,7 @@ module Polispec
           syntax = syntax_invocation(words, env)
           host = !syntax && follow_script(words) == :followed
           runs_elsewhere(words, redirects)
+          handed_a_command(words) unless syntax
           added = add_command(words, redirects, env, text, sudo, xargs, reads)
           added.host = true if host && added
           added.syntax_only = true if syntax && added
@@ -1508,6 +1509,41 @@ module Polispec
           end
         rescue StandardError
           false
+        end
+
+        HANDED_NAMES = %w[git gh systemctl service polispec rm rmdir shred sh bash zsh dash].freeze
+        HANDED_CLASSES = %w[git.push git.tag git.rewrite release.publish promote deploy fs.delete service.control service.config].freeze
+        HANDED_FAMILIES = %w[git gh systemctl fs release].freeze
+        HANDED_JUDGED_APART = %w[docker podman].freeze
+        HANDED_LIMIT = 16
+
+        def handed_a_command(words)
+          name = File.basename(words.first.to_s)
+          return if HANDED_JUDGED_APART.include?(name) || Classify::Registry.family("generic").claimed?(name)
+
+          texts = handed_texts(words.drop(1).map(&:to_s))
+          hit = texts.any? { |text| probe_commands(text).any? { |cmd| handed_program?(cmd) } }
+          mark_unparsed!("an unrecognized program is handed a command to run") if hit
+        end
+
+        def handed_texts(args)
+          texts = []
+          args.each_with_index do |arg, at|
+            if HANDED_NAMES.include?(File.basename(arg))
+              texts << Shellwords.join(args.drop(at))
+            elsif at.positive? && %w[-c --command].include?(args[at - 1]) && arg.match?(/\s/)
+              texts << arg
+            end
+            break if texts.length >= HANDED_LIMIT
+          end
+          texts
+        end
+
+        def handed_program?(cmd)
+          HANDED_FAMILIES.any? do |name|
+            family = Classify::Registry.family(name)
+            family && Array(family.classify(cmd)).flatten.compact.any? { |action| HANDED_CLASSES.include?(action.action_class) }
+          end
         end
 
         def probe_commands(text)

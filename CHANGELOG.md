@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.60.4] - 2026-11-25
+
+### Fixed
+
+- A wrapper the shell parser does not know hid the command it ran: `setpriv`, `prlimit`, `runuser`, `nsenter`, `firejail`, `numactl`, `strace`, `ltrace` and `parallel` in front of `git push origin main:stable` were judged as an ordinary write and allowed in a live project. A program no classifier family recognizes now asks (`POLISPEC-SHELL-UNPARSED`, `an unrecognized program is handed a command to run`) when its arguments, or a multi-word string after `-c` or `--command`, hold a push, tag, history rewrite, release publish, promote, deploy, file delete or service command (`Classify::Shell`, `lib/polispec/classify/shell.rb`). It asks and does not deny. `docker` and `podman` are excluded; their `exec` and `run` forms were already judged. `smoke/scenarios/sweep-classify.yml` gains four steps.
+
 ## [0.60.3] - 2026-11-25
 
 ### Fixed
