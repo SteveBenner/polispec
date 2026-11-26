@@ -9,6 +9,8 @@ module Polispec
       CHILD_BYTE = "c"
       STOP_SIGNALS = %w[TERM INT HUP USR1].freeze
       DRAIN_BYTES = 4096
+      TAKEOVER_WAIT = HookCommand::HOOK_BUDGET + 3
+      TAKEOVER_POLL = 0.1
 
       attr_reader :token
 
@@ -30,8 +32,11 @@ module Polispec
       def run
         state = Judge.read_state
         if state && state["pid"] != Process.pid && Judge.listening?(state)
-          warn "polispec: judge already listening on 127.0.0.1:#{state['port']}"
-          return 0
+          unless Judge.supervised?
+            warn "polispec: judge already listening on 127.0.0.1:#{state['port']}"
+            return 0
+          end
+          return 1 unless take_over(state)
         end
 
         FileUtils.mkdir_p(State.home, mode: 0o700)
@@ -52,6 +57,45 @@ module Polispec
       end
 
       private
+
+      def take_over(state)
+        pid = state["pid"]
+        unless judge_process?(pid)
+          warn "polispec: judge on 127.0.0.1:#{state['port']} names pid #{pid.inspect}, which is not a judge serve of this user; not taking over"
+          return false
+        end
+        FileUtils.mkdir_p(State.home, mode: 0o700)
+        write_atomic(Judge.supervised_path, Process.pid.to_s)
+        warn "polispec: taking over from unsupervised judge #{pid} on 127.0.0.1:#{state['port']}"
+        signal(pid, "TERM")
+        stop = clock + TAKEOVER_WAIT
+        while clock < stop
+          return true unless alive?(pid) || Judge.listening?(state)
+
+          sleep TAKEOVER_POLL
+        end
+        warn "polispec: judge #{pid} did not retire within #{TAKEOVER_WAIT.to_i} s"
+        File.delete(Judge.supervised_path) if supervised_own?
+        false
+      end
+
+      def judge_process?(pid)
+        return false unless pid.is_a?(Integer) && pid.positive?
+        return false unless File.stat("/proc/#{pid}").uid == Process.uid
+
+        File.binread("/proc/#{pid}/cmdline").split("\0").each_cons(2).any? { |word, nxt| word == "judge" && nxt == "serve" }
+      rescue Errno::ENOENT, Errno::ESRCH, Errno::EACCES
+        false
+      end
+
+      def alive?(pid)
+        Process.kill(0, pid)
+        true
+      rescue Errno::ESRCH
+        false
+      rescue Errno::EPERM
+        true
+      end
 
       def clock
         Process.clock_gettime(Process::CLOCK_MONOTONIC)

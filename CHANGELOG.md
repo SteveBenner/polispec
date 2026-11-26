@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.61.2] - 2026-11-25
+
+### Fixed
+
+- `polispec judge serve` under systemd takes over from a judge it did not start instead of exiting. When the launcher has already started a judge, a supervised serve used to find it listening and exit 0, and `Restart=always` retried until systemd stopped with `start-limit-hit`. This happened on the host on 2026-11-25, when a launcher call between `polispec judge stop` and `systemctl --user enable --now polispec-judge.service` started a judge in a tmux scope. Now a supervised serve checks that the listening judge's pid belongs to the same user and is a `judge serve`. It writes `judge.supervised` first, so the launcher starts no third judge, sends TERM, and starts once the old master has exited and its port has closed. It waits up to `HOOK_BUDGET + 3` s (10 s), because the old judge finishes its in-flight requests first. If the pid is not a judge of this user, or the judge has not retired in time, it removes its marker and exits 1. An unsupervised serve still exits 0 beside a listening judge. No verdict changes.
+
 ## [0.61.1] - 2026-11-25
 
 ### Fixed

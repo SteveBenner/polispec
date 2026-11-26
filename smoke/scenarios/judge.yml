@@ -356,6 +356,13 @@ steps:
     expect:
       exit: 0
       stdout_includes: ["supervised ", "marker removed on stop"]
+  - name: a judge systemd started takes over from a launcher-started judge instead of exiting
+    run: [bash, -c, 'st="$1/state"; rm -f "$st/judge.json" "$st/judge.spawn" "$st/judge.supervised"; printf "%s" "$4" | "$3" pretool --harness claude >/dev/null; i=0; while [ "$i" -lt 150 ] && [ ! -e "$st/judge.json" ]; do i=$((i+1)); sleep 0.1; done; old="$(sed -n "s/.*\"pid\":\([0-9]*\).*/\1/p" "$st/judge.json" 2>/dev/null)"; [ -n "$old" ] || { echo "no launcher judge"; exit 1; }; [ -e "$st/judge.supervised" ] && { echo "launcher judge claimed supervision"; exit 1; }; sh -c "export SYSTEMD_EXEC_PID=\$\$; exec \"\$0\" judge serve </dev/null >/dev/null 2>&1" "$2" & i=0; while [ "$i" -lt 300 ]; do new="$(sed -n "s/.*\"pid\":\([0-9]*\).*/\1/p" "$st/judge.json" 2>/dev/null)"; sup="$(cat "$st/judge.supervised" 2>/dev/null)"; if [ -n "$new" ] && [ "$new" != "$old" ] && [ "$new" = "$sup" ]; then break; fi; i=$((i+1)); sleep 0.1; done; kill -0 "$old" 2>/dev/null && { echo "old judge $old still alive"; exit 1; }; [ -n "$new" ] && [ "$new" != "$old" ] && [ "$new" = "$sup" ] || { echo "no takeover: json=$new supervised=$sup"; exit 1; }; echo "took over from $old as $new"; "$2" judge status | grep -q "listening: yes" && echo "new judge listening"; "$2" judge stop >/dev/null; i=0; while [ "$i" -lt 100 ] && kill -0 "$new" 2>/dev/null; do i=$((i+1)); sleep 0.1; done; kill -0 "$new" 2>/dev/null || echo "stopped"', bash, "{{scratch}}", "{{polispec}}", "{{tree}}/bin/polispec-guard", "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"},\"cwd\":\"{{project.shop}}\",\"session_id\":\"takeover\"}"]
+    env: { POLISPEC_BIN: "{{files}}/polispec", POLISPEC_JUDGE_WORKERS: "2", POLISPEC_JUDGE_IDLE: "0", INVOCATION_ID: "smoke", SYSTEMD_EXEC_PID: "1" }
+    timeout: 90
+    expect:
+      exit: 0
+      stdout_includes: ["took over from", "new judge listening", "stopped"]
   - name: judge unit prints a generic systemd user unit
     run: ["{{polispec}}", judge, unit]
     expect:
