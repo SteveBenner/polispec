@@ -17,6 +17,12 @@ fixture:
         "README.md": "shop\n"
         "lib/app.rb": "puts 1\n"
 steps:
+  - name: the exact native Codex interview tool follows the active tools catalog
+    hook: { harness: codex, event: pretool, tool: request_user_input_async, input: { questions: [{ title: "Choose the layout" }] }, cwd: "{{project.shop}}" }
+    expect: { decision: allow }
+  - name: an unfamiliar interview tool still requires a decision
+    hook: { harness: codex, event: pretool, tool: unrecognized_interview_tool, input: {}, cwd: "{{project.shop}}" }
+    expect: { decision: deny }
   - name: ls is allowed
     hook: { harness: claude, event: pretool, tool: Bash, input: { command: ls }, cwd: "{{project.shop}}" }
     expect: { decision: allow }

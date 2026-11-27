@@ -9,6 +9,42 @@ fixture:
       variant: service
       status: live
 steps:
+  - name: native research classifies the search and both page destinations
+    run: ["{{polispec}}", classify, --json, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name":"webrun","tool_input":{"search_query":[{"q":"project manual"}],"open":[{"ref_id":"https://example.org/manual"},{"ref_id":"https://example.net/guide"}]}}'
+    expect:
+      exit: 0
+      json:
+        actions:
+          - { class: web.fetch, env_hint: { search: true } }
+          - { class: web.fetch, env_hint: { domain: example.org } }
+          - { class: web.fetch, env_hint: { domain: example.net } }
+  - name: a local administrative URL retains its policy action in a research batch
+    run: ["{{polispec}}", classify, --json, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name":"webrun","tool_input":{"open":[{"ref_id":"http://localhost:7421/api/v1/session"}]}}'
+    expect:
+      exit: 0
+      json:
+        actions:
+          - { class: web.fetch, env_hint: { domain: localhost } }
+          - { class: policy.edit, env_hint: { shape: [web_local] } }
+  - name: an opaque reference keeps both the network check and the unknown-tool decision
+    run: ["{{polispec}}", classify, --json, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name":"webrun","tool_input":{"open":[{"ref_id":"turn0search0"}]}}'
+    expect:
+      exit: 0
+      json:
+        actions:
+          - { class: web.fetch }
+          - { class: tool.internal, raw: { unknown_tool: true, tool: webrun } }
+  - name: native delegation reports its action class
+    run: ["{{polispec}}", classify, --json, --cwd, "{{project.shop}}"]
+    stdin: '{"tool_name":"collaborationspawn_agent","tool_input":{"task_name":"layout","message":"Review this layout"}}'
+    expect:
+      exit: 0
+      json:
+        actions:
+          - { class: agent.spawn, env_hint: { tool: collaborationspawn_agent } }
   - name: git push to stable is git.push on prod
     run: ["{{polispec}}", classify, --json, --cwd, "{{project.shop}}"]
     stdin: '{"tool_name":"Bash","tool_input":{"command":"git push origin main:stable"}}'

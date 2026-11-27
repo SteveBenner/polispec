@@ -8,6 +8,7 @@ rules:
   - { id: TOOL-SKILL, match: { tool: Skill, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
   - { id: TOOL-TOOLSEARCH, match: { tool: ToolSearch, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
   - { id: TOOL-ASKUSERQUESTION, match: { tool: AskUserQuestion, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
+  - { id: TOOL-REQUEST-USER-INPUT-ASYNC, match: { tool: request_user_input_async, class: [tool.internal] }, verdict: allow, overridable: true, reason: "request a decision from the person using Codex" }
   - { id: TOOL-ENTERPLANMODE, match: { tool: EnterPlanMode, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
   - { id: TOOL-EXITPLANMODE, match: { tool: ExitPlanMode, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }
   - { id: TOOL-TASKOUTPUT, match: { tool: TaskOutput, class: [tool.internal] }, verdict: allow, overridable: true, reason: "harness-internal tool" }

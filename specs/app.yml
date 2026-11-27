@@ -1,6 +1,6 @@
 schema_version: 1
 name: polispec
-version: 0.61.2
+version: 0.61.3
 handed_command:
   summary: "Since 0.60.4 a program no classifier family recognizes asks with POLISPEC-SHELL-UNPARSED and the reason an unrecognized program is handed a command to run when its arguments hold git, gh, systemctl, service, polispec, rm, rmdir, shred or a shell, or a multi-word string after -c or --command, that classifies as git.push, git.tag, git.rewrite, release.publish, promote, deploy, fs.delete, service.control or service.config. This covers wrappers the parser does not know, such as setpriv, prlimit, runuser, nsenter, firejail, numactl, strace and ltrace. It asks and never denies, up to 16 candidates per command. docker and podman are left to the runs-elsewhere check, so docker rm does not ask."
 sandbox_wrapper:
