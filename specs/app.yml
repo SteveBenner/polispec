@@ -1,3 +1,15 @@
+software:
+  name: polispec
+  version: 0.61.3
+  spec_schema: polispec.app/v1
+  status: released
+problem: A harness tool call can affect several projects and environments with different rules for access, release, and operator approval.
+solution: Classify the requested action, evaluate the applicable versioned policies and harness controls, and return the governing verdict before execution.
+architecture:
+  entry: Harness adapters normalize tool calls for the classifier and policy engine. The CLI exposes policy inspection and release operations.
+  authority: The ledger identifies governed projects. The configured trust ref supplies project policy. An active sealed plane checks protected provenance for operator actions.
+  persistence: The judgment journal records decisions. Protected operator records track the issuance, redemption, and consumption of one-use authorizations.
+  detail: See model, wiring, and protected_authorizations for evaluation order, process boundaries, and record transitions.
 schema_version: 1
 name: polispec
 version: 0.61.3
